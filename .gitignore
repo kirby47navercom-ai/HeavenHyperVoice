@@ -1,0 +1,51 @@
+# Unreal Engine generated files
+[Bb]inaries/
+[Dd]erivedDataCache/
+[Ii]ntermediate/
+[Ss]aved/
+[Ll]ocalBuilds/
+
+# Generated project files
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+*.opendb
+
+# IDE and editor state
+.vs/
+.idea/
+.vscode/.browse.VC.db*
+.vscode/*.VC.db
+.vscode/*.suo
+.vscode/ipch/
+*.user
+*.userosscache
+*.rsuser
+
+# Build artifacts and temporary files
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll
+*.exe
+*.app
+*.ipa
+*.dSYM/
+*.tmp
+*.temp
+*.bak
+
+# Logs and diagnostics
+*.log
+*.tlog
+*.lastbuildstate
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
