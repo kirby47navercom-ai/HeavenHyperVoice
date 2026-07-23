@@ -8,7 +8,15 @@ public class HeavenHyperVoice : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
+		PublicDependencyModuleNames.AddRange(new string[]
+		{
+			"Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput",
+			"GameplayTags",
+			"UMG",
+			"GameplayAbilities",
+			"GameplayTasks",
+			"GameplayTags"
+		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
