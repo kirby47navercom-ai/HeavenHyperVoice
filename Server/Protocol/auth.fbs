@@ -1,0 +1,27 @@
+// 인증 티켓. LoginServer 가 개인키로 서명하고, 각 서비스가 공개키로 검증한다.
+//
+// 와이어 형식: [이 FlatBuffer][64바이트 Ed25519 서명]
+// 서명 대상은 FlatBuffer 바이트열 전체다.
+
+namespace HeavenAuth;
+
+table AuthTicket {
+  // 발급자 식별. 추후 발급자가 여럿이 될 때를 위한 것.
+  issuer:string;
+
+  // 이 티켓이 통용되는 서비스: "chat" / "voice" / "gateway".
+  // 검증하는 쪽은 자기 audience 와 일치하는지 반드시 확인해야 한다.
+  // 없으면 채팅 티켓을 음성 서버에 재사용할 수 있게 된다.
+  audience:string;
+
+  // 서명 키 식별. 무중단 키 교체를 위해 검증자가 이걸로 공개키를 고른다.
+  key_id:string;
+
+  account_id:ulong;
+  nickname:string;
+
+  issued_unix:long;
+  expires_unix:long;
+}
+
+root_type AuthTicket;

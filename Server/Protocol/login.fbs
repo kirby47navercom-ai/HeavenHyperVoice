@@ -1,0 +1,36 @@
+// 로그인 프로토콜. 프레이밍은 chat 과 동일하다 (4바이트 LE 길이 + Envelope).
+
+namespace HeavenLogin;
+
+// 클라 -> 서버
+table LoginRequest {
+  username:string;
+  password:string;
+}
+
+// 서버 -> 클라. 응답 후 서버가 연결을 끊는다.
+table LoginResponse {
+  ok:bool;
+  message:string;
+
+  // 성공 시에만 채워진다. 그대로 ChatServer 의 Hello 에 실어 보낸다.
+  ticket:[ubyte];
+
+  // 어디로 붙을지 서버가 알려준다. 클라이언트가 주소를 하드코딩하지 않게 하기 위함.
+  chat_host:string;
+  chat_port:ushort;
+
+  // 표시용. 권위 있는 값은 티켓 안에 있다.
+  nickname:string;
+}
+
+union Payload {
+  LoginRequest,
+  LoginResponse
+}
+
+table Envelope {
+  payload:Payload;
+}
+
+root_type Envelope;

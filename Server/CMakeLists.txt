@@ -37,3 +37,5 @@ if(MSVC)
     add_compile_options(/utf-8 /W4 /permissive-)
 endif()
 
+add_subdirectory(Protocol)
+

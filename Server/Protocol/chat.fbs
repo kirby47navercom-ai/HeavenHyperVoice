@@ -1,0 +1,40 @@
+// 채팅 와이어 프로토콜.
+// 프레이밍: 4바이트 리틀엔디언 길이 접두사 + 아래 Envelope FlatBuffer.
+
+namespace HeavenChat;
+
+// 클라 -> 서버: 접속 후 반드시 첫 프레임으로 보낸다.
+// LoginServer 가 발급한 서명 티켓을 그대로 싣는다.
+// 닉네임은 티켓 안에 있다 — 클라이언트가 스스로 주장할 수 없다.
+table Hello {
+  ticket:[ubyte];
+}
+
+// 클라 -> 서버: 채팅 발화.
+table Say {
+  text:string;
+}
+
+// 서버 -> 클라: 입퇴장 등 시스템 알림.
+table Notice {
+  text:string;
+}
+
+// 서버 -> 클라: 다른 참가자의 발화 브로드캐스트.
+table Chat {
+  nickname:string;
+  text:string;
+}
+
+union Payload {
+  Hello,
+  Say,
+  Notice,
+  Chat
+}
+
+table Envelope {
+  payload:Payload;
+}
+
+root_type Envelope;
