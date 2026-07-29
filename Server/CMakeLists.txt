@@ -39,4 +39,5 @@ endif()
 
 add_subdirectory(Protocol)
 add_subdirectory(Net)
+add_subdirectory(LoginServer)
 
