@@ -38,4 +38,5 @@ if(MSVC)
 endif()
 
 add_subdirectory(Protocol)
+add_subdirectory(Net)
 
