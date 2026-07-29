@@ -1,0 +1,10 @@
+{
+  "name": "heaven-server",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "openssl",
+    "flatbuffers",
+    "spdlog"
+  ],
+  "builtin-baseline": "86dc619bd8d9697405ae5c944b474117ea9457ce"
+}

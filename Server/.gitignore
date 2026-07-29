@@ -1,0 +1,8 @@
+# CMake / Ninja build output
+build/
+
+# vcpkg manifest mode install tree
+vcpkg_installed/
+
+# Local development TLS certificates (never commit these)
+certs/
