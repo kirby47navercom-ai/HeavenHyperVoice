@@ -41,4 +41,5 @@ add_subdirectory(Protocol)
 add_subdirectory(Net)
 add_subdirectory(LoginServer)
 add_subdirectory(ChatServer)
+add_subdirectory(TestClient)
 
