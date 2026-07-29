@@ -15,7 +15,10 @@ public class HeavenHyperVoice : ModuleRules
 			"UMG",
 			"GameplayAbilities",
 			"GameplayTasks",
-			"GameplayTags"
+			"GameplayTags",
+			"GameplayAbilities", 
+			"GameplayTags", 
+			"GameplayTasks"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
