@@ -37,6 +37,9 @@ if(MSVC)
     add_compile_options(/utf-8 /W4 /permissive-)
 endif()
 
+# 실행 파일을 한곳에 모은다. 런처가 서버 exe 를 자기 옆에서 찾기 때문에 필요하다.
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
+
 add_subdirectory(Protocol)
 add_subdirectory(Net)
 add_subdirectory(LoginServer)

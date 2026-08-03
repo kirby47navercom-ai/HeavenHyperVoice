@@ -9,7 +9,6 @@ target_compile_definitions(Launcher PRIVATE
     NOMINMAX
 )
 
-# 런처가 서버 exe 를 자기 옆에서 찾으므로 출력 위치를 맞춰준다.
-set_target_properties(Launcher LoginServer ChatServer PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
-)
+# 링크하지 않으므로 CMake 가 의존 관계를 알지 못한다. 명시해두지 않으면
+# IDE 에서 Launcher 만 빌드해 실행했을 때 서버 exe 가 없어 실패한다.
+add_dependencies(Launcher LoginServer ChatServer)
