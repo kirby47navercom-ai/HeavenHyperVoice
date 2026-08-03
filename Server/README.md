@@ -13,8 +13,10 @@
 | `ChatServer/` | 티켓 검증 → 채팅방. 기본 포트 **9000** |
 | `TestClient/` | 개발/검증용 클라이언트. 로그인부터 채팅까지 |
 | `Launcher/` | 서버들을 한꺼번에 띄운다 |
+| `DataBase/` | 계정 스키마 마이그레이션 (`tools\apply-migrations.ps1` 로 적용) |
 
-의존성은 vcpkg 매니페스트(`vcpkg.json`)로 baseline 고정: `openssl`, `flatbuffers`, `spdlog`.
+의존성은 vcpkg 매니페스트(`vcpkg.json`)로 baseline 고정: `openssl`, `flatbuffers`, `spdlog`, `argon2`.
+ODBC 드라이버 매니저와 자격증명 관리자는 Windows SDK 구성요소라 vcpkg 를 타지 않는다.
 **Windows 전용**이다 (IOCP).
 
 ## 인증 — Ed25519 서명 티켓
@@ -75,6 +77,32 @@ TestClient            LoginServer                      ChatServer
 `gen-auth-key.ps1`은 `certs/auth.key`(개인, LoginServer 전용)와
 `certs/auth.pub`(공개, 검증하는 서버에 배포)를 만든다.
 
+### 계정 데이터베이스
+
+LoginServer 는 기본적으로 MySQL 을 ODBC 로 조회한다. **MySQL Connector/ODBC(64-bit,
+Unicode)** 가 필요하며, 드라이버 이름은 버전이 섞이므로 설치된 것 중에서 자동으로 찾는다
+(`--db-driver` 로 지정 가능).
+
+```powershell
+.\tools\apply-migrations.ps1              # DataBase\*.sql 을 순서대로 적용
+.\build\windows-x64\bin\Debug\LoginServer.exe --save-db-password   # 최초 1회
+```
+
+DB 비밀번호는 **명령줄로 받지 않는다** — 프로세스 목록에 그대로 노출되기 때문이다.
+`--save-db-password` 로 한 번 저장해두면 Windows 자격증명 관리자(DPAPI, 사용자 계정에
+묶인 암호화)에서 읽어오므로, 런처를 더블클릭해도 환경변수 설정 없이 붙는다.
+CI 나 컨테이너에서는 `HHV_DB_PASSWORD` 환경변수를 먼저 본다.
+저장된 값은 `--forget-db-password` 로 지운다.
+
+비밀번호는 **argon2id** 로 해시한다(OWASP 권장 최소치, `m=19456 t=2 p=1`). 계정 행을
+손으로 넣을 때 쓸 해시는 이렇게 뽑는다:
+
+```powershell
+.\build\windows-x64\bin\Debug\LoginServer.exe --hash-password '비밀번호' 2>$null
+```
+
+DB 없이 채팅 흐름만 보고 싶으면 `--account-store dev` 로 띄운다 (아래 *한계* 참고).
+
 ## 빌드
 
 ### Rider
@@ -119,10 +147,10 @@ vcpkg 경로는 CMake가 스스로 찾으므로 환경변수 설정이 필요 �
 
 ```powershell
 # 대화형 (기본): 로그인 후 채팅. /quit 로 종료
-.\build\windows-x64\TestClient\Debug\TestClient.exe --user alice
+.\build\windows-x64\bin\Debug\TestClient.exe --user alice
 
 # 스크립트: 메시지 보내고 종료
-.\build\windows-x64\TestClient\Debug\TestClient.exe --user bob --say "안녕" --wait 2
+.\build\windows-x64\bin\Debug\TestClient.exe --user bob --say "안녕" --wait 2
 ```
 
 터미널 두 개를 다른 `--user`로 띄우면 실제로 대화가 된다.
@@ -146,7 +174,8 @@ Windows 콘솔을 UTF-8로 전환하므로 한글 입출력이 프로토콜 인�
 | `kHandshakeTimeout` | 10초 | `Net/src/TlsServer.h` | 붙어놓고 아무것도 보내지 않는 연결 (slowloris) |
 | `kMaxSendQueueBytes` | 1 MiB | `Net/src/TlsSession.h` | 소켓을 읽지 않는 클라이언트로 인한 큐 폭증 |
 | `kMaxBodyBytes` | 64 KiB | `Protocol/Framing.h` | 거대한 길이 접두사로 메모리를 할당시키는 것 |
-| `kMaxNicknameBytes` | 32 | `Protocol/Framing.h` | 과도한 길이의 닉네임 |
+| `kMaxUsernameBytes` | 32 | `Protocol/LoginCodec.h` | 과도한 길이의 아이디 |
+| `kMaxPasswordBytes` | 128 | `Protocol/LoginCodec.h` | argon2 에 거대한 입력을 밀어 넣는 것 |
 
 전송 큐가 상한에 닿으면 해당 연결만 끊는다. 다른 참가자는 영향받지 않는다.
 핸드셰이크 타임아웃은 1초 주기 감시 스레드가 검사하므로 실제로는 최대 1초 늦게 걸린다.
@@ -165,12 +194,17 @@ IOCP 워커가 여럿이므로 아래 규칙을 지켜야 한다.
   자신을 붙잡고, 완료 처리에서 지역 변수로 옮겨 받는다. `pendingOps_` 가 0 이 되고
   닫힌 뒤에야 정리가 한 번 실행된다.
 - **`TlsChannel` 은 스레드 안전하지 않다.** 반드시 세션 락 안에서만 만질 것.
+- **느린 일은 IOCP 워커에서 하지 않는다.** 비밀번호 검증(argon2id, Release 기준 약
+  18.5ms)과 DB 왕복이 그렇다. `LoginHandler` 는 파싱만 하고 `WorkQueue`(`--auth-threads`,
+  기본 4)에 넘긴 뒤 즉시 반환하며, 응답도 인증 스레드가 보낸다 (`TlsSession::send` 는
+  스레드 안전하다). 그러지 않으면 로그인 몇 건이 워커를 전부 붙잡아 같은 완료 포트의
+  다른 I/O 까지 멈춘다.
 
 ## 한계
 
-- **`DevAccountStore` 는 실제로 인증하지 않는다.** 비어 있지 않은 아이디면 통과시키고
-  비밀번호는 보지 않는다. `AccountStore` 인터페이스 뒤의 DB 자리를 비워둔 것이며,
-  기동할 때마다 경고를 남긴다.
+- **`--account-store dev` 는 실제로 인증하지 않는다.** 비어 있지 않은 아이디면 통과시키고
+  비밀번호는 보지 않는다. DB 없이 채팅 흐름만 시험하기 위한 것이며, 기동할 때마다
+  경고를 남긴다. 기본값은 `odbc` 다.
 - **티켓 재사용 가능**: 만료 전까지 같은 티켓으로 여러 번 접속할 수 있다. 막으려면
   일회용 nonce 등록부(중앙 저장소)가 필요하다. 지금은 유효기간 60초로 대신한다.
 - **중앙 강제 차단이 없다.** 서명이 유효하고 만료 전이면 LoginServer 가 죽어도 티켓은
