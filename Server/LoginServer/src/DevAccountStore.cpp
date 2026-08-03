@@ -2,8 +2,7 @@
 
 namespace heaven::login {
 
-// 비밀번호는 받지도 않는다. 진짜 계정 저장소가 붙기 전까지의 자리 채움이다.
-// 아이디 형식 검증은 LoginHandler 가 이미 했다.
+// 비밀번호는 받지도 않는다. 아이디 형식 검증은 LoginHandler 가 이미 했다.
 std::optional<Account> DevAccountStore::authenticate(std::string_view username,
                                                      std::string_view) {
     if (username.empty()) {
