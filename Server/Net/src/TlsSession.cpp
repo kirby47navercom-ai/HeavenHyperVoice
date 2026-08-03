@@ -172,8 +172,10 @@ void TlsSession::send(const proto::Bytes& frame) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (sendBuffer_.size() - sendOffset_ >= kMaxSendQueueBytes) {
             overflow = true;
+        } else if (!tls_.writePlain(frame.data(), frame.size())) {
+            spdlog::warn("{}: {}", peer_, tls_.lastError());
         } else {
-            queuePlainLocked(frame);
+            // 암호문을 꺼내 큐에 붙이는 것은 flushLocked 가 한다.
             flushLocked();
         }
     }
@@ -185,14 +187,6 @@ void TlsSession::send(const proto::Bytes& frame) {
         // 대기 중인 WSARecv 가 실패로 완료되면서 정리가 진행된다.
         closeSocket();
     }
-}
-
-void TlsSession::queuePlainLocked(const proto::Bytes& frame) {
-    if (!tls_.writePlain(frame.data(), frame.size())) {
-        spdlog::warn("{}: {}", peer_, tls_.lastError());
-        return;
-    }
-    tls_.drainEncrypted(sendBuffer_);
 }
 
 void TlsSession::flushLocked() {

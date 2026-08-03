@@ -79,4 +79,4 @@ finally {
 }
 
 Write-Host ''
-Write-Host "Built $Config -> build\windows-x64\ChatServer\$Config\ChatServer.exe"
+Write-Host "Built $Config -> build\windows-x64\bin\$Config\"

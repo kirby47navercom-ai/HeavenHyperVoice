@@ -65,8 +65,9 @@ public:
 
 private:
     bool postRecv();
+
+    // 밀린 암호문을 꺼내 큐에 붙이고, 보낼 게 있으면 WSASend 를 건다.
     void flushLocked();
-    void queuePlainLocked(const proto::Bytes& frame);
 
     // 누적된 평문에서 완성된 프레임을 뽑는다. mutex_ 를 잡은 채로 호출한다.
     bool extractFramesLocked(std::vector<proto::Bytes>& frames);

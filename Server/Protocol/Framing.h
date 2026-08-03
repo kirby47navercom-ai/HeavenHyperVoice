@@ -17,7 +17,6 @@ using Bytes = std::vector<std::uint8_t>;
 // 한 프레임의 최대 바디 크기. 길이 접두사만 조작해서 거대한 할당을 유도하는 것을 막는다.
 inline constexpr std::uint32_t kMaxBodyBytes = 64u * 1024u;
 inline constexpr std::size_t kHeaderBytes = 4;
-inline constexpr std::size_t kMaxNicknameBytes = 32;
 
 // FlatBufferBuilder 결과에 길이 접두사를 붙여 전송 가능한 프레임으로 만든다.
 inline Bytes finishFrame(flatbuffers::FlatBufferBuilder& fbb) {

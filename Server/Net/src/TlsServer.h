@@ -15,6 +15,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "IoOperation.h"
 #include "Tls.h"
 #include "TlsSession.h"
 
