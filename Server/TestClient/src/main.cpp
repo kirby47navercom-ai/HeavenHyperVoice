@@ -74,7 +74,7 @@ void printUsage() {
                  "  --login-port <n>  login server port (default 9100)\n"
                  "  --user <name>     username. Prompted for if omitted and stdin is a console.\n"
                  "  --password <p>    password. Prompted for (hidden) if omitted and stdin is\n"
-                 "                    a console. The dev account store ignores it either way.\n"
+                 "                    a console. Ignored by the server's dev account store.\n"
                  "  --chat-host <h>   override the chat host the login server hands back\n"
                  "  --chat-port <n>   override the chat port the login server hands back\n"
                  "  --login-only      log in, print the result, and exit without chatting\n"
@@ -228,6 +228,9 @@ LoginResult login(const Options& options) {
     TlsClient client;
     LoginResult result;
     std::atomic<bool> answered{false};
+    std::string closeReason;
+
+    client.onClosed([&closeReason](const std::string& reason) { closeReason = reason; });
 
     client.onFrame([&](const Bytes& body) {
         const auto* envelope = heaven::proto::verifyLoginEnvelope(body);
@@ -266,12 +269,13 @@ LoginResult login(const Options& options) {
         result.ok = false;
         if (result.message.empty()) {
             result.message = "login server closed the connection without responding";
+            if (!closeReason.empty()) {
+                result.message += " (" + closeReason + ")";
+            }
         }
     }
     return result;
 }
-
-std::atomic<bool> g_chatClosed{false};
 
 void printChatFrame(const Bytes& body) {
     const auto* envelope = heaven::proto::verifyEnvelope(body);
@@ -304,7 +308,14 @@ int runChat(const Options& options, const LoginResult& session) {
     if (options.stallSeconds == 0) {
         client.onFrame(printChatFrame);
     }
-    client.onClosed([] { g_chatClosed.store(true); });
+
+    // 워커 스레드가 쓰고, client.wait() 로 합류한 뒤에 읽는다.
+    std::atomic<bool> closed{false};
+    std::string closeReason;
+    client.onClosed([&](const std::string& reason) {
+        closeReason = reason;
+        closed.store(true);
+    });
 
     client.connect(host, port);
     std::cout << "connected to " << host << ':' << port << " as '" << session.nickname << '\''
@@ -335,7 +346,7 @@ int runChat(const Options& options, const LoginResult& session) {
         std::cout << "type a message and press Enter. /quit to exit." << std::endl;
 
         std::string line;
-        while (!g_chatClosed.load() && std::getline(std::cin, line)) {
+        while (!closed.load() && std::getline(std::cin, line)) {
             if (line == "/quit") {
                 break;
             }
@@ -352,8 +363,16 @@ int runChat(const Options& options, const LoginResult& session) {
         std::this_thread::sleep_for(std::chrono::seconds(options.waitSeconds));
     }
 
+    // 우리가 끝낸 것인지, 서버가 먼저 끊은 것인지 여기서 갈린다.
+    const bool droppedByServer = closed.load();
+
     client.close();
     client.wait();
+
+    // 우리가 끝낸 경우는 알릴 게 없다. 서버가 끊었을 때만 사유를 보여준다.
+    if (droppedByServer) {
+        std::cout << "disconnected: " << closeReason << std::endl;
+    }
     return 0;
 }
 

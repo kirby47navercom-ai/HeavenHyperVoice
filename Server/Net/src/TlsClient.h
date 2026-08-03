@@ -29,7 +29,8 @@ namespace heaven::net {
 class TlsClient {
 public:
     using FrameCallback = std::function<void(const proto::Bytes& body)>;
-    using CloseCallback = std::function<void()>;
+    // 연결이 끝난 사유를 함께 넘긴다. 상대가 끊었는지, TLS 오류인지 구분하기 위함.
+    using CloseCallback = std::function<void(const std::string& reason)>;
 
     TlsClient();
     ~TlsClient();
@@ -64,6 +65,10 @@ private:
     void flushLocked();
     void finish();
 
+    // 연결 종료 사유를 기록한다. 이미 기록돼 있으면 무시한다.
+    void noteReason(std::string reason);
+    std::string closeReason() const;
+
     TlsContext context_;
     SOCKET socket_ = INVALID_SOCKET;
     HANDLE iocp_ = nullptr;
@@ -83,11 +88,15 @@ private:
     std::condition_variable handshakeCv_;
     bool handshakeDone_ = false;
     bool handshakeFailed_ = false;
-    std::string handshakeError_;
 
     std::thread worker_;
     FrameCallback onFrame_;
     CloseCallback onClosed_;
+
+    // 연결이 끝난 사유. 처음 기록된 것을 유지해 이후 연쇄적으로 나는 오류가
+    // 덮어쓰지 않게 한다. 핸드셰이크 실패 사유로도 그대로 쓴다.
+    mutable std::mutex reasonMutex_;
+    std::string closeReason_;
     std::atomic<bool> connected_{false};
     std::atomic<bool> closed_{false};
     std::atomic<bool> paused_{false};
