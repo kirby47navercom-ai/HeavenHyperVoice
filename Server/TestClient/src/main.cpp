@@ -56,6 +56,10 @@ struct Options {
     bool loginOnly = false;
     bool dumpTicket = false;
 
+    // 계정을 만들고 종료한다. 채팅에는 붙지 않는다.
+    bool registerOnly = false;
+    std::string nickname;
+
     // 주어지면 로그인을 건너뛰고 이 티켓을 쓴다. 빈 값도 유효한 시험 대상이므로
     // 문자열이 비었는지가 아니라 플래그로 지정 여부를 따진다.
     bool ticketProvided = false;
@@ -77,6 +81,9 @@ void printUsage() {
                  "                    a console. Ignored by the server's dev account store.\n"
                  "  --chat-host <h>   override the chat host the login server hands back\n"
                  "  --chat-port <n>   override the chat port the login server hands back\n"
+                 "  --register        create an account and exit. Prompts for whatever is not\n"
+                 "                    given with --user/--password/--nickname.\n"
+                 "  --nickname <n>    display name, used with --register\n"
                  "  --login-only      log in, print the result, and exit without chatting\n"
                  "  --dump-ticket     print the ticket as hex (for tamper/replay testing)\n"
                  "  --ticket-hex <h>  skip login and present this ticket instead.\n"
@@ -113,6 +120,10 @@ Options parseArgs(int argc, char** argv) {
             options.chatHost = next("--chat-host");
         } else if (arg == "--chat-port") {
             options.chatPort = static_cast<std::uint16_t>(std::stoi(next("--chat-port")));
+        } else if (arg == "--register") {
+            options.registerOnly = true;
+        } else if (arg == "--nickname") {
+            options.nickname = next("--nickname");
         } else if (arg == "--login-only") {
             options.loginOnly = true;
         } else if (arg == "--dump-ticket") {
@@ -277,6 +288,49 @@ LoginResult login(const Options& options) {
     return result;
 }
 
+// 계정을 만들고 결과를 출력한다. 성공하면 0.
+int registerAccount(const Options& options) {
+    TlsClient client;
+    bool ok = false;
+    std::string message;
+    std::atomic<bool> answered{false};
+
+    client.onFrame([&](const Bytes& body) {
+        const auto* envelope = heaven::proto::verifyLoginEnvelope(body);
+        if (envelope == nullptr ||
+            envelope->payload_type() != HeavenLogin::Payload::RegisterResponse) {
+            message = "malformed response";
+            answered.store(true);
+            return;
+        }
+        const auto* response = envelope->payload_as_RegisterResponse();
+        ok = response->ok();
+        if (response->message() != nullptr) {
+            message = response->message()->str();
+        }
+        answered.store(true);
+    });
+
+    client.connect(options.loginHost, options.loginPort);
+    client.send(
+        heaven::proto::encodeRegisterRequest(options.username, options.password, options.nickname));
+    client.wait();
+
+    if (!answered.load()) {
+        std::cerr << "register failed: server closed the connection without responding"
+                  << std::endl;
+        return 1;
+    }
+    if (!ok) {
+        std::cerr << "register failed: " << message << std::endl;
+        return 1;
+    }
+
+    std::cout << "registered '" << options.username << "' as '" << options.nickname << "'."
+              << std::endl;
+    return 0;
+}
+
 void printChatFrame(const Bytes& body) {
     const auto* envelope = heaven::proto::verifyEnvelope(body);
     if (envelope == nullptr) {
@@ -416,6 +470,17 @@ int main(int argc, char** argv) {
         if (!options.passwordProvided && stdinIsConsole()) {
             std::cout << "password: " << std::flush;
             options.password = readHiddenLine();
+        }
+
+        if (options.registerOnly) {
+            if (options.nickname.empty()) {
+                if (!stdinIsConsole()) {
+                    throw std::runtime_error(
+                        "--nickname is required when stdin is not a console");
+                }
+                options.nickname = promptLine("nickname: ");
+            }
+            return registerAccount(options);
         }
 
         const LoginResult session = login(options);
