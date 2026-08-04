@@ -1,7 +1,10 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <shared_mutex>
+#include <string>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "TlsSession.h"
@@ -18,14 +21,22 @@ using net::TlsSession;
 // 나중에 워커 스레드가 처리한다.
 class Room {
 public:
-    void join(const std::shared_ptr<TlsSession>& session);
-    void leave(const std::shared_ptr<TlsSession>& session);
+    // 계정 인덱스에도 함께 넣는다. 같은 계정이 이미 있으면 그 세션을 돌려준다
+    // (호출자가 끊는다). 인덱스는 새 세션이 차지한다.
+    std::shared_ptr<TlsSession> join(std::uint64_t accountId,
+                                     const std::shared_ptr<TlsSession>& session);
+
+    // 계정 인덱스는 아직 이 세션이 주인일 때만 지운다. 그러지 않으면
+    // 이미 자리를 넘겨준 옛 세션이 나가면서 새 세션의 인덱스를 지운다.
+    void leave(std::uint64_t accountId, const std::shared_ptr<TlsSession>& session);
+
     void broadcast(const Frame& frame, const TlsSession* except);
     std::size_t size() const;
 
 private:
     mutable std::shared_mutex mutex_;
     std::unordered_set<std::shared_ptr<TlsSession>> sessions_;
+    std::unordered_map<std::uint64_t, std::shared_ptr<TlsSession>> byAccount_;
 };
 
 }  // namespace heaven::chat

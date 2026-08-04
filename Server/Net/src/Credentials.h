@@ -14,7 +14,7 @@
 #include <optional>
 #include <string>
 
-namespace heaven::login {
+namespace heaven::net {
 
 // 자격증명 관리자에 보이는 이름.
 inline constexpr const char* kDbCredentialTarget = "HeavenHyperVoice/db";
@@ -28,4 +28,4 @@ void storePassword(const std::string& target, const std::string& password);
 // 저장된 항목을 지운다. 없으면 false.
 bool erasePassword(const std::string& target);
 
-}  // namespace heaven::login
+}  // namespace heaven::net

@@ -1,5 +1,6 @@
 find_package(OpenSSL REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+find_package(hiredis CONFIG REQUIRED)
 
 # IOCP 를 직접 쓰므로 Windows 전용이다.
 if(NOT WIN32)
@@ -11,6 +12,8 @@ add_library(Net STATIC
     src/TlsSession.cpp
     src/TlsServer.cpp
     src/TlsClient.cpp
+    src/RedisClient.cpp
+    src/Credentials.cpp
 )
 
 target_include_directories(Net PUBLIC src)
@@ -22,6 +25,8 @@ target_link_libraries(Net PUBLIC
     spdlog::spdlog
     ws2_32
     mswsock
+    advapi32
+    hiredis::hiredis
 )
 
 target_compile_definitions(Net PUBLIC

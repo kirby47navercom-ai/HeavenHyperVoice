@@ -2,14 +2,28 @@
 
 namespace heaven::chat {
 
-void Room::join(const std::shared_ptr<TlsSession>& session) {
+std::shared_ptr<TlsSession> Room::join(std::uint64_t accountId,
+                                       const std::shared_ptr<TlsSession>& session) {
     std::unique_lock<std::shared_mutex> lock(mutex_);
     sessions_.insert(session);
+
+    std::shared_ptr<TlsSession> previous;
+    const auto it = byAccount_.find(accountId);
+    if (it != byAccount_.end() && it->second != session) {
+        previous = it->second;
+    }
+    byAccount_[accountId] = session;
+    return previous;
 }
 
-void Room::leave(const std::shared_ptr<TlsSession>& session) {
+void Room::leave(std::uint64_t accountId, const std::shared_ptr<TlsSession>& session) {
     std::unique_lock<std::shared_mutex> lock(mutex_);
     sessions_.erase(session);
+
+    const auto it = byAccount_.find(accountId);
+    if (it != byAccount_.end() && it->second == session) {
+        byAccount_.erase(it);
+    }
 }
 
 void Room::broadcast(const Frame& frame, const TlsSession* except) {

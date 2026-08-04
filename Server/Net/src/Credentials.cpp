@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace heaven::login {
+namespace heaven::net {
 
 namespace {
 
@@ -70,4 +70,4 @@ bool erasePassword(const std::string& target) {
     return ::CredDeleteW(wideTarget.c_str(), CRED_TYPE_GENERIC, 0) != FALSE;
 }
 
-}  // namespace heaven::login
+}  // namespace heaven::net

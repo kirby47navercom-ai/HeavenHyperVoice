@@ -2,6 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <atomic>
 #include <chrono>
 
 namespace heaven::chat {
@@ -16,6 +17,13 @@ std::int64_t nowUnix() {
     return std::chrono::duration_cast<std::chrono::seconds>(
                std::chrono::system_clock::now().time_since_epoch())
         .count();
+}
+
+// 이 프로세스 안에서 세션을 구분하는 값. 레지스트리에서 "아직 내 것인가" 를
+// 판단할 때 쓰므로 재사용되지 않기만 하면 된다.
+std::string nextSessionId() {
+    static std::atomic<std::uint64_t> counter{0};
+    return std::to_string(counter.fetch_add(1, std::memory_order_relaxed));
 }
 
 }  // namespace
@@ -53,10 +61,31 @@ bool ChatHandler::handleHello(TlsSession& session, const proto::Bytes& body) {
     // 닉네임은 서명된 티켓에서 온다. 클라이언트가 주장한 값이 아니다.
     nickname_ = verified.nickname;
     accountId_ = verified.accountId;
+    sessionId_ = nextSessionId();
     joined_ = true;
     session.markAuthenticated();
 
-    room_.join(session.shared_from_this());
+    // 레지스트리에 자기 것으로 등록하고 이전 주인을 받아온다 (후접속 우선).
+    // 서버가 한 종류뿐이라 실제 강제 종료는 아래 Room 인덱스가 처리한다.
+    // 레지스트리는 클라이언트가 직접 붙는 프로세스가 늘었을 때를 위한 것이다.
+    if (registry_ != nullptr) {
+        const auto previous = registry_->claim(accountId_, sessionId_);
+        if (previous.has_value() && previous->serverId != registry_->serverId()) {
+            spdlog::info("{} was connected to {}; that server owns the disconnect", nickname_,
+                         previous->serverId);
+        }
+    }
+
+    auto self = session.shared_from_this();
+    const auto displaced = room_.join(accountId_, self);
+
+    if (displaced) {
+        spdlog::info("{} (account {}) logged in again; dropping the earlier session at {}",
+                     nickname_, accountId_, displaced->peer());
+        displaced->send(proto::encodeNotice("다른 곳에서 로그인하여 연결을 종료합니다"));
+        displaced->closeAfterFlush();
+    }
+
     spdlog::info("joined: {} (account {} via {}, {}) - {} online", nickname_, accountId_,
                  verified.issuer, session.peer(), room_.size());
     room_.broadcast(makeFrame(proto::encodeNotice(nickname_ + " 님이 들어왔습니다")), &session);
@@ -91,7 +120,14 @@ void ChatHandler::onClosed(TlsSession& session) {
     }
     joined_ = false;
 
-    room_.leave(session.shared_from_this());
+    auto self = session.shared_from_this();
+    room_.leave(accountId_, self);
+
+    // 아직 내 것일 때만 지운다. 자리를 넘겨준 뒤라면 새 주인의 등록이 남아야 한다.
+    if (registry_ != nullptr) {
+        registry_->release(accountId_, sessionId_);
+    }
+
     spdlog::info("left: {} ({}) - {} online", nickname_, session.peer(), room_.size());
     room_.broadcast(makeFrame(proto::encodeNotice(nickname_ + " 님이 나갔습니다")), nullptr);
 }

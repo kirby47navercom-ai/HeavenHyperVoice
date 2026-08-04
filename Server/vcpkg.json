@@ -7,8 +7,11 @@
     "spdlog",
     {
       "name": "argon2",
-      "features": [ "hwopt" ]
-    }
+      "features": [
+        "hwopt"
+      ]
+    },
+    "hiredis"
   ],
   "builtin-baseline": "86dc619bd8d9697405ae5c944b474117ea9457ce"
 }

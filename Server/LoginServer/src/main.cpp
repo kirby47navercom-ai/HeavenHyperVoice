@@ -233,16 +233,16 @@ int saveDatabasePassword() {
         return 1;
     }
 
-    heaven::login::storePassword(heaven::login::kDbCredentialTarget, password);
+    heaven::net::storePassword(heaven::net::kDbCredentialTarget, password);
     std::cout << "stored in the Windows Credential Manager as '"
-              << heaven::login::kDbCredentialTarget << "'.\n"
+              << heaven::net::kDbCredentialTarget << "'.\n"
               << "It is encrypted for your Windows account. The launcher can now start the\n"
               << "servers without HHV_DB_PASSWORD being set." << std::endl;
     return 0;
 }
 
 int forgetDatabasePassword() {
-    const bool removed = heaven::login::erasePassword(heaven::login::kDbCredentialTarget);
+    const bool removed = heaven::net::erasePassword(heaven::net::kDbCredentialTarget);
     std::cout << (removed ? "stored database password removed"
                           : "no stored database password to remove")
               << std::endl;
@@ -300,7 +300,7 @@ int main(int argc, char** argv) {
                 db.password = *fromEnv;
                 spdlog::debug("database password came from HHV_DB_PASSWORD");
             } else if (const auto stored =
-                           heaven::login::readStoredPassword(heaven::login::kDbCredentialTarget)) {
+                           heaven::net::readStoredPassword(heaven::net::kDbCredentialTarget)) {
                 db.password = *stored;
                 spdlog::debug("database password came from the Windows Credential Manager");
             } else if (db.connectionString.empty()) {

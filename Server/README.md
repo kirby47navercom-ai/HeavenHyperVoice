@@ -7,7 +7,7 @@
 
 | 디렉터리 | 내용 |
 |---|---|
-| `Net/` | 공용 IOCP + TLS 기반. 서버(`TlsServer`/`TlsSession`)와 클라이언트(`TlsClient`) 양쪽 |
+| `Net/` | 공용 IOCP + TLS 기반. 서버(`TlsServer`/`TlsSession`), 클라이언트(`TlsClient`), Redis 래퍼, 자격증명 관리자 접근 |
 | `Protocol/` | `.fbs` 스키마 + 인코딩 헬퍼 + 티켓 서명/검증. 빌드 시점에 헤더 생성 |
 | `LoginServer/` | 자격증명 확인 → 티켓 발급. 기본 포트 **9100** |
 | `ChatServer/` | 티켓 검증 → 채팅방. 기본 포트 **9000** |
@@ -15,9 +15,9 @@
 | `Launcher/` | 서버들을 한꺼번에 띄운다 |
 | `DataBase/` | 계정 스키마 마이그레이션 (`tools\apply-migrations.ps1` 로 적용) |
 
-의존성은 vcpkg 매니페스트(`vcpkg.json`)로 baseline 고정: `openssl`, `flatbuffers`, `spdlog`, `argon2`.
-ODBC 드라이버 매니저와 자격증명 관리자는 Windows SDK 구성요소라 vcpkg 를 타지 않는다.
-**Windows 전용**이다 (IOCP).
+의존성은 vcpkg 매니페스트(`vcpkg.json`)로 baseline 고정: `openssl`, `flatbuffers`, `spdlog`,
+`argon2`, `hiredis`. ODBC 드라이버 매니저와 자격증명 관리자는 Windows SDK 구성요소라
+vcpkg 를 타지 않는다. **Windows 전용**이다 (IOCP).
 
 ## 인증 — Ed25519 서명 티켓
 
@@ -102,6 +102,55 @@ CI 나 컨테이너에서는 `HHV_DB_PASSWORD` 환경변수를 먼저 본다.
 ```
 
 DB 없이 채팅 흐름만 보고 싶으면 `--account-store dev` 로 띄운다 (아래 *한계* 참고).
+
+### 세션 레지스트리 (Redis / Memurai)
+
+ChatServer 는 접속 중인 계정을 Redis 에 `session:{account_id} → {server_id}|{session_id}`
+로 등록한다. Windows 에서는 Redis 호환 서버인 **Memurai** 를 쓴다.
+
+```powershell
+.\tools\setup-memurai.ps1                                            # 관리자 권한, 최초 1회
+.\build\windows-x64\bin\Debug\ChatServer.exe --save-redis-password   # 최초 1회
+```
+
+`setup-memurai.ps1` 은 벤더 설정 파일 끝에 표시된 블록만 덧붙인다(`-Remove` 로 되돌림).
+기본 설치 상태의 두 가지를 고친다 — `requirepass` 가 없어 로컬의 아무 프로세스나 캐시를
+읽고 쓸 수 있는 것, 그리고 `maxmemory` 가 수 GiB 에 정책이 `noeviction` 인 것(캐시인데
+메모리가 차면 오래된 키를 버리는 대신 쓰기가 실패한다 → `512mb` / `volatile-lru`).
+비밀번호는 DB 와 같은 이유로 명령줄로 받지 않고 자격증명 관리자에 둔다
+(`--forget-redis-password` 로 삭제).
+
+**레지스트리는 없어도 되는 자원이다.** 못 붙으면 경고만 남기고 채팅은 그대로 받는다
+(`--no-redis` 로 아예 끌 수도 있다). Redis 가 중간에 죽어도 마찬가지이며,
+`RedisClient` 는 200 ms 타임아웃을 걸어 멈춘 Redis 가 IOCP 워커를 붙잡지 못하게 한다.
+
+```powershell
+--redis-host <h> --redis-port <n>   # 기본 127.0.0.1:6379
+--server-id <id>                    # 레지스트리에 기록될 이 프로세스 이름 (기본 chat-1)
+--no-redis                          # 레지스트리 없이 기동
+```
+
+RedisInsight 같은 GUI 로 붙을 때도 `requirepass` 를 설정했으므로 연결 설정에 같은
+비밀번호를 넣어야 한다. 이미 저장해둔 연결이 있다면 `NOAUTH` 로 실패한다.
+
+## 중복 로그인 — 후접속 우선
+
+같은 계정으로 다시 접속하면 **나중 접속이 이기고 먼저 붙어 있던 세션이 끊긴다.**
+끊기는 쪽은 `다른 곳에서 로그인하여 연결을 종료합니다` 공지를 받고 전송이 끝난 뒤 닫힌다.
+
+강제 종료를 실제로 수행하는 것은 `Room` 의 계정 인덱스다. 세션 객체를 쥐고 있는 것은
+그 프로세스뿐이라, 끊는 일은 항상 그 세션을 소유한 서버가 한다.
+
+Redis 레지스트리는 **클라이언트가 직접 붙는 프로세스가 둘 이상일 때**를 위한 것이다
+(음성 서버가 생기는 시점). 지금은 ChatServer 하나뿐이라 기능적으로 꼭 필요하지는 않다.
+
+| 동작 | 명령 | 이유 |
+|---|---|---|
+| 등록 | `SET session:{id} {server}|{session} EX 60 GET` | 덮어쓰기와 이전 주인 조회가 한 번에 일어난다 (Redis 6.2+) |
+| 해제 | `EVAL` 로 값 비교 후 `DEL` | GET/DEL 을 나눠 하면 그 사이 새 주인의 등록을 지워 새 세션이 유령이 된다 |
+| 갱신 | 20초마다 `SET ... EX 60` | `EXPIRE` 가 아니라 `SET` 이라, Redis 가 재시작돼 키가 사라져도 다음 주기에 스스로 복구된다 |
+
+TTL 을 두는 이유는 서버가 비정상 종료돼도 등록이 영원히 남지 않게 하기 위해서다.
 
 ## 빌드
 
@@ -212,4 +261,10 @@ IOCP 워커가 여럿이므로 아래 규칙을 지켜야 한다.
   도입할 시점이다.
 - **`TestClient` 는 TLS 인증서를 검증하지 않는다** (`Net` 의 클라이언트 컨텍스트가
   `SSL_VERIFY_NONE`). 개발 편의용이며 실제 클라이언트는 반드시 켜야 한다.
+- **세션 레지스트리는 아직 강제력이 없다.** 다른 서버가 갖고 있는 세션을 발견해도
+  로그만 남긴다. 실제로 끊으려면 서버 간 통지 경로(pub/sub 등)가 필요하고,
+  그건 클라이언트가 직접 붙는 두 번째 프로세스가 생길 때 넣을 일이다.
+- **Memurai 설정 파일에 비밀번호가 평문으로 들어간다.** `Program Files` 는 로컬
+  사용자가 읽을 수 있으므로 "아무 프로세스나 캐시를 조작하는 것"을 막는 수준이다.
+  실제 배포에서는 Redis ACL 과 파일 권한을 함께 써야 한다.
 - 자동 테스트가 없다. 검증은 수동 시나리오다.
