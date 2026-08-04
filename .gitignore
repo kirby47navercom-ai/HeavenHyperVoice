@@ -5,6 +5,9 @@
 [Ss]aved/
 [Ll]ocalBuilds/
 
+# Local editor automation bridge. Do not commit this; teammates may not have it.
+Client/Plugins/MCPUnreal/
+
 # Generated project files
 *.sln
 *.suo
