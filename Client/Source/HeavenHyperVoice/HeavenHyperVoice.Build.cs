@@ -10,14 +10,14 @@ public class HeavenHyperVoice : ModuleRules
 	
 		PublicDependencyModuleNames.AddRange(new string[]
 		{
-			"Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput",
+			"Core",
+			"CoreUObject",
+			"Engine",
+			"InputCore",
+			"EnhancedInput",
 			"GameplayTags",
 			"UMG",
 			"GameplayAbilities",
-			"GameplayTasks",
-			"GameplayTags",
-			"GameplayAbilities", 
-			"GameplayTags", 
 			"GameplayTasks"
 		});
 

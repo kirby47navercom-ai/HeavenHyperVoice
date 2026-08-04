@@ -3,9 +3,11 @@
 
 #include "UEGameModeBase.h"
 
+#include "../Character/UEPlayerCharacter.h"
 #include "../Player/UEPlayerController.h"
 
 AUEGameModeBase::AUEGameModeBase()
 {
 	PlayerControllerClass = AUEPlayerController::StaticClass();
+	DefaultPawnClass = AUEPlayerCharacter::StaticClass();
 }
