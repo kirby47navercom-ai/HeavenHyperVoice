@@ -345,6 +345,8 @@ int main(int argc, char** argv) {
                      options.chatPort, options.audience, options.ticketTtl);
         spdlog::info("account store: {} ({} auth threads)", accounts->describe(),
                      authQueue.threadCount());
+        spdlog::info("registration: {}",
+                     accounts->supportsRegistration() ? "enabled" : "disabled");
         if (options.accountStore == "dev") {
             spdlog::warn("ANY non-empty username is accepted with no password check.");
         }

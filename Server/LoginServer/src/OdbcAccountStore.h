@@ -59,8 +59,13 @@ public:
     std::optional<Account> authenticate(std::string_view username,
                                         std::string_view password) override;
 
+    CreateAccountResult createAccount(std::string_view username, std::string_view nickname,
+                                      const std::string& passwordHash) override;
+
     // 접속 정보를 그대로 쓴다. 비밀번호는 들어 있지 않다.
     const char* describe() const override { return target_.c_str(); }
+
+    bool supportsRegistration() const override { return canCreateAccounts_; }
 
 private:
     struct Connection;
@@ -69,6 +74,10 @@ private:
     Connection* acquire();
     void release(Connection* connection);
 
+    // INSERT 가 중복 키로 실패했을 때 어느 쪽이 걸렸는지 확인한다.
+    CreateAccountResult classifyDuplicate(Connection* connection, std::string_view username,
+                                          std::string_view nickname);
+
     SQLHENV env_ = SQL_NULL_HENV;
     std::string target_;
 
@@ -76,6 +85,10 @@ private:
     std::condition_variable available_;
     std::vector<std::unique_ptr<Connection>> connections_;
     std::vector<Connection*> free_;
+
+    // INSERT 권한이 없으면 가입만 막고 로그인은 계속 받는다.
+    // 기능 하나 때문에 서버 전체가 못 뜨는 것보다 낫다.
+    bool canCreateAccounts_ = false;
 
     // 계정이 없을 때도 같은 시간을 쓰기 위한 더미 해시.
     // 이게 없으면 응답 시간만으로 아이디 존재 여부를 알 수 있다.

@@ -6,6 +6,7 @@
 #include "AccountStore.h"
 #include "AuthTicket.h"
 #include "FrameHandler.h"
+#include "LoginCodec.h"
 #include "TlsSession.h"
 #include "WorkQueue.h"
 
@@ -42,6 +43,9 @@ public:
     bool onFrame(TlsSession& session, const proto::Bytes& body) override;
 
 private:
+    bool handleLogin(TlsSession& session, const HeavenLogin::LoginRequest& request);
+    bool handleRegister(TlsSession& session, const HeavenLogin::RegisterRequest& request);
+
     const LoginContext& context_;
     bool handled_ = false;
 };

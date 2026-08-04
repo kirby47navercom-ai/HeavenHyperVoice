@@ -17,9 +17,25 @@ struct Account {
     std::string nickname;
 };
 
+enum class CreateAccountResult {
+    Created,
+    UsernameTaken,
+    NicknameTaken,
+    NotSupported,  // 저장소가 계정 생성을 지원하지 않는다
+    Error,
+};
+
+const char* describe(CreateAccountResult result);
+
 class AccountStore {
 public:
     virtual ~AccountStore() = default;
+
+    // 새 계정을 만든다. 비밀번호는 이미 해싱된 상태로 받는다 — 해싱 정책은
+    // 저장소가 알 바가 아니고, 호출자가 인증 스레드에서 미리 처리한다.
+    virtual CreateAccountResult createAccount(std::string_view username,
+                                              std::string_view nickname,
+                                              const std::string& passwordHash) = 0;
 
     // 자격증명이 맞으면 계정을, 아니면 nullopt.
     //
@@ -30,6 +46,9 @@ public:
 
     // 기동 로그에 찍을 이름.
     virtual const char* describe() const = 0;
+
+    // 가입을 받을 수 있는 상태인지. 권한이 없으면 로그인만 받고 가입은 거절한다.
+    virtual bool supportsRegistration() const = 0;
 };
 
 }  // namespace heaven::login

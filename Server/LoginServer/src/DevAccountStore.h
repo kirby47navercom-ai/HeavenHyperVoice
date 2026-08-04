@@ -15,7 +15,13 @@ public:
     std::optional<Account> authenticate(std::string_view username,
                                         std::string_view password) override;
 
+    // 저장할 곳이 없다. 어차피 아무 아이디나 로그인되므로 가입도 의미가 없다.
+    CreateAccountResult createAccount(std::string_view username, std::string_view nickname,
+                                      const std::string& passwordHash) override;
+
     const char* describe() const override { return "DevAccountStore (no real authentication)"; }
+
+    bool supportsRegistration() const override { return false; }
 };
 
 }  // namespace heaven::login

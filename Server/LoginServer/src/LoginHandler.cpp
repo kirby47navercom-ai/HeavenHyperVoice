@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "LoginCodec.h"
+#include "PasswordHash.h"
 
 namespace heaven::login {
 
@@ -33,13 +34,111 @@ bool LoginHandler::onFrame(TlsSession& session, const proto::Bytes& body) {
     handled_ = true;
 
     const auto* envelope = proto::verifyLoginEnvelope(body);
-    if (envelope == nullptr || envelope->payload_type() != HeavenLogin::Payload::LoginRequest) {
-        spdlog::warn("{}: first frame was not a valid LoginRequest", session.peer());
+    if (envelope == nullptr) {
+        spdlog::warn("{}: malformed first frame", session.peer());
         fail(session, "잘못된 요청입니다");
         return true;
     }
 
-    const auto* request = envelope->payload_as_LoginRequest();
+    switch (envelope->payload_type()) {
+        case HeavenLogin::Payload::LoginRequest:
+            return handleLogin(session, *envelope->payload_as_LoginRequest());
+        case HeavenLogin::Payload::RegisterRequest:
+            return handleRegister(session, *envelope->payload_as_RegisterRequest());
+        default:
+            spdlog::warn("{}: unexpected payload type", session.peer());
+            fail(session, "잘못된 요청입니다");
+            return true;
+    }
+}
+
+bool LoginHandler::handleRegister(TlsSession& session,
+                                  const HeavenLogin::RegisterRequest& request) {
+    const auto* username = request.username();
+    const auto* password = request.password();
+    const auto* nickname = request.nickname();
+
+    if (username == nullptr || password == nullptr || nickname == nullptr) {
+        session.send(proto::encodeRegisterResult(false, "요청에 빠진 항목이 있습니다"));
+        session.closeAfterFlush();
+        return true;
+    }
+
+    const std::string user = username->str();
+    const std::string secret = password->str();
+    const std::string nick = nickname->str();
+
+    // 형식 검증은 DB 를 건드리기 전에 끝낸다.
+    const char* problem = nullptr;
+    const auto nickLength = proto::utf8Length(nick);
+
+    if (!proto::isValidUsername(user)) {
+        problem = "아이디는 영문, 숫자, 밑줄만 쓸 수 있고 3~32자여야 합니다";
+    } else if (secret.size() < proto::kMinPasswordChars ||
+               secret.size() > proto::kMaxPasswordBytes) {
+        problem = "비밀번호는 8자 이상이어야 합니다";
+    } else if (!nickLength.has_value()) {
+        problem = "닉네임의 문자 인코딩이 올바르지 않습니다";
+    } else if (*nickLength < proto::kMinNicknameChars ||
+               *nickLength > proto::kMaxNicknameChars) {
+        problem = "닉네임은 2~32자여야 합니다";
+    }
+
+    if (problem != nullptr) {
+        spdlog::info("register rejected: {} ({}) - {}", user, session.peer(), problem);
+        session.send(proto::encodeRegisterResult(false, problem));
+        session.closeAfterFlush();
+        return true;
+    }
+
+    session.markAuthenticated();
+
+    // 해싱이 22ms 라 로그인과 마찬가지로 IOCP 워커에서 하면 안 된다.
+    auto self = session.shared_from_this();
+    const LoginContext* context = &context_;
+
+    context_.authQueue->submit([self, context, user, secret, nick] {
+        std::string hash;
+        try {
+            hash = hashPassword(secret);
+        } catch (const std::exception& e) {
+            spdlog::error("failed to hash password for {}: {}", user, e.what());
+            self->send(proto::encodeRegisterResult(false, "서버 오류로 가입에 실패했습니다"));
+            self->closeAfterFlush();
+            return;
+        }
+
+        const CreateAccountResult result = context->accounts->createAccount(user, nick, hash);
+
+        switch (result) {
+            case CreateAccountResult::Created:
+                spdlog::info("registered: {} as '{}' ({})", user, nick, self->peer());
+                self->send(proto::encodeRegisterResult(true, "가입이 완료되었습니다"));
+                break;
+            case CreateAccountResult::UsernameTaken:
+                spdlog::info("register rejected: {} - username taken", user);
+                self->send(proto::encodeRegisterResult(false, "이미 사용 중인 아이디입니다"));
+                break;
+            case CreateAccountResult::NicknameTaken:
+                spdlog::info("register rejected: {} - nickname '{}' taken", user, nick);
+                self->send(proto::encodeRegisterResult(false, "이미 사용 중인 닉네임입니다"));
+                break;
+            case CreateAccountResult::NotSupported:
+                self->send(proto::encodeRegisterResult(
+                    false, "이 서버는 가입을 받지 않습니다 (--account-store dev)"));
+                break;
+            case CreateAccountResult::Error:
+                self->send(proto::encodeRegisterResult(false, "서버 오류로 가입에 실패했습니다"));
+                break;
+        }
+        self->closeAfterFlush();
+    });
+
+    return true;
+}
+
+bool LoginHandler::handleLogin(TlsSession& session, const HeavenLogin::LoginRequest& source) {
+    const auto* request = &source;
     const auto* username = request->username();
     const auto* password = request->password();
 

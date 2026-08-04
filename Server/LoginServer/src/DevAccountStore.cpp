@@ -2,6 +2,22 @@
 
 namespace heaven::login {
 
+const char* describe(CreateAccountResult result) {
+    switch (result) {
+        case CreateAccountResult::Created:       return "created";
+        case CreateAccountResult::UsernameTaken: return "username already taken";
+        case CreateAccountResult::NicknameTaken: return "nickname already taken";
+        case CreateAccountResult::NotSupported:  return "account creation is not available";
+        case CreateAccountResult::Error:         return "internal error";
+    }
+    return "unknown result";
+}
+
+CreateAccountResult DevAccountStore::createAccount(std::string_view, std::string_view,
+                                                   const std::string&) {
+    return CreateAccountResult::NotSupported;
+}
+
 // 비밀번호는 받지도 않는다. 아이디 형식 검증은 LoginHandler 가 이미 했다.
 std::optional<Account> DevAccountStore::authenticate(std::string_view username,
                                                      std::string_view) {

@@ -119,6 +119,8 @@ struct OdbcAccountStore::Connection {
     SQLHDBC dbc = SQL_NULL_HDBC;
     SQLHSTMT select = SQL_NULL_HSTMT;
     SQLHSTMT touchLogin = SQL_NULL_HSTMT;
+    SQLHSTMT insert = SQL_NULL_HSTMT;
+    SQLHSTMT exists = SQL_NULL_HSTMT;
 };
 
 OdbcAccountStore::OdbcAccountStore(const OdbcSettings& settings) {
@@ -178,6 +180,10 @@ OdbcAccountStore::OdbcAccountStore(const OdbcSettings& settings) {
                 SQL_HANDLE_DBC, connection->dbc, "SQLAllocHandle(STMT select)");
         require(SQLAllocHandle(SQL_HANDLE_STMT, connection->dbc, &connection->touchLogin),
                 SQL_HANDLE_DBC, connection->dbc, "SQLAllocHandle(STMT touchLogin)");
+        require(SQLAllocHandle(SQL_HANDLE_STMT, connection->dbc, &connection->insert),
+                SQL_HANDLE_DBC, connection->dbc, "SQLAllocHandle(STMT insert)");
+        require(SQLAllocHandle(SQL_HANDLE_STMT, connection->dbc, &connection->exists),
+                SQL_HANDLE_DBC, connection->dbc, "SQLAllocHandle(STMT exists)");
 
         // 준비된 구문. 사용자 입력은 반드시 파라미터로 넘긴다 (SQL 인젝션 차단).
         const std::wstring selectSql =
@@ -197,6 +203,39 @@ OdbcAccountStore::OdbcAccountStore(const OdbcSettings& settings) {
                             SQL_NTS),
                 SQL_HANDLE_STMT, connection->touchLogin, "SQLPrepare(touchLogin)");
 
+        // 가입용 구문. INSERT 권한이 없는 배포도 있을 수 있으므로 실패해도 죽지 않는다.
+        // 로그인은 SELECT/UPDATE 만으로 동작한다.
+        const std::wstring insertSql = widen(
+            "INSERT INTO accounts (username, nickname, password_hash) VALUES (?, ?, ?)");
+        const std::wstring existsSql = widen(
+            "SELECT "
+            "  EXISTS(SELECT 1 FROM accounts WHERE username = ?), "
+            "  EXISTS(SELECT 1 FROM accounts WHERE nickname = ?)");
+
+        bool registrationReady = false;
+        try {
+            require(SQLPrepareW(connection->insert,
+                                const_cast<SQLWCHAR*>(
+                                    reinterpret_cast<const SQLWCHAR*>(insertSql.c_str())),
+                                SQL_NTS),
+                    SQL_HANDLE_STMT, connection->insert, "SQLPrepare(insert)");
+            // 중복 키로 실패했을 때 어느 쪽이 걸렸는지 알아내는 데 쓴다.
+            require(SQLPrepareW(connection->exists,
+                                const_cast<SQLWCHAR*>(
+                                    reinterpret_cast<const SQLWCHAR*>(existsSql.c_str())),
+                                SQL_NTS),
+                    SQL_HANDLE_STMT, connection->exists, "SQLPrepare(exists)");
+            registrationReady = true;
+        } catch (const std::exception& e) {
+            if (i == 0) {
+                spdlog::warn("account registration is unavailable: {}", e.what());
+                spdlog::warn("run tools\apply-migrations.ps1 to grant INSERT if you want it");
+            }
+        }
+        if (i == 0) {
+            canCreateAccounts_ = registrationReady;
+        }
+
         free_.push_back(connection.get());
         connections_.push_back(std::move(connection));
     }
@@ -212,6 +251,12 @@ OdbcAccountStore::~OdbcAccountStore() {
         }
         if (connection->touchLogin != SQL_NULL_HSTMT) {
             SQLFreeHandle(SQL_HANDLE_STMT, connection->touchLogin);
+        }
+        if (connection->insert != SQL_NULL_HSTMT) {
+            SQLFreeHandle(SQL_HANDLE_STMT, connection->insert);
+        }
+        if (connection->exists != SQL_NULL_HSTMT) {
+            SQLFreeHandle(SQL_HANDLE_STMT, connection->exists);
         }
         if (connection->dbc != SQL_NULL_HDBC) {
             SQLDisconnect(connection->dbc);
@@ -237,6 +282,126 @@ void OdbcAccountStore::release(Connection* connection) {
         free_.push_back(connection);
     }
     available_.notify_one();
+}
+
+CreateAccountResult OdbcAccountStore::classifyDuplicate(Connection* connection,
+                                                        std::string_view username,
+                                                        std::string_view nickname) {
+    std::wstring wideUsername = widen(username);
+    std::wstring wideNickname = widen(nickname);
+    SQLLEN usernameLength = SQL_NTS;
+    SQLLEN nicknameLength = SQL_NTS;
+
+    std::int64_t usernameExists = 0;
+    std::int64_t nicknameExists = 0;
+    SQLLEN usernameIndicator = 0;
+    SQLLEN nicknameIndicator = 0;
+
+    try {
+        require(SQLBindParameter(connection->exists, 1, SQL_PARAM_INPUT, SQL_C_WCHAR,
+                                 SQL_WVARCHAR, wideUsername.size(), 0, wideUsername.data(),
+                                 static_cast<SQLLEN>(wideUsername.size() * sizeof(SQLWCHAR)),
+                                 &usernameLength),
+                SQL_HANDLE_STMT, connection->exists, "SQLBindParameter(exists username)");
+        require(SQLBindParameter(connection->exists, 2, SQL_PARAM_INPUT, SQL_C_WCHAR,
+                                 SQL_WVARCHAR, wideNickname.size(), 0, wideNickname.data(),
+                                 static_cast<SQLLEN>(wideNickname.size() * sizeof(SQLWCHAR)),
+                                 &nicknameLength),
+                SQL_HANDLE_STMT, connection->exists, "SQLBindParameter(exists nickname)");
+
+        require(SQLExecute(connection->exists), SQL_HANDLE_STMT, connection->exists,
+                "SQLExecute(exists)");
+        SQLBindCol(connection->exists, 1, SQL_C_SBIGINT, &usernameExists, sizeof(usernameExists),
+                   &usernameIndicator);
+        SQLBindCol(connection->exists, 2, SQL_C_SBIGINT, &nicknameExists, sizeof(nicknameExists),
+                   &nicknameIndicator);
+        SQLFetch(connection->exists);
+        SQLCloseCursor(connection->exists);
+    } catch (const std::exception& e) {
+        SQLCloseCursor(connection->exists);
+        spdlog::error("duplicate classification failed: {}", e.what());
+        return CreateAccountResult::Error;
+    }
+
+    // 아이디를 먼저 본다. 둘 다 겹치면 아이디 쪽이 사용자에게 더 유용한 정보다.
+    if (usernameExists != 0) {
+        return CreateAccountResult::UsernameTaken;
+    }
+    if (nicknameExists != 0) {
+        return CreateAccountResult::NicknameTaken;
+    }
+    // 우리가 확인하는 사이에 상대가 지웠다. 재시도하면 될 상황이다.
+    return CreateAccountResult::Error;
+}
+
+CreateAccountResult OdbcAccountStore::createAccount(std::string_view username,
+                                                    std::string_view nickname,
+                                                    const std::string& passwordHash) {
+    if (!canCreateAccounts_) {
+        return CreateAccountResult::NotSupported;
+    }
+
+    Connection* connection = acquire();
+    struct Release {
+        OdbcAccountStore* store;
+        Connection* connection;
+        ~Release() { store->release(connection); }
+    } releaseGuard{this, connection};
+
+    std::wstring wideUsername = widen(username);
+    std::wstring wideNickname = widen(nickname);
+    std::wstring wideHash = widen(passwordHash);
+    SQLLEN usernameLength = SQL_NTS;
+    SQLLEN nicknameLength = SQL_NTS;
+    SQLLEN hashLength = SQL_NTS;
+
+    SQLRETURN rc = SQL_SUCCESS;
+    try {
+        require(SQLBindParameter(connection->insert, 1, SQL_PARAM_INPUT, SQL_C_WCHAR,
+                                 SQL_WVARCHAR, wideUsername.size(), 0, wideUsername.data(),
+                                 static_cast<SQLLEN>(wideUsername.size() * sizeof(SQLWCHAR)),
+                                 &usernameLength),
+                SQL_HANDLE_STMT, connection->insert, "SQLBindParameter(username)");
+        require(SQLBindParameter(connection->insert, 2, SQL_PARAM_INPUT, SQL_C_WCHAR,
+                                 SQL_WVARCHAR, wideNickname.size(), 0, wideNickname.data(),
+                                 static_cast<SQLLEN>(wideNickname.size() * sizeof(SQLWCHAR)),
+                                 &nicknameLength),
+                SQL_HANDLE_STMT, connection->insert, "SQLBindParameter(nickname)");
+        require(SQLBindParameter(connection->insert, 3, SQL_PARAM_INPUT, SQL_C_WCHAR,
+                                 SQL_WVARCHAR, wideHash.size(), 0, wideHash.data(),
+                                 static_cast<SQLLEN>(wideHash.size() * sizeof(SQLWCHAR)),
+                                 &hashLength),
+                SQL_HANDLE_STMT, connection->insert, "SQLBindParameter(password_hash)");
+
+        rc = SQLExecute(connection->insert);
+    } catch (const std::exception& e) {
+        spdlog::error("account insert failed: {}", e.what());
+        return CreateAccountResult::Error;
+    }
+
+    if (succeeded(rc)) {
+        SQLCloseCursor(connection->insert);
+        return CreateAccountResult::Created;
+    }
+
+    // SQLSTATE 23000 은 무결성 제약 위반이다. 표준이라 MSSQL 로 옮겨도 같다.
+    // 드라이버별 메시지 문자열을 파싱하는 것보다 안전하다.
+    SQLWCHAR state[6] = {};
+    SQLINTEGER native = 0;
+    SQLWCHAR message[512] = {};
+    SQLSMALLINT messageLength = 0;
+    SQLGetDiagRecW(SQL_HANDLE_STMT, connection->insert, 1, state, &native, message,
+                   static_cast<SQLSMALLINT>(std::size(message)), &messageLength);
+    const std::string sqlState = narrow(state, 5 * static_cast<SQLLEN>(sizeof(SQLWCHAR)));
+    SQLCloseCursor(connection->insert);
+
+    if (sqlState == "23000") {
+        return classifyDuplicate(connection, username, nickname);
+    }
+
+    spdlog::error("account insert failed: [{}] {}", sqlState,
+                  narrow(message, messageLength * static_cast<SQLLEN>(sizeof(SQLWCHAR))));
+    return CreateAccountResult::Error;
 }
 
 std::optional<Account> OdbcAccountStore::authenticate(std::string_view username,
