@@ -7,9 +7,10 @@
 #include "UEGameModeBase.generated.h"
 
 /**
- * HeavenHyperVoice 클라이언트의 기본 GameMode다.
+ * Base GameMode for the HeavenHyperVoice client.
  *
- * 현재 단계에서는 서버 접속 전에 로그인 화면을 먼저 띄우는 PlayerController만 지정한다.
+ * It owns the default player controller and player character classes used by
+ * the login-first client flow.
  */
 UCLASS()
 class HEAVENHYPERVOICE_API AUEGameModeBase : public AGameModeBase

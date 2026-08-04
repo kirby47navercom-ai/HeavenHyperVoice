@@ -9,10 +9,10 @@
 class UUELoginWidget;
 
 /**
- * 클라이언트 첫 화면을 관리하는 PlayerController다.
+ * PlayerController for the client entry flow.
  *
- * 서버 접속 전에는 캐릭터 조작보다 UI 입력이 우선이므로 BeginPlay에서 로그인 위젯을 띄운다.
- * LoginWidgetClass를 BP 자식으로 바꾸면 화면 문구와 수치를 디자이너에서 바로 조절할 수 있다.
+ * It shows the login widget first, then switches back to game input when
+ * HideLoginScreen is called by Blueprint or future login code.
  */
 UCLASS()
 class HEAVENHYPERVOICE_API AUEPlayerController : public APlayerController
@@ -31,6 +31,10 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	// Blueprint can continue the client flow after C++ has accepted the credentials.
+	UFUNCTION(BlueprintImplementableEvent, Category = "Login", meta = (DisplayName = "On Local Login Succeeded"))
+	void BP_OnLocalLoginSucceeded(const FString& UserId, const FString& Nickname);
+
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Login")
 	TSubclassOf<UUELoginWidget> LoginWidgetClass;
@@ -42,6 +46,9 @@ protected:
 	int32 LoginWidgetZOrder = 100;
 
 private:
+	UFUNCTION()
+	void HandleLoginSucceeded(const FString& UserId, const FString& Nickname);
+
 	UPROPERTY(Transient)
 	TObjectPtr<UUELoginWidget> LoginWidgetInstance = nullptr;
 };
