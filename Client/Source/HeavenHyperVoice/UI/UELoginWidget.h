@@ -55,6 +55,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Text")
 	FText SubmittedStatusText;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Style")
+	FLinearColor InputTextColor = FLinearColor(0.02f, 0.02f, 0.02f, 1.0f);
+
 	// 화면 중앙 기준의 UI 크기다. BP에서 값만 바꿔도 배치가 같이 따라간다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Layout", meta = (ClampMin = "240.0"))
 	float PanelWidth = 420.0f;

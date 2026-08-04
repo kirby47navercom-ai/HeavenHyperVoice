@@ -106,10 +106,12 @@ void UUELoginWidget::BuildLoginLayout()
 
 	IdInputBox = WidgetTree->ConstructWidget<UEditableTextBox>(UEditableTextBox::StaticClass(), TEXT("Input_Id"));
 	IdInputBox->SetHintText(IdHintText);
+	IdInputBox->SetForegroundColor(InputTextColor);
 	AddCenteredCanvasSlot(IdInputBox, FVector2D(0.0f, IdInputOffsetY), FVector2D(PanelWidth, InputHeight), 2);
 
 	PasswordInputBox = WidgetTree->ConstructWidget<UEditableTextBox>(UEditableTextBox::StaticClass(), TEXT("Input_Password"));
 	PasswordInputBox->SetHintText(PasswordHintText);
+	PasswordInputBox->SetForegroundColor(InputTextColor);
 	PasswordInputBox->SetIsPassword(true);
 	AddCenteredCanvasSlot(PasswordInputBox, FVector2D(0.0f, PasswordInputOffsetY), FVector2D(PanelWidth, InputHeight), 2);
 
