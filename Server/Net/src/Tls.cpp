@@ -25,8 +25,7 @@ std::string opensslError() {
 
 // ------------------------------------------------------------ TlsContext
 
-TlsContext::TlsContext(const std::string& certFile, const std::string& keyFile)
-    : role_(TlsRole::Server) {
+TlsContext::TlsContext(const std::string& certFile, const std::string& keyFile) {
     ctx_ = SSL_CTX_new(TLS_server_method());
     if (ctx_ == nullptr) {
         throw std::runtime_error("SSL_CTX_new failed: " + opensslError());
@@ -52,17 +51,6 @@ TlsContext::TlsContext(const std::string& certFile, const std::string& keyFile)
     }
 }
 
-TlsContext::TlsContext() : role_(TlsRole::Client) {
-    ctx_ = SSL_CTX_new(TLS_client_method());
-    if (ctx_ == nullptr) {
-        throw std::runtime_error("SSL_CTX_new failed: " + opensslError());
-    }
-    SSL_CTX_set_min_proto_version(ctx_, TLS1_2_VERSION);
-    // 개발용 자체 서명 인증서를 쓰므로 검증하지 않는다.
-    // 실제 클라이언트는 반드시 SSL_VERIFY_PEER + CA 검증을 켜야 한다.
-    SSL_CTX_set_verify(ctx_, SSL_VERIFY_NONE, nullptr);
-}
-
 TlsContext::~TlsContext() {
     if (ctx_ != nullptr) {
         SSL_CTX_free(ctx_);
@@ -71,7 +59,7 @@ TlsContext::~TlsContext() {
 
 // ------------------------------------------------------------ TlsChannel
 
-TlsChannel::TlsChannel(SSL_CTX* ctx, TlsRole role) : role_(role) {
+TlsChannel::TlsChannel(SSL_CTX* ctx) {
     ssl_ = SSL_new(ctx);
     if (ssl_ == nullptr) {
         throw std::runtime_error("SSL_new failed: " + opensslError());
@@ -91,12 +79,7 @@ TlsChannel::TlsChannel(SSL_CTX* ctx, TlsRole role) : role_(role) {
     BIO_set_mem_eof_return(wbio_, -1);
 
     SSL_set_bio(ssl_, rbio_, wbio_);  // 소유권이 SSL 로 넘어간다
-
-    if (role_ == TlsRole::Server) {
-        SSL_set_accept_state(ssl_);
-    } else {
-        SSL_set_connect_state(ssl_);
-    }
+    SSL_set_accept_state(ssl_);
 }
 
 TlsChannel::~TlsChannel() {
@@ -120,14 +103,8 @@ bool TlsChannel::advanceHandshake() {
     if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
         return true;  // 더 주고받아야 한다
     }
-    captureError(role_ == TlsRole::Server ? "SSL_accept" : "SSL_connect", err);
+    captureError("SSL_accept", err);
     return false;
-}
-
-void TlsChannel::startHandshake() {
-    if (!SSL_is_init_finished(ssl_)) {
-        advanceHandshake();
-    }
 }
 
 void TlsChannel::feedEncrypted(const char* data, std::size_t len) {

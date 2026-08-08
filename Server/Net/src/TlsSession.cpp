@@ -13,7 +13,7 @@ TlsSession::TlsSession(SOCKET socket, TlsServer& server, SSL_CTX* sslContext, st
       server_(server),
       peer_(std::move(peer)),
       createdAt_(std::chrono::steady_clock::now()),
-      tls_(sslContext, TlsRole::Server) {}
+      tls_(sslContext) {}
 
 TlsSession::~TlsSession() {
     if (socket_ != INVALID_SOCKET) {

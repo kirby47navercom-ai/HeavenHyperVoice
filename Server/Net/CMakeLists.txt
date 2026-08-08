@@ -11,7 +11,6 @@ add_library(Net STATIC
     src/Tls.cpp
     src/TlsSession.cpp
     src/TlsServer.cpp
-    src/TlsClient.cpp
     src/RedisClient.cpp
     src/Credentials.cpp
 )

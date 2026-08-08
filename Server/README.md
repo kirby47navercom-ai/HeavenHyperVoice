@@ -7,7 +7,7 @@
 
 | 디렉터리 | 내용 |
 |---|---|
-| `Net/` | 공용 IOCP + TLS 기반. 서버(`TlsServer`/`TlsSession`), 클라이언트(`TlsClient`), Redis 래퍼, 자격증명 관리자 접근 |
+| `Net/` | 공용 IOCP + TLS 기반(`TlsServer`/`TlsSession`), Redis 래퍼, 자격증명 관리자 접근 |
 | `Protocol/` | `.fbs` 스키마 + 인코딩 헬퍼 + 티켓 서명/검증. 빌드 시점에 헤더 생성 |
 | `LoginServer/` | 자격증명 확인 → 티켓 발급. 기본 포트 **9100** |
 | `ChatServer/` | 티켓 검증 → 채팅방. 기본 포트 **9000** |
