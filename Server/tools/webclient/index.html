@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>HeavenHyperVoice test client</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 24px; font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
+         background: #14161a; color: #e6e6e6; }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 15px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+       color: #7d8896; margin: 0 0 20px; }
+  fieldset { border: 1px solid #2b3038; border-radius: 6px; padding: 14px 16px; margin: 0 0 16px; }
+  legend { padding: 0 6px; font-size: 12px; color: #7d8896; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  input { flex: 1 1 140px; min-width: 0; background: #1b1e24; color: inherit;
+          border: 1px solid #2b3038; border-radius: 4px; padding: 7px 9px; font: inherit; }
+  input:focus { outline: none; border-color: #4a90d9; }
+  button { background: #2b3038; color: #e6e6e6; border: 1px solid #3a414c; border-radius: 4px;
+           padding: 7px 14px; font: inherit; cursor: pointer; }
+  button:hover:not(:disabled) { background: #353c46; }
+  button:disabled { opacity: .4; cursor: default; }
+  #log { height: 340px; overflow-y: auto; background: #101216; border: 1px solid #2b3038;
+         border-radius: 6px; padding: 12px; font-family: Consolas, monospace; font-size: 13px; }
+  #log div { margin-bottom: 3px; word-break: break-word; }
+  .notice { color: #b9a24a; }
+  .closed { color: #d96a6a; }
+  .system { color: #6b7480; }
+  .me strong { color: #6bd98a; }
+  strong { color: #4a90d9; font-weight: 600; }
+  #status { float: right; font-size: 12px; color: #7d8896; text-transform: none; letter-spacing: 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>HeavenHyperVoice test client <span id="status">연결 안 됨</span></h1>
+
+  <fieldset>
+    <legend>로그인</legend>
+    <div class="row">
+      <input id="user" placeholder="아이디" autocomplete="off">
+      <input id="pw" type="password" placeholder="비밀번호">
+      <input id="nick" placeholder="닉네임 (가입 시)" autocomplete="off">
+      <button id="loginBtn">로그인</button>
+      <button id="registerBtn">가입</button>
+      <button id="logoutBtn" disabled>끊기</button>
+    </div>
+  </fieldset>
+
+  <div id="log"></div>
+
+  <fieldset style="margin-top:16px">
+    <legend>대화</legend>
+    <form class="row" id="sayForm">
+      <input id="text" placeholder="메시지" autocomplete="off" disabled>
+      <button id="sayBtn" disabled>보내기</button>
+    </form>
+  </fieldset>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const log = $('log');
+let nickname = '';
+
+function append(cls, html) {
+  const line = document.createElement('div');
+  line.className = cls;
+  line.innerHTML = html;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+
+const escape = s => s.replace(/[&<>"]/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function setConnected(on, who) {
+  nickname = on ? who : '';
+  $('status').textContent = on ? `접속 중 — ${who}` : '연결 안 됨';
+  $('text').disabled = $('sayBtn').disabled = !on;
+  $('logoutBtn').disabled = !on;
+  $('loginBtn').disabled = $('registerBtn').disabled = on;
+  if (on) $('text').focus();
+}
+
+async function post(path, body) {
+  const r = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return r.json();
+}
+
+$('registerBtn').onclick = async () => {
+  const r = await post('/api/register', {
+    username: $('user').value, password: $('pw').value, nickname: $('nick').value,
+  });
+  append('system', escape(r.message || (r.ok ? '가입 완료' : '가입 실패')));
+};
+
+$('loginBtn').onclick = async () => {
+  const r = await post('/api/login', { username: $('user').value, password: $('pw').value });
+  if (!r.ok) return append('closed', escape(r.message || '로그인 실패'));
+  append('system', `로그인 성공 — 티켓 ${r.ticketBytes}바이트, 채팅 ${escape(r.chat)}`);
+  setConnected(true, r.nickname);
+};
+
+$('logoutBtn').onclick = async () => {
+  await post('/api/logout', {});
+  setConnected(false);
+  append('system', '연결을 끊었습니다');
+};
+
+$('sayForm').onsubmit = async e => {
+  e.preventDefault();
+  const text = $('text').value.trim();
+  if (!text) return;
+  $('text').value = '';
+  const r = await post('/api/say', { text });
+  if (!r.ok) append('closed', escape(r.message || '전송 실패'));
+};
+
+// 서버가 밀어주는 이벤트. 브리지가 채팅 소켓을 대신 읽는다.
+new EventSource('/api/events').onmessage = e => {
+  const ev = JSON.parse(e.data);
+  if (ev.kind === 'chat') {
+    append(ev.nickname === nickname ? 'me' : '',
+           `<strong>${escape(ev.nickname)}</strong> ${escape(ev.text)}`);
+  } else if (ev.kind === 'notice') {
+    append('notice', `* ${escape(ev.text)}`);
+  } else if (ev.kind === 'closed') {
+    append('closed', `연결 종료: ${escape(ev.text)}`);
+    setConnected(false);
+  }
+};
+</script>
+</body>
+</html>
