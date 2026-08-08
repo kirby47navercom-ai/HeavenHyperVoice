@@ -159,10 +159,29 @@ class Session:
     def __init__(self):
         self.sock = None
         self.nickname = ""
-        self.events = queue.Queue()
+        self.lock = threading.Lock()
+        self.subscribers = []
+
+    def subscribe(self):
+        """Each event stream needs its own queue: Queue.get() consumes, so a
+        shared queue would split events between a reloaded page and the stale
+        thread the reload left behind."""
+        events = queue.Queue()
+        with self.lock:
+            self.subscribers.append(events)
+        return events
+
+    def unsubscribe(self, events):
+        with self.lock:
+            if events in self.subscribers:
+                self.subscribers.remove(events)
 
     def publish(self, kind, **fields):
-        self.events.put({"kind": kind, **fields})
+        event = {"kind": kind, **fields}
+        with self.lock:
+            targets = list(self.subscribers)
+        for events in targets:
+            events.put(event)
 
     def close(self):
         sock, self.sock = self.sock, None
@@ -175,6 +194,9 @@ class Session:
     def start_chat(self, host, port, ticket, nickname):
         self.close()
         sock = connect(host, port)
+        # The connect timeout would otherwise apply to every recv, and a quiet
+        # chat room would look like a dead socket after ten seconds.
+        sock.settimeout(None)
         send_frame(sock, envelope(hello_payload(ticket), HELLO))
         self.sock = sock
         self.nickname = nickname
@@ -247,18 +269,20 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream; charset=utf-8")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
+        events = session.subscribe()
         try:
             while True:
                 try:
-                    event = session.events.get(timeout=15)
-                    line = json.dumps(event, ensure_ascii=False)
+                    line = json.dumps(events.get(timeout=15), ensure_ascii=False)
                 except queue.Empty:
-                    line = None  # keep-alive comment so proxies do not time out
+                    line = None  # a ping proves the browser is still there
                 chunk = f"data: {line}\n\n" if line else ": ping\n\n"
                 self.wfile.write(chunk.encode("utf-8"))
                 self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError):
+        except (BrokenPipeError, ConnectionResetError, OSError):
             pass
+        finally:
+            session.unsubscribe(events)
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
