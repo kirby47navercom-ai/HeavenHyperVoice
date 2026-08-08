@@ -11,8 +11,8 @@
 | `Protocol/` | `.fbs` 스키마 + 인코딩 헬퍼 + 티켓 서명/검증. 빌드 시점에 헤더 생성 |
 | `LoginServer/` | 자격증명 확인 → 티켓 발급. 기본 포트 **9100** |
 | `ChatServer/` | 티켓 검증 → 채팅방. 기본 포트 **9000** |
-| `TestClient/` | 개발/검증용 클라이언트. 로그인부터 채팅까지 |
 | `Launcher/` | 서버들을 한꺼번에 띄운다 |
+| `tools/webclient/` | 브라우저 테스트 클라이언트 + 프로토콜 브리지 (Python) |
 | `DataBase/` | 계정 스키마 마이그레이션 (`tools\apply-migrations.ps1` 로 적용) |
 
 의존성은 vcpkg 매니페스트(`vcpkg.json`)로 baseline 고정: `openssl`, `flatbuffers`, `spdlog`,
@@ -46,7 +46,7 @@ ChatServer   공개키만 보유 → 검증만 가능, 위조 불가
 ### 흐름
 
 ```
-TestClient            LoginServer                      ChatServer
+클라이언트             LoginServer                      ChatServer
     |--TLS------------->|                                   |
     |--LoginRequest---->| AccountStore 조회                   |
     |                   | 티켓 발급 (개인키 서명)               |
@@ -192,29 +192,7 @@ vcpkg 경로는 CMake가 스스로 찾으므로 환경변수 설정이 필요 �
 빌드 시점에 박아둔 소스 루트. ②가 쓰이면 경고 로그가 남는다. IDE의 작업 디렉터리가
 빌드 출력 폴더라도 그냥 실행되며, 릴리스 바이너리에는 개발 경로가 들어가지 않는다.
 
-### TestClient
-
-```powershell
-# 대화형 (기본): 로그인 후 채팅. /quit 로 종료
-.\build\windows-x64\bin\Debug\TestClient.exe --user alice
-
-# 스크립트: 메시지 보내고 종료
-.\build\windows-x64\bin\Debug\TestClient.exe --user bob --say "안녕" --wait 2
-```
-
-터미널 두 개를 다른 `--user`로 띄우면 실제로 대화가 된다.
-Windows 콘솔을 UTF-8로 전환하므로 한글 입출력이 프로토콜 인코딩과 일치한다.
-
-**검증용 플래그**
-
-```powershell
---login-only --dump-ticket   # 티켓을 hex 로 출력 (변조/재사용 시험)
---ticket-hex <hex>           # 로그인을 건너뛰고 이 티켓을 제시 (--chat-host/--chat-port 필요)
---stall <sec>                # 접속만 하고 수신을 멈춘다 (서버 전송 큐 상한 시험)
---flood <n>                  # 지연 없이 n개 전송
-```
-
-### 브라우저 테스트 클라이언트
+### 테스트 클라이언트
 
 ```powershell
 python .\tools\webclient\bridge.py     # http://127.0.0.1:8080
@@ -225,8 +203,14 @@ python .\tools\webclient\bridge.py     # http://127.0.0.1:8080
 `flatbuffers` 패키지만 쓰고, 스키마가 작아서 `flatc` 생성 코드 없이 직접 인코딩한다.
 
 로그인/가입은 요청-응답이고, 채팅 수신은 SSE(`/api/events`)로 밀어준다.
-세션을 모듈 전역에 하나만 두므로 **브라우저 탭 하나** 기준이다. 개발용이며
-`TestClient` 와 마찬가지로 서버 인증서를 검증하지 않는다.
+세션을 모듈 전역에 하나만 두므로 **브라우저 탭 하나** 기준이다. 개발용이라
+서버 인증서를 검증하지 않는다.
+
+두 계정으로 동시에 대화하려면 브리지를 포트를 달리해 하나 더 띄운다.
+
+```powershell
+python .\tools\webclient\bridge.py --port 8081
+```
 
 ## 자원 한계
 
@@ -273,8 +257,11 @@ IOCP 워커가 여럿이므로 아래 규칙을 지켜야 한다.
 - **중앙 강제 차단이 없다.** 서명이 유효하고 만료 전이면 LoginServer 가 죽어도 티켓은
   통한다. 비대칭 서명의 본질적 트레이드오프이며, 필요해지면 그때가 별도 토큰 서비스를
   도입할 시점이다.
-- **`TestClient` 는 TLS 인증서를 검증하지 않는다** (`Net` 의 클라이언트 컨텍스트가
-  `SSL_VERIFY_NONE`). 개발 편의용이며 실제 클라이언트는 반드시 켜야 한다.
+- **테스트 클라이언트는 TLS 인증서를 검증하지 않는다.** 개발용 자체 서명 인증서를
+  쓰기 때문이며, 실제 클라이언트는 반드시 검증을 켜야 한다.
+- **부하/악성 입력 시험 수단이 없다.** 전송 큐 상한(`--stall` + `--flood`)과 위조·만료
+  티켓 거절은 C++ TestClient 로 확인했었고, 그걸 지우면서 재현 수단도 같이 없어졌다.
+  브라우저 클라이언트는 정상 흐름만 다룬다.
 - **세션 레지스트리는 아직 강제력이 없다.** 다른 서버가 갖고 있는 세션을 발견해도
   로그만 남긴다. 실제로 끊으려면 서버 간 통지 경로(pub/sub 등)가 필요하고,
   그건 클라이언트가 직접 붙는 두 번째 프로세스가 생길 때 넣을 일이다.

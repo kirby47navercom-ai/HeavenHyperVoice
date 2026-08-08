@@ -6,7 +6,7 @@ it serves index.html and translates JSON calls into the FlatBuffers protocol.
     python bridge.py            # then open http://127.0.0.1:8080
 
 Development only. It holds a single chat session in module state and does not
-verify the server certificate, exactly like the C++ TestClient.
+verify the server certificate, which is self-signed.
 """
 
 import argparse
