@@ -335,10 +335,16 @@ function say(el, text, ok) {
   el.className = 'msg ' + (ok ? 'good' : 'bad');
 }
 
+// 탭마다 다른 세션을 쓰기 위한 토큰. sessionStorage 는 탭 단위라 같은 주소를
+// 두 번 열어도 값이 갈린다 (쿠키는 오리진 단위라 공유된다).
+const TOKEN = sessionStorage.getItem('hhv') ||
+              (v => (sessionStorage.setItem('hhv', v), v))(
+                  Math.random().toString(36).slice(2) + Date.now().toString(36));
+
 async function post(path, body) {
   const r = await fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-HHV-Session': TOKEN },
     body: JSON.stringify(body || {}),
   });
   return r.json();
@@ -754,7 +760,8 @@ requestAnimationFrame(draw);
 // 이 소켓 하나로 주고받는다.
 
 function openSocket() {
-  ws = new WebSocket('ws://' + location.host + '/ws');
+  // 핸드셰이크에는 헤더를 붙일 수 없어 질의 문자열로 넘긴다.
+  ws = new WebSocket('ws://' + location.host + '/ws?s=' + encodeURIComponent(TOKEN));
   ws.onmessage = e => handle(JSON.parse(e.data));
   ws.onclose = () => { ws = null; };
 }

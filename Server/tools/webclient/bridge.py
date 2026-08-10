@@ -4,15 +4,16 @@ A browser cannot open a raw TLS socket, so this process sits in between:
 it serves index.html and translates JSON into the FlatBuffers protocols.
 
     python bridge.py                # then open http://127.0.0.1:8080
-    python bridge.py --port 8081    # a second one, to play two accounts at once
+
+Each browser tab gets its own session, keyed by a cookie, so two tabs can play
+two accounts against the same bridge. Closing a tab leaves the world.
 
 Login is request/response over POST. Field movement runs at 20 Hz, which is
 too chatty for one HTTP request per update, so the field and chat traffic go
 over a WebSocket instead. The handshake and framing are implemented here with
 the standard library only.
 
-Development only. It holds a single session in module state and does not verify
-the server certificate, which is self-signed.
+Development only. It does not verify the server certificate, which is self-signed.
 """
 
 import argparse
@@ -24,6 +25,7 @@ import socket
 import ssl
 import struct
 import threading
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import flatbuffers
@@ -322,8 +324,6 @@ def ws_read(rfile):
 
 # -------------------------------------------------------------------- session
 
-# ponytail: one session in module state, enough for a single browser tab.
-# Run a second bridge on another port to drive two accounts at once.
 class Session:
     def __init__(self):
         # 캐릭터를 고를 때까지 열어두는 로그인 연결. 서버가 120초 상한을 건다.
@@ -470,7 +470,31 @@ class Session:
                 self.push("closed", text=reason)
 
 
-session = Session()
+# 탭마다 세션이 하나다. 예전에는 모듈 전역에 하나만 두어서, 같은 브리지에 탭을
+# 둘 열면 나중 로그인이 먼저 것의 소켓을 끊었다.
+#
+# 구분자는 쿠키가 아니라 클라이언트가 만든 토큰이다. 쿠키는 오리진 단위라
+# 같은 주소의 두 탭이 같은 값을 공유한다. 브라우저에서 탭 단위인 것은
+# sessionStorage 뿐이라 거기서 만들어 보내게 했다.
+SESSION_HEADER = "X-HHV-Session"
+
+sessions = {}
+sessions_lock = threading.Lock()
+
+
+def session_for(token):
+    with sessions_lock:
+        found = sessions.get(token)
+        if found is None:
+            found = sessions[token] = Session()
+        return found
+
+
+def drop_session(token):
+    with sessions_lock:
+        found = sessions.pop(token, None)
+    if found is not None:
+        found.close()
 
 
 # ----------------------------------------------------------------------- HTTP
@@ -491,7 +515,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path == "/ws":
+        if self.path.startswith("/ws"):
             return self.serve_websocket()
         if self.path in ("/", "/index.html"):
             with open(os.path.join(HERE, "index.html"), "rb") as f:
@@ -509,6 +533,11 @@ class Handler(BaseHTTPRequestHandler):
         if not key:
             return self.send_error(400, "not a websocket handshake")
 
+        # 핸드셰이크에는 임의 헤더를 붙일 수 없으므로 질의 문자열로 받는다.
+        token = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("s", [""])[0]
+        if not token:
+            return self.send_error(400, "missing session token")
+
         self.wfile.write(
             b"HTTP/1.1 101 Switching Protocols\r\n"
             b"Upgrade: websocket\r\n"
@@ -516,6 +545,7 @@ class Handler(BaseHTTPRequestHandler):
             b"Sec-WebSocket-Accept: " + ws_accept_key(key).encode("ascii") + b"\r\n\r\n")
         self.wfile.flush()
 
+        session = session_for(token)
         session.attach(self.wfile)
         try:
             while True:
@@ -546,6 +576,9 @@ class Handler(BaseHTTPRequestHandler):
             pass
         finally:
             session.detach(self.wfile)
+            # 탭을 닫으면 세션도 끝난다. 소켓을 들고 있는 유령 세션이 남으면
+            # 필드에 유령 캐릭터가 서 있게 된다.
+            drop_session(token)
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -553,6 +586,11 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length) or b"{}")
         except json.JSONDecodeError:
             return self.reply({"ok": False, "message": "bad json"}, 400)
+
+        token = self.headers.get(SESSION_HEADER)
+        if not token:
+            return self.reply({"ok": False, "message": "세션 토큰이 없습니다"}, 400)
+        session = session_for(token)
 
         try:
             handler = {
@@ -568,14 +606,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error(404)
 
         try:
-            self.reply(handler(body))
+            self.reply(handler(session, body))
         except (OSError, ValueError, RuntimeError) as e:
             # 로그인 연결이 끊어졌으면 다시 로그인해야 한다.
             if self.path.startswith("/api/characters"):
                 session.close_login()
             self.reply({"ok": False, "message": f"{type(e).__name__}: {e}"}, 502)
 
-    def api_register(self, body):
+    def api_register(self, session, body):
         sock = connect(args.login_host, args.login_port)
         try:
             payload = exchange(
@@ -588,7 +626,7 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             sock.close()
 
-    def api_login(self, body):
+    def api_login(self, session, body):
         session.close()
 
         sock = connect(args.login_host, args.login_port)
@@ -607,7 +645,7 @@ class Handler(BaseHTTPRequestHandler):
                 "characters": decode_characters(payload, 2),
                 "maxSlots": read_scalar(payload, 3, Uint8Flags)}
 
-    def api_create_character(self, body):
+    def api_create_character(self, session, body):
         payload = exchange(
             session.require_login(),
             envelope(create_character_payload(body.get("nickname", ""),
@@ -618,7 +656,7 @@ class Handler(BaseHTTPRequestHandler):
                 "message": read_string(payload, 1),
                 "characters": decode_characters(payload, 2)}
 
-    def api_delete_character(self, body):
+    def api_delete_character(self, session, body):
         payload = exchange(
             session.require_login(),
             envelope(delete_character_payload(int(body.get("characterId", 0)),
@@ -629,7 +667,7 @@ class Handler(BaseHTTPRequestHandler):
                 "message": read_string(payload, 1),
                 "characters": decode_characters(payload, 2)}
 
-    def api_release_partner(self, body):
+    def api_release_partner(self, session, body):
         payload = exchange(
             session.require_login(),
             envelope(character_id_payload(int(body.get("characterId", 0))),
@@ -639,7 +677,7 @@ class Handler(BaseHTTPRequestHandler):
                 "message": read_string(payload, 1),
                 "characters": decode_characters(payload, 2)}
 
-    def api_select_character(self, body):
+    def api_select_character(self, session, body):
         payload = exchange(
             session.require_login(),
             envelope(character_id_payload(int(body.get("characterId", 0))),
@@ -668,7 +706,7 @@ class Handler(BaseHTTPRequestHandler):
                 "services": {name: f"{host}:{port} ({len(ticket)}B)"
                              for name, (host, port, ticket) in endpoints.items()}}
 
-    def api_logout(self, _body):
+    def api_logout(self, session, _body):
         session.close()
         return {"ok": True}
 
@@ -691,4 +729,5 @@ if __name__ == "__main__":
     try:
         Server(("127.0.0.1", args.port), Handler).serve_forever()
     except KeyboardInterrupt:
-        session.close()
+        for token in list(sessions):
+            drop_session(token)
