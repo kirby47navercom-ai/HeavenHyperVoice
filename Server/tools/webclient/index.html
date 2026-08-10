@@ -465,6 +465,13 @@ function renderSlots() {
 
 async function enterField(characterId) {
   say($('charMsg'), '입장 중…', true);
+
+  // 응답을 받기 전에 비운다. 브리지는 HTTP 응답을 돌려주기 전에 필드에
+  // 접속하므로, Spawn 이 WebSocket 으로 먼저 도착한다. 응답 뒤에 비우면
+  // 방금 받은 Spawn 을 지운다.
+  $('log').innerHTML = '';
+  entities.clear();
+
   const r = await post('/api/characters/select', { characterId });
   if (!r.ok) {
     say($('charMsg'), r.message || '입장 실패', false);
@@ -479,8 +486,6 @@ async function enterField(characterId) {
     since: new Date().toLocaleTimeString('ko-KR'),
   };
   say($('charMsg'), '', true);
-  $('log').innerHTML = '';
-  entities.clear();
   $('hudWho').textContent = r.nickname;
   append('system', Object.keys(r.services || {}).map(k => k + ' ' + r.services[k]).join(' · '));
   show('field');
