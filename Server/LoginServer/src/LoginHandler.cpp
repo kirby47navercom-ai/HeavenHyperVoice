@@ -253,7 +253,8 @@ bool LoginHandler::handleCreateCharacter(TlsSession& session,
         session.send(proto::encodeCreateCharacterResult(false, problem, {}));
         return true;
     }
-    if (proto::findSpecies(speciesId) == nullptr) {
+    // 0 이면 파트너 없이 시작한다. 그 외에는 종족 표에 있어야 한다.
+    if (speciesId != 0 && proto::findSpecies(speciesId) == nullptr) {
         resume(Stage::AwaitingSelection);
         session.send(
             proto::encodeCreateCharacterResult(false, "알 수 없는 파트너입니다", {}));

@@ -578,12 +578,16 @@ CreateCharacterResult OdbcStore::create(std::uint64_t accountId, std::string_vie
         return CreateCharacterResult::NotSupported;
     }
 
-    // 클라이언트가 보낸 종족을 그대로 믿지 않는다. 표에 없으면 여기서 끝난다.
-    const proto::SpeciesBase* species = proto::findSpecies(speciesId);
-    if (species == nullptr) {
+    // 0 은 "파트너 없이 시작" 이다. 그 외에는 클라이언트가 보낸 종족을 그대로
+    // 믿지 않고 표로 거른다.
+    const proto::SpeciesBase* species =
+        speciesId == 0 ? nullptr : proto::findSpecies(speciesId);
+    if (speciesId != 0 && species == nullptr) {
         return CreateCharacterResult::UnknownSpecies;
     }
-    const proto::PokemonStats stats = proto::computeStats(*species, proto::kStarterLevel);
+    const proto::PokemonStats stats =
+        species != nullptr ? proto::computeStats(*species, proto::kStarterLevel)
+                           : proto::PokemonStats{};
 
     Connection* connection = acquire();
     struct Release {
@@ -614,8 +618,10 @@ CreateCharacterResult OdbcStore::create(std::uint64_t accountId, std::string_vie
         return CreateCharacterResult::Error;
     }
 
-    // 캐릭터와 파트너는 함께 생기거나 함께 실패해야 한다. 캐릭터만 남으면
-    // 파트너 없는 유령이 되고, 유일 제약 때문에 같은 닉네임으로 다시 만들 수도 없다.
+    // 파트너를 같이 만들 때는 둘이 함께 생기거나 함께 실패해야 한다.
+    // 캐릭터만 남으면 유일 제약 때문에 같은 닉네임으로 다시 만들 수도 없다.
+    // 파트너 없이 만드는 경우에도 같은 경로를 쓴다 — INSERT 하나짜리 트랜잭션은
+    // 해가 없고, 분기를 두 벌로 만드는 것보다 낫다.
     if (!succeeded(SQLSetConnectAttr(connection->dbc, SQL_ATTR_AUTOCOMMIT,
                                      reinterpret_cast<SQLPOINTER>(SQL_AUTOCOMMIT_OFF), 0))) {
         spdlog::error("could not begin a transaction: {}",
@@ -669,6 +675,17 @@ CreateCharacterResult OdbcStore::create(std::uint64_t accountId, std::string_vie
             rollback();
             spdlog::error("could not read the new character id");
             return CreateCharacterResult::Error;
+        }
+
+        if (species == nullptr) {
+            // 파트너 없이 시작한다. 나중에 잡으면 slot 0 에 들어간다.
+            if (!succeeded(SQLEndTran(SQL_HANDLE_DBC, connection->dbc, SQL_COMMIT))) {
+                spdlog::error("commit failed: {}",
+                              diagnostics(SQL_HANDLE_DBC, connection->dbc));
+                rollback();
+                return CreateCharacterResult::Error;
+            }
+            return CreateCharacterResult::Created;
         }
 
         std::uint32_t level = proto::kStarterLevel;

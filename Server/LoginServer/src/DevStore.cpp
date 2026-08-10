@@ -48,8 +48,10 @@ std::optional<Character> DevStore::find(std::uint64_t accountId, std::uint64_t c
 
 CreateCharacterResult DevStore::create(std::uint64_t accountId, std::string_view nickname,
                                        std::uint16_t speciesId) {
-    const proto::SpeciesBase* species = proto::findSpecies(speciesId);
-    if (species == nullptr) {
+    // 0 은 "파트너 없이 시작" 이다.
+    const proto::SpeciesBase* species =
+        speciesId == 0 ? nullptr : proto::findSpecies(speciesId);
+    if (speciesId != 0 && species == nullptr) {
         return CreateCharacterResult::UnknownSpecies;
     }
 
@@ -72,10 +74,12 @@ CreateCharacterResult DevStore::create(std::uint64_t accountId, std::string_view
     character.id = nextCharacterId_++;
     character.nickname = std::string(nickname);
     character.level = 1;
-    character.hasPartner = true;
-    character.partner.speciesId = speciesId;
-    character.partner.level = proto::kStarterLevel;
-    character.partner.stats = proto::computeStats(*species, proto::kStarterLevel);
+    if (species != nullptr) {
+        character.hasPartner = true;
+        character.partner.speciesId = speciesId;
+        character.partner.level = proto::kStarterLevel;
+        character.partner.stats = proto::computeStats(*species, proto::kStarterLevel);
+    }
     owned.push_back(std::move(character));
 
     return CreateCharacterResult::Created;
