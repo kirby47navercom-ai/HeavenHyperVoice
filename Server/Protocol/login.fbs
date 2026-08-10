@@ -69,12 +69,27 @@ table CreateCharacterRequest {
   species_id:ushort;
 }
 
-// 서버 -> 클라. 성공하면 갱신된 목록을 그대로 돌려준다.
-// 클라가 목록을 다시 요청할 필요가 없다.
-table CreateCharacterResponse {
+// 서버 -> 클라. 생성/삭제/방생이 모두 이걸로 답한다. 셋 다 "무언가 바뀌었으니
+// 갱신된 목록을 받아라" 이므로 표를 따로 둘 이유가 없다.
+table CharacterListResponse {
   ok:bool;
   message:string;
   characters:[CharacterSummary];
+}
+
+// 클라 -> 서버. confirm_nickname 은 사용자가 직접 다시 입력한 값이다.
+// character_id 만 믿으면 잘못 누른 한 번으로 다른 캐릭터가 지워진다.
+//
+// 캐릭터는 행이 지워지지 않고 숨겨진다. 닉네임은 계속 점유된다 — 방금 지워진
+// 이름을 남이 바로 가져가면 사칭이 된다.
+table DeleteCharacterRequest {
+  character_id:ulong;
+  confirm_nickname:string;
+}
+
+// 클라 -> 서버. 파트너를 놓아준다. 이쪽은 행을 진짜 지운다.
+table ReleasePartnerRequest {
+  character_id:ulong;
 }
 
 // 클라 -> 서버. character_id 는 클라가 보낸 값이지만, 서버는 인증된
@@ -112,9 +127,11 @@ union Payload {
   RegisterRequest,
   RegisterResponse,
   CreateCharacterRequest,
-  CreateCharacterResponse,
+  CharacterListResponse,
   SelectCharacterRequest,
-  SelectCharacterResponse
+  SelectCharacterResponse,
+  DeleteCharacterRequest,
+  ReleasePartnerRequest
 }
 
 table Envelope {

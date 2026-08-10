@@ -217,18 +217,33 @@ inline Bytes encodeCreateCharacterRequest(std::string_view nickname, std::uint16
     return detail::wrap(fbb, HeavenLogin::Payload::CreateCharacterRequest, request.Union());
 }
 
-inline Bytes encodeCreateCharacterResult(bool ok, std::string_view message,
-                                         const std::vector<CharacterInfo>& characters) {
+// 생성/삭제/방생이 모두 이 응답을 쓴다. 셋 다 목록이 바뀌는 일이다.
+inline Bytes encodeCharacterList(bool ok, std::string_view message,
+                                 const std::vector<CharacterInfo>& characters) {
     flatbuffers::FlatBufferBuilder fbb;
     auto text = fbb.CreateString(message.data(), message.size());
     auto list = detail::buildCharacters(fbb, characters);
 
-    HeavenLogin::CreateCharacterResponseBuilder builder(fbb);
+    HeavenLogin::CharacterListResponseBuilder builder(fbb);
     builder.add_ok(ok);
     builder.add_message(text);
     builder.add_characters(list);
-    return detail::wrap(fbb, HeavenLogin::Payload::CreateCharacterResponse,
+    return detail::wrap(fbb, HeavenLogin::Payload::CharacterListResponse,
                         builder.Finish().Union());
+}
+
+inline Bytes encodeDeleteCharacterRequest(std::uint64_t characterId,
+                                          std::string_view confirmNickname) {
+    flatbuffers::FlatBufferBuilder fbb;
+    auto nick = fbb.CreateString(confirmNickname.data(), confirmNickname.size());
+    auto request = HeavenLogin::CreateDeleteCharacterRequest(fbb, characterId, nick);
+    return detail::wrap(fbb, HeavenLogin::Payload::DeleteCharacterRequest, request.Union());
+}
+
+inline Bytes encodeReleasePartnerRequest(std::uint64_t characterId) {
+    flatbuffers::FlatBufferBuilder fbb;
+    auto request = HeavenLogin::CreateReleasePartnerRequest(fbb, characterId);
+    return detail::wrap(fbb, HeavenLogin::Payload::ReleasePartnerRequest, request.Union());
 }
 
 // ------------------------------------------------------------- 캐릭터 선택

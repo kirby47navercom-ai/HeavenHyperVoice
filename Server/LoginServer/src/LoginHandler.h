@@ -79,6 +79,10 @@ private:
                                const HeavenLogin::CreateCharacterRequest& request);
     bool handleSelectCharacter(TlsSession& session,
                                const HeavenLogin::SelectCharacterRequest& request);
+    bool handleDeleteCharacter(TlsSession& session,
+                               const HeavenLogin::DeleteCharacterRequest& request);
+    bool handleReleasePartner(TlsSession& session,
+                              const HeavenLogin::ReleasePartnerRequest& request);
 
     // 응답을 보내고 연결을 닫는다. 인증 스레드에서도 불린다.
     void finish(TlsSession& session, const proto::Bytes& frame);

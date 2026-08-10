@@ -85,4 +85,46 @@ CreateCharacterResult DevStore::create(std::uint64_t accountId, std::string_view
     return CreateCharacterResult::Created;
 }
 
+DeleteResult DevStore::remove(std::uint64_t accountId, std::uint64_t characterId,
+                              std::string_view confirmNickname) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto owned = characters_.find(accountId);
+    if (owned == characters_.end()) {
+        return DeleteResult::NotFound;
+    }
+    const auto found = std::find_if(owned->second.begin(), owned->second.end(),
+                                    [characterId](const Character& c) {
+                                        return c.id == characterId;
+                                    });
+    if (found == owned->second.end()) {
+        return DeleteResult::NotFound;
+    }
+    if (found->nickname != confirmNickname) {
+        return DeleteResult::NameMismatch;
+    }
+    // 개발용이라 되살릴 일이 없다. 그냥 지운다.
+    owned->second.erase(found);
+    return DeleteResult::Deleted;
+}
+
+DeleteResult DevStore::releasePartner(std::uint64_t accountId, std::uint64_t characterId) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto owned = characters_.find(accountId);
+    if (owned == characters_.end()) {
+        return DeleteResult::NotFound;
+    }
+    for (Character& character : owned->second) {
+        if (character.id != characterId) {
+            continue;
+        }
+        if (!character.hasPartner) {
+            return DeleteResult::Nothing;
+        }
+        character.hasPartner = false;
+        character.partner = {};
+        return DeleteResult::Deleted;
+    }
+    return DeleteResult::NotFound;
+}
+
 }  // namespace heaven::data

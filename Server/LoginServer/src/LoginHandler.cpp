@@ -71,6 +71,10 @@ bool LoginHandler::onFrame(TlsSession& session, const proto::Bytes& body) {
             return handleCreateCharacter(session, *envelope->payload_as_CreateCharacterRequest());
         case HeavenLogin::Payload::SelectCharacterRequest:
             return handleSelectCharacter(session, *envelope->payload_as_SelectCharacterRequest());
+        case HeavenLogin::Payload::DeleteCharacterRequest:
+            return handleDeleteCharacter(session, *envelope->payload_as_DeleteCharacterRequest());
+        case HeavenLogin::Payload::ReleasePartnerRequest:
+            return handleReleasePartner(session, *envelope->payload_as_ReleasePartnerRequest());
         default:
             spdlog::warn("{}: expected a character request", session.peer());
             fail(session, "잘못된 요청입니다");
@@ -243,21 +247,21 @@ bool LoginHandler::handleCreateCharacter(TlsSession& session,
 
     if (nickname == nullptr || nickname->size() > proto::kMaxNicknameBytes) {
         resume(Stage::AwaitingSelection);
-        session.send(proto::encodeCreateCharacterResult(false, "닉네임이 올바르지 않습니다", {}));
+        session.send(proto::encodeCharacterList(false, "닉네임이 올바르지 않습니다", {}));
         return true;
     }
 
     const std::string nick = nickname->str();
     if (const char* problem = proto::validateNickname(nick)) {
         resume(Stage::AwaitingSelection);
-        session.send(proto::encodeCreateCharacterResult(false, problem, {}));
+        session.send(proto::encodeCharacterList(false, problem, {}));
         return true;
     }
     // 0 이면 파트너 없이 시작한다. 그 외에는 종족 표에 있어야 한다.
     if (speciesId != 0 && proto::findSpecies(speciesId) == nullptr) {
         resume(Stage::AwaitingSelection);
         session.send(
-            proto::encodeCreateCharacterResult(false, "알 수 없는 파트너입니다", {}));
+            proto::encodeCharacterList(false, "알 수 없는 파트너입니다", {}));
         return true;
     }
 
@@ -295,7 +299,7 @@ bool LoginHandler::handleCreateCharacter(TlsSession& session,
 
         // 아직 선택이 남았으므로 연결을 유지한다.
         handler->resume(Stage::AwaitingSelection);
-        self->send(proto::encodeCreateCharacterResult(ok, message, characters));
+        self->send(proto::encodeCharacterList(ok, message, characters));
     });
 
     return true;
@@ -360,6 +364,94 @@ bool LoginHandler::handleSelectCharacter(TlsSession& session,
 
         handler->finish(*self,
                         proto::encodeSelectCharacterSuccess(endpoints, character->nickname));
+    });
+
+    return true;
+}
+
+// ------------------------------------------------------------- 캐릭터 삭제
+
+bool LoginHandler::handleDeleteCharacter(TlsSession& session,
+                                         const HeavenLogin::DeleteCharacterRequest& request) {
+    const auto* confirm = request.confirm_nickname();
+    if (confirm == nullptr || confirm->size() > proto::kMaxNicknameBytes) {
+        resume(Stage::AwaitingSelection);
+        session.send(proto::encodeCharacterList(false, "확인 입력이 올바르지 않습니다", {}));
+        return true;
+    }
+
+    auto self = session.shared_from_this();
+    const LoginContext* context = &context_;
+    LoginHandler* handler = this;
+    const std::uint64_t accountId = accountId_;
+    const std::uint64_t characterId = request.character_id();
+    const std::string typed = confirm->str();
+
+    context_.authQueue->submit([self, context, handler, accountId, characterId, typed] {
+        const data::DeleteResult result =
+            context->characters->remove(accountId, characterId, typed);
+
+        const char* message = nullptr;
+        switch (result) {
+            case data::DeleteResult::Deleted:      message = "캐릭터를 삭제했습니다"; break;
+            case data::DeleteResult::NotFound:     message = "캐릭터를 찾을 수 없습니다"; break;
+            case data::DeleteResult::NameMismatch: message = "닉네임이 일치하지 않습니다"; break;
+            case data::DeleteResult::Nothing:      message = "지울 것이 없습니다"; break;
+            case data::DeleteResult::NotSupported: message = "이 서버는 삭제를 지원하지 않습니다"; break;
+            case data::DeleteResult::Error:        message = "서버 오류로 삭제하지 못했습니다"; break;
+        }
+
+        const bool ok = result == data::DeleteResult::Deleted;
+        if (ok) {
+            spdlog::info("character deleted: {} (character {}, account {})", typed, characterId,
+                         accountId);
+        } else {
+            spdlog::info("character delete rejected for account {}: {}", accountId,
+                         describe(result));
+        }
+
+        const std::vector<data::Character> characters =
+            context->characters->listByAccount(accountId);
+        handler->resume(Stage::AwaitingSelection);
+        self->send(proto::encodeCharacterList(ok, message, characters));
+    });
+
+    return true;
+}
+
+// ------------------------------------------------------------- 파트너 방생
+
+bool LoginHandler::handleReleasePartner(TlsSession& session,
+                                        const HeavenLogin::ReleasePartnerRequest& request) {
+    auto self = session.shared_from_this();
+    const LoginContext* context = &context_;
+    LoginHandler* handler = this;
+    const std::uint64_t accountId = accountId_;
+    const std::uint64_t characterId = request.character_id();
+
+    context_.authQueue->submit([self, context, handler, accountId, characterId] {
+        const data::DeleteResult result =
+            context->characters->releasePartner(accountId, characterId);
+
+        const char* message = nullptr;
+        switch (result) {
+            case data::DeleteResult::Deleted:      message = "파트너를 놓아주었습니다"; break;
+            case data::DeleteResult::Nothing:      message = "놓아줄 파트너가 없습니다"; break;
+            case data::DeleteResult::NotFound:     message = "캐릭터를 찾을 수 없습니다"; break;
+            case data::DeleteResult::NameMismatch: message = "확인에 실패했습니다"; break;
+            case data::DeleteResult::NotSupported: message = "이 서버는 방생을 지원하지 않습니다"; break;
+            case data::DeleteResult::Error:        message = "서버 오류로 실패했습니다"; break;
+        }
+
+        const bool ok = result == data::DeleteResult::Deleted;
+        if (ok) {
+            spdlog::info("partner released: character {} (account {})", characterId, accountId);
+        }
+
+        const std::vector<data::Character> characters =
+            context->characters->listByAccount(accountId);
+        handler->resume(Stage::AwaitingSelection);
+        self->send(proto::encodeCharacterList(ok, message, characters));
     });
 
     return true;

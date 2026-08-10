@@ -196,13 +196,16 @@ struct OdbcStore::Connection {
     SQLHSTMT insertPokemon = SQL_NULL_HSTMT;
     SQLHSTMT touchPlayed = SQL_NULL_HSTMT;
     SQLHSTMT selectPosition = SQL_NULL_HSTMT;
+    SQLHSTMT softDelete = SQL_NULL_HSTMT;
+    SQLHSTMT deletePartner = SQL_NULL_HSTMT;
     SQLHSTMT updatePosition = SQL_NULL_HSTMT;
 
     // 모든 구문 핸들을 한 번에 돌기 위한 목록.
     std::vector<SQLHSTMT*> all() {
         return {&selectAccount,   &touchLogin,      &insertAccount,   &listCharacters,
                 &findCharacter,   &countCharacters, &insertCharacter, &lastInsertId,
-                &insertPokemon,   &touchPlayed,     &selectPosition,  &updatePosition};
+                &insertPokemon,   &touchPlayed,     &selectPosition,  &updatePosition,
+                &softDelete,      &deletePartner};
     }
 };
 
@@ -269,17 +272,22 @@ OdbcStore::OdbcStore(const OdbcSettings& settings) {
         prepare(connection->touchLogin,
                 "UPDATE accounts SET last_login_at = CURRENT_TIMESTAMP(3) WHERE id = ?",
                 "SQLPrepare(touchLogin)");
+        // deleted_at IS NULL 은 모든 캐릭터 조회에 붙는다. 하나라도 빠뜨리면
+        // 지운 캐릭터가 로비에 다시 나타나거나 티켓을 받아 갈 수 있다.
         prepare(connection->listCharacters,
-                (std::string(kCharacterColumns) + "WHERE c.account_id = ? ORDER BY c.id").c_str(),
+                (std::string(kCharacterColumns) +
+                 "WHERE c.account_id = ? AND c.deleted_at IS NULL ORDER BY c.id").c_str(),
                 "SQLPrepare(listCharacters)");
         prepare(connection->findCharacter,
-                (std::string(kCharacterColumns) + "WHERE c.account_id = ? AND c.id = ?").c_str(),
+                (std::string(kCharacterColumns) +
+                 "WHERE c.account_id = ? AND c.id = ? AND c.deleted_at IS NULL").c_str(),
                 "SQLPrepare(findCharacter)");
         prepare(connection->countCharacters,
-                "SELECT COUNT(*) FROM characters WHERE account_id = ?",
+                "SELECT COUNT(*) FROM characters WHERE account_id = ? AND deleted_at IS NULL",
                 "SQLPrepare(countCharacters)");
         prepare(connection->selectPosition,
-                "SELECT map_id, pos_x, pos_y FROM characters WHERE id = ?",
+                "SELECT map_id, pos_x, pos_y FROM characters "
+                "WHERE id = ? AND deleted_at IS NULL",
                 "SQLPrepare(selectPosition)");
 
         // 쓰기 경로. 권한이 없는 배포도 있을 수 있으므로 실패해도 죽지 않는다.
@@ -305,6 +313,17 @@ OdbcStore::OdbcStore(const OdbcSettings& settings) {
             prepare(connection->updatePosition,
                     "UPDATE characters SET map_id = ?, pos_x = ?, pos_y = ? WHERE id = ?",
                     "SQLPrepare(updatePosition)");
+            // 소유와 닉네임 일치를 WHERE 에 함께 넣는다. 조건이 하나라도 어긋나면
+            // 0행이 갱신되므로 별도 검사 없이 거절된다.
+            prepare(connection->softDelete,
+                    "UPDATE characters SET deleted_at = CURRENT_TIMESTAMP(3) "
+                    "WHERE id = ? AND account_id = ? AND nickname = ? AND deleted_at IS NULL",
+                    "SQLPrepare(softDelete)");
+            prepare(connection->deletePartner,
+                    "DELETE p FROM character_pokemon p JOIN characters c ON c.id = p.character_id "
+                    "WHERE p.character_id = ? AND p.slot = 0 "
+                    "  AND c.account_id = ? AND c.deleted_at IS NULL",
+                    "SQLPrepare(deletePartner)");
             writable = true;
         } catch (const std::exception& e) {
             if (i == 0) {
@@ -829,6 +848,86 @@ void OdbcStore::savePosition(std::uint64_t characterId, const Position& position
     } catch (const std::exception& e) {
         SQLCloseCursor(connection->updatePosition);
         spdlog::warn("position save failed for character {}: {}", characterId, e.what());
+    }
+}
+
+DeleteResult OdbcStore::remove(std::uint64_t accountId, std::uint64_t characterId,
+                               std::string_view confirmNickname) {
+    if (!canWrite_) {
+        return DeleteResult::NotSupported;
+    }
+
+    Connection* connection = acquire();
+    struct Release {
+        OdbcStore* store;
+        Connection* connection;
+        ~Release() { store->release(connection); }
+    } releaseGuard{this, connection};
+
+    // 확인 문자열이 틀린 것과 캐릭터가 없는 것을 구분해서 알려주려면 먼저
+    // 조회해야 한다. UPDATE 만으로는 둘 다 0행이라 구분이 안 된다.
+    const auto character = find(accountId, characterId);
+    if (!character.has_value()) {
+        return DeleteResult::NotFound;
+    }
+    if (character->nickname != confirmNickname) {
+        return DeleteResult::NameMismatch;
+    }
+
+    std::uint64_t id = characterId;
+    std::uint64_t owner = accountId;
+    std::wstring wideNickname = widen(confirmNickname);
+    SQLLEN lengths[3] = {};
+
+    try {
+        bindUInt64(connection->softDelete, 1, id, lengths[0]);
+        bindUInt64(connection->softDelete, 2, owner, lengths[1]);
+        bindText(connection->softDelete, 3, wideNickname, lengths[2]);
+        require(SQLExecute(connection->softDelete), SQL_HANDLE_STMT, connection->softDelete,
+                "SQLExecute(softDelete)");
+
+        SQLLEN affected = 0;
+        SQLRowCount(connection->softDelete, &affected);
+        SQLCloseCursor(connection->softDelete);
+        return affected > 0 ? DeleteResult::Deleted : DeleteResult::NotFound;
+    } catch (const std::exception& e) {
+        SQLCloseCursor(connection->softDelete);
+        spdlog::error("character delete failed for {}: {}", characterId, e.what());
+        return DeleteResult::Error;
+    }
+}
+
+DeleteResult OdbcStore::releasePartner(std::uint64_t accountId, std::uint64_t characterId) {
+    if (!canWrite_) {
+        return DeleteResult::NotSupported;
+    }
+
+    Connection* connection = acquire();
+    struct Release {
+        OdbcStore* store;
+        Connection* connection;
+        ~Release() { store->release(connection); }
+    } releaseGuard{this, connection};
+
+    std::uint64_t id = characterId;
+    std::uint64_t owner = accountId;
+    SQLLEN lengths[2] = {};
+
+    try {
+        // 소유 확인이 구문의 JOIN 에 들어 있다. 남의 캐릭터면 0행이다.
+        bindUInt64(connection->deletePartner, 1, id, lengths[0]);
+        bindUInt64(connection->deletePartner, 2, owner, lengths[1]);
+        require(SQLExecute(connection->deletePartner), SQL_HANDLE_STMT, connection->deletePartner,
+                "SQLExecute(deletePartner)");
+
+        SQLLEN affected = 0;
+        SQLRowCount(connection->deletePartner, &affected);
+        SQLCloseCursor(connection->deletePartner);
+        return affected > 0 ? DeleteResult::Deleted : DeleteResult::Nothing;
+    } catch (const std::exception& e) {
+        SQLCloseCursor(connection->deletePartner);
+        spdlog::error("partner release failed for character {}: {}", characterId, e.what());
+        return DeleteResult::Error;
     }
 }
 

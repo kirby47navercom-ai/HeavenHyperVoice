@@ -44,14 +44,24 @@ CREATE TABLE IF NOT EXISTS characters (
     REFERENCES accounts (id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
--- 기존 계정의 닉네임을 캐릭터로 옮긴다. 이미 옮겼으면 아무것도 하지 않는다.
-INSERT INTO characters (account_id, nickname)
-SELECT a.id, a.nickname
-FROM accounts a
-WHERE EXISTS (SELECT 1 FROM information_schema.columns
-              WHERE table_schema = 'hhv' AND table_name = 'accounts'
-                AND column_name = 'nickname')
-  AND NOT EXISTS (SELECT 1 FROM characters c WHERE c.account_id = a.id);
+-- 기존 계정의 닉네임을 캐릭터로 옮긴다.
+--
+-- PREPARE 로 감싸는 이유는 재실행 때문이다. apply-migrations.ps1 은 매번 모든
+-- 파일을 다시 돌리는데, 아래 컬럼 드롭이 끝난 뒤라면 a.nickname 이 존재하지
+-- 않는다. WHERE 로 걸러도 SELECT 목록의 컬럼 참조는 파싱 단계에서 해석되므로
+-- ERROR 1054 가 난다. 문자열로 만들어 두면 EXECUTE 할 때만 파싱된다.
+SET @backfill := (
+  SELECT IF(COUNT(*) > 0,
+            'INSERT INTO characters (account_id, nickname)
+               SELECT a.id, a.nickname FROM accounts a
+               WHERE NOT EXISTS (SELECT 1 FROM characters c WHERE c.account_id = a.id)',
+            'DO 0')
+  FROM information_schema.columns
+  WHERE table_schema = 'hhv' AND table_name = 'accounts' AND column_name = 'nickname'
+);
+PREPARE stmt FROM @backfill;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 컬럼을 드롭한다. 인덱스 uq_nickname 도 함께 사라진다.
 -- 여러 번 실행해도 안전하도록 있을 때만 실행한다.

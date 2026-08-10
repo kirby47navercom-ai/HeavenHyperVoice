@@ -49,15 +49,22 @@ CREATE TABLE IF NOT EXISTS character_pokemon (
 ) ENGINE=InnoDB;
 
 -- 004 에서 넘어온 기존 캐릭터에 파트너를 넣어준다. 스타터를 물어볼 방법이
--- 없으므로 character_id 로 10 종을 돌려가며 배정한다. 결정적이라 여러 번
--- 실행해도 같은 결과다.
+-- 없으므로 character_id 로 10 종을 돌려가며 배정한다.
+--
+-- **한 번만 실행한다.** apply-migrations.ps1 은 매번 모든 파일을 다시 돌리는데,
+-- "파트너 없는 캐릭터" 를 조건으로 삼으면 파트너 없이 만든 캐릭터에까지
+-- 두 번째 실행에서 포켓몬이 생긴다. 파트너 없이 시작하는 것은 정상 상태다.
+-- 그래서 조건을 schema_migrations 에 건다.
 --
 -- 레벨 5, 개체값/노력치 0 기준 표준 공식:
 --   HP   = FLOOR(2 * 종족값 * 5 / 100) + 5 + 10
 --   나머지 = FLOOR(2 * 종족값 * 5 / 100) + 5
-INSERT INTO character_pokemon
-  (character_id, slot, species_id, level, max_hp, atk, def, sp_atk, sp_def, speed)
-SELECT c.id, 0, s.species_id, 5,
+SET @backfill := IF(
+  (SELECT COUNT(*) FROM schema_migrations WHERE version = '005_character_pokemon') > 0,
+  'DO 0',
+  'INSERT INTO character_pokemon
+     (character_id, slot, species_id, level, max_hp, atk, def, sp_atk, sp_def, speed)
+   SELECT c.id, 0, s.species_id, 5,
        FLOOR(2 * s.hp     * 5 / 100) + 5 + 10,
        FLOOR(2 * s.atk    * 5 / 100) + 5,
        FLOOR(2 * s.def    * 5 / 100) + 5,
@@ -77,9 +84,12 @@ JOIN (
   UNION ALL SELECT  9, 40, 45, 35, 40, 40, 90
   UNION ALL SELECT 10, 50, 52, 48, 65, 50, 55
 ) s ON s.species_id = ((c.id - 1) % 10) + 1
-WHERE NOT EXISTS (
-  SELECT 1 FROM character_pokemon p WHERE p.character_id = c.id AND p.slot = 0
-);
+   WHERE NOT EXISTS (
+     SELECT 1 FROM character_pokemon p WHERE p.character_id = c.id AND p.slot = 0
+   )');
+PREPARE stmt FROM @backfill;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 INSERT IGNORE INTO schema_migrations (version) VALUES ('005_character_pokemon');
 

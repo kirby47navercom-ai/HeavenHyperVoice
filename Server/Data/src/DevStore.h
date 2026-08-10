@@ -33,6 +33,9 @@ public:
     std::optional<Character> find(std::uint64_t accountId, std::uint64_t characterId) override;
     CreateCharacterResult create(std::uint64_t accountId, std::string_view nickname,
                                  std::uint16_t speciesId) override;
+    DeleteResult remove(std::uint64_t accountId, std::uint64_t characterId,
+                        std::string_view confirmNickname) override;
+    DeleteResult releasePartner(std::uint64_t accountId, std::uint64_t characterId) override;
     void touchPlayed(std::uint64_t) override {}
 
     // 개발용이라 위치를 들고 있지 않다. 항상 스폰 지점에서 시작한다.

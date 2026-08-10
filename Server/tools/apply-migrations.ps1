@@ -5,6 +5,13 @@
 #   .\tools\apply-migrations.ps1 -User admin    # 다른 계정으로
 #   .\tools\apply-migrations.ps1 -SkipBackup    # 백업 생략
 #
+# 이 스크립트는 매번 **모든** 파일을 다시 실행한다. 적용 여부를 먼저 조회하려면
+# 비밀번호를 한 번 더 물어야 해서 그렇게 하지 않았다.
+#
+# 그래서 마이그레이션은 전부 여러 번 실행해도 안전해야 한다. 스키마를 바꾸는
+# 구문은 information_schema 로 확인한 뒤 PREPARE 로 감싼다 — WHERE 로만 거르면
+# 이미 사라진 컬럼을 참조하는 SELECT 가 파싱 단계에서 실패한다 (004 참고).
+#
 # Windows PowerShell 5.1 은 '<' 입력 리다이렉션을 지원하지 않으므로
 # mysql 클라이언트의 source 명령을 쓴다.
 #

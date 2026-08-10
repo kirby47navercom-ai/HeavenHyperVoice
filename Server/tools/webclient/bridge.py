@@ -40,9 +40,11 @@ LOGIN_RESPONSE = 2
 REGISTER_REQUEST = 3
 REGISTER_RESPONSE = 4
 CREATE_CHARACTER_REQUEST = 5
-CREATE_CHARACTER_RESPONSE = 6
+CHARACTER_LIST_RESPONSE = 6
 SELECT_CHARACTER_REQUEST = 7
 SELECT_CHARACTER_RESPONSE = 8
+DELETE_CHARACTER_REQUEST = 9
+RELEASE_PARTNER_REQUEST = 10
 
 CHAT_HELLO, CHAT_SAY, CHAT_NOTICE, CHAT_CHAT = 1, 2, 3, 4
 FIELD_ENTER, FIELD_ENTER_ACK, FIELD_MOVE, FIELD_SNAPSHOT, FIELD_NOTICE = 1, 2, 3, 4, 5
@@ -98,10 +100,22 @@ def create_character_payload(nickname, species_id):
     return build
 
 
-def select_character_payload(character_id):
+def character_id_payload(character_id):
+    """SelectCharacterRequest 와 ReleasePartnerRequest 가 같은 모양이다."""
     def build(b):
         b.StartObject(1)
         b.PrependUint64Slot(0, character_id, 0)
+        return b.EndObject()
+
+    return build
+
+
+def delete_character_payload(character_id, confirm_nickname):
+    def build(b):
+        nick = b.CreateString(confirm_nickname)
+        b.StartObject(2)
+        b.PrependUint64Slot(0, character_id, 0)
+        b.PrependUOffsetTRelativeSlot(1, nick, 0)
         return b.EndObject()
 
     return build
@@ -546,6 +560,8 @@ class Handler(BaseHTTPRequestHandler):
                 "/api/login": self.api_login,
                 "/api/characters/create": self.api_create_character,
                 "/api/characters/select": self.api_select_character,
+                "/api/characters/delete": self.api_delete_character,
+                "/api/characters/release": self.api_release_partner,
                 "/api/logout": self.api_logout,
             }[self.path]
         except KeyError:
@@ -597,7 +613,28 @@ class Handler(BaseHTTPRequestHandler):
             envelope(create_character_payload(body.get("nickname", ""),
                                               int(body.get("speciesId", 0))),
                      CREATE_CHARACTER_REQUEST),
-            CREATE_CHARACTER_RESPONSE)
+            CHARACTER_LIST_RESPONSE)
+        return {"ok": bool(read_scalar(payload, 0, BoolFlags, False)),
+                "message": read_string(payload, 1),
+                "characters": decode_characters(payload, 2)}
+
+    def api_delete_character(self, body):
+        payload = exchange(
+            session.require_login(),
+            envelope(delete_character_payload(int(body.get("characterId", 0)),
+                                              body.get("confirm", "")),
+                     DELETE_CHARACTER_REQUEST),
+            CHARACTER_LIST_RESPONSE)
+        return {"ok": bool(read_scalar(payload, 0, BoolFlags, False)),
+                "message": read_string(payload, 1),
+                "characters": decode_characters(payload, 2)}
+
+    def api_release_partner(self, body):
+        payload = exchange(
+            session.require_login(),
+            envelope(character_id_payload(int(body.get("characterId", 0))),
+                     RELEASE_PARTNER_REQUEST),
+            CHARACTER_LIST_RESPONSE)
         return {"ok": bool(read_scalar(payload, 0, BoolFlags, False)),
                 "message": read_string(payload, 1),
                 "characters": decode_characters(payload, 2)}
@@ -605,7 +642,7 @@ class Handler(BaseHTTPRequestHandler):
     def api_select_character(self, body):
         payload = exchange(
             session.require_login(),
-            envelope(select_character_payload(int(body.get("characterId", 0))),
+            envelope(character_id_payload(int(body.get("characterId", 0))),
                      SELECT_CHARACTER_REQUEST),
             SELECT_CHARACTER_RESPONSE)
         session.close_login()  # 서버가 이 응답 뒤에 끊는다

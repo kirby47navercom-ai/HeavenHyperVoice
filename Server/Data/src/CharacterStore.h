@@ -42,6 +42,28 @@ inline const char* describe(CreateCharacterResult result) {
     return "unknown result";
 }
 
+// 캐릭터 삭제와 파트너 방생이 같은 결과 타입을 쓴다. 실패 사유가 같기 때문이다.
+enum class DeleteResult {
+    Deleted,
+    NotFound,      // 없거나, 남의 것이거나, 이미 지워졌다
+    NameMismatch,  // 확인용으로 입력한 닉네임이 다르다
+    Nothing,       // 방생할 파트너가 애초에 없다
+    NotSupported,
+    Error,
+};
+
+inline const char* describe(DeleteResult result) {
+    switch (result) {
+        case DeleteResult::Deleted:      return "deleted";
+        case DeleteResult::NotFound:     return "not found";
+        case DeleteResult::NameMismatch: return "confirmation name did not match";
+        case DeleteResult::Nothing:      return "nothing to release";
+        case DeleteResult::NotSupported: return "deletion is not available";
+        case DeleteResult::Error:        return "internal error";
+    }
+    return "unknown result";
+}
+
 // 계정당 캐릭터 수 상한. 없으면 무한 생성이 된다.
 inline constexpr std::size_t kMaxCharactersPerAccount = 3;
 
@@ -70,6 +92,19 @@ public:
     // 캐릭터와 파트너를 함께 만든다. 둘 중 하나만 생기는 상태는 없어야 한다.
     virtual CreateCharacterResult create(std::uint64_t accountId, std::string_view nickname,
                                          std::uint16_t speciesId) = 0;
+
+    // 소프트 삭제. 행은 남고 deleted_at 이 채워지며, 이후 조회에서 빠진다.
+    // 닉네임은 계속 점유된다 (사칭 방지).
+    //
+    // confirmNickname 은 클라이언트가 사용자에게 다시 입력받은 값이다.
+    // characterId 만 믿으면 잘못 누른 한 번으로 다른 캐릭터가 지워진다.
+    virtual DeleteResult remove(std::uint64_t accountId, std::uint64_t characterId,
+                                std::string_view confirmNickname) = 0;
+
+    // 파트너 방생. 이쪽은 행을 진짜 지운다 — 유령 행이 남으면
+    // uq_character_slot 때문에 새 파트너를 slot 0 에 넣을 수 없다.
+    virtual DeleteResult releasePartner(std::uint64_t accountId,
+                                        std::uint64_t characterId) = 0;
 
     // 마지막 플레이 시각. 실패해도 입장은 막지 않는다.
     virtual void touchPlayed(std::uint64_t characterId) = 0;
