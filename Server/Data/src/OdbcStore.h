@@ -87,11 +87,31 @@ private:
     struct Connection;
 
     // 풀에서 커넥션을 하나 빌린다. 없으면 반납될 때까지 기다린다.
+    //
+    // **이미 빌린 채로 다시 부르지 말 것.** 풀 크기가 스레드 수와 같아서
+    // 중첩 대여는 모든 스레드가 서로를 기다리는 교착이 된다.
     Connection* acquire();
     void release(Connection* connection);
 
+    // acquire/release 짝을 맞춘다.
+    class Lease {
+    public:
+        explicit Lease(OdbcStore& store) : store_(store), connection_(store.acquire()) {}
+        ~Lease() { store_.release(connection_); }
+
+        Lease(const Lease&) = delete;
+        Lease& operator=(const Lease&) = delete;
+
+        Connection* operator->() const { return connection_; }
+        Connection& operator*() const { return *connection_; }
+
+    private:
+        OdbcStore& store_;
+        Connection* connection_;
+    };
+
     // 캐릭터 목록/단건 조회가 같은 컬럼 배치를 공유한다.
-    std::vector<Character> fetchCharacters(Connection* connection, SQLHSTMT statement);
+    static std::vector<Character> fetchCharacters(SQLHSTMT statement);
 
     SQLHENV env_ = SQL_NULL_HENV;
     std::string target_;

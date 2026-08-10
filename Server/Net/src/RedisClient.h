@@ -11,6 +11,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -58,6 +59,11 @@ private:
     // mutex_ 를 잡은 채로 호출한다.
     bool ensureConnectedLocked();
     void dropLocked();
+
+    // 명령을 보내고 응답을 콜백에 넘긴다. 실패하면 콜백을 부르지 않는다.
+    // redisReply* 를 헤더에 노출하지 않으려고 void* 로 받는다.
+    bool executeLocked(const std::vector<std::string>& arguments,
+                       const std::function<void(void* reply)>& onReply);
 
     RedisSettings settings_;
     std::string target_;

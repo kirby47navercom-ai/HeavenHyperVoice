@@ -26,7 +26,7 @@ void Room::leave(std::uint64_t accountId, const std::shared_ptr<TlsSession>& ses
     }
 }
 
-void Room::broadcast(const Frame& frame, const TlsSession* except) {
+void Room::broadcast(const proto::Bytes& frame, const TlsSession* except) {
     std::shared_lock<std::shared_mutex> lock(mutex_);
     for (const auto& session : sessions_) {
         if (session.get() == except) {

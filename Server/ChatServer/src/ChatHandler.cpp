@@ -2,28 +2,16 @@
 
 #include <spdlog/spdlog.h>
 
-#include <atomic>
 #include <chrono>
 
 namespace heaven::chat {
 
 namespace {
 
-Frame makeFrame(proto::Bytes bytes) {
-    return std::make_shared<const proto::Bytes>(std::move(bytes));
-}
-
 std::int64_t nowUnix() {
     return std::chrono::duration_cast<std::chrono::seconds>(
                std::chrono::system_clock::now().time_since_epoch())
         .count();
-}
-
-// 이 프로세스 안에서 세션을 구분하는 값. 레지스트리에서 "아직 내 것인가" 를
-// 판단할 때 쓰므로 재사용되지 않기만 하면 된다.
-std::string nextSessionId() {
-    static std::atomic<std::uint64_t> counter{0};
-    return std::to_string(counter.fetch_add(1, std::memory_order_relaxed));
 }
 
 }  // namespace
@@ -62,20 +50,8 @@ bool ChatHandler::handleHello(TlsSession& session, const proto::Bytes& body) {
     nickname_ = verified.nickname;
     accountId_ = verified.accountId;
     characterId_ = verified.characterId;
-    sessionId_ = nextSessionId();
     joined_ = true;
     session.markAuthenticated();
-
-    // 레지스트리에 자기 것으로 등록하고 이전 주인을 받아온다 (후접속 우선).
-    // 서버가 한 종류뿐이라 실제 강제 종료는 아래 Room 인덱스가 처리한다.
-    // 레지스트리는 클라이언트가 직접 붙는 프로세스가 늘었을 때를 위한 것이다.
-    if (registry_ != nullptr) {
-        const auto previous = registry_->claim(accountId_, sessionId_);
-        if (previous.has_value() && previous->serverId != registry_->serverId()) {
-            spdlog::info("{} was connected to {}; that server owns the disconnect", nickname_,
-                         previous->serverId);
-        }
-    }
 
     auto self = session.shared_from_this();
     const auto displaced = room_.join(accountId_, self);
@@ -91,7 +67,7 @@ bool ChatHandler::handleHello(TlsSession& session, const proto::Bytes& body) {
     // 붙이는 것도 막아야 하므로 characterId 로 좁히면 안 된다.
     spdlog::info("joined: {} (character {}, account {} via {}, {}) - {} online", nickname_,
                  characterId_, accountId_, verified.issuer, session.peer(), room_.size());
-    room_.broadcast(makeFrame(proto::encodeNotice(nickname_ + " 님이 들어왔습니다")), &session);
+    room_.broadcast(proto::encodeNotice(nickname_ + " 님이 들어왔습니다"), &session);
     return true;
 }
 
@@ -111,8 +87,22 @@ bool ChatHandler::handleSay(const proto::Bytes& body) {
         return true;
     }
 
+    // 한 사람이 보낸 바이트가 접속자 수만큼 증폭돼 나간다. 프레임 상한(64KiB)에만
+    // 기대면 한 장으로 방 전체의 전송 큐를 채울 수 있다.
+    if (text->size() > proto::kMaxChatTextBytes) {
+        spdlog::warn("{}: dropped a {} byte message", nickname_, text->size());
+        return true;
+    }
+
+    // 도배 차단. 버리기만 하고 끊지는 않는다 — 랙으로 몰려 온 정상 입력도 있다.
+    const auto now = std::chrono::steady_clock::now();
+    if (now - lastSayAt_ < proto::kMinSayInterval) {
+        return true;
+    }
+    lastSayAt_ = now;
+
     spdlog::info("[{}] {}", nickname_, text->str());
-    room_.broadcast(makeFrame(proto::encodeChat(nickname_, text->str())), nullptr);
+    room_.broadcast(proto::encodeChat(nickname_, text->str()), nullptr);
     return true;
 }
 
@@ -126,13 +116,8 @@ void ChatHandler::onClosed(TlsSession& session) {
     auto self = session.shared_from_this();
     room_.leave(accountId_, self);
 
-    // 아직 내 것일 때만 지운다. 자리를 넘겨준 뒤라면 새 주인의 등록이 남아야 한다.
-    if (registry_ != nullptr) {
-        registry_->release(accountId_, sessionId_);
-    }
-
     spdlog::info("left: {} ({}) - {} online", nickname_, session.peer(), room_.size());
-    room_.broadcast(makeFrame(proto::encodeNotice(nickname_ + " 님이 나갔습니다")), nullptr);
+    room_.broadcast(proto::encodeNotice(nickname_ + " 님이 나갔습니다"), nullptr);
 }
 
 }  // namespace heaven::chat

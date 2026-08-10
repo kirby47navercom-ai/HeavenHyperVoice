@@ -21,7 +21,8 @@ struct Options {
     std::uint16_t loginPort = 9100;
     std::uint16_t chatPort = 9000;
     std::uint16_t fieldPort = 9200;
-    std::string chatHost = "127.0.0.1";
+    // 채팅과 필드가 같은 머신에서 뜨므로 주소도 하나다. 나뉘면 그때 쪼갠다.
+    std::string host = "127.0.0.1";
     bool verbose = false;
 };
 
@@ -38,7 +39,8 @@ void printUsage() {
                  "  --login-port <n>  login server port (default 9100)\n"
                  "  --chat-port <n>   chat server port (default 9000)\n"
                  "  --field-port <n>  field server port (default 9200)\n"
-                 "  --chat-host <h>   chat host advertised to clients (default 127.0.0.1)\n"
+                 "  --host <h>        host advertised to clients for chat and field\n"
+                 "                    (default 127.0.0.1)\n"
                  "  --verbose         pass --verbose to the servers\n"
                  "  --help            show this message\n"
                  "\n"
@@ -63,8 +65,8 @@ Options parseArgs(int argc, char** argv) {
             options.chatPort = static_cast<std::uint16_t>(std::stoi(next("--chat-port")));
         } else if (arg == "--field-port") {
             options.fieldPort = static_cast<std::uint16_t>(std::stoi(next("--field-port")));
-        } else if (arg == "--chat-host") {
-            options.chatHost = next("--chat-host");
+        } else if (arg == "--host") {
+            options.host = next("--host");
         } else if (arg == "--verbose") {
             options.verbose = true;
         } else if (arg == "--help" || arg == "-h") {
@@ -163,9 +165,9 @@ int main(int argc, char** argv) {
 
         const std::filesystem::path loginExe = dir / "LoginServer.exe";
         const std::string loginArgs = "LoginServer --port " + std::to_string(options.loginPort) +
-                                      " --chat-host " + options.chatHost + " --chat-port " +
+                                      " --chat-host " + options.host + " --chat-port " +
                                       std::to_string(options.chatPort) + " --field-host " +
-                                      options.chatHost + " --field-port " +
+                                      options.host + " --field-port " +
                                       std::to_string(options.fieldPort) + verbose;
 
         const std::filesystem::path chatExe = dir / "ChatServer.exe";

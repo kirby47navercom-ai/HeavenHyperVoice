@@ -11,7 +11,6 @@
 
 namespace heaven::chat {
 
-using net::Frame;
 using net::TlsSession;
 
 // 입장한 세션들의 집합. 브로드캐스트는 shared 락만 잡는다.
@@ -30,7 +29,7 @@ public:
     // 이미 자리를 넘겨준 옛 세션이 나가면서 새 세션의 인덱스를 지운다.
     void leave(std::uint64_t accountId, const std::shared_ptr<TlsSession>& session);
 
-    void broadcast(const Frame& frame, const TlsSession* except);
+    void broadcast(const proto::Bytes& frame, const TlsSession* except);
     std::size_t size() const;
 
 private:

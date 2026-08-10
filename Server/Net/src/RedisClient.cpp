@@ -93,11 +93,10 @@ bool RedisClient::ensureConnectedLocked() {
     return true;
 }
 
-std::optional<std::string> RedisClient::commandForString(
-    const std::vector<std::string>& arguments) {
-    std::lock_guard<std::mutex> lock(mutex_);
+bool RedisClient::executeLocked(const std::vector<std::string>& arguments,
+                                const std::function<void(void*)>& onReply) {
     if (!ensureConnectedLocked()) {
-        return std::nullopt;
+        return false;
     }
 
     std::vector<const char*> argv;
@@ -117,85 +116,46 @@ std::optional<std::string> RedisClient::commandForString(
     if (reply == nullptr) {
         lastError_ = context_->errstr;
         dropLocked();  // 다음 호출에서 재접속한다
-        return std::nullopt;
+        return false;
     }
     if (reply->type == REDIS_REPLY_ERROR) {
         lastError_ = reply->str != nullptr ? reply->str : "redis error";
-        return std::nullopt;
+        return false;
     }
-    if (reply->type == REDIS_REPLY_STRING) {
-        return std::string(reply->str, reply->len);
-    }
-    // nil 이나 정수 등은 "문자열 없음" 으로 본다.
-    return std::nullopt;
+    onReply(reply);
+    return true;
+}
+
+std::optional<std::string> RedisClient::commandForString(
+    const std::vector<std::string>& arguments) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::optional<std::string> value;
+    executeLocked(arguments, [&value](void* raw) {
+        // nil 이나 정수 등은 "문자열 없음" 으로 본다.
+        auto* reply = static_cast<redisReply*>(raw);
+        if (reply->type == REDIS_REPLY_STRING) {
+            value = std::string(reply->str, reply->len);
+        }
+    });
+    return value;
 }
 
 std::optional<long long> RedisClient::commandForInteger(
     const std::vector<std::string>& arguments) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!ensureConnectedLocked()) {
-        return std::nullopt;
-    }
-
-    std::vector<const char*> argv;
-    std::vector<std::size_t> lengths;
-    argv.reserve(arguments.size());
-    lengths.reserve(arguments.size());
-    for (const std::string& argument : arguments) {
-        argv.push_back(argument.data());
-        lengths.push_back(argument.size());
-    }
-
-    ReplyGuard guard;
-    guard.reply = redisCommandArgv(context_, static_cast<int>(argv.size()), argv.data(),
-                                   lengths.data());
-    auto* reply = static_cast<redisReply*>(guard.reply);
-
-    if (reply == nullptr) {
-        lastError_ = context_->errstr;
-        dropLocked();
-        return std::nullopt;
-    }
-    if (reply->type == REDIS_REPLY_ERROR) {
-        lastError_ = reply->str != nullptr ? reply->str : "redis error";
-        return std::nullopt;
-    }
-    if (reply->type == REDIS_REPLY_INTEGER) {
-        return reply->integer;
-    }
-    return std::nullopt;
+    std::optional<long long> value;
+    executeLocked(arguments, [&value](void* raw) {
+        auto* reply = static_cast<redisReply*>(raw);
+        if (reply->type == REDIS_REPLY_INTEGER) {
+            value = reply->integer;
+        }
+    });
+    return value;
 }
 
 bool RedisClient::command(const std::vector<std::string>& arguments) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!ensureConnectedLocked()) {
-        return false;
-    }
-
-    std::vector<const char*> argv;
-    std::vector<std::size_t> lengths;
-    argv.reserve(arguments.size());
-    lengths.reserve(arguments.size());
-    for (const std::string& argument : arguments) {
-        argv.push_back(argument.data());
-        lengths.push_back(argument.size());
-    }
-
-    ReplyGuard guard;
-    guard.reply = redisCommandArgv(context_, static_cast<int>(argv.size()), argv.data(),
-                                   lengths.data());
-    auto* reply = static_cast<redisReply*>(guard.reply);
-
-    if (reply == nullptr) {
-        lastError_ = context_->errstr;
-        dropLocked();
-        return false;
-    }
-    if (reply->type == REDIS_REPLY_ERROR) {
-        lastError_ = reply->str != nullptr ? reply->str : "redis error";
-        return false;
-    }
-    return true;
+    return executeLocked(arguments, [](void*) {});
 }
 
 }  // namespace heaven::net

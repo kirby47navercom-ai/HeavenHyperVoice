@@ -21,9 +21,6 @@ namespace heaven::net {
 
 class TlsServer;
 
-// 브로드캐스트 시 세션들이 공유하는 프레임 바이트열.
-using Frame = std::shared_ptr<const proto::Bytes>;
-
 // 세션당 전송 대기 바이트 상한. 소켓을 읽지 않는 클라이언트 때문에
 // 큐가 무한정 자라는 것을 막는다. 넘으면 해당 연결을 끊는다.
 inline constexpr std::size_t kMaxSendQueueBytes = 1024 * 1024;
@@ -46,8 +43,8 @@ public:
     void onSendComplete(DWORD bytes, bool ok);
 
     // --- 어느 스레드에서든 호출 가능 ---
+    // 브로드캐스트도 세션마다 따로 암호화해야 하므로 바이트열을 공유해도 얻는 게 없다.
     void send(const proto::Bytes& frame);
-    void send(const Frame& frame);
 
     // 소켓만 닫는다. 실제 정리는 대기 중인 작업이 실패로 완료되면서 이뤄진다.
     void closeSocket();

@@ -100,6 +100,35 @@ void LoginHandler::resume(Stage stage) {
     stage_ = stage;
 }
 
+bool LoginHandler::submitCharacterChange(TlsSession& session,
+                                         std::function<std::pair<bool, const char*>()> work) {
+    auto self = session.shared_from_this();
+    const LoginContext* context = &context_;
+    LoginHandler* handler = this;
+    const std::uint64_t accountId = accountId_;
+
+    // DB 왕복이므로 IOCP 워커에서 하지 않는다.
+    const bool queued = context_.authQueue->submit(
+        [self, context, handler, accountId, work = std::move(work)] {
+            const auto [ok, message] = work();
+
+            // 성공이든 실패든 최신 목록을 같이 보낸다. 클라가 따로 조회할 필요가 없다.
+            const std::vector<Character> characters =
+                context->characters->listByAccount(accountId);
+
+            // 아직 선택이 남았으므로 연결을 유지한다.
+            handler->resume(Stage::AwaitingSelection);
+            self->send(proto::encodeCharacterList(ok, message, characters));
+        });
+
+    if (!queued) {
+        spdlog::warn("{}: auth queue full, refusing request", session.peer());
+        resume(Stage::AwaitingSelection);
+        session.send(proto::encodeCharacterList(false, "서버가 혼잡합니다", {}));
+    }
+    return true;
+}
+
 // -------------------------------------------------------------------- 가입
 
 bool LoginHandler::handleRegister(TlsSession& session,
@@ -137,7 +166,7 @@ bool LoginHandler::handleRegister(TlsSession& session,
     const LoginContext* context = &context_;
     LoginHandler* handler = this;
 
-    context_.authQueue->submit([self, context, handler, user, secret] {
+    const bool queued = context_.authQueue->submit([self, context, handler, user, secret] {
         std::string hash;
         try {
             hash = data::hashPassword(secret);
@@ -173,18 +202,21 @@ bool LoginHandler::handleRegister(TlsSession& session,
         }
     });
 
+    if (!queued) {
+        spdlog::warn("{}: auth queue full, refusing registration", session.peer());
+        finish(session, proto::encodeRegisterResult(false, "서버가 혼잡합니다"));
+    }
     return true;
 }
 
 // ------------------------------------------------------------------ 로그인
 
-bool LoginHandler::handleLogin(TlsSession& session, const HeavenLogin::LoginRequest& source) {
-    const auto* request = &source;
-    const auto* username = request->username();
-    const auto* password = request->password();
+bool LoginHandler::handleLogin(TlsSession& session, const HeavenLogin::LoginRequest& request) {
+    const auto* username = request.username();
+    const auto* password = request.password();
 
     if (username == nullptr || username->size() == 0 ||
-        username->size() > proto::kMaxUsernameBytes ||
+        username->size() > proto::kMaxUsernameChars ||
         (password != nullptr && password->size() > proto::kMaxPasswordBytes)) {
         spdlog::warn("{}: rejected malformed credentials", session.peer());
         fail(session, "아이디 또는 비밀번호 형식이 올바르지 않습니다");
@@ -207,8 +239,9 @@ bool LoginHandler::handleLogin(TlsSession& session, const HeavenLogin::LoginRequ
     const LoginContext* context = &context_;
     LoginHandler* handler = this;
 
-    context_.authQueue->submit([self, context, handler, user = std::move(user),
-                                secret = std::move(secret)] {
+    const bool queued = context_.authQueue->submit([self, context, handler,
+                                                    user = std::move(user),
+                                                    secret = std::move(secret)] {
         const auto account = context->accounts->authenticate(user, secret);
 
         if (!account.has_value()) {
@@ -223,7 +256,6 @@ bool LoginHandler::handleLogin(TlsSession& session, const HeavenLogin::LoginRequ
         {
             std::lock_guard<std::mutex> lock(handler->mutex_);
             handler->accountId_ = account->id;
-            handler->username_ = user;
             handler->stage_ = Stage::AwaitingSelection;
         }
 
@@ -235,6 +267,10 @@ bool LoginHandler::handleLogin(TlsSession& session, const HeavenLogin::LoginRequ
             characters, static_cast<std::uint8_t>(kMaxCharactersPerAccount)));
     });
 
+    if (!queued) {
+        spdlog::warn("{}: auth queue full, refusing login", session.peer());
+        fail(session, "서버가 혼잡합니다. 잠시 후 다시 시도해 주세요");
+    }
     return true;
 }
 
@@ -265,17 +301,13 @@ bool LoginHandler::handleCreateCharacter(TlsSession& session,
         return true;
     }
 
-    auto self = session.shared_from_this();
     const LoginContext* context = &context_;
-    LoginHandler* handler = this;
     const std::uint64_t accountId = accountId_;
 
-    // DB 왕복이므로 IOCP 워커에서 하지 않는다.
-    context_.authQueue->submit([self, context, handler, accountId, nick, speciesId] {
+    return submitCharacterChange(session, [context, accountId, nick, speciesId] {
         const CreateCharacterResult result =
             context->characters->create(accountId, nick, speciesId);
 
-        const bool ok = result == CreateCharacterResult::Created;
         const char* message = nullptr;
         switch (result) {
             case CreateCharacterResult::Created:        message = "캐릭터를 만들었습니다"; break;
@@ -286,6 +318,7 @@ bool LoginHandler::handleCreateCharacter(TlsSession& session,
             case CreateCharacterResult::Error:          message = "서버 오류로 만들지 못했습니다"; break;
         }
 
+        const bool ok = result == CreateCharacterResult::Created;
         if (ok) {
             spdlog::info("character created: {} (account {}, species {})", nick, accountId,
                          speciesId);
@@ -293,16 +326,8 @@ bool LoginHandler::handleCreateCharacter(TlsSession& session,
             spdlog::info("character creation rejected for account {}: {}", accountId,
                          describe(result));
         }
-
-        // 성공이든 실패든 최신 목록을 같이 보낸다. 클라가 따로 조회할 필요가 없다.
-        const std::vector<Character> characters = context->characters->listByAccount(accountId);
-
-        // 아직 선택이 남았으므로 연결을 유지한다.
-        handler->resume(Stage::AwaitingSelection);
-        self->send(proto::encodeCharacterList(ok, message, characters));
+        return std::pair{ok, message};
     });
-
-    return true;
 }
 
 // ------------------------------------------------------------- 캐릭터 선택
@@ -316,7 +341,8 @@ bool LoginHandler::handleSelectCharacter(TlsSession& session,
     LoginHandler* handler = this;
     const std::uint64_t accountId = accountId_;
 
-    context_.authQueue->submit([self, context, handler, accountId, characterId] {
+    const bool queued = context_.authQueue->submit([self, context, handler, accountId,
+                                                    characterId] {
         // accountId 는 서버가 인증 후에 정한 값이다. 조회를 이걸로 좁히므로
         // 남의 캐릭터 번호를 보내도 찾히지 않는다.
         const auto character = context->characters->find(accountId, characterId);
@@ -366,6 +392,10 @@ bool LoginHandler::handleSelectCharacter(TlsSession& session,
                         proto::encodeSelectCharacterSuccess(endpoints, character->nickname));
     });
 
+    if (!queued) {
+        spdlog::warn("{}: auth queue full, refusing character select", session.peer());
+        finish(session, proto::encodeSelectCharacterFailure("서버가 혼잡합니다"));
+    }
     return true;
 }
 
@@ -380,14 +410,12 @@ bool LoginHandler::handleDeleteCharacter(TlsSession& session,
         return true;
     }
 
-    auto self = session.shared_from_this();
     const LoginContext* context = &context_;
-    LoginHandler* handler = this;
     const std::uint64_t accountId = accountId_;
     const std::uint64_t characterId = request.character_id();
     const std::string typed = confirm->str();
 
-    context_.authQueue->submit([self, context, handler, accountId, characterId, typed] {
+    return submitCharacterChange(session, [context, accountId, characterId, typed] {
         const data::DeleteResult result =
             context->characters->remove(accountId, characterId, typed);
 
@@ -409,27 +437,19 @@ bool LoginHandler::handleDeleteCharacter(TlsSession& session,
             spdlog::info("character delete rejected for account {}: {}", accountId,
                          describe(result));
         }
-
-        const std::vector<data::Character> characters =
-            context->characters->listByAccount(accountId);
-        handler->resume(Stage::AwaitingSelection);
-        self->send(proto::encodeCharacterList(ok, message, characters));
+        return std::pair{ok, message};
     });
-
-    return true;
 }
 
 // ------------------------------------------------------------- 파트너 방생
 
 bool LoginHandler::handleReleasePartner(TlsSession& session,
                                         const HeavenLogin::ReleasePartnerRequest& request) {
-    auto self = session.shared_from_this();
     const LoginContext* context = &context_;
-    LoginHandler* handler = this;
     const std::uint64_t accountId = accountId_;
     const std::uint64_t characterId = request.character_id();
 
-    context_.authQueue->submit([self, context, handler, accountId, characterId] {
+    return submitCharacterChange(session, [context, accountId, characterId] {
         const data::DeleteResult result =
             context->characters->releasePartner(accountId, characterId);
 
@@ -447,14 +467,8 @@ bool LoginHandler::handleReleasePartner(TlsSession& session,
         if (ok) {
             spdlog::info("partner released: character {} (account {})", characterId, accountId);
         }
-
-        const std::vector<data::Character> characters =
-            context->characters->listByAccount(accountId);
-        handler->resume(Stage::AwaitingSelection);
-        self->send(proto::encodeCharacterList(ok, message, characters));
+        return std::pair{ok, message};
     });
-
-    return true;
 }
 
 }  // namespace heaven::login

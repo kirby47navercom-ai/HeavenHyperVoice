@@ -1,41 +1,22 @@
 #include <spdlog/spdlog.h>
-#include <windows.h>
 
 #include <chrono>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
 #include <memory>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 
 #include "AuthTicket.h"
-#include "Credentials.h"
 #include "DevStore.h"
-#include "DevPaths.h"
 #include "LoginHandler.h"
 #include "OdbcStore.h"
 #include "PasswordHash.h"
-#include "TlsServer.h"
-#include "WorkQueue.h"
+#include "ServerMain.h"
 
 namespace {
-
-heaven::net::TlsServer* g_server = nullptr;
-
-// MSVC 는 getenv 를 안전하지 않다고 경고한다.
-std::optional<std::string> environmentValue(const char* name) {
-    char* buffer = nullptr;
-    std::size_t size = 0;
-    if (_dupenv_s(&buffer, &size, name) != 0 || buffer == nullptr) {
-        return std::nullopt;
-    }
-    std::string value(buffer);
-    std::free(buffer);
-    return value;
-}
 
 struct Options {
     std::uint16_t port = 9100;
@@ -62,7 +43,6 @@ struct Options {
 
     // 아래 셋 중 하나라도 지정되면 그 일만 하고 종료한다. 서버는 뜨지 않는다.
     bool hashOnly = false;
-    std::string passwordToHash;
     bool saveDbPassword = false;
     bool forgetDbPassword = false;
 };
@@ -106,9 +86,10 @@ void printUsage() {
                  "                        launcher works by double-click, with no environment\n"
                  "                        setup. The password never goes on the command line.\n"
                  "  --forget-db-password  remove the stored password.\n"
-                 "  --hash-password <p>   print an argon2id hash for <p>. Use it to seed\n"
-                 "                        accounts.password_hash by hand. The hash goes to\n"
-                 "                        stdout, timings to stderr.\n";
+                 "  --hash-password       prompt for a password and print its argon2id hash.\n"
+                 "                        Use it to seed accounts.password_hash by hand. The\n"
+                 "                        hash goes to stdout, timings to stderr. The password\n"
+                 "                        is read from the console, never from the command line.\n";
 }
 
 Options parseArgs(int argc, char** argv) {
@@ -170,7 +151,6 @@ Options parseArgs(int argc, char** argv) {
         } else if (arg == "--verbose") {
             options.verbose = true;
         } else if (arg == "--hash-password") {
-            options.passwordToHash = next("--hash-password");
             options.hashOnly = true;
         } else if (arg == "--save-db-password") {
             options.saveDbPassword = true;
@@ -187,9 +167,16 @@ Options parseArgs(int argc, char** argv) {
 }
 
 // --hash-password 처리. 해시는 stdout 으로, 진단은 stderr 로 내보내
-// `LoginServer --hash-password x 2>NUL` 로 해시만 뽑아 쓸 수 있게 한다.
-int printPasswordHash(const std::string& password) {
-    const auto params = heaven::data::currentHashParameters();
+// `LoginServer --hash-password 2>NUL` 로 해시만 뽑아 쓸 수 있게 한다.
+//
+// 비밀번호는 콘솔에서 받는다. 인자로 받으면 프로세스 목록과 셸 히스토리에 남는다.
+int printPasswordHash() {
+    std::cerr << "password: " << std::flush;
+    const std::string password = heaven::net::readHiddenLine();
+    if (password.empty()) {
+        std::cerr << "nothing entered" << std::endl;
+        return 1;
+    }
 
     const auto started = std::chrono::steady_clock::now();
     const std::string encoded = heaven::data::hashPassword(password);
@@ -204,11 +191,10 @@ int printPasswordHash(const std::string& password) {
         return std::chrono::duration<double, std::milli>(to - from).count();
     };
 
+    // 인코딩 문자열이 이미 m/t/p 를 담고 있으므로 따로 찍지 않는다.
     std::cout << encoded << std::endl;
 
-    std::cerr << "argon2id  m=" << params.memoryKiB << "KiB t=" << params.iterations
-              << " p=" << params.parallelism << '\n'
-              << "hash      " << ms(started, hashed) << " ms\n"
+    std::cerr << "hash      " << ms(started, hashed) << " ms\n"
               << "verify    " << ms(hashed, verified) << " ms\n"
               << "round trip " << (roundTrip ? "ok" : "FAILED")
               << ", wrong password " << (rejectsWrong ? "rejected" : "ACCEPTED") << std::endl;
@@ -216,85 +202,31 @@ int printPasswordHash(const std::string& password) {
     return (roundTrip && rejectsWrong) ? 0 : 1;
 }
 
-// 콘솔에서 에코 없이 한 줄 읽는다.
-std::string readHiddenLine() {
-    const HANDLE input = ::GetStdHandle(STD_INPUT_HANDLE);
-    DWORD mode = 0;
-    const bool isConsole = ::GetConsoleMode(input, &mode) != 0;
-    if (isConsole) {
-        ::SetConsoleMode(input, mode & ~static_cast<DWORD>(ENABLE_ECHO_INPUT));
-    }
-
-    std::string line;
-    std::getline(std::cin, line);
-
-    if (isConsole) {
-        ::SetConsoleMode(input, mode);
-        std::cout << std::endl;
-    }
-    return line;
-}
-
-int saveDatabasePassword() {
-    std::cout << "database password: " << std::flush;
-    const std::string password = readHiddenLine();
-    if (password.empty()) {
-        std::cerr << "nothing entered, not stored" << std::endl;
-        return 1;
-    }
-
-    heaven::net::storePassword(heaven::net::kDbCredentialTarget, password);
-    std::cout << "stored in the Windows Credential Manager as '"
-              << heaven::net::kDbCredentialTarget << "'.\n"
-              << "It is encrypted for your Windows account. The launcher can now start the\n"
-              << "servers without HHV_DB_PASSWORD being set." << std::endl;
-    return 0;
-}
-
-int forgetDatabasePassword() {
-    const bool removed = heaven::net::erasePassword(heaven::net::kDbCredentialTarget);
-    std::cout << (removed ? "stored database password removed"
-                          : "no stored database password to remove")
-              << std::endl;
-    return 0;
-}
-
-BOOL WINAPI consoleHandler(DWORD signal) {
-    if (signal == CTRL_C_EVENT || signal == CTRL_BREAK_EVENT || signal == CTRL_CLOSE_EVENT) {
-        spdlog::info("shutting down");
-        if (g_server != nullptr) {
-            g_server->stop();
-        }
-        return TRUE;
-    }
-    return FALSE;
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
     try {
         const Options options = parseArgs(argc, argv);
-        spdlog::set_level(options.verbose ? spdlog::level::debug : spdlog::level::info);
-        spdlog::set_pattern("[%H:%M:%S.%e] [%^%l%$] %v");
+        heaven::net::initLogging(options.verbose);
 
         // 인증서도 키도 필요 없는 경로들이다. 서버를 띄우기 전에 처리한다.
         if (options.hashOnly) {
-            return printPasswordHash(options.passwordToHash);
+            return printPasswordHash();
         }
         if (options.saveDbPassword) {
-            return saveDatabasePassword();
+            return heaven::net::storePasswordInteractive(heaven::net::kDbCredentialTarget,
+                                                         "database");
         }
         if (options.forgetDbPassword) {
-            return forgetDatabasePassword();
+            return heaven::net::erasePasswordAndReport(heaven::net::kDbCredentialTarget,
+                                                       "database");
         }
 
-        const std::string cert = heaven::net::resolveResourcePath(options.certFile, "certificate");
-        const std::string key = heaven::net::resolveResourcePath(options.keyFile, "private key");
-        const std::string authKey =
-            heaven::net::resolveResourcePath(options.authKeyFile, "ticket signing key");
+        const auto files = heaven::net::resolveServerFiles(
+            options.certFile, options.keyFile, options.authKeyFile, "ticket signing key");
+        const std::string& authKey = files.ticketKey;
 
-        heaven::net::TlsContext tls(cert, key);
+        heaven::net::TlsContext tls(files.certificate, files.privateKey);
         heaven::proto::TicketSigner signer(authKey, options.keyId);
 
         // 계정과 캐릭터는 인터페이스가 나뉘어 있지만 구현은 하나다.
@@ -312,15 +244,8 @@ int main(int argc, char** argv) {
             heaven::data::OdbcSettings db = options.db;
             db.poolSize = options.authThreads;
 
-            // DB 비밀번호는 명령줄로 받지 않는다. 프로세스 목록에서 다 보이기 때문이다.
-            // 환경변수를 먼저 본다 (CI 나 컨테이너용). 없으면 자격증명 관리자.
-            if (const auto fromEnv = environmentValue("HHV_DB_PASSWORD")) {
-                db.password = *fromEnv;
-                spdlog::debug("database password came from HHV_DB_PASSWORD");
-            } else if (const auto stored =
-                           heaven::net::readStoredPassword(heaven::net::kDbCredentialTarget)) {
-                db.password = *stored;
-                spdlog::debug("database password came from the Windows Credential Manager");
+            if (const auto password = heaven::net::databasePassword()) {
+                db.password = *password;
             } else if (db.connectionString.empty()) {
                 throw std::runtime_error(
                     "no database password available.\n"
@@ -364,8 +289,7 @@ int main(int argc, char** argv) {
             return std::make_unique<heaven::login::LoginHandler>(context);
         });
 
-        g_server = &server;
-        ::SetConsoleCtrlHandler(consoleHandler, TRUE);
+        heaven::net::installConsoleHandler(server);
 
         spdlog::info("LoginServer listening on port {} (TLS, IOCP)", options.port);
         spdlog::info("signing key: {} (key_id={})", authKey, options.keyId);
@@ -389,8 +313,6 @@ int main(int argc, char** argv) {
         // 큐를 먼저 비워야 대기 중인 인증이 응답을 보내고 끝난다.
         // accounts 보다 먼저 정리해야 작업이 죽은 저장소를 만지지 않는다.
         authQueue.stop();
-
-        g_server = nullptr;
         return 0;
     } catch (const std::exception& e) {
         spdlog::error("fatal: {}", e.what());

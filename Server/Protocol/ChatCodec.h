@@ -3,6 +3,7 @@
 // 채팅 메시지 인코딩/검증.
 // 채팅 프로토콜을 바꿀 때 손대야 할 곳은 chat.fbs 와 이 파일뿐이다.
 
+#include <chrono>
 #include <string>
 #include <string_view>
 
@@ -10,6 +11,13 @@
 #include "chat_generated.h"
 
 namespace heaven::proto {
+
+// 한 발화의 상한. 프레임 상한(64KiB)에만 기대면 한 사람이 보낸 64KiB 가
+// 접속자 수만큼 증폭돼 나간다.
+inline constexpr std::size_t kMaxChatTextBytes = 1024;
+
+// 발화 사이 최소 간격. 사람이 치는 속도보다 넉넉하다.
+inline constexpr std::chrono::milliseconds kMinSayInterval{200};
 
 // 닉네임은 티켓 안에 있다. 클라이언트가 스스로 주장하지 않는다.
 inline Bytes encodeHello(const Bytes& ticket) {

@@ -4,6 +4,7 @@
 // windows.h 를 먼저 넣어야 wincred.h 가 필요한 타입을 찾는다.
 #include <wincred.h>
 
+#include <iostream>
 #include <stdexcept>
 #include <vector>
 
@@ -68,6 +69,47 @@ void storePassword(const std::string& target, const std::string& password) {
 bool erasePassword(const std::string& target) {
     const std::wstring wideTarget = widen(target);
     return ::CredDeleteW(wideTarget.c_str(), CRED_TYPE_GENERIC, 0) != FALSE;
+}
+
+std::string readHiddenLine() {
+    const HANDLE input = ::GetStdHandle(STD_INPUT_HANDLE);
+    DWORD mode = 0;
+    const bool isConsole = ::GetConsoleMode(input, &mode) != 0;
+    if (isConsole) {
+        ::SetConsoleMode(input, mode & ~static_cast<DWORD>(ENABLE_ECHO_INPUT));
+    }
+
+    std::string line;
+    std::getline(std::cin, line);
+
+    if (isConsole) {
+        ::SetConsoleMode(input, mode);
+        std::cout << std::endl;
+    }
+    return line;
+}
+
+int storePasswordInteractive(const std::string& target, const char* label) {
+    std::cout << label << " password: " << std::flush;
+    const std::string password = readHiddenLine();
+    if (password.empty()) {
+        std::cerr << "nothing entered, not stored" << std::endl;
+        return 1;
+    }
+
+    storePassword(target, password);
+    std::cout << "stored in the Windows Credential Manager as '" << target << "'.\n"
+              << "It is encrypted for your Windows account, so the servers can start\n"
+              << "without any environment setup." << std::endl;
+    return 0;
+}
+
+int erasePasswordAndReport(const std::string& target, const char* label) {
+    const bool removed = erasePassword(target);
+    std::cout << (removed ? std::string("stored ") + label + " password removed"
+                          : std::string("no stored ") + label + " password to remove")
+              << std::endl;
+    return 0;
 }
 
 }  // namespace heaven::net

@@ -196,14 +196,14 @@ accounts            id, username, password_hash, token_version, status, ...
 
 **현재 체력과 실시간 위치는 스키마에 없다.** 잃어도 되는 값이라 Redis 로 간다 (아래).
 
-### 세션 레지스트리 (Redis / Memurai)
+### 위치 캐시 (Redis / Memurai)
 
-ChatServer 는 접속 중인 계정을 Redis 에 `session:{account_id} → {server_id}|{session_id}`
-로 등록한다. Windows 에서는 Redis 호환 서버인 **Memurai** 를 쓴다.
+FieldServer 는 캐릭터의 실시간 위치를 Redis 에 `pos:{character_id}` 로 둔다.
+Windows 에서는 Redis 호환 서버인 **Memurai** 를 쓴다.
 
 ```powershell
 .\tools\setup-memurai.ps1                                            # 관리자 권한, 최초 1회
-.\build\windows-x64\bin\Debug\ChatServer.exe --save-redis-password   # 최초 1회
+.\build\windows-x64\bin\Debug\FieldServer.exe --save-redis-password  # 최초 1회
 ```
 
 `setup-memurai.ps1` 은 벤더 설정 파일 끝에 표시된 블록만 덧붙인다(`-Remove` 로 되돌림).
@@ -213,14 +213,13 @@ ChatServer 는 접속 중인 계정을 Redis 에 `session:{account_id} → {serv
 비밀번호는 DB 와 같은 이유로 명령줄로 받지 않고 자격증명 관리자에 둔다
 (`--forget-redis-password` 로 삭제).
 
-**레지스트리는 없어도 되는 자원이다.** 못 붙으면 경고만 남기고 채팅은 그대로 받는다
+**캐시는 없어도 되는 자원이다.** 못 붙으면 경고만 남기고 위치를 DB 로만 읽고 쓴다
 (`--no-redis` 로 아예 끌 수도 있다). Redis 가 중간에 죽어도 마찬가지이며,
 `RedisClient` 는 200 ms 타임아웃을 걸어 멈춘 Redis 가 IOCP 워커를 붙잡지 못하게 한다.
 
 ```powershell
 --redis-host <h> --redis-port <n>   # 기본 127.0.0.1:6379
---server-id <id>                    # 레지스트리에 기록될 이 프로세스 이름 (기본 chat-1)
---no-redis                          # 레지스트리 없이 기동
+--no-redis                          # 캐시 없이 기동
 ```
 
 RedisInsight 같은 GUI 로 붙을 때도 `requirepass` 를 설정했으므로 연결 설정에 같은
@@ -234,12 +233,10 @@ RedisInsight 같은 GUI 로 붙을 때도 `requirepass` 를 설정했으므로 �
 | 데이터 | 어디 | 이유 |
 |---|---|---|
 | 계정, 캐릭터, 포켓몬 종족·스탯 | MySQL | 잃으면 사고 |
-| 접속 위치 (`session:`) | Redis | 클라가 다시 붙으면 복구된다 |
 | 캐릭터·포켓몬 실시간 위치 | Redis | 저장된 위치로 리스폰하면 된다 |
 | 인스턴스 안 포켓몬 현재 체력 | Redis | 인스턴스가 끝나면 버린다 |
 
 ```
-session:{account_id}               "{server_id}|{session_id}"   TTL 60
 pos:{character_id}                 "map|x|y|facing"             TTL 300, 60초마다 갱신
 inst:{instance_id}:{character_id}  hash{pet_hp, pet_x, pet_y}   (설계만, 미구현)
 ```
@@ -337,16 +334,9 @@ Redis 자신이 재시작하면 같이 사라진다 — "서버만 죽는" 흔�
 서로 다른 서비스라 같은 계정이 양쪽에 붙어 있는 것이 정상이고, 막는 것은 **한 서비스
 안에서의 중복**이다.
 
-Redis 레지스트리는 **같은 서비스가 여러 프로세스로 늘어날 때**를 위한 것이다.
-지금은 각 서버가 하나씩이라 기능적으로 꼭 필요하지는 않다.
-
-| 동작 | 명령 | 이유 |
-|---|---|---|
-| 등록 | `SET session:{id} {server}|{session} EX 60 GET` | 덮어쓰기와 이전 주인 조회가 한 번에 일어난다 (Redis 6.2+) |
-| 해제 | `EVAL` 로 값 비교 후 `DEL` | GET/DEL 을 나눠 하면 그 사이 새 주인의 등록을 지워 새 세션이 유령이 된다 |
-| 갱신 | 20초마다 `SET ... EX 60` | `EXPIRE` 가 아니라 `SET` 이라, Redis 가 재시작돼 키가 사라져도 다음 주기에 스스로 복구된다 |
-
-TTL 을 두는 이유는 서버가 비정상 종료돼도 등록이 영원히 남지 않게 하기 위해서다.
+같은 서비스가 여러 프로세스로 늘어나면 프로세스 경계 너머로 계정을 봐야 하고, 그때는
+Redis 에 세션 레지스트리를 두게 된다. 지금은 각 서비스가 한 프로세스씩이라 위의 인메모리
+인덱스로 충분하다 — 필요해지는 시점에 넣는다.
 
 ## 빌드
 
@@ -446,11 +436,15 @@ python .\tools\webclient\bridge.py     # http://127.0.0.1:8080
 | `maxSessionLifetime` | 120초 (로그인만) | `Net/src/TlsServer.h` | 로그인만 하고 캐릭터를 고르지 않는 연결 |
 | `kMaxSendQueueBytes` | 1 MiB | `Net/src/TlsSession.h` | 소켓을 읽지 않는 클라이언트로 인한 큐 폭증 |
 | `kMaxBodyBytes` | 64 KiB | `Protocol/Framing.h` | 거대한 길이 접두사로 메모리를 할당시키는 것 |
-| `kMaxUsernameBytes` | 32 | `Protocol/LoginCodec.h` | 과도한 길이의 아이디 |
+| `kMaxUsernameChars` | 32 | `Protocol/LoginCodec.h` | 과도한 길이의 아이디 |
 | `kMaxPasswordBytes` | 128 | `Protocol/LoginCodec.h` | argon2 에 거대한 입력을 밀어 넣는 것 |
+| `kMaxChatTextBytes` | 1 KiB | `Protocol/ChatCodec.h` | 한 발화가 접속자 수만큼 증폭돼 나가는 것 |
+| `kMinSayInterval` | 200 ms | `Protocol/ChatCodec.h` | 채팅 도배 |
 | `kMaxCharactersPerAccount` | 3 | `Data/src/CharacterStore.h` | 무한 캐릭터 생성 |
 | `kMaxSpeed` | 600 uu/s | `Protocol/FieldGeometry.h` | 순간이동·스피드핵 (거절이 아니라 클램프) |
+| `kMinMoveInterval` | 10 ms | `Protocol/FieldGeometry.h` | Move 도배로 월드 락을 독점하는 것 |
 | `kEnterRadius` / `kExitRadius` | 2800 / 3200 uu | `Protocol/FieldGeometry.h` | 시야 밖 좌표 유출, 경계 깜빡임 |
+| `kMaxPendingPerThread` | 64 | `Net/src/WorkQueue.h` | 인증 큐가 무한정 자라 메모리를 채우는 것 |
 
 전송 큐가 상한에 닿으면 해당 연결만 끊는다. 다른 참가자는 영향받지 않는다.
 핸드셰이크 타임아웃은 1초 주기 감시 스레드가 검사하므로 실제로는 최대 1초 늦게 걸린다.
@@ -514,10 +508,9 @@ IOCP 워커가 여럿이므로 아래 규칙을 지켜야 한다.
 - **부하/악성 입력 시험 수단이 없다.** 전송 큐 상한(`--stall` + `--flood`)과 위조·만료
   티켓 거절은 C++ TestClient 로 확인했었고, 그걸 지우면서 재현 수단도 같이 없어졌다.
   브라우저 클라이언트는 정상 흐름만 다룬다.
-- **세션 레지스트리는 아직 강제력이 없다.** 다른 서버가 갖고 있는 세션을 발견해도
-  로그만 남긴다. 실제로 끊으려면 서버 간 통지 경로(pub/sub 등)가 필요하다.
-  필드와 채팅은 서로 다른 서비스라 같은 계정이 양쪽에 붙어 있는 것이 정상이고,
-  중복 차단은 각 서버 안에서 계정 단위로 한다.
+- **중복 차단은 프로세스 안에서만 한다.** 각 서버가 계정 인덱스를 메모리에 들고 있다.
+  같은 서비스를 여러 프로세스로 늘리면 그때 공유 레지스트리와 서버 간 통지 경로가
+  필요하다. 필드와 채팅은 서로 다른 서비스라 같은 계정이 양쪽에 붙는 것이 정상이다.
 - **이동이 클라이언트 권위다.** 서버는 속도 상한만 검사한다. 벽 통과나 지형 무시는
   막지 못한다 — 충돌 판정과 서버 권위 이동은 맵 데이터가 들어온 뒤의 일이다.
 - **DB 자격증명을 가진 프로세스가 둘이다** (LoginServer, FieldServer). 셋을 넘으면
@@ -525,4 +518,6 @@ IOCP 워커가 여럿이므로 아래 규칙을 지켜야 한다.
 - **Memurai 설정 파일에 비밀번호가 평문으로 들어간다.** `Program Files` 는 로컬
   사용자가 읽을 수 있으므로 "아무 프로세스나 캐시를 조작하는 것"을 막는 수준이다.
   실제 배포에서는 Redis ACL 과 파일 권한을 함께 써야 한다.
-- 자동 테스트가 없다. 검증은 수동 시나리오다.
+- **자동 테스트가 거의 없다.** 채팅 발화 상한만 `tools\test-chat-limits.py` 로 확인한다
+  (서버를 띄운 뒤 실행). 나머지는 수동 시나리오이며, 컴파일 시점 검사는
+  `FieldGeometry.h` 와 `PokemonSpecies.h` 의 `static_assert` 가 전부다.

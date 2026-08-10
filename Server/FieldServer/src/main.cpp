@@ -1,5 +1,4 @@
 #include <spdlog/spdlog.h>
-#include <windows.h>
 
 #include <atomic>
 #include <chrono>
@@ -7,35 +6,18 @@
 #include <exception>
 #include <iostream>
 #include <memory>
-#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
 
-#include "Credentials.h"
-#include "DevPaths.h"
 #include "FieldHandler.h"
 #include "OdbcStore.h"
 #include "RedisClient.h"
-#include "TlsServer.h"
-#include "WorkQueue.h"
+#include "ServerMain.h"
 #include "World.h"
 
 namespace {
-
-heaven::net::TlsServer* g_server = nullptr;
-
-std::optional<std::string> environmentValue(const char* name) {
-    char* buffer = nullptr;
-    std::size_t size = 0;
-    if (_dupenv_s(&buffer, &size, name) != 0 || buffer == nullptr) {
-        return std::nullopt;
-    }
-    std::string value(buffer);
-    std::free(buffer);
-    return value;
-}
 
 struct Options {
     std::uint16_t port = 9200;
@@ -54,6 +36,10 @@ struct Options {
     bool useRedis = true;
 
     heaven::data::OdbcSettings db;
+
+    // 지정되면 그 일만 하고 종료한다.
+    bool saveRedisPassword = false;
+    bool forgetRedisPassword = false;
 };
 
 void printUsage() {
@@ -70,11 +56,20 @@ void printUsage() {
                  "  --redis-host <h>    default 127.0.0.1\n"
                  "  --redis-port <n>    default 6379\n"
                  "  --no-redis          skip the position cache; load and save via the DB only\n"
+                 "  --db-driver <name>  ODBC driver name (default: auto-detected)\n"
                  "  --db-host <h>       database host (default 127.0.0.1)\n"
+                 "  --db-port <n>       database port (default 3306)\n"
                  "  --db-name <n>       database name (default hhv)\n"
                  "  --db-user <u>       database user (default hhv_server)\n"
+                 "  --db-conn <str>     full ODBC connection string, overrides the above\n"
                  "  --verbose           enable debug logging\n"
-                 "  --help              show this message\n";
+                 "  --help              show this message\n"
+                 "\n"
+                 "Run once, then exit (no server is started)\n"
+                 "  --save-redis-password    prompt for the Redis password and store it in the\n"
+                 "                           Windows Credential Manager. The password never goes\n"
+                 "                           on the command line.\n"
+                 "  --forget-redis-password  remove the stored password.\n";
 }
 
 Options parseArgs(int argc, char** argv) {
@@ -108,12 +103,22 @@ Options parseArgs(int argc, char** argv) {
             options.redisPort = static_cast<std::uint16_t>(std::stoi(next("--redis-port")));
         } else if (arg == "--no-redis") {
             options.useRedis = false;
+        } else if (arg == "--save-redis-password") {
+            options.saveRedisPassword = true;
+        } else if (arg == "--forget-redis-password") {
+            options.forgetRedisPassword = true;
+        } else if (arg == "--db-driver") {
+            options.db.driver = next("--db-driver");
         } else if (arg == "--db-host") {
             options.db.server = next("--db-host");
+        } else if (arg == "--db-port") {
+            options.db.port = static_cast<std::uint16_t>(std::stoi(next("--db-port")));
         } else if (arg == "--db-name") {
             options.db.database = next("--db-name");
         } else if (arg == "--db-user") {
             options.db.user = next("--db-user");
+        } else if (arg == "--db-conn") {
+            options.db.connectionString = next("--db-conn");
         } else if (arg == "--verbose") {
             options.verbose = true;
         } else if (arg == "--help" || arg == "-h") {
@@ -126,31 +131,28 @@ Options parseArgs(int argc, char** argv) {
     return options;
 }
 
-BOOL WINAPI consoleHandler(DWORD signal) {
-    if (signal == CTRL_C_EVENT || signal == CTRL_BREAK_EVENT || signal == CTRL_CLOSE_EVENT) {
-        spdlog::info("shutting down");
-        if (g_server != nullptr) {
-            g_server->stop();
-        }
-        return TRUE;
-    }
-    return FALSE;
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
     try {
         const Options options = parseArgs(argc, argv);
-        spdlog::set_level(options.verbose ? spdlog::level::debug : spdlog::level::info);
-        spdlog::set_pattern("[%H:%M:%S.%e] [%^%l%$] %v");
+        heaven::net::initLogging(options.verbose);
 
-        const std::string cert = heaven::net::resolveResourcePath(options.certFile, "certificate");
-        const std::string key = heaven::net::resolveResourcePath(options.keyFile, "private key");
-        const std::string authPub =
-            heaven::net::resolveResourcePath(options.authPubFile, "ticket public key");
+        // 자격증명만 만지고 끝나는 경로들이다. 서버를 띄우기 전에 처리한다.
+        if (options.forgetRedisPassword) {
+            return heaven::net::erasePasswordAndReport(heaven::net::kRedisCredentialTarget,
+                                                       "Redis");
+        }
+        if (options.saveRedisPassword) {
+            return heaven::net::storePasswordInteractive(heaven::net::kRedisCredentialTarget,
+                                                         "Redis");
+        }
 
-        heaven::net::TlsContext tls(cert, key);
+        const auto files = heaven::net::resolveServerFiles(
+            options.certFile, options.keyFile, options.authPubFile, "ticket public key");
+        const std::string& authPub = files.ticketKey;
+
+        heaven::net::TlsContext tls(files.certificate, files.privateKey);
 
         // 공개키만 갖는다. 티켓을 검증할 수는 있어도 발급할 수는 없다.
         heaven::proto::PublicKeyRing keys;
@@ -158,11 +160,8 @@ int main(int argc, char** argv) {
 
         heaven::data::OdbcSettings db = options.db;
         db.poolSize = options.dbThreads;
-        if (const auto fromEnv = environmentValue("HHV_DB_PASSWORD")) {
-            db.password = *fromEnv;
-        } else if (const auto stored =
-                       heaven::net::readStoredPassword(heaven::net::kDbCredentialTarget)) {
-            db.password = *stored;
+        if (const auto password = heaven::net::databasePassword()) {
+            db.password = *password;
         } else {
             throw std::runtime_error(
                 "no database password available.\n"
@@ -178,7 +177,7 @@ int main(int argc, char** argv) {
             redisSettings.host = options.redisHost;
             redisSettings.port = options.redisPort;
             if (const auto stored =
-                    heaven::net::readStoredPassword("HeavenHyperVoice/redis")) {
+                    heaven::net::readStoredPassword(heaven::net::kRedisCredentialTarget)) {
                 redisSettings.password = *stored;
             }
             redis = std::make_unique<heaven::net::RedisClient>(redisSettings);
@@ -208,8 +207,7 @@ int main(int argc, char** argv) {
             return std::make_unique<heaven::field::FieldHandler>(context);
         });
 
-        g_server = &server;
-        ::SetConsoleCtrlHandler(consoleHandler, TRUE);
+        heaven::net::installConsoleHandler(server);
 
         spdlog::info("FieldServer listening on port {} (TLS, IOCP)", options.port);
         spdlog::info("ticket public key: {} (key_id={}, audience={})", authPub, options.keyId,
@@ -256,7 +254,6 @@ int main(int argc, char** argv) {
 
         // 큐를 먼저 비워야 대기 중인 위치 저장이 끝난다.
         dbQueue.stop();
-        g_server = nullptr;
         return 0;
     } catch (const std::exception& e) {
         spdlog::error("fatal: {}", e.what());

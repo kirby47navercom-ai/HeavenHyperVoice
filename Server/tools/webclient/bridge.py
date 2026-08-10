@@ -511,6 +511,16 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass  # the console is for the game, not for access logs
 
+    def origin_allowed(self):
+        # 브라우저는 교차 출처 요청에도 Origin 을 붙인다. 이 검사가 없으면
+        # 사용자가 연 아무 사이트나 이 localhost 브리지에 붙어 게임 세션을
+        # 조종할 수 있다 (WebSocket 은 동일 출처 정책이 막아주지 않는다).
+        origin = self.headers.get("Origin")
+        if origin is None:
+            return True  # curl 등 브라우저가 아닌 클라이언트
+        host = self.headers.get("Host", "")
+        return origin in (f"http://{host}", f"https://{host}")
+
     def reply(self, payload, status=200):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -534,6 +544,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def serve_websocket(self):
+        if not self.origin_allowed():
+            return self.send_error(403, "cross-origin websocket rejected")
+
         key = self.headers.get("Sec-WebSocket-Key")
         if not key:
             return self.send_error(400, "not a websocket handshake")
@@ -586,6 +599,9 @@ class Handler(BaseHTTPRequestHandler):
             drop_session(token)
 
     def do_POST(self):
+        if not self.origin_allowed():
+            return self.reply({"ok": False, "message": "cross-origin request rejected"}, 403)
+
         length = int(self.headers.get("Content-Length", 0))
         try:
             body = json.loads(self.rfile.read(length) or b"{}")

@@ -131,6 +131,27 @@ void bindUInt16(SQLHSTMT statement, SQLUSMALLINT index, std::uint16_t& value, SQ
 
 constexpr std::size_t kMaxTextChars = 256;
 
+// 드라이버 이름에 박힌 버전 번호. "MySQL ODBC 9.4 Unicode Driver" -> 904.
+// 사전순으로 비교하면 "9.4" 가 "26.7" 보다 뒤라 구버전을 고르게 된다.
+int driverVersion(const std::string& name) {
+    const std::size_t start = name.find_first_of("0123456789");
+    if (start == std::string::npos) {
+        return -1;
+    }
+    int major = 0;
+    int minor = 0;
+    std::size_t i = start;
+    for (; i < name.size() && std::isdigit(static_cast<unsigned char>(name[i])); ++i) {
+        major = major * 10 + (name[i] - '0');
+    }
+    if (i < name.size() && name[i] == '.') {
+        for (++i; i < name.size() && std::isdigit(static_cast<unsigned char>(name[i])); ++i) {
+            minor = minor * 10 + (name[i] - '0');
+        }
+    }
+    return major * 100 + minor;
+}
+
 // 개체값을 굴린다. 스탯당 0~31 이고 태어날 때 한 번 정해진다.
 proto::StatSpread rollIndividualValues() {
     // 게임 밸런스용이라 암호학적 난수가 필요하지 않다. 스레드마다 하나 둔다.
@@ -167,6 +188,7 @@ std::string findMySqlUnicodeDriver() {
     SQLSetEnvAttr(env, SQL_ATTR_ODBC_VERSION, reinterpret_cast<SQLPOINTER>(SQL_OV_ODBC3), 0);
 
     std::string best;
+    int bestVersion = -1;
     SQLWCHAR name[256] = {};
     SQLWCHAR attributes[512] = {};
     SQLSMALLINT nameLength = 0;
@@ -183,8 +205,10 @@ std::string findMySqlUnicodeDriver() {
         // ANSI 드라이버는 한글이 코드페이지를 거쳐 깨지므로 유니코드만 받는다.
         if (driver.find("MySQL") != std::string::npos &&
             driver.find("Unicode") != std::string::npos) {
-            // 여러 개면 이름순으로 가장 뒤(대체로 최신 버전)를 쓴다.
-            if (driver > best) {
+            // 여러 개면 버전이 가장 높은 것을 쓴다.
+            const int version = driverVersion(driver);
+            if (version > bestVersion) {
+                bestVersion = version;
                 best = driver;
             }
         }
@@ -304,7 +328,7 @@ OdbcStore::OdbcStore(const OdbcSettings& settings) {
                 "SELECT COUNT(*) FROM characters WHERE account_id = ? AND deleted_at IS NULL",
                 "SQLPrepare(countCharacters)");
         prepare(connection->selectPosition,
-                "SELECT map_id, pos_x, pos_y FROM characters "
+                "SELECT map_id, pos_x, pos_y, facing FROM characters "
                 "WHERE id = ? AND deleted_at IS NULL",
                 "SQLPrepare(selectPosition)");
 
@@ -330,7 +354,8 @@ OdbcStore::OdbcStore(const OdbcSettings& settings) {
                     "UPDATE characters SET last_played_at = CURRENT_TIMESTAMP(3) WHERE id = ?",
                     "SQLPrepare(touchPlayed)");
             prepare(connection->updatePosition,
-                    "UPDATE characters SET map_id = ?, pos_x = ?, pos_y = ? WHERE id = ?",
+                    "UPDATE characters SET map_id = ?, pos_x = ?, pos_y = ?, facing = ? "
+                    "WHERE id = ?",
                     "SQLPrepare(updatePosition)");
             // 소유와 닉네임 일치를 WHERE 에 함께 넣는다. 조건이 하나라도 어긋나면
             // 0행이 갱신되므로 별도 검사 없이 거절된다.
@@ -403,12 +428,7 @@ CreateAccountResult OdbcStore::createAccount(std::string_view username,
         return CreateAccountResult::NotSupported;
     }
 
-    Connection* connection = acquire();
-    struct Release {
-        OdbcStore* store;
-        Connection* connection;
-        ~Release() { store->release(connection); }
-    } releaseGuard{this, connection};
+    Lease connection(*this);
 
     std::wstring wideUsername = widen(username);
     std::wstring wideHash = widen(passwordHash);
@@ -444,12 +464,7 @@ CreateAccountResult OdbcStore::createAccount(std::string_view username,
 
 std::optional<Account> OdbcStore::authenticate(std::string_view username,
                                                std::string_view password) {
-    Connection* connection = acquire();
-    struct Release {
-        OdbcStore* store;
-        Connection* connection;
-        ~Release() { store->release(connection); }
-    } releaseGuard{this, connection};
+    Lease connection(*this);
 
     std::wstring wideUsername = widen(username);
     SQLLEN usernameLength = 0;
@@ -471,7 +486,7 @@ std::optional<Account> OdbcStore::authenticate(std::string_view username,
         SQLBindCol(connection->selectAccount, 3, SQL_C_WCHAR, status, sizeof(status),
                    &statusLength);
 
-        found = SQLFetch(connection->selectAccount) == SQL_SUCCESS;
+        found = succeeded(SQLFetch(connection->selectAccount));
         SQLCloseCursor(connection->selectAccount);
     } catch (const std::exception& e) {
         SQLCloseCursor(connection->selectAccount);
@@ -515,7 +530,7 @@ std::optional<Account> OdbcStore::authenticate(std::string_view username,
 
 // ---------------------------------------------------------------- 캐릭터
 
-std::vector<Character> OdbcStore::fetchCharacters(Connection*, SQLHSTMT statement) {
+std::vector<Character> OdbcStore::fetchCharacters(SQLHSTMT statement) {
     std::vector<Character> characters;
 
     std::uint64_t id = 0;
@@ -545,7 +560,7 @@ std::vector<Character> OdbcStore::fetchCharacters(Connection*, SQLHSTMT statemen
                    sizeof(ev[i]), &spreadLength[6 + i]);
     }
 
-    while (SQLFetch(statement) == SQL_SUCCESS) {
+    while (succeeded(SQLFetch(statement))) {
         Character character;
         character.id = id;
         character.nickname = narrow(nickname, nicknameLength);
@@ -582,19 +597,14 @@ std::vector<Character> OdbcStore::fetchCharacters(Connection*, SQLHSTMT statemen
 }
 
 std::vector<Character> OdbcStore::listByAccount(std::uint64_t accountId) {
-    Connection* connection = acquire();
-    struct Release {
-        OdbcStore* store;
-        Connection* connection;
-        ~Release() { store->release(connection); }
-    } releaseGuard{this, connection};
+    Lease connection(*this);
 
     try {
         SQLLEN accountLength = 0;
         bindUInt64(connection->listCharacters, 1, accountId, accountLength);
         require(SQLExecute(connection->listCharacters), SQL_HANDLE_STMT,
                 connection->listCharacters, "SQLExecute(listCharacters)");
-        return fetchCharacters(connection, connection->listCharacters);
+        return fetchCharacters(connection->listCharacters);
     } catch (const std::exception& e) {
         SQLCloseCursor(connection->listCharacters);
         spdlog::error("character list failed for account {}: {}", accountId, e.what());
@@ -603,12 +613,7 @@ std::vector<Character> OdbcStore::listByAccount(std::uint64_t accountId) {
 }
 
 std::optional<Character> OdbcStore::find(std::uint64_t accountId, std::uint64_t characterId) {
-    Connection* connection = acquire();
-    struct Release {
-        OdbcStore* store;
-        Connection* connection;
-        ~Release() { store->release(connection); }
-    } releaseGuard{this, connection};
+    Lease connection(*this);
 
     try {
         SQLLEN accountLength = 0;
@@ -618,7 +623,7 @@ std::optional<Character> OdbcStore::find(std::uint64_t accountId, std::uint64_t 
         require(SQLExecute(connection->findCharacter), SQL_HANDLE_STMT, connection->findCharacter,
                 "SQLExecute(findCharacter)");
 
-        std::vector<Character> found = fetchCharacters(connection, connection->findCharacter);
+        std::vector<Character> found = fetchCharacters(connection->findCharacter);
         if (found.empty()) {
             return std::nullopt;
         }
@@ -647,12 +652,7 @@ CreateCharacterResult OdbcStore::create(std::uint64_t accountId, std::string_vie
     const proto::StatSpread ivs = species != nullptr ? rollIndividualValues()
                                                      : proto::StatSpread{};
 
-    Connection* connection = acquire();
-    struct Release {
-        OdbcStore* store;
-        Connection* connection;
-        ~Release() { store->release(connection); }
-    } releaseGuard{this, connection};
+    Lease connection(*this);
 
     // 슬롯 확인.
     try {
@@ -727,7 +727,7 @@ CreateCharacterResult OdbcStore::create(std::uint64_t accountId, std::string_vie
                 "SQLExecute(lastInsertId)");
         SQLBindCol(connection->lastInsertId, 1, SQL_C_UBIGINT, &characterId, sizeof(characterId),
                    &idLength);
-        const bool gotId = SQLFetch(connection->lastInsertId) == SQL_SUCCESS;
+        const bool gotId = succeeded(SQLFetch(connection->lastInsertId));
         SQLCloseCursor(connection->lastInsertId);
         if (!gotId || characterId == 0) {
             rollback();
@@ -781,12 +781,7 @@ void OdbcStore::touchPlayed(std::uint64_t characterId) {
         return;
     }
 
-    Connection* connection = acquire();
-    struct Release {
-        OdbcStore* store;
-        Connection* connection;
-        ~Release() { store->release(connection); }
-    } releaseGuard{this, connection};
+    Lease connection(*this);
 
     try {
         SQLLEN idLength = 0;
@@ -801,16 +796,11 @@ void OdbcStore::touchPlayed(std::uint64_t characterId) {
 }
 
 std::optional<Position> OdbcStore::loadPosition(std::uint64_t characterId) {
-    Connection* connection = acquire();
-    struct Release {
-        OdbcStore* store;
-        Connection* connection;
-        ~Release() { store->release(connection); }
-    } releaseGuard{this, connection};
+    Lease connection(*this);
 
     std::uint32_t mapId = 0;
-    double x = 0.0, y = 0.0;
-    SQLLEN mapLength = 0, xLength = 0, yLength = 0;
+    double x = 0.0, y = 0.0, facing = 0.0;
+    SQLLEN mapLength = 0, xLength = 0, yLength = 0, facingLength = 0;
 
     try {
         SQLLEN idLength = 0;
@@ -821,8 +811,10 @@ std::optional<Position> OdbcStore::loadPosition(std::uint64_t characterId) {
         SQLBindCol(connection->selectPosition, 1, SQL_C_ULONG, &mapId, sizeof(mapId), &mapLength);
         SQLBindCol(connection->selectPosition, 2, SQL_C_DOUBLE, &x, sizeof(x), &xLength);
         SQLBindCol(connection->selectPosition, 3, SQL_C_DOUBLE, &y, sizeof(y), &yLength);
+        SQLBindCol(connection->selectPosition, 4, SQL_C_DOUBLE, &facing, sizeof(facing),
+                   &facingLength);
 
-        const bool found = SQLFetch(connection->selectPosition) == SQL_SUCCESS;
+        const bool found = succeeded(SQLFetch(connection->selectPosition));
         SQLCloseCursor(connection->selectPosition);
         if (!found) {
             return std::nullopt;
@@ -837,6 +829,7 @@ std::optional<Position> OdbcStore::loadPosition(std::uint64_t characterId) {
     position.mapId = mapId;
     position.x = static_cast<float>(x);
     position.y = static_cast<float>(y);
+    position.facing = static_cast<float>(facing);
     return position;
 }
 
@@ -845,24 +838,21 @@ void OdbcStore::savePosition(std::uint64_t characterId, const Position& position
         return;
     }
 
-    Connection* connection = acquire();
-    struct Release {
-        OdbcStore* store;
-        Connection* connection;
-        ~Release() { store->release(connection); }
-    } releaseGuard{this, connection};
+    Lease connection(*this);
 
     std::uint32_t mapId = position.mapId;
     double x = position.x;
     double y = position.y;
+    double facing = position.facing;
     std::uint64_t id = characterId;
-    SQLLEN lengths[4] = {};
+    SQLLEN lengths[5] = {};
 
     try {
         bindUInt32(connection->updatePosition, 1, mapId, lengths[0]);
         bindDouble(connection->updatePosition, 2, x, lengths[1]);
         bindDouble(connection->updatePosition, 3, y, lengths[2]);
-        bindUInt64(connection->updatePosition, 4, id, lengths[3]);
+        bindDouble(connection->updatePosition, 4, facing, lengths[3]);
+        bindUInt64(connection->updatePosition, 5, id, lengths[4]);
         require(SQLExecute(connection->updatePosition), SQL_HANDLE_STMT,
                 connection->updatePosition, "SQLExecute(updatePosition)");
         SQLCloseCursor(connection->updatePosition);
@@ -878,15 +868,11 @@ DeleteResult OdbcStore::remove(std::uint64_t accountId, std::uint64_t characterI
         return DeleteResult::NotSupported;
     }
 
-    Connection* connection = acquire();
-    struct Release {
-        OdbcStore* store;
-        Connection* connection;
-        ~Release() { store->release(connection); }
-    } releaseGuard{this, connection};
-
     // 확인 문자열이 틀린 것과 캐릭터가 없는 것을 구분해서 알려주려면 먼저
     // 조회해야 한다. UPDATE 만으로는 둘 다 0행이라 구분이 안 된다.
+    //
+    // 커넥션을 빌리기 **전에** 조회한다. find() 도 풀에서 하나 빌리므로,
+    // 쥔 채로 부르면 풀 크기만큼의 동시 삭제가 서로를 영원히 기다린다.
     const auto character = find(accountId, characterId);
     if (!character.has_value()) {
         return DeleteResult::NotFound;
@@ -894,6 +880,8 @@ DeleteResult OdbcStore::remove(std::uint64_t accountId, std::uint64_t characterI
     if (character->nickname != confirmNickname) {
         return DeleteResult::NameMismatch;
     }
+
+    Lease connection(*this);
 
     std::uint64_t id = characterId;
     std::uint64_t owner = accountId;
@@ -923,12 +911,7 @@ DeleteResult OdbcStore::releasePartner(std::uint64_t accountId, std::uint64_t ch
         return DeleteResult::NotSupported;
     }
 
-    Connection* connection = acquire();
-    struct Release {
-        OdbcStore* store;
-        Connection* connection;
-        ~Release() { store->release(connection); }
-    } releaseGuard{this, connection};
+    Lease connection(*this);
 
     std::uint64_t id = characterId;
     std::uint64_t owner = accountId;

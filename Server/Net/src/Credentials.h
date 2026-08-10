@@ -18,6 +18,7 @@ namespace heaven::net {
 
 // 자격증명 관리자에 보이는 이름.
 inline constexpr const char* kDbCredentialTarget = "HeavenHyperVoice/db";
+inline constexpr const char* kRedisCredentialTarget = "HeavenHyperVoice/redis";
 
 // 없으면 nullopt.
 std::optional<std::string> readStoredPassword(const std::string& target);
@@ -27,5 +28,17 @@ void storePassword(const std::string& target, const std::string& password);
 
 // 저장된 항목을 지운다. 없으면 false.
 bool erasePassword(const std::string& target);
+
+// --- 명령줄 도구. 프롬프트로 받아 저장하고 종료 코드를 돌려준다 ---
+//
+// 비밀번호를 인자로 받지 않는 이유는 위와 같다. 콘솔에서 직접 받아야
+// 프로세스 목록에도 셸 히스토리에도 남지 않는다.
+
+// 화면에 남기지 않고 한 줄 읽는다.
+std::string readHiddenLine();
+
+// label 은 "database" 처럼 프롬프트에 쓸 이름이다.
+int storePasswordInteractive(const std::string& target, const char* label);
+int erasePasswordAndReport(const std::string& target, const char* label);
 
 }  // namespace heaven::net

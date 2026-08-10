@@ -139,7 +139,8 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
     const std::uint64_t characterId = verified.characterId;
     const std::uint64_t accountId = verified.accountId;
 
-    context_.dbQueue->submit([self, context, handler, characterId, accountId] {
+    const bool queued = context_.dbQueue->submit([self, context, handler, characterId,
+                                                  accountId] {
         const auto character = context->characters->find(accountId, characterId);
         if (!character.has_value()) {
             spdlog::warn("character {} not found for account {}", characterId, accountId);
@@ -193,6 +194,11 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
                      context->world->size());
     });
 
+    if (!queued) {
+        spdlog::warn("{}: db queue full, refusing entry", session.peer());
+        session.send(proto::encodeFieldNotice("서버가 혼잡합니다. 잠시 후 다시 시도해 주세요"));
+        return false;
+    }
     return true;
 }
 

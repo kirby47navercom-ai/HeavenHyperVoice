@@ -2,7 +2,6 @@ add_executable(ChatServer
     src/main.cpp
     src/ChatHandler.cpp
     src/Room.cpp
-    src/SessionRegistry.cpp
 )
 
 target_include_directories(ChatServer PRIVATE src)

@@ -10,20 +10,10 @@
 // 주의: 설계상 느리다(수십 ms). IOCP 워커 스레드에서 직접 호출하면
 // 그 워커가 통째로 멈춘다. 반드시 별도 인증 스레드에서 돌릴 것.
 
-#include <cstdint>
 #include <string>
 #include <string_view>
 
 namespace heaven::data {
-
-struct HashParameters {
-    std::uint32_t memoryKiB = 0;
-    std::uint32_t iterations = 0;
-    std::uint32_t parallelism = 0;
-};
-
-// 새 해시를 만들 때 쓰는 파라미터. 진단 출력용이며, 실제 값은 PasswordHash.cpp 에 있다.
-HashParameters currentHashParameters();
 
 // 새 비밀번호를 인코딩 문자열로 만든다. accounts.password_hash 에 그대로 넣는다.
 // 실패하면 예외를 던진다.

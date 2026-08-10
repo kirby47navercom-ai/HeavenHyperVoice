@@ -8,7 +8,9 @@
 // 높이는 아직 없다. 넣을 때 z 를 추가하면 되고, 섹터는 2D 로 남는 편이 낫다
 // (수직으로 나눌 만큼 높이가 깊지 않다).
 
+#include <chrono>
 #include <cstdint>
+#include <limits>
 
 namespace heaven::proto {
 
@@ -30,6 +32,11 @@ inline constexpr float kExitRadius = 3200.f;   // 32 m
 inline constexpr float kMaxSpeed = 600.f;      // 6 m/s, 달리기
 inline constexpr float kSpeedSlack = 200.f;    // 지터 여유 2 m
 
+// 이동을 받아들이는 최소 간격. 거리는 클램프해도 **빈도**를 막지 않으면
+// 클라 하나가 회선 속도로 Move 를 밀어 넣어 월드 락을 독점할 수 있다.
+// 틱이 20Hz 라 그보다 자주 받아봐야 나가는 스냅샷은 늘지 않는다.
+inline constexpr std::chrono::milliseconds kMinMoveInterval{10};
+
 inline constexpr float kSpawnX = kWorldSize / 2.f;
 inline constexpr float kSpawnY = kWorldSize / 2.f;
 
@@ -47,10 +54,18 @@ static_assert(kSectorCols * kSectorSize == kWorldSize, "격자와 월드 크기�
 inline constexpr float clampToWorld(float value) {
     // 경계 자체는 다음 섹터로 넘어가므로 아주 살짝 안쪽으로 민다.
     constexpr float kEpsilon = 0.01f;
-    if (value < 0.f) return 0.f;
+    // `value < 0` 이 아니라 `!(value >= 0)` 으로 쓴다. NaN 은 모든 비교가 거짓이라
+    // 앞의 형태로는 그대로 빠져나가고, sectorIndex 의 float->int 변환이 정의되지
+    // 않은 값을 내서 섹터 배열을 범위 밖에서 건드리게 된다.
+    if (!(value >= 0.f)) return 0.f;
     if (value >= kWorldSize) return kWorldSize - kEpsilon;
     return value;
 }
+
+// 섹터 인덱스가 배열 안에 있으려면 위 클램프가 셋 다 지켜야 한다.
+static_assert(clampToWorld(-1.f) == 0.f, "음수는 0 으로");
+static_assert(clampToWorld(kWorldSize) < kWorldSize, "상한은 배열 안쪽으로");
+static_assert(clampToWorld(std::numeric_limits<float>::quiet_NaN()) == 0.f, "NaN 은 0 으로");
 
 inline constexpr int sectorCol(float x) { return static_cast<int>(x / kSectorSize); }
 inline constexpr int sectorRow(float y) { return static_cast<int>(y / kSectorSize); }

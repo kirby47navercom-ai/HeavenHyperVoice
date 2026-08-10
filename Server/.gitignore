@@ -15,3 +15,6 @@ DataBase/002_app_user.sql
 
 # 마이그레이션 직전 mysqldump 백업. 실제 계정 데이터가 들어 있다.
 DataBase/backup/
+
+# 파이썬 도구 캐시
+__pycache__/

@@ -3,6 +3,7 @@
 #include <argon2.h>
 #include <openssl/rand.h>
 
+#include <cstdint>
 #include <cstring>
 #include <stdexcept>
 #include <vector>
@@ -19,10 +20,6 @@ constexpr std::uint32_t kSaltBytes = 16;
 constexpr std::uint32_t kHashBytes = 32;
 
 }  // namespace
-
-HashParameters currentHashParameters() {
-    return HashParameters{kMemoryKiB, kIterations, kParallelism};
-}
 
 std::string hashPassword(std::string_view password) {
     unsigned char salt[kSaltBytes];

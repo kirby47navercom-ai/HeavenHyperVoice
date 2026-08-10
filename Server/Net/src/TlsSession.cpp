@@ -158,10 +158,6 @@ void TlsSession::onSendComplete(DWORD bytes, bool ok) {
     maybeFinish();
 }
 
-void TlsSession::send(const Frame& frame) {
-    send(*frame);
-}
-
 void TlsSession::send(const proto::Bytes& frame) {
     if (closed_.load(std::memory_order_acquire)) {
         return;

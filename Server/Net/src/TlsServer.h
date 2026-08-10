@@ -30,7 +30,6 @@ using HandlerFactory = std::function<std::unique_ptr<FrameHandler>(TlsSession&)>
 struct TlsServerOptions {
     std::uint16_t port = 9000;
     unsigned workerThreads = 0;  // 0 이면 하드웨어 동시성에서 정한다
-    std::chrono::seconds handshakeTimeout = kHandshakeTimeout;
 
     // 인증 여부와 무관한 연결 수명 상한. 0 이면 끈다.
     //

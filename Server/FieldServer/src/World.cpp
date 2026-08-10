@@ -96,7 +96,9 @@ std::optional<Position> World::leave(std::uint64_t characterId) {
 
 void World::removeFromVisibility(Entity& self) {
     const std::vector<std::uint64_t> gone{self.visible.begin(), self.visible.end()};
-    const std::vector<std::uint64_t> despawned{self.characterId};
+
+    // 받는 사람마다 같은 바이트열이다. 한 번만 만든다.
+    const proto::Bytes despawn = proto::encodeSnapshot({}, {}, {self.characterId});
 
     for (const std::uint64_t otherId : gone) {
         const auto other = entities_.find(otherId);
@@ -104,7 +106,7 @@ void World::removeFromVisibility(Entity& self) {
             continue;
         }
         other->second.visible.erase(self.characterId);
-        sendTo(other->second, proto::encodeSnapshot({}, {}, despawned));
+        sendTo(other->second, despawn);
     }
     self.visible.clear();
 }
@@ -164,6 +166,13 @@ void World::updateVisibility(Entity& self) {
 }
 
 void World::move(std::uint64_t characterId, float x, float y, float facing) {
+    // NaN/Inf 를 먼저 막는다. clampToWorld 의 비교는 NaN 에 대해 모두 거짓이라
+    // 그대로 통과하고, sectorIndex 의 float->int 변환이 정의되지 않은 값을 내며
+    // sectors_ 를 배열 밖에서 건드리게 된다.
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(facing)) {
+        return;
+    }
+
     std::lock_guard<std::mutex> lock(mutex_);
 
     const auto it = entities_.find(characterId);
@@ -172,11 +181,18 @@ void World::move(std::uint64_t characterId, float x, float y, float facing) {
     }
     Entity& self = it->second;
 
+    // 좌표는 클램프해도 **빈도**는 막지 못한다. 회선 속도로 밀어 넣으면 월드
+    // 전역 락과 시야 재계산을 독점할 수 있어, 너무 잦은 것은 그냥 버린다.
+    // lastMoveAt 을 갱신하지 않으므로 속도 예산은 그대로 쌓인다.
+    const auto now = std::chrono::steady_clock::now();
+    if (now - self.lastMoveAt < proto::kMinMoveInterval) {
+        return;
+    }
+
     x = proto::clampToWorld(x);
     y = proto::clampToWorld(y);
 
     // 속도 상한. 거절이 아니라 클램프다 — 랙 스파이크로 정상 유저를 튕기지 않는다.
-    const auto now = std::chrono::steady_clock::now();
     const float elapsed = std::chrono::duration<float>(now - self.lastMoveAt).count();
     const float allowed = proto::kMaxSpeed * elapsed + proto::kSpeedSlack;
     const float distance =

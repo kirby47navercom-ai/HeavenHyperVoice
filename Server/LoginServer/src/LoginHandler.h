@@ -1,10 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <string>
-#include <vector>
 #include <string_view>
+#include <vector>
 
 #include "AccountStore.h"
 #include "AuthTicket.h"
@@ -90,6 +91,12 @@ private:
     // 다음 요청을 받을 수 있게 되돌린다 (연결은 유지).
     void resume(Stage stage);
 
+    // 생성/삭제/방생은 모양이 같다. DB 작업을 인증 스레드에서 돌리고, 결과
+    // 메시지와 함께 최신 목록을 돌려준 뒤 다시 선택 단계로 되돌린다.
+    // 큐가 가득 차면 목록 없이 거절만 보낸다.
+    bool submitCharacterChange(TlsSession& session,
+                               std::function<std::pair<bool, const char*>()> work);
+
     const LoginContext& context_;
 
     // 이 핸들러의 상태는 IOCP 워커와 인증 스레드가 같이 만진다. 다른 핸들러는
@@ -101,7 +108,6 @@ private:
     // 인증이 끝난 뒤에만 채워진다. 캐릭터 조회는 반드시 이 값으로 좁힌다 —
     // 클라이언트가 보낸 character_id 를 그대로 믿으면 남의 캐릭터로 티켓이 나간다.
     std::uint64_t accountId_ = 0;
-    std::string username_;
 };
 
 }  // namespace heaven::login

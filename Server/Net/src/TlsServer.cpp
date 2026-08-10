@@ -236,7 +236,7 @@ void TlsServer::timerLoop() {
             std::shared_lock<std::shared_mutex> lock(sessionsMutex_);
             for (const auto& session : sessions_) {
                 const auto age = now - session->createdAt();
-                if (!session->authenticated() && age > options_.handshakeTimeout) {
+                if (!session->authenticated() && age > kHandshakeTimeout) {
                     silent.push_back(session);
                 } else if (options_.maxSessionLifetime.count() > 0 &&
                            age > options_.maxSessionLifetime) {
@@ -247,7 +247,7 @@ void TlsServer::timerLoop() {
 
         for (const auto& session : silent) {
             spdlog::warn("{}: handshake timed out after {}s", session->peer(),
-                         options_.handshakeTimeout.count());
+                         kHandshakeTimeout.count());
             session->closeSocket();
         }
         for (const auto& session : overstayed) {

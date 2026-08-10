@@ -10,6 +10,7 @@ WorkQueue::WorkQueue(unsigned threads) {
     if (threads == 0) {
         threads = 1;
     }
+    maxPending_ = threads * kMaxPendingPerThread;
     workers_.reserve(threads);
     for (unsigned i = 0; i < threads; ++i) {
         workers_.emplace_back([this] { workerLoop(); });
@@ -20,15 +21,16 @@ WorkQueue::~WorkQueue() {
     stop();
 }
 
-void WorkQueue::submit(std::function<void()> task) {
+bool WorkQueue::submit(std::function<void()> task) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (stopping_) {
-            return;
+        if (stopping_ || tasks_.size() >= maxPending_) {
+            return false;
         }
         tasks_.push_back(std::move(task));
     }
     ready_.notify_one();
+    return true;
 }
 
 void WorkQueue::stop() {

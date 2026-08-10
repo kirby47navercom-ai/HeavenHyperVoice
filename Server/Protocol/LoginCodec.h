@@ -15,12 +15,12 @@
 namespace heaven::proto {
 
 // 프레임 크기를 제한하기 위한 바이트 상한. 내용 규칙은 아래 길이 상수를 쓴다.
-inline constexpr std::size_t kMaxUsernameBytes = 32;
 inline constexpr std::size_t kMaxPasswordBytes = 128;
 inline constexpr std::size_t kMaxNicknameBytes = 128;  // UTF-8 32글자 최대치
 
 // DB 는 VARCHAR(32) 로 **글자** 수를 센다. 바이트로 검사하면 한글 닉네임이
 // 11글자에서 잘린다(글자당 3바이트). 코드포인트로 세야 스키마와 일치한다.
+// 아이디는 ASCII 로 제한되므로 바이트 수가 곧 글자 수다.
 inline constexpr std::size_t kMaxUsernameChars = 32;
 inline constexpr std::size_t kMinUsernameChars = 3;
 inline constexpr std::size_t kMaxNicknameChars = 32;
