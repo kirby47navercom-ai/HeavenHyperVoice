@@ -73,12 +73,16 @@ CreateCharacterResult DevStore::create(std::uint64_t accountId, std::string_view
     Character character;
     character.id = nextCharacterId_++;
     character.nickname = std::string(nickname);
-    character.level = 1;
     if (species != nullptr) {
         character.hasPartner = true;
         character.partner.speciesId = speciesId;
         character.partner.level = proto::kStarterLevel;
-        character.partner.stats = proto::computeStats(*species, proto::kStarterLevel);
+        // 개발용이라 개체값을 굴리지 않고 만렙으로 둔다. 값이 매번 달라지면
+        // 화면을 눈으로 비교하기 어렵다.
+        character.partner.ivs = {31, 31, 31, 31, 31, 31};
+        character.partner.stats = proto::computeStats(*species, proto::kStarterLevel,
+                                                      character.partner.ivs,
+                                                      character.partner.evs);
     }
     owned.push_back(std::move(character));
 

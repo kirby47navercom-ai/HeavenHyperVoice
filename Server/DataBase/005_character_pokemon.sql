@@ -93,6 +93,9 @@ DEALLOCATE PREPARE stmt;
 
 INSERT IGNORE INTO schema_migrations (version) VALUES ('005_character_pokemon');
 
+-- 확인용 출력은 **이 파일이 만든 컬럼만** 건드린다. 모든 마이그레이션이 매번
+-- 다시 실행되므로, 뒤 파일이 드롭한 컬럼을 여기서 참조하면 ERROR 1054 로 멈춘다.
+-- 실 수치 컬럼(max_hp 등)이 008 에서 사라지면서 실제로 그렇게 됐다.
 SELECT '005_character_pokemon applied' AS result;
-SELECT c.nickname, p.species_id, p.level, p.max_hp, p.atk, p.def, p.sp_atk, p.sp_def, p.speed
+SELECT c.nickname, p.species_id, p.level
 FROM characters c JOIN character_pokemon p ON p.character_id = c.id AND p.slot = 0;

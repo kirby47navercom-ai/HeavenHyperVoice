@@ -2,6 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <random>
 #include <stdexcept>
 #include <utility>
 
@@ -130,12 +131,29 @@ void bindUInt16(SQLHSTMT statement, SQLUSMALLINT index, std::uint16_t& value, SQ
 
 constexpr std::size_t kMaxTextChars = 256;
 
+// 개체값을 굴린다. 스탯당 0~31 이고 태어날 때 한 번 정해진다.
+proto::StatSpread rollIndividualValues() {
+    // 게임 밸런스용이라 암호학적 난수가 필요하지 않다. 스레드마다 하나 둔다.
+    static thread_local std::mt19937 engine{std::random_device{}()};
+    std::uniform_int_distribution<int> roll(0, proto::kMaxIndividualValue);
+
+    proto::StatSpread spread;
+    spread.hp = static_cast<std::uint16_t>(roll(engine));
+    spread.atk = static_cast<std::uint16_t>(roll(engine));
+    spread.def = static_cast<std::uint16_t>(roll(engine));
+    spread.spAtk = static_cast<std::uint16_t>(roll(engine));
+    spread.spDef = static_cast<std::uint16_t>(roll(engine));
+    spread.speed = static_cast<std::uint16_t>(roll(engine));
+    return spread;
+}
+
 // 캐릭터 조회 두 구문이 공유하는 컬럼 목록. 순서가 fetchCharacters 의
 // 바인딩과 일치해야 한다.
 constexpr const char* kCharacterColumns =
-    "SELECT c.id, c.nickname, c.level, "
+    "SELECT c.id, c.nickname, "
     "       p.species_id, p.nickname, p.level, "
-    "       p.max_hp, p.atk, p.def, p.sp_atk, p.sp_def, p.speed "
+    "       p.iv_hp, p.iv_atk, p.iv_def, p.iv_sp_atk, p.iv_sp_def, p.iv_speed, "
+    "       p.ev_hp, p.ev_atk, p.ev_def, p.ev_sp_atk, p.ev_sp_def, p.ev_speed "
     "FROM characters c "
     "LEFT JOIN character_pokemon p ON p.character_id = c.id AND p.slot = 0 ";
 
@@ -304,8 +322,9 @@ OdbcStore::OdbcStore(const OdbcSettings& settings) {
                     "SQLPrepare(lastInsertId)");
             prepare(connection->insertPokemon,
                     "INSERT INTO character_pokemon "
-                    "(character_id, slot, species_id, level, max_hp, atk, def, sp_atk, sp_def, "
-                    " speed) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "(character_id, slot, species_id, level, "
+                    " iv_hp, iv_atk, iv_def, iv_sp_atk, iv_sp_def, iv_speed) "
+                    "VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?)",
                     "SQLPrepare(insertPokemon)");
             prepare(connection->touchPlayed,
                     "UPDATE characters SET last_played_at = CURRENT_TIMESTAMP(3) WHERE id = ?",
@@ -501,37 +520,35 @@ std::vector<Character> OdbcStore::fetchCharacters(Connection*, SQLHSTMT statemen
 
     std::uint64_t id = 0;
     SQLWCHAR nickname[kMaxTextChars] = {};
-    std::uint32_t level = 0;
 
     std::uint16_t speciesId = 0;
     SQLWCHAR partnerNickname[kMaxTextChars] = {};
     std::uint32_t partnerLevel = 0;
-    std::uint16_t maxHp = 0, atk = 0, def = 0, spAtk = 0, spDef = 0, speed = 0;
+    // 실 수치는 읽지 않는다. 저장돼 있지 않고 아래에서 계산한다.
+    std::uint8_t iv[6] = {};
+    std::uint8_t ev[6] = {};
 
-    SQLLEN idLength = 0, nicknameLength = 0, levelLength = 0;
+    SQLLEN idLength = 0, nicknameLength = 0;
     SQLLEN speciesLength = 0, partnerNicknameLength = 0, partnerLevelLength = 0;
-    SQLLEN maxHpLength = 0, atkLength = 0, defLength = 0;
-    SQLLEN spAtkLength = 0, spDefLength = 0, speedLength = 0;
+    SQLLEN spreadLength[12] = {};
 
     SQLBindCol(statement, 1, SQL_C_UBIGINT, &id, sizeof(id), &idLength);
     SQLBindCol(statement, 2, SQL_C_WCHAR, nickname, sizeof(nickname), &nicknameLength);
-    SQLBindCol(statement, 3, SQL_C_ULONG, &level, sizeof(level), &levelLength);
-    SQLBindCol(statement, 4, SQL_C_USHORT, &speciesId, sizeof(speciesId), &speciesLength);
-    SQLBindCol(statement, 5, SQL_C_WCHAR, partnerNickname, sizeof(partnerNickname),
+    SQLBindCol(statement, 3, SQL_C_USHORT, &speciesId, sizeof(speciesId), &speciesLength);
+    SQLBindCol(statement, 4, SQL_C_WCHAR, partnerNickname, sizeof(partnerNickname),
                &partnerNicknameLength);
-    SQLBindCol(statement, 6, SQL_C_ULONG, &partnerLevel, sizeof(partnerLevel), &partnerLevelLength);
-    SQLBindCol(statement, 7, SQL_C_USHORT, &maxHp, sizeof(maxHp), &maxHpLength);
-    SQLBindCol(statement, 8, SQL_C_USHORT, &atk, sizeof(atk), &atkLength);
-    SQLBindCol(statement, 9, SQL_C_USHORT, &def, sizeof(def), &defLength);
-    SQLBindCol(statement, 10, SQL_C_USHORT, &spAtk, sizeof(spAtk), &spAtkLength);
-    SQLBindCol(statement, 11, SQL_C_USHORT, &spDef, sizeof(spDef), &spDefLength);
-    SQLBindCol(statement, 12, SQL_C_USHORT, &speed, sizeof(speed), &speedLength);
+    SQLBindCol(statement, 5, SQL_C_ULONG, &partnerLevel, sizeof(partnerLevel), &partnerLevelLength);
+    for (int i = 0; i < 6; ++i) {
+        SQLBindCol(statement, static_cast<SQLUSMALLINT>(6 + i), SQL_C_UTINYINT, &iv[i],
+                   sizeof(iv[i]), &spreadLength[i]);
+        SQLBindCol(statement, static_cast<SQLUSMALLINT>(12 + i), SQL_C_UTINYINT, &ev[i],
+                   sizeof(ev[i]), &spreadLength[6 + i]);
+    }
 
     while (SQLFetch(statement) == SQL_SUCCESS) {
         Character character;
         character.id = id;
         character.nickname = narrow(nickname, nicknameLength);
-        character.level = level;
 
         // LEFT JOIN 이라 파트너가 없으면 NULL 이 온다. 004 이전에 만들어진
         // 캐릭터가 그럴 수 있다.
@@ -543,12 +560,19 @@ std::vector<Character> OdbcStore::fetchCharacters(Connection*, SQLHSTMT statemen
                     ? std::string()
                     : narrow(partnerNickname, partnerNicknameLength);
             character.partner.level = partnerLevel;
-            character.partner.stats.maxHp = maxHp;
-            character.partner.stats.atk = atk;
-            character.partner.stats.def = def;
-            character.partner.stats.spAtk = spAtk;
-            character.partner.stats.spDef = spDef;
-            character.partner.stats.speed = speed;
+            character.partner.ivs = {iv[0], iv[1], iv[2], iv[3], iv[4], iv[5]};
+            character.partner.evs = {ev[0], ev[1], ev[2], ev[3], ev[4], ev[5]};
+
+            // 실 수치는 여기서 만든다. 저장하면 레벨업이나 노력치 변화 때마다
+            // 갱신해야 하고, 한 군데만 빠뜨려도 조용히 어긋난다.
+            if (const proto::SpeciesBase* base = proto::findSpecies(speciesId)) {
+                character.partner.stats = proto::computeStats(*base, partnerLevel,
+                                                              character.partner.ivs,
+                                                              character.partner.evs);
+            } else {
+                // 종족 표에서 사라진 id 다. 배열을 줄였을 때 생길 수 있다.
+                spdlog::warn("character {} has unknown species {}", id, speciesId);
+            }
         }
         characters.push_back(std::move(character));
     }
@@ -619,9 +643,9 @@ CreateCharacterResult OdbcStore::create(std::uint64_t accountId, std::string_vie
     if (speciesId != 0 && species == nullptr) {
         return CreateCharacterResult::UnknownSpecies;
     }
-    const proto::PokemonStats stats =
-        species != nullptr ? proto::computeStats(*species, proto::kStarterLevel)
-                           : proto::PokemonStats{};
+    // 개체값은 태어날 때 한 번 굴리고 바뀌지 않는다. 노력치는 0 에서 시작한다.
+    const proto::StatSpread ivs = species != nullptr ? rollIndividualValues()
+                                                     : proto::StatSpread{};
 
     Connection* connection = acquire();
     struct Release {
@@ -724,19 +748,16 @@ CreateCharacterResult OdbcStore::create(std::uint64_t accountId, std::string_vie
 
         std::uint32_t level = proto::kStarterLevel;
         std::uint16_t speciesParam = speciesId;
-        std::uint16_t maxHp = stats.maxHp, atk = stats.atk, def = stats.def;
-        std::uint16_t spAtk = stats.spAtk, spDef = stats.spDef, speed = stats.speed;
+        std::uint16_t values[6] = {ivs.hp, ivs.atk, ivs.def, ivs.spAtk, ivs.spDef, ivs.speed};
         SQLLEN lengths[9] = {};
 
         bindUInt64(connection->insertPokemon, 1, characterId, lengths[0]);
         bindUInt16(connection->insertPokemon, 2, speciesParam, lengths[1]);
         bindUInt32(connection->insertPokemon, 3, level, lengths[2]);
-        bindUInt16(connection->insertPokemon, 4, maxHp, lengths[3]);
-        bindUInt16(connection->insertPokemon, 5, atk, lengths[4]);
-        bindUInt16(connection->insertPokemon, 6, def, lengths[5]);
-        bindUInt16(connection->insertPokemon, 7, spAtk, lengths[6]);
-        bindUInt16(connection->insertPokemon, 8, spDef, lengths[7]);
-        bindUInt16(connection->insertPokemon, 9, speed, lengths[8]);
+        for (int i = 0; i < 6; ++i) {
+            bindUInt16(connection->insertPokemon, static_cast<SQLUSMALLINT>(4 + i), values[i],
+                       lengths[3 + i]);
+        }
 
         require(SQLExecute(connection->insertPokemon), SQL_HANDLE_STMT, connection->insertPokemon,
                 "SQLExecute(insertPokemon)");

@@ -200,6 +200,12 @@ def decode_partner(partner):
         "spAtk": read_scalar(partner, 6, Uint16Flags),
         "spDef": read_scalar(partner, 7, Uint16Flags),
         "speed": read_scalar(partner, 8, Uint16Flags),
+        "ivHp": read_scalar(partner, 9, Uint8Flags),
+        "ivAtk": read_scalar(partner, 10, Uint8Flags),
+        "ivDef": read_scalar(partner, 11, Uint8Flags),
+        "ivSpAtk": read_scalar(partner, 12, Uint8Flags),
+        "ivSpDef": read_scalar(partner, 13, Uint8Flags),
+        "ivSpeed": read_scalar(partner, 14, Uint8Flags),
     }
 
 
@@ -207,8 +213,7 @@ def decode_characters(response, slot):
     return [{
         "id": read_scalar(entry, 0, Uint64Flags),
         "nickname": read_string(entry, 1),
-        "level": read_scalar(entry, 2, Uint32Flags),
-        "partner": decode_partner(read_table(entry, 3)),
+        "partner": decode_partner(read_table(entry, 2)),
     } for entry in read_table_vector(response, slot)]
 
 

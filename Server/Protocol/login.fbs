@@ -31,26 +31,40 @@ table RegisterResponse {
 }
 
 // 종속 포켓몬. 지금은 캐릭터당 한 마리다.
-// 스탯은 종족값이 아니라 개체의 실제 값이다. 현재 체력은 없다 — 인스턴스
-// 안에서만 의미가 있어서 Redis 에 있고 여기로 오지 않는다.
+//
+// 실 수치는 서버가 계산해서 보낸다. DB 에는 입력(종족, 레벨, 개체값, 노력치)만
+// 있고 저장된 스탯은 없다 — 레벨이나 노력치가 바뀔 때마다 어긋나기 때문이다.
+// 클라이언트가 공식을 들고 있을 필요도 없어진다.
+//
+// 현재 체력은 없다. 인스턴스 안에서만 의미가 있어서 Redis 에 있고 여기로 오지 않는다.
+// 노력치도 아직 안 보낸다. 전부 0 이고 올릴 경로가 없다.
 table PokemonSummary {
   species_id:ushort;
   nickname:string;      // 비어 있으면 클라가 종족명을 쓴다
   level:uint;
+
   max_hp:ushort;
   atk:ushort;
   def:ushort;
   sp_atk:ushort;
   sp_def:ushort;
   speed:ushort;
+
+  // 0~31. 태어날 때 정해져 바뀌지 않는다.
+  iv_hp:ubyte;
+  iv_atk:ubyte;
+  iv_def:ubyte;
+  iv_sp_atk:ubyte;
+  iv_sp_def:ubyte;
+  iv_speed:ubyte;
 }
 
+// 캐릭터에는 레벨이 없다. 레벨을 갖는 것은 포켓몬이다.
 table CharacterSummary {
   id:ulong;
   nickname:string;
-  level:uint;
 
-  // 004 이전에 만들어진 캐릭터는 비어 있을 수 있다.
+  // 파트너 없이 시작할 수 있으므로 비어 있을 수 있다.
   // 여러 마리로 늘어나면 [PokemonSummary] 가 된다.
   partner:PokemonSummary;
 }

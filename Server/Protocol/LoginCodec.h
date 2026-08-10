@@ -33,15 +33,21 @@ struct PartnerInfo {
     std::uint16_t speciesId = 0;
     std::string nickname;  // 비어 있으면 종족명을 쓴다
     std::uint32_t level = 0;
+
+    // DB 에 저장되는 입력.
+    StatSpread ivs;
+    StatSpread evs;
+
+    // 위 값들로 계산한 결과. 저장소가 읽어올 때 채운다.
     PokemonStats stats;
 };
 
+// 캐릭터에는 레벨이 없다. 레벨을 갖는 것은 포켓몬이다.
 struct CharacterInfo {
     std::uint64_t id = 0;
     std::string nickname;
-    std::uint32_t level = 1;
 
-    // 004 이전에 만들어진 캐릭터는 파트너가 없을 수 있다.
+    // 파트너 없이 시작할 수 있다.
     bool hasPartner = false;
     PartnerInfo partner;
 };
@@ -132,13 +138,18 @@ buildCharacters(flatbuffers::FlatBufferBuilder& fbb,
             builder.add_sp_atk(character.partner.stats.spAtk);
             builder.add_sp_def(character.partner.stats.spDef);
             builder.add_speed(character.partner.stats.speed);
+            builder.add_iv_hp(static_cast<std::uint8_t>(character.partner.ivs.hp));
+            builder.add_iv_atk(static_cast<std::uint8_t>(character.partner.ivs.atk));
+            builder.add_iv_def(static_cast<std::uint8_t>(character.partner.ivs.def));
+            builder.add_iv_sp_atk(static_cast<std::uint8_t>(character.partner.ivs.spAtk));
+            builder.add_iv_sp_def(static_cast<std::uint8_t>(character.partner.ivs.spDef));
+            builder.add_iv_speed(static_cast<std::uint8_t>(character.partner.ivs.speed));
             partner = builder.Finish();
         }
 
         HeavenLogin::CharacterSummaryBuilder builder(fbb);
         builder.add_id(character.id);
         builder.add_nickname(nickname);
-        builder.add_level(character.level);
         if (!partner.IsNull()) {
             builder.add_partner(partner);
         }

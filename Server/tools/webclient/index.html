@@ -299,16 +299,16 @@
 // Unreal 클라이언트도 모델과 이름을 자기가 들고 있어야 한다. 서버는 id 만
 // 검증하고 실제 스탯을 계산해 내려준다 (Protocol/PokemonSpecies.h).
 const SPECIES = [
-  { id: 1,  name: '이상해씨',   base: [45, 49, 49, 65, 65, 45] },
-  { id: 2,  name: '파이리',     base: [39, 52, 43, 60, 50, 65] },
-  { id: 3,  name: '꼬부기',     base: [44, 48, 65, 50, 64, 43] },
-  { id: 4,  name: '피카츄',     base: [35, 55, 40, 50, 50, 90] },
-  { id: 5,  name: '이브이',     base: [55, 55, 50, 45, 65, 55] },
-  { id: 6,  name: '구구',       base: [40, 45, 40, 35, 35, 56] },
-  { id: 7,  name: '꼬렛',       base: [30, 56, 35, 25, 35, 72] },
-  { id: 8,  name: '모래두지',   base: [50, 75, 85, 20, 30, 40] },
-  { id: 9,  name: '나옹',       base: [40, 45, 35, 40, 40, 90] },
-  { id: 10, name: '고라파덕',   base: [50, 52, 48, 65, 50, 55] },
+  { id: 1,  name: '피카츄',   base: [ 35,  55,  40,  50,  50,  90] },
+  { id: 2,  name: '이상해꽃', base: [ 80,  82,  83, 100, 100,  80] },
+  { id: 3,  name: '리자몽',   base: [ 78,  84,  78, 109,  85, 100] },
+  { id: 4,  name: '거북왕',   base: [ 79,  83, 100,  85, 105,  78] },
+  { id: 5,  name: '딱구리',   base: [ 70, 110, 180,  60,  60,  50] },
+  { id: 6,  name: '후딘',     base: [ 55,  50,  45, 135,  95, 120] },
+  { id: 7,  name: '잠만보',   base: [160, 110,  65,  65, 110,  30] },
+  { id: 8,  name: '포푸니라', base: [ 70, 120,  65,  45,  85, 125] },
+  { id: 9,  name: '루카리오', base: [ 70, 110,  70, 115,  70,  90] },
+  { id: 10, name: '귀뚤톡크', base: [ 77,  85,  51,  55,  51,  65] },
 ];
 const speciesName = id => (SPECIES.find(s => s.id === id) || {}).name || `#${id}`;
 const STAT_LABELS = ['체력', '공격', '방어', '특수공격', '특수방어', '스피드'];
@@ -415,10 +415,15 @@ for (const id of ['regUser', 'regPw']) {
 
 // --------------------------------------------------------- 캐릭터 선택
 
+// 실 수치는 서버가 계산해서 준다. 개체값을 옆에 붙여 왜 그 값인지 보이게 한다.
 function statRows(partner) {
   const values = [partner.maxHp, partner.atk, partner.def,
                   partner.spAtk, partner.spDef, partner.speed];
-  return STAT_LABELS.map((label, i) => `<span>${label}</span><b>${values[i]}</b>`).join('');
+  const ivs = [partner.ivHp, partner.ivAtk, partner.ivDef,
+               partner.ivSpAtk, partner.ivSpDef, partner.ivSpeed];
+  return STAT_LABELS.map((label, i) =>
+    `<span>${label}</span><b>${values[i]}` +
+    `<span style="color:var(--dim);font-weight:400"> ·${ivs[i]}</span></b>`).join('');
 }
 
 function openCreate() {
@@ -447,7 +452,6 @@ function renderSlots() {
       const partner = character.partner;
       card.insertAdjacentHTML('beforeend',
         `<div class="who">${esc(character.nickname)}</div>` +
-        `<div class="lv">Lv.${character.level}</div>` +
         (partner
           ? `<div class="partner">파트너 <b>${esc(partner.nickname || speciesName(partner.speciesId))}</b>` +
             ` <span style="color:var(--dim)">Lv.${partner.level}</span></div>` +
