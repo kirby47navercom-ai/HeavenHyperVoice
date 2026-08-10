@@ -1,0 +1,9 @@
+Content/CharacterCustomization/Assets/** filter=lfs diff=lfs merge=lfs -text
+Content/CharacterCustomization/Blueprints/BP_CustomizationGameMode.uasset filter=lfs diff=lfs merge=lfs -text
+Content/CharacterCustomization/Blueprints/BP_CustomizationPlayerController.uasset filter=lfs diff=lfs merge=lfs -text
+Content/CharacterCustomization/Blueprints/BP_CustomizationPreviewActor.uasset filter=lfs diff=lfs merge=lfs -text
+Content/CharacterCustomization/Blueprints/DA_CustomizationCatalog.uasset filter=lfs diff=lfs merge=lfs -text
+Content/CharacterCustomization/Maps/L_CharacterCustomization.umap filter=lfs diff=lfs merge=lfs -text
+Content/CharacterCustomization/UI/WBP_CharacterCustomization.uasset filter=lfs diff=lfs merge=lfs -text
+Content/VRoidCatalog/** filter=lfs diff=lfs merge=lfs -text
+Content/VRoidGenerated/** filter=lfs diff=lfs merge=lfs -text

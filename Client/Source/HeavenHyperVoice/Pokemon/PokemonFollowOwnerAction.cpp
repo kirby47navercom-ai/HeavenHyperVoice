@@ -8,11 +8,11 @@
 
 namespace
 {
-	constexpr float Pi = 3.14159265358979323846f;
+	constexpr float FollowPi = 3.14159265358979323846f;
 
-	float DegreesToRadians(float Degrees)
+	float FollowDegreesToRadians(float Degrees)
 	{
-		return Degrees * Pi / 180.0f;
+		return Degrees * FollowPi / 180.0f;
 	}
 
 	HHV::Map::Vec3 MakeDirectionFromAngle(float Radians)
@@ -124,7 +124,7 @@ namespace HHV::PokemonAI
 		for (int Index = 0; Index < CandidateCount; ++Index)
 		{
 			const float Alpha = static_cast<float>(Index) / static_cast<float>(CandidateCount);
-			const float Angle = DegreesToRadians(Context.OwnerYawDegrees) + Alpha * Pi * 2.0f;
+			const float Angle = FollowDegreesToRadians(Context.OwnerYawDegrees) + Alpha * FollowPi * 2.0f;
 			const HHV::Map::Vec3 Direction = MakeDirectionFromAngle(Angle);
 			const HHV::Map::Vec3 Candidate{
 				Context.OwnerLocation.X + Direction.X * Settings.FallbackRadius,
@@ -143,7 +143,7 @@ namespace HHV::PokemonAI
 
 	HHV::Map::Vec3 FollowOwnerAction::CalculateOffsetTarget(const CompanionContext& Context, float SideSign) const
 	{
-		const float YawRadians = DegreesToRadians(Context.OwnerYawDegrees);
+		const float YawRadians = FollowDegreesToRadians(Context.OwnerYawDegrees);
 		const HHV::Map::Vec3 Forward{ std::cos(YawRadians), std::sin(YawRadians), 0.0f };
 		const HHV::Map::Vec3 Right{ -std::sin(YawRadians), std::cos(YawRadians), 0.0f };
 
