@@ -12,3 +12,6 @@ certs/
 
 # 비밀번호가 들어간 마이그레이션 사본. 템플릿만 커밋한다.
 DataBase/002_app_user.sql
+
+# 마이그레이션 직전 mysqldump 백업. 실제 계정 데이터가 들어 있다.
+DataBase/backup/

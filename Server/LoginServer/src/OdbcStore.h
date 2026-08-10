@@ -1,12 +1,16 @@
 #pragma once
 
-// ODBC 기반 계정 저장소.
+// ODBC 기반 계정/캐릭터 저장소.
 //
 // 드라이버만 바꾸면 MySQL / MSSQL 등으로 옮길 수 있게 ODBC 를 쓴다.
 // 유니코드 API(SQLWCHAR, W 접미사 함수)를 쓰는 이유는 두 가지다.
 //   - MSSQL 드라이버가 유니코드 우선이라 전환 시 이 코드가 그대로 간다
 //   - 좁은 문자 API 는 시스템 ANSI 코드페이지(한국어 Windows 는 CP949)를 거쳐
 //     UTF-8 닉네임이 깨진다
+//
+// 계정과 캐릭터는 인터페이스가 나뉘어 있지만 구현은 하나다. 커넥션 풀을 둘로
+// 나누면 같은 DB 에 두 배로 붙게 되고, 준비된 구문도 두 벌이 된다.
+// 나중에 캐릭터를 다른 서버가 맡게 되면 그때 이 클래스를 쪼개면 된다.
 //
 // 커넥션은 스레드마다 하나씩 필요하다. ODBC 핸들은 동시 사용이 안전하지 않다.
 
@@ -22,6 +26,7 @@
 #include <vector>
 
 #include "AccountStore.h"
+#include "CharacterStore.h"
 
 namespace heaven::login {
 
@@ -47,25 +52,31 @@ struct OdbcSettings {
     unsigned poolSize = 4;
 };
 
-class OdbcAccountStore : public AccountStore {
+class OdbcStore : public AccountStore, public CharacterStore {
 public:
     // 커넥션을 미리 열어둔다. 실패하면 예외를 던진다.
-    explicit OdbcAccountStore(const OdbcSettings& settings);
-    ~OdbcAccountStore() override;
+    explicit OdbcStore(const OdbcSettings& settings);
+    ~OdbcStore() override;
 
-    OdbcAccountStore(const OdbcAccountStore&) = delete;
-    OdbcAccountStore& operator=(const OdbcAccountStore&) = delete;
+    OdbcStore(const OdbcStore&) = delete;
+    OdbcStore& operator=(const OdbcStore&) = delete;
 
+    // --- AccountStore ---
     std::optional<Account> authenticate(std::string_view username,
                                         std::string_view password) override;
-
-    CreateAccountResult createAccount(std::string_view username, std::string_view nickname,
+    CreateAccountResult createAccount(std::string_view username,
                                       const std::string& passwordHash) override;
-
     // 접속 정보를 그대로 쓴다. 비밀번호는 들어 있지 않다.
     const char* describe() const override { return target_.c_str(); }
+    bool supportsRegistration() const override { return canWrite_; }
 
-    bool supportsRegistration() const override { return canCreateAccounts_; }
+    // --- CharacterStore ---
+    std::vector<Character> listByAccount(std::uint64_t accountId) override;
+    std::optional<Character> find(std::uint64_t accountId, std::uint64_t characterId) override;
+    CreateCharacterResult create(std::uint64_t accountId, std::string_view nickname,
+                                 std::uint16_t speciesId) override;
+    void touchPlayed(std::uint64_t characterId) override;
+    bool supportsCreation() const override { return canWrite_; }
 
 private:
     struct Connection;
@@ -74,9 +85,8 @@ private:
     Connection* acquire();
     void release(Connection* connection);
 
-    // INSERT 가 중복 키로 실패했을 때 어느 쪽이 걸렸는지 확인한다.
-    CreateAccountResult classifyDuplicate(Connection* connection, std::string_view username,
-                                          std::string_view nickname);
+    // 캐릭터 목록/단건 조회가 같은 컬럼 배치를 공유한다.
+    std::vector<Character> fetchCharacters(Connection* connection, SQLHSTMT statement);
 
     SQLHENV env_ = SQL_NULL_HENV;
     std::string target_;
@@ -86,9 +96,9 @@ private:
     std::vector<std::unique_ptr<Connection>> connections_;
     std::vector<Connection*> free_;
 
-    // INSERT 권한이 없으면 가입만 막고 로그인은 계속 받는다.
+    // INSERT 권한이 없으면 쓰기 기능만 막고 로그인은 계속 받는다.
     // 기능 하나 때문에 서버 전체가 못 뜨는 것보다 낫다.
-    bool canCreateAccounts_ = false;
+    bool canWrite_ = false;
 
     // 계정이 없을 때도 같은 시간을 쓰기 위한 더미 해시.
     // 이게 없으면 응답 시간만으로 아이디 존재 여부를 알 수 있다.

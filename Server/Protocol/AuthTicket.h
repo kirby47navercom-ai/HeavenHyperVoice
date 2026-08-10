@@ -26,6 +26,7 @@ struct TicketClaims {
     std::string issuer;
     std::string audience;
     std::uint64_t accountId = 0;
+    std::uint64_t characterId = 0;
     std::string nickname;
     std::int64_t issuedUnix = 0;
     std::int64_t expiresUnix = 0;
@@ -33,6 +34,7 @@ struct TicketClaims {
 
 struct VerifiedTicket {
     std::uint64_t accountId = 0;
+    std::uint64_t characterId = 0;
     std::string nickname;
     std::string issuer;
 };

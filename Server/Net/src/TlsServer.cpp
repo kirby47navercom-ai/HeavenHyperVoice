@@ -230,20 +230,29 @@ void TlsServer::timerLoop() {
         ::Sleep(1000);
 
         const auto now = std::chrono::steady_clock::now();
-        std::vector<std::shared_ptr<TlsSession>> expired;
+        std::vector<std::shared_ptr<TlsSession>> silent;
+        std::vector<std::shared_ptr<TlsSession>> overstayed;
         {
             std::shared_lock<std::shared_mutex> lock(sessionsMutex_);
             for (const auto& session : sessions_) {
-                if (!session->authenticated() &&
-                    now - session->createdAt() > options_.handshakeTimeout) {
-                    expired.push_back(session);
+                const auto age = now - session->createdAt();
+                if (!session->authenticated() && age > options_.handshakeTimeout) {
+                    silent.push_back(session);
+                } else if (options_.maxSessionLifetime.count() > 0 &&
+                           age > options_.maxSessionLifetime) {
+                    overstayed.push_back(session);
                 }
             }
         }
 
-        for (const auto& session : expired) {
+        for (const auto& session : silent) {
             spdlog::warn("{}: handshake timed out after {}s", session->peer(),
                          options_.handshakeTimeout.count());
+            session->closeSocket();
+        }
+        for (const auto& session : overstayed) {
+            spdlog::info("{}: closed after {}s (session lifetime cap)", session->peer(),
+                         options_.maxSessionLifetime.count());
             session->closeSocket();
         }
     }

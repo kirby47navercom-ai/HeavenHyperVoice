@@ -31,6 +31,16 @@ struct TlsServerOptions {
     std::uint16_t port = 9000;
     unsigned workerThreads = 0;  // 0 이면 하드웨어 동시성에서 정한다
     std::chrono::seconds handshakeTimeout = kHandshakeTimeout;
+
+    // 인증 여부와 무관한 연결 수명 상한. 0 이면 끈다.
+    //
+    // 핸드셰이크 타임아웃은 첫 프레임까지만 본다. 로그인처럼 여러 왕복이
+    // 필요한 대화는 그 뒤로 감시가 없어서, 로그인만 하고 캐릭터를 고르지
+    // 않는 연결이 슬롯을 무한정 잡을 수 있다. 사람이 고르는 시간을 감안하면
+    // 핸드셰이크 타임아웃을 늘리는 것으로는 해결되지 않는다.
+    //
+    // 채팅처럼 오래 붙어 있는 게 정상인 서버는 이걸 켜면 안 된다.
+    std::chrono::seconds maxSessionLifetime{0};
 };
 
 class TlsServer {

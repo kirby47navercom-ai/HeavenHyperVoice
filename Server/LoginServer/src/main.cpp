@@ -13,10 +13,10 @@
 
 #include "AuthTicket.h"
 #include "Credentials.h"
-#include "DevAccountStore.h"
+#include "DevStore.h"
 #include "DevPaths.h"
 #include "LoginHandler.h"
-#include "OdbcAccountStore.h"
+#include "OdbcStore.h"
 #include "PasswordHash.h"
 #include "TlsServer.h"
 #include "WorkQueue.h"
@@ -54,6 +54,9 @@ struct Options {
 
     // dev = 아무나 통과(개발용), odbc = 실제 DB 조회
     std::string accountStore = "odbc";
+
+    // 로그인 후 캐릭터를 고를 때까지 연결을 열어두는 상한(초).
+    int sessionLifetime = 120;
     heaven::login::OdbcSettings db;
 
     // 아래 셋 중 하나라도 지정되면 그 일만 하고 종료한다. 서버는 뜨지 않는다.
@@ -81,6 +84,8 @@ void printUsage() {
                  "  --threads <n>      IOCP worker threads (default: hardware concurrency)\n"
                  "  --auth-threads <n> threads for DB lookup and password verification\n"
                  "                     (default 4; these must never run on IOCP workers)\n"
+                 "  --select-timeout <s> how long a client may stay connected while\n"
+                 "                     choosing a character (default 120, 0 disables)\n"
                  "  --verbose          enable debug logging\n"
                  "  --help             show this message\n"
                  "\n"
@@ -138,6 +143,8 @@ Options parseArgs(int argc, char** argv) {
             options.ticketTtl = std::stoll(next("--ticket-ttl"));
         } else if (arg == "--threads") {
             options.threads = static_cast<unsigned>(std::stoi(next("--threads")));
+        } else if (arg == "--select-timeout") {
+            options.sessionLifetime = std::stoi(next("--select-timeout"));
         } else if (arg == "--auth-threads") {
             options.authThreads = static_cast<unsigned>(std::stoi(next("--auth-threads")));
         } else if (arg == "--account-store") {
@@ -287,9 +294,17 @@ int main(int argc, char** argv) {
         heaven::net::TlsContext tls(cert, key);
         heaven::proto::TicketSigner signer(authKey, options.keyId);
 
-        std::unique_ptr<heaven::login::AccountStore> accounts;
+        // 계정과 캐릭터는 인터페이스가 나뉘어 있지만 구현은 하나다.
+        // store 가 소유하고, 아래 두 포인터는 같은 객체를 가리킨다.
+        std::unique_ptr<heaven::login::DevStore> devStore;
+        std::unique_ptr<heaven::login::OdbcStore> odbcStore;
+        heaven::login::AccountStore* accounts = nullptr;
+        heaven::login::CharacterStore* characters = nullptr;
+
         if (options.accountStore == "dev") {
-            accounts = std::make_unique<heaven::login::DevAccountStore>();
+            devStore = std::make_unique<heaven::login::DevStore>();
+            accounts = devStore.get();
+            characters = devStore.get();
         } else {
             heaven::login::OdbcSettings db = options.db;
             db.poolSize = options.authThreads;
@@ -313,14 +328,17 @@ int main(int argc, char** argv) {
                     "  Or pass a full connection string with --db-conn,\n"
                     "  or run with --account-store dev to skip the database.");
             }
-            accounts = std::make_unique<heaven::login::OdbcAccountStore>(db);
+            odbcStore = std::make_unique<heaven::login::OdbcStore>(db);
+            accounts = odbcStore.get();
+            characters = odbcStore.get();
         }
 
         // 인증 스레드 풀. server.run() 이 끝난 뒤 명시적으로 정리한다.
         heaven::login::WorkQueue authQueue(options.authThreads);
 
         heaven::login::LoginContext context;
-        context.accounts = accounts.get();
+        context.accounts = accounts;
+        context.characters = characters;
         context.signer = &signer;
         context.authQueue = &authQueue;
         context.chat = {options.chatHost, options.chatPort};
@@ -331,6 +349,9 @@ int main(int argc, char** argv) {
         heaven::net::TlsServerOptions serverOptions;
         serverOptions.port = options.port;
         serverOptions.workerThreads = options.threads;
+        // 로그인은 2왕복이라 첫 프레임 이후로도 연결이 열려 있다. 캐릭터를
+        // 고르지 않는 연결이 슬롯을 무한정 잡지 못하게 상한을 둔다.
+        serverOptions.maxSessionLifetime = std::chrono::seconds(options.sessionLifetime);
 
         heaven::net::TlsServer server(serverOptions, tls, [&context](heaven::net::TlsSession&) {
             return std::make_unique<heaven::login::LoginHandler>(context);
@@ -347,6 +368,9 @@ int main(int argc, char** argv) {
                      authQueue.threadCount());
         spdlog::info("registration: {}",
                      accounts->supportsRegistration() ? "enabled" : "disabled");
+        spdlog::info("character creation: {} (up to {} per account, {}s to choose)",
+                     characters->supportsCreation() ? "enabled" : "disabled",
+                     heaven::login::kMaxCharactersPerAccount, options.sessionLifetime);
         if (options.accountStore == "dev") {
             spdlog::warn("ANY non-empty username is accepted with no password check.");
         }

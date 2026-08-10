@@ -61,6 +61,7 @@ bool ChatHandler::handleHello(TlsSession& session, const proto::Bytes& body) {
     // 닉네임은 서명된 티켓에서 온다. 클라이언트가 주장한 값이 아니다.
     nickname_ = verified.nickname;
     accountId_ = verified.accountId;
+    characterId_ = verified.characterId;
     sessionId_ = nextSessionId();
     joined_ = true;
     session.markAuthenticated();
@@ -86,8 +87,10 @@ bool ChatHandler::handleHello(TlsSession& session, const proto::Bytes& body) {
         displaced->closeAfterFlush();
     }
 
-    spdlog::info("joined: {} (account {} via {}, {}) - {} online", nickname_, accountId_,
-                 verified.issuer, session.peer(), room_.size());
+    // 중복 접속 판정은 계정 단위다. 한 계정으로 캐릭터 여럿을 동시에
+    // 붙이는 것도 막아야 하므로 characterId 로 좁히면 안 된다.
+    spdlog::info("joined: {} (character {}, account {} via {}, {}) - {} online", nickname_,
+                 characterId_, accountId_, verified.issuer, session.peer(), room_.size());
     room_.broadcast(makeFrame(proto::encodeNotice(nickname_ + " 님이 들어왔습니다")), &session);
     return true;
 }

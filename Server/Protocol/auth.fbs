@@ -18,6 +18,15 @@ table AuthTicket {
   key_id:string;
 
   account_id:ulong;
+
+  // 어느 캐릭터로 들어가는지. 계정 하나에 캐릭터가 여럿이므로 account_id 만으로는
+  // 부족하다. 필드 서버가 이걸로 캐릭터와 종속 포켓몬을 읽는다.
+  //
+  // 포켓몬 정보 자체는 싣지 않는다. 티켓은 신원 증명이고 발급 후 바뀌지 않는데,
+  // 스탯은 레벨업으로 바뀐다. 필드 서버가 입장할 때 DB 에서 읽으면 된다.
+  character_id:ulong;
+
+  // 캐릭터 닉네임. 계정 닉네임이 아니다.
   nickname:string;
 
   issued_unix:long;

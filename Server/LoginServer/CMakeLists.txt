@@ -3,8 +3,8 @@ find_package(unofficial-argon2 CONFIG REQUIRED)
 add_executable(LoginServer
     src/main.cpp
     src/LoginHandler.cpp
-    src/DevAccountStore.cpp
-    src/OdbcAccountStore.cpp
+    src/DevStore.cpp
+    src/OdbcStore.cpp
     src/PasswordHash.cpp
     src/WorkQueue.cpp
 )

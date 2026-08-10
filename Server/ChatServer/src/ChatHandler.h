@@ -35,6 +35,7 @@ private:
     std::string nickname_;
     std::string sessionId_;
     std::uint64_t accountId_ = 0;
+    std::uint64_t characterId_ = 0;
     bool joined_ = false;
 };
 

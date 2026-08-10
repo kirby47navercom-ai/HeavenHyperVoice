@@ -84,6 +84,7 @@ Bytes TicketSigner::sign(const TicketClaims& claims) const {
     builder.add_audience(audience);
     builder.add_key_id(keyId);
     builder.add_account_id(claims.accountId);
+    builder.add_character_id(claims.characterId);
     builder.add_nickname(nickname);
     builder.add_issued_unix(claims.issuedUnix);
     builder.add_expires_unix(claims.expiresUnix);
@@ -201,6 +202,7 @@ TicketError verifyTicket(const Bytes& ticket, std::string_view expectedAudience,
     }
 
     out.accountId = parsed->account_id();
+    out.characterId = parsed->character_id();
     out.nickname = parsed->nickname()->str();
     out.issuer = parsed->issuer() != nullptr ? parsed->issuer()->str() : std::string();
     return TicketError::Ok;

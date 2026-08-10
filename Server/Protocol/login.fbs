@@ -1,4 +1,12 @@
 // 로그인 프로토콜. 프레이밍은 chat 과 동일하다 (4바이트 LE 길이 + Envelope).
+//
+// 로그인은 한 연결 안에서 2왕복이다.
+//
+//   LoginRequest          -> LoginResponse{characters[]}      (연결 유지)
+//   CreateCharacterRequest -> CreateCharacterResponse         (선택, 연결 유지)
+//   SelectCharacterRequest -> SelectCharacterResponse{ticket} (서버가 끊음)
+//
+// 티켓은 마지막에야 나온다. 어느 캐릭터로 들어가는지 정해져야 발급할 수 있기 때문이다.
 
 namespace HeavenLogin;
 
@@ -8,11 +16,10 @@ table LoginRequest {
   password:string;
 }
 
-// 클라 -> 서버. 계정 하나에 닉네임 하나다 (계정 = 캐릭터 1:1).
+// 클라 -> 서버. 계정만 만든다. 캐릭터는 로그인한 뒤에 만든다.
 table RegisterRequest {
   username:string;
   password:string;
-  nickname:string;
 }
 
 // 서버 -> 클라. 응답 후 서버가 연결을 끊는다.
@@ -23,15 +30,66 @@ table RegisterResponse {
   message:string;
 }
 
-// 서버 -> 클라. 응답 후 서버가 연결을 끊는다.
+// 종속 포켓몬. 지금은 캐릭터당 한 마리다.
+// 스탯은 종족값이 아니라 개체의 실제 값이다. 현재 체력은 없다 — 인스턴스
+// 안에서만 의미가 있어서 Redis 에 있고 여기로 오지 않는다.
+table PokemonSummary {
+  species_id:ushort;
+  nickname:string;      // 비어 있으면 클라가 종족명을 쓴다
+  level:uint;
+  max_hp:ushort;
+  atk:ushort;
+  def:ushort;
+  sp_atk:ushort;
+  sp_def:ushort;
+  speed:ushort;
+}
+
+table CharacterSummary {
+  id:ulong;
+  nickname:string;
+  level:uint;
+
+  // 004 이전에 만들어진 캐릭터는 비어 있을 수 있다.
+  // 여러 마리로 늘어나면 [PokemonSummary] 가 된다.
+  partner:PokemonSummary;
+}
+
+// 서버 -> 클라. 여기서는 아직 티켓이 나오지 않는다. 연결은 열린 채로 둔다.
 table LoginResponse {
   ok:bool;
   message:string;
+  characters:[CharacterSummary];
+  max_slots:ubyte;
+}
 
-  // 성공 시에만 채워진다. 그대로 ChatServer 의 Hello 에 실어 보낸다.
+// 클라 -> 서버. 스타터는 서버가 종족 표로 검증한다.
+table CreateCharacterRequest {
+  nickname:string;
+  species_id:ushort;
+}
+
+// 서버 -> 클라. 성공하면 갱신된 목록을 그대로 돌려준다.
+// 클라가 목록을 다시 요청할 필요가 없다.
+table CreateCharacterResponse {
+  ok:bool;
+  message:string;
+  characters:[CharacterSummary];
+}
+
+// 클라 -> 서버. character_id 는 클라가 보낸 값이지만, 서버는 인증된
+// account_id 로 좁혀서 조회하므로 남의 캐릭터는 애초에 찾히지 않는다.
+table SelectCharacterRequest {
+  character_id:ulong;
+}
+
+// 서버 -> 클라. 응답 후 서버가 연결을 끊는다.
+// 티켓과 접속 주소가 같이 온다 — 붙는 데 필요한 것이 한 프레임에 모인다.
+table SelectCharacterResponse {
+  ok:bool;
+  message:string;
+
   ticket:[ubyte];
-
-  // 어디로 붙을지 서버가 알려준다. 클라이언트가 주소를 하드코딩하지 않게 하기 위함.
   chat_host:string;
   chat_port:ushort;
 
@@ -43,7 +101,11 @@ union Payload {
   LoginRequest,
   LoginResponse,
   RegisterRequest,
-  RegisterResponse
+  RegisterResponse,
+  CreateCharacterRequest,
+  CreateCharacterResponse,
+  SelectCharacterRequest,
+  SelectCharacterResponse
 }
 
 table Envelope {

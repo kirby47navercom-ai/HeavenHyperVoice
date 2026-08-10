@@ -4,9 +4,13 @@ A browser cannot open a raw TLS socket, so this process sits in between:
 it serves index.html and translates JSON calls into the FlatBuffers protocol.
 
     python bridge.py            # then open http://127.0.0.1:8080
+    python bridge.py --port 8081    # a second one, to play two accounts at once
 
-Development only. It holds a single chat session in module state and does not
-verify the server certificate, which is self-signed.
+Login is two round trips on one connection (log in, list characters, pick one),
+so the login socket stays open until a character is selected.
+
+Development only. It holds a single session in module state and does not verify
+the server certificate, which is self-signed.
 """
 
 import argparse
@@ -20,14 +24,23 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import flatbuffers
-from flatbuffers.number_types import BoolFlags, Uint8Flags, Uint16Flags
+from flatbuffers.number_types import (BoolFlags, Uint8Flags, Uint16Flags,
+                                      Uint32Flags, Uint64Flags)
 from flatbuffers.table import Table
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MAX_BODY = 64 * 1024
 
 # Payload union tags, in schema declaration order.
-LOGIN_REQUEST, LOGIN_RESPONSE, REGISTER_REQUEST, REGISTER_RESPONSE = 1, 2, 3, 4
+LOGIN_REQUEST = 1
+LOGIN_RESPONSE = 2
+REGISTER_REQUEST = 3
+REGISTER_RESPONSE = 4
+CREATE_CHARACTER_REQUEST = 5
+CREATE_CHARACTER_RESPONSE = 6
+SELECT_CHARACTER_REQUEST = 7
+SELECT_CHARACTER_RESPONSE = 8
+
 HELLO, SAY, NOTICE, CHAT = 1, 2, 3, 4
 
 
@@ -70,6 +83,26 @@ def hello_payload(ticket):
     return build
 
 
+def create_character_payload(nickname, species_id):
+    def build(b):
+        nick = b.CreateString(nickname)
+        b.StartObject(2)
+        b.PrependUOffsetTRelativeSlot(0, nick, 0)
+        b.PrependUint16Slot(1, species_id, 0)
+        return b.EndObject()
+
+    return build
+
+
+def select_character_payload(character_id):
+    def build(b):
+        b.StartObject(1)
+        b.PrependUint64Slot(0, character_id, 0)
+        return b.EndObject()
+
+    return build
+
+
 def root(buf):
     return Table(buf, struct.unpack_from("<I", buf, 0)[0])
 
@@ -96,13 +129,55 @@ def read_bytes(table, slot):
     return bytes(table.Bytes[start:start + table.VectorLen(o)])
 
 
+def read_table(table, slot):
+    """A nested table field, or None when absent."""
+    o = field(table, slot)
+    if not o:
+        return None
+    return Table(table.Bytes, table.Indirect(o + table.Pos))
+
+
+def read_table_vector(table, slot):
+    o = field(table, slot)
+    if not o:
+        return []
+    start = table.Vector(o)
+    return [Table(table.Bytes, table.Indirect(start + i * 4))
+            for i in range(table.VectorLen(o))]
+
+
 def read_payload(table):
     """Returns (tag, inner table) for an Envelope."""
     tag = read_scalar(table, 0, Uint8Flags)
-    o = field(table, 1)
-    if not o:
-        return tag, None
-    return tag, Table(table.Bytes, table.Indirect(o + table.Pos))
+    return tag, read_table(table, 1)
+
+
+def decode_partner(partner):
+    if partner is None:
+        return None
+    return {
+        "speciesId": read_scalar(partner, 0, Uint16Flags),
+        "nickname": read_string(partner, 1),
+        "level": read_scalar(partner, 2, Uint32Flags),
+        "maxHp": read_scalar(partner, 3, Uint16Flags),
+        "atk": read_scalar(partner, 4, Uint16Flags),
+        "def": read_scalar(partner, 5, Uint16Flags),
+        "spAtk": read_scalar(partner, 6, Uint16Flags),
+        "spDef": read_scalar(partner, 7, Uint16Flags),
+        "speed": read_scalar(partner, 8, Uint16Flags),
+    }
+
+
+def decode_characters(response, slot):
+    characters = []
+    for entry in read_table_vector(response, slot):
+        characters.append({
+            "id": read_scalar(entry, 0, Uint64Flags),
+            "nickname": read_string(entry, 1),
+            "level": read_scalar(entry, 2, Uint32Flags),
+            "partner": decode_partner(read_table(entry, 3)),
+        })
+    return characters
 
 
 # ------------------------------------------------------------------ transport
@@ -141,23 +216,27 @@ def recv_frame(sock):
     return recv_exact(sock, length)
 
 
-def request_response(host, port, body):
-    """One round trip against the login server, which closes after replying."""
-    sock = connect(host, port)
-    try:
-        send_frame(sock, body)
-        return recv_frame(sock)
-    finally:
-        sock.close()
+def exchange(sock, body, expected_tag):
+    """One request and its reply on an already open connection."""
+    send_frame(sock, body)
+    reply = recv_frame(sock)
+    if reply is None:
+        raise RuntimeError("서버가 응답 없이 연결을 끊었습니다")
+    tag, payload = read_payload(root(reply))
+    if tag != expected_tag or payload is None:
+        raise RuntimeError(f"예상치 못한 응답 (tag {tag})")
+    return payload
 
 
 # -------------------------------------------------------------------- session
 
 # ponytail: one session in module state, enough for a single browser tab.
-# Move to a dict keyed by cookie if you ever want two logins at once.
+# Run a second bridge on another port to drive two accounts at once.
 class Session:
     def __init__(self):
-        self.sock = None
+        # 캐릭터를 고를 때까지 열어두는 로그인 연결. 서버가 120초 상한을 건다.
+        self.login = None
+        self.chat = None
         self.nickname = ""
         self.lock = threading.Lock()
         self.subscribers = []
@@ -183,29 +262,46 @@ class Session:
         for events in targets:
             events.put(event)
 
-    def close(self):
-        sock, self.sock = self.sock, None
-        if sock:
+    @staticmethod
+    def _shutdown(sock):
+        if sock is not None:
             try:
                 sock.close()
             except OSError:
                 pass
 
+    def close_login(self):
+        sock, self.login = self.login, None
+        self._shutdown(sock)
+
+    def close_chat(self):
+        sock, self.chat = self.chat, None
+        self._shutdown(sock)
+
+    def close(self):
+        self.close_login()
+        self.close_chat()
+
+    def require_login(self):
+        if self.login is None:
+            raise RuntimeError("로그인 세션이 없습니다. 다시 로그인하세요")
+        return self.login
+
     def start_chat(self, host, port, ticket, nickname):
-        self.close()
+        self.close_chat()
         sock = connect(host, port)
         # The connect timeout would otherwise apply to every recv, and a quiet
         # chat room would look like a dead socket after ten seconds.
         sock.settimeout(None)
         send_frame(sock, envelope(hello_payload(ticket), HELLO))
-        self.sock = sock
+        self.chat = sock
         self.nickname = nickname
         threading.Thread(target=self._read_loop, args=(sock,), daemon=True).start()
 
     def say(self, text):
-        if not self.sock:
+        if self.chat is None:
             raise RuntimeError("not connected")
-        send_frame(self.sock, envelope(strings_table(text), SAY))
+        send_frame(self.chat, envelope(strings_table(text), SAY))
 
     def _read_loop(self, sock):
         reason = "연결이 종료되었습니다"
@@ -225,8 +321,8 @@ class Session:
         except (OSError, ValueError) as e:
             reason = str(e)
         finally:
-            if self.sock is sock:
-                self.sock = None
+            if self.chat is sock:
+                self.chat = None
                 self.publish("closed", text=reason)
 
 
@@ -295,6 +391,8 @@ class Handler(BaseHTTPRequestHandler):
             handler = {
                 "/api/register": self.api_register,
                 "/api/login": self.api_login,
+                "/api/characters/create": self.api_create_character,
+                "/api/characters/select": self.api_select_character,
                 "/api/say": self.api_say,
                 "/api/logout": self.api_logout,
             }[self.path]
@@ -304,34 +402,67 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self.reply(handler(body))
         except (OSError, ValueError, RuntimeError) as e:
+            # 로그인 연결이 끊어졌으면 다시 로그인해야 한다.
+            if self.path.startswith("/api/characters"):
+                session.close_login()
             self.reply({"ok": False, "message": f"{type(e).__name__}: {e}"}, 502)
 
     def api_register(self, body):
-        frame = envelope(
-            strings_table(body.get("username", ""), body.get("password", ""),
-                          body.get("nickname", "")),
-            REGISTER_REQUEST,
-        )
-        reply = request_response(args.login_host, args.login_port, frame)
-        if reply is None:
-            return {"ok": False, "message": "서버가 응답 없이 연결을 끊었습니다"}
-        tag, payload = read_payload(root(reply))
-        if tag != REGISTER_RESPONSE or payload is None:
-            return {"ok": False, "message": "예상치 못한 응답"}
-        return {"ok": bool(read_scalar(payload, 0, BoolFlags, False)),
-                "message": read_string(payload, 1)}
+        sock = connect(args.login_host, args.login_port)
+        try:
+            payload = exchange(
+                sock,
+                envelope(strings_table(body.get("username", ""), body.get("password", "")),
+                         REGISTER_REQUEST),
+                REGISTER_RESPONSE,
+            )
+            return {"ok": bool(read_scalar(payload, 0, BoolFlags, False)),
+                    "message": read_string(payload, 1)}
+        finally:
+            sock.close()
 
     def api_login(self, body):
-        frame = envelope(
-            strings_table(body.get("username", ""), body.get("password", "")),
-            LOGIN_REQUEST,
+        session.close()
+
+        sock = connect(args.login_host, args.login_port)
+        payload = exchange(
+            sock,
+            envelope(strings_table(body.get("username", ""), body.get("password", "")),
+                     LOGIN_REQUEST),
+            LOGIN_RESPONSE,
         )
-        reply = request_response(args.login_host, args.login_port, frame)
-        if reply is None:
-            return {"ok": False, "message": "서버가 응답 없이 연결을 끊었습니다"}
-        tag, payload = read_payload(root(reply))
-        if tag != LOGIN_RESPONSE or payload is None:
-            return {"ok": False, "message": "예상치 못한 응답"}
+
+        if not read_scalar(payload, 0, BoolFlags, False):
+            sock.close()
+            return {"ok": False, "message": read_string(payload, 1)}
+
+        # 캐릭터를 고를 때까지 이 연결을 열어둔다.
+        session.login = sock
+        return {"ok": True,
+                "characters": decode_characters(payload, 2),
+                "maxSlots": read_scalar(payload, 3, Uint8Flags)}
+
+    def api_create_character(self, body):
+        payload = exchange(
+            session.require_login(),
+            envelope(create_character_payload(body.get("nickname", ""),
+                                              int(body.get("speciesId", 0))),
+                     CREATE_CHARACTER_REQUEST),
+            CREATE_CHARACTER_RESPONSE,
+        )
+        return {"ok": bool(read_scalar(payload, 0, BoolFlags, False)),
+                "message": read_string(payload, 1),
+                "characters": decode_characters(payload, 2)}
+
+    def api_select_character(self, body):
+        payload = exchange(
+            session.require_login(),
+            envelope(select_character_payload(int(body.get("characterId", 0))),
+                     SELECT_CHARACTER_REQUEST),
+            SELECT_CHARACTER_RESPONSE,
+        )
+        # 서버가 이 응답 뒤에 로그인 연결을 끊는다.
+        session.close_login()
 
         if not read_scalar(payload, 0, BoolFlags, False):
             return {"ok": False, "message": read_string(payload, 1)}
