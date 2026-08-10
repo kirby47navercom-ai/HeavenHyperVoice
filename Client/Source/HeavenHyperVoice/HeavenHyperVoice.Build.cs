@@ -15,6 +15,7 @@ public class HeavenHyperVoice : ModuleRules
 			"Engine",
 			"InputCore",
 			"EnhancedInput",
+			"AssetRegistry",
 			"GameplayTags",
 			"UMG",
 			"GameplayAbilities",
