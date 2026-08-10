@@ -4,7 +4,7 @@
 
 #include <utility>
 
-namespace heaven::login {
+namespace heaven::net {
 
 WorkQueue::WorkQueue(unsigned threads) {
     if (threads == 0) {
@@ -73,4 +73,4 @@ void WorkQueue::workerLoop() {
     }
 }
 
-}  // namespace heaven::login
+}  // namespace heaven::net

@@ -16,7 +16,7 @@
 #include <thread>
 #include <vector>
 
-namespace heaven::login {
+namespace heaven::net {
 
 class WorkQueue {
 public:
@@ -44,4 +44,4 @@ private:
     bool stopping_ = false;
 };
 
-}  // namespace heaven::login
+}  // namespace heaven::net

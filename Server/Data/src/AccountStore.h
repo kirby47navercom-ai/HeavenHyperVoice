@@ -12,7 +12,7 @@
 #include <string>
 #include <string_view>
 
-namespace heaven::login {
+namespace heaven::data {
 
 struct Account {
     std::uint64_t id = 0;
@@ -61,4 +61,4 @@ public:
     virtual bool supportsRegistration() const = 0;
 };
 
-}  // namespace heaven::login
+}  // namespace heaven::data

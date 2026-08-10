@@ -1,22 +1,25 @@
-"""Browser test client bridge for the login and chat servers.
+"""Browser test client bridge for the login, chat and field servers.
 
 A browser cannot open a raw TLS socket, so this process sits in between:
-it serves index.html and translates JSON calls into the FlatBuffers protocol.
+it serves index.html and translates JSON into the FlatBuffers protocols.
 
-    python bridge.py            # then open http://127.0.0.1:8080
+    python bridge.py                # then open http://127.0.0.1:8080
     python bridge.py --port 8081    # a second one, to play two accounts at once
 
-Login is two round trips on one connection (log in, list characters, pick one),
-so the login socket stays open until a character is selected.
+Login is request/response over POST. Field movement runs at 20 Hz, which is
+too chatty for one HTTP request per update, so the field and chat traffic go
+over a WebSocket instead. The handshake and framing are implemented here with
+the standard library only.
 
 Development only. It holds a single session in module state and does not verify
 the server certificate, which is self-signed.
 """
 
 import argparse
+import base64
+import hashlib
 import json
 import os
-import queue
 import socket
 import ssl
 import struct
@@ -24,8 +27,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import flatbuffers
-from flatbuffers.number_types import (BoolFlags, Uint8Flags, Uint16Flags,
-                                      Uint32Flags, Uint64Flags)
+from flatbuffers.number_types import (BoolFlags, Float32Flags, Uint8Flags,
+                                      Uint16Flags, Uint32Flags, Uint64Flags)
 from flatbuffers.table import Table
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -41,7 +44,8 @@ CREATE_CHARACTER_RESPONSE = 6
 SELECT_CHARACTER_REQUEST = 7
 SELECT_CHARACTER_RESPONSE = 8
 
-HELLO, SAY, NOTICE, CHAT = 1, 2, 3, 4
+CHAT_HELLO, CHAT_SAY, CHAT_NOTICE, CHAT_CHAT = 1, 2, 3, 4
+FIELD_ENTER, FIELD_ENTER_ACK, FIELD_MOVE, FIELD_SNAPSHOT, FIELD_NOTICE = 1, 2, 3, 4, 5
 
 
 # ----------------------------------------------------------------- FlatBuffers
@@ -73,7 +77,7 @@ def strings_table(*values):
     return build
 
 
-def hello_payload(ticket):
+def ticket_payload(ticket):
     def build(b):
         vector = b.CreateByteVector(ticket)
         b.StartObject(1)
@@ -103,26 +107,37 @@ def select_character_payload(character_id):
     return build
 
 
+def move_payload(x, y, facing):
+    def build(b):
+        b.StartObject(3)
+        b.PrependFloat32Slot(0, x, 0.0)
+        b.PrependFloat32Slot(1, y, 0.0)
+        b.PrependFloat32Slot(2, facing, 0.0)
+        return b.EndObject()
+
+    return build
+
+
 def root(buf):
     return Table(buf, struct.unpack_from("<I", buf, 0)[0])
 
 
-def field(table, slot):
+def field_at(table, slot):
     return table.Offset(4 + 2 * slot)
 
 
 def read_string(table, slot):
-    o = field(table, slot)
+    o = field_at(table, slot)
     return table.String(o + table.Pos).decode("utf-8") if o else ""
 
 
 def read_scalar(table, slot, flags, default=0):
-    o = field(table, slot)
+    o = field_at(table, slot)
     return table.Get(flags, o + table.Pos) if o else default
 
 
 def read_bytes(table, slot):
-    o = field(table, slot)
+    o = field_at(table, slot)
     if not o:
         return b""
     start = table.Vector(o)
@@ -130,15 +145,12 @@ def read_bytes(table, slot):
 
 
 def read_table(table, slot):
-    """A nested table field, or None when absent."""
-    o = field(table, slot)
-    if not o:
-        return None
-    return Table(table.Bytes, table.Indirect(o + table.Pos))
+    o = field_at(table, slot)
+    return Table(table.Bytes, table.Indirect(o + table.Pos)) if o else None
 
 
 def read_table_vector(table, slot):
-    o = field(table, slot)
+    o = field_at(table, slot)
     if not o:
         return []
     start = table.Vector(o)
@@ -146,10 +158,17 @@ def read_table_vector(table, slot):
             for i in range(table.VectorLen(o))]
 
 
+def read_u64_vector(table, slot):
+    o = field_at(table, slot)
+    if not o:
+        return []
+    start = table.Vector(o)
+    return [table.Get(Uint64Flags, start + i * 8) for i in range(table.VectorLen(o))]
+
+
 def read_payload(table):
     """Returns (tag, inner table) for an Envelope."""
-    tag = read_scalar(table, 0, Uint8Flags)
-    return tag, read_table(table, 1)
+    return read_scalar(table, 0, Uint8Flags), read_table(table, 1)
 
 
 def decode_partner(partner):
@@ -169,15 +188,23 @@ def decode_partner(partner):
 
 
 def decode_characters(response, slot):
-    characters = []
-    for entry in read_table_vector(response, slot):
-        characters.append({
-            "id": read_scalar(entry, 0, Uint64Flags),
-            "nickname": read_string(entry, 1),
-            "level": read_scalar(entry, 2, Uint32Flags),
-            "partner": decode_partner(read_table(entry, 3)),
-        })
-    return characters
+    return [{
+        "id": read_scalar(entry, 0, Uint64Flags),
+        "nickname": read_string(entry, 1),
+        "level": read_scalar(entry, 2, Uint32Flags),
+        "partner": decode_partner(read_table(entry, 3)),
+    } for entry in read_table_vector(response, slot)]
+
+
+def decode_entities(snapshot, slot):
+    return [{
+        "id": str(read_scalar(entry, 0, Uint64Flags)),
+        "x": read_scalar(entry, 1, Float32Flags, 0.0),
+        "y": read_scalar(entry, 2, Float32Flags, 0.0),
+        "facing": read_scalar(entry, 3, Float32Flags, 0.0),
+        "nickname": read_string(entry, 4),
+        "partnerSpecies": read_scalar(entry, 5, Uint16Flags),
+    } for entry in read_table_vector(snapshot, slot)]
 
 
 # ------------------------------------------------------------------ transport
@@ -228,6 +255,57 @@ def exchange(sock, body, expected_tag):
     return payload
 
 
+# ------------------------------------------------------------------ WebSocket
+#
+# 20Hz movement over one HTTP request per update would be silly. The protocol
+# is small enough that the handshake and framing fit in a page.
+
+WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+
+def ws_accept_key(key):
+    digest = hashlib.sha1((key + WS_GUID).encode("ascii")).digest()
+    return base64.b64encode(digest).decode("ascii")
+
+
+def ws_encode(payload, opcode=0x1):
+    header = bytearray([0x80 | opcode])
+    length = len(payload)
+    if length < 126:
+        header.append(length)
+    elif length < 65536:
+        header.append(126)
+        header += struct.pack(">H", length)
+    else:
+        header.append(127)
+        header += struct.pack(">Q", length)
+    return bytes(header) + payload
+
+
+def ws_read(rfile):
+    """Returns (opcode, payload) or None when the peer is gone."""
+    first = rfile.read(1)
+    if not first:
+        return None
+    second = rfile.read(1)
+    if not second:
+        return None
+
+    opcode = first[0] & 0x0F
+    masked = second[0] & 0x80
+    length = second[0] & 0x7F
+    if length == 126:
+        length = struct.unpack(">H", rfile.read(2))[0]
+    elif length == 127:
+        length = struct.unpack(">Q", rfile.read(8))[0]
+
+    mask = rfile.read(4) if masked else b"\0\0\0\0"
+    data = bytearray(rfile.read(length))
+    for i in range(length):
+        data[i] ^= mask[i % 4]
+    return opcode, bytes(data)
+
+
 # -------------------------------------------------------------------- session
 
 # ponytail: one session in module state, enough for a single browser tab.
@@ -237,30 +315,35 @@ class Session:
         # 캐릭터를 고를 때까지 열어두는 로그인 연결. 서버가 120초 상한을 건다.
         self.login = None
         self.chat = None
+        self.field = None
         self.nickname = ""
-        self.lock = threading.Lock()
-        self.subscribers = []
+        self.entity_id = 0
 
-    def subscribe(self):
-        """Each event stream needs its own queue: Queue.get() consumes, so a
-        shared queue would split events between a reloaded page and the stale
-        thread the reload left behind."""
-        events = queue.Queue()
-        with self.lock:
-            self.subscribers.append(events)
-        return events
+        self.ws = None
+        self.ws_lock = threading.Lock()
 
-    def unsubscribe(self, events):
-        with self.lock:
-            if events in self.subscribers:
-                self.subscribers.remove(events)
+    # --- 브라우저로 밀어내기 ---
 
-    def publish(self, kind, **fields):
-        event = {"kind": kind, **fields}
-        with self.lock:
-            targets = list(self.subscribers)
-        for events in targets:
-            events.put(event)
+    def attach(self, wfile):
+        self.ws = wfile
+
+    def detach(self, wfile):
+        if self.ws is wfile:
+            self.ws = None
+
+    def push(self, kind, **fields):
+        target = self.ws
+        if target is None:
+            return
+        payload = json.dumps({"kind": kind, **fields}, ensure_ascii=False).encode("utf-8")
+        try:
+            with self.ws_lock:
+                target.write(ws_encode(payload))
+                target.flush()
+        except (OSError, ValueError):
+            self.ws = None
+
+    # --- 소켓 ---
 
     @staticmethod
     def _shutdown(sock):
@@ -274,36 +357,36 @@ class Session:
         sock, self.login = self.login, None
         self._shutdown(sock)
 
-    def close_chat(self):
-        sock, self.chat = self.chat, None
-        self._shutdown(sock)
+    def close_world(self):
+        chat, self.chat = self.chat, None
+        field, self.field = self.field, None
+        self._shutdown(chat)
+        self._shutdown(field)
 
     def close(self):
         self.close_login()
-        self.close_chat()
+        self.close_world()
 
     def require_login(self):
         if self.login is None:
             raise RuntimeError("로그인 세션이 없습니다. 다시 로그인하세요")
         return self.login
 
-    def start_chat(self, host, port, ticket, nickname):
-        self.close_chat()
+    # --- 채팅 ---
+
+    def start_chat(self, host, port, ticket):
         sock = connect(host, port)
-        # The connect timeout would otherwise apply to every recv, and a quiet
-        # chat room would look like a dead socket after ten seconds.
-        sock.settimeout(None)
-        send_frame(sock, envelope(hello_payload(ticket), HELLO))
+        sock.settimeout(None)  # 조용한 방은 죽은 소켓이 아니다
+        send_frame(sock, envelope(ticket_payload(ticket), CHAT_HELLO))
         self.chat = sock
-        self.nickname = nickname
-        threading.Thread(target=self._read_loop, args=(sock,), daemon=True).start()
+        threading.Thread(target=self._chat_loop, args=(sock,), daemon=True).start()
 
     def say(self, text):
         if self.chat is None:
-            raise RuntimeError("not connected")
-        send_frame(self.chat, envelope(strings_table(text), SAY))
+            raise RuntimeError("채팅에 연결되어 있지 않습니다")
+        send_frame(self.chat, envelope(strings_table(text), CHAT_SAY))
 
-    def _read_loop(self, sock):
+    def _chat_loop(self, sock):
         reason = "연결이 종료되었습니다"
         try:
             while True:
@@ -313,17 +396,64 @@ class Session:
                 tag, payload = read_payload(root(body))
                 if payload is None:
                     continue
-                if tag == NOTICE:
-                    self.publish("notice", text=read_string(payload, 0))
-                elif tag == CHAT:
-                    self.publish("chat", nickname=read_string(payload, 0),
-                                 text=read_string(payload, 1))
+                if tag == CHAT_NOTICE:
+                    self.push("notice", text=read_string(payload, 0))
+                elif tag == CHAT_CHAT:
+                    self.push("chat", nickname=read_string(payload, 0),
+                              text=read_string(payload, 1))
         except (OSError, ValueError) as e:
             reason = str(e)
         finally:
             if self.chat is sock:
                 self.chat = None
-                self.publish("closed", text=reason)
+                self.push("closed", text=reason)
+
+    # --- 필드 ---
+
+    def start_field(self, host, port, ticket):
+        sock = connect(host, port)
+        sock.settimeout(None)
+        send_frame(sock, envelope(ticket_payload(ticket), FIELD_ENTER))
+        self.field = sock
+        threading.Thread(target=self._field_loop, args=(sock,), daemon=True).start()
+
+    def move(self, x, y, facing):
+        if self.field is None:
+            return
+        send_frame(self.field, envelope(move_payload(x, y, facing), FIELD_MOVE))
+
+    def _field_loop(self, sock):
+        reason = "필드 연결이 종료되었습니다"
+        try:
+            while True:
+                body = recv_frame(sock)
+                if body is None:
+                    break
+                tag, payload = read_payload(root(body))
+                if payload is None:
+                    continue
+
+                if tag == FIELD_ENTER_ACK:
+                    self.entity_id = read_scalar(payload, 0, Uint64Flags)
+                    self.push("enter",
+                              entityId=str(self.entity_id),
+                              x=read_scalar(payload, 1, Float32Flags, 0.0),
+                              y=read_scalar(payload, 2, Float32Flags, 0.0),
+                              facing=read_scalar(payload, 3, Float32Flags, 0.0),
+                              mapId=read_scalar(payload, 4, Uint32Flags))
+                elif tag == FIELD_SNAPSHOT:
+                    self.push("snapshot",
+                              spawned=decode_entities(payload, 0),
+                              moved=decode_entities(payload, 1),
+                              despawned=[str(i) for i in read_u64_vector(payload, 2)])
+                elif tag == FIELD_NOTICE:
+                    self.push("fieldNotice", text=read_string(payload, 0))
+        except (OSError, ValueError) as e:
+            reason = str(e)
+        finally:
+            if self.field is sock:
+                self.field = None
+                self.push("closed", text=reason)
 
 
 session = Session()
@@ -336,7 +466,7 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):
-        pass  # the console is for chat, not for access logs
+        pass  # the console is for the game, not for access logs
 
     def reply(self, payload, status=200):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -347,8 +477,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path.startswith("/api/events"):
-            return self.stream_events()
+        if self.path == "/ws":
+            return self.serve_websocket()
         if self.path in ("/", "/index.html"):
             with open(os.path.join(HERE, "index.html"), "rb") as f:
                 body = f.read()
@@ -360,25 +490,48 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_error(404)
 
-    def stream_events(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache")
-        self.end_headers()
-        events = session.subscribe()
+    def serve_websocket(self):
+        key = self.headers.get("Sec-WebSocket-Key")
+        if not key:
+            return self.send_error(400, "not a websocket handshake")
+
+        self.wfile.write(
+            b"HTTP/1.1 101 Switching Protocols\r\n"
+            b"Upgrade: websocket\r\n"
+            b"Connection: Upgrade\r\n"
+            b"Sec-WebSocket-Accept: " + ws_accept_key(key).encode("ascii") + b"\r\n\r\n")
+        self.wfile.flush()
+
+        session.attach(self.wfile)
         try:
             while True:
+                frame = ws_read(self.rfile)
+                if frame is None:
+                    break
+                opcode, data = frame
+                if opcode == 0x8:  # close
+                    break
+                if opcode == 0x9:  # ping
+                    with session.ws_lock:
+                        self.wfile.write(ws_encode(data, 0xA))
+                        self.wfile.flush()
+                    continue
+                if opcode != 0x1:
+                    continue
+
                 try:
-                    line = json.dumps(events.get(timeout=15), ensure_ascii=False)
-                except queue.Empty:
-                    line = None  # a ping proves the browser is still there
-                chunk = f"data: {line}\n\n" if line else ": ping\n\n"
-                self.wfile.write(chunk.encode("utf-8"))
-                self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError, OSError):
+                    message = json.loads(data)
+                    if message.get("t") == "move":
+                        session.move(float(message["x"]), float(message["y"]),
+                                     float(message.get("f", 0.0)))
+                    elif message.get("t") == "say":
+                        session.say(message.get("text", ""))
+                except (ValueError, KeyError, OSError, RuntimeError) as e:
+                    session.push("error", text=str(e))
+        except (OSError, ValueError):
             pass
         finally:
-            session.unsubscribe(events)
+            session.detach(self.wfile)
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -393,7 +546,6 @@ class Handler(BaseHTTPRequestHandler):
                 "/api/login": self.api_login,
                 "/api/characters/create": self.api_create_character,
                 "/api/characters/select": self.api_select_character,
-                "/api/say": self.api_say,
                 "/api/logout": self.api_logout,
             }[self.path]
         except KeyError:
@@ -414,8 +566,7 @@ class Handler(BaseHTTPRequestHandler):
                 sock,
                 envelope(strings_table(body.get("username", ""), body.get("password", "")),
                          REGISTER_REQUEST),
-                REGISTER_RESPONSE,
-            )
+                REGISTER_RESPONSE)
             return {"ok": bool(read_scalar(payload, 0, BoolFlags, False)),
                     "message": read_string(payload, 1)}
         finally:
@@ -429,15 +580,13 @@ class Handler(BaseHTTPRequestHandler):
             sock,
             envelope(strings_table(body.get("username", ""), body.get("password", "")),
                      LOGIN_REQUEST),
-            LOGIN_RESPONSE,
-        )
+            LOGIN_RESPONSE)
 
         if not read_scalar(payload, 0, BoolFlags, False):
             sock.close()
             return {"ok": False, "message": read_string(payload, 1)}
 
-        # 캐릭터를 고를 때까지 이 연결을 열어둔다.
-        session.login = sock
+        session.login = sock  # 캐릭터를 고를 때까지 열어둔다
         return {"ok": True,
                 "characters": decode_characters(payload, 2),
                 "maxSlots": read_scalar(payload, 3, Uint8Flags)}
@@ -448,8 +597,7 @@ class Handler(BaseHTTPRequestHandler):
             envelope(create_character_payload(body.get("nickname", ""),
                                               int(body.get("speciesId", 0))),
                      CREATE_CHARACTER_REQUEST),
-            CREATE_CHARACTER_RESPONSE,
-        )
+            CREATE_CHARACTER_RESPONSE)
         return {"ok": bool(read_scalar(payload, 0, BoolFlags, False)),
                 "message": read_string(payload, 1),
                 "characters": decode_characters(payload, 2)}
@@ -459,29 +607,29 @@ class Handler(BaseHTTPRequestHandler):
             session.require_login(),
             envelope(select_character_payload(int(body.get("characterId", 0))),
                      SELECT_CHARACTER_REQUEST),
-            SELECT_CHARACTER_RESPONSE,
-        )
-        # 서버가 이 응답 뒤에 로그인 연결을 끊는다.
-        session.close_login()
+            SELECT_CHARACTER_RESPONSE)
+        session.close_login()  # 서버가 이 응답 뒤에 끊는다
 
         if not read_scalar(payload, 0, BoolFlags, False):
             return {"ok": False, "message": read_string(payload, 1)}
 
-        ticket = read_bytes(payload, 2)
-        host = read_string(payload, 3) or args.login_host
-        port = read_scalar(payload, 4, Uint16Flags)
-        nickname = read_string(payload, 5)
+        # 서비스마다 티켓이 따로 서명돼 있다. 필드 티켓을 채팅에 낼 수 없다.
+        endpoints = {}
+        for entry in read_table_vector(payload, 2):
+            endpoints[read_string(entry, 0)] = (read_string(entry, 1),
+                                                read_scalar(entry, 2, Uint16Flags),
+                                                read_bytes(entry, 3))
+        nickname = read_string(payload, 3)
+        session.nickname = nickname
 
-        session.start_chat(host, port, ticket, nickname)
-        return {"ok": True, "nickname": nickname, "ticketBytes": len(ticket),
-                "chat": f"{host}:{port}"}
+        if "field" in endpoints:
+            session.start_field(*endpoints["field"])
+        if "chat" in endpoints:
+            session.start_chat(*endpoints["chat"])
 
-    def api_say(self, body):
-        text = body.get("text", "").strip()
-        if not text:
-            return {"ok": False, "message": "빈 메시지"}
-        session.say(text)
-        return {"ok": True}
+        return {"ok": True, "nickname": nickname,
+                "services": {name: f"{host}:{port} ({len(ticket)}B)"
+                             for name, (host, port, ticket) in endpoints.items()}}
 
     def api_logout(self, _body):
         session.close()
@@ -490,7 +638,7 @@ class Handler(BaseHTTPRequestHandler):
 
 class Server(ThreadingHTTPServer):
     def handle_error(self, request, client_address):
-        # A browser closing a tab aborts the event stream. That is not an error.
+        # A browser closing a tab aborts the socket. That is not an error.
         pass
 
 

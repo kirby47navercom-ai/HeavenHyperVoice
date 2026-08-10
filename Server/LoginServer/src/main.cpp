@@ -44,9 +44,10 @@ struct Options {
     std::string authKeyFile = "certs/auth.key";
     std::string keyId = "dev-1";
     std::string issuer = "hhv-login";
-    std::string audience = std::string(heaven::proto::kAudienceChat);
     std::string chatHost = "127.0.0.1";
     std::uint16_t chatPort = 9000;
+    std::string fieldHost = "127.0.0.1";
+    std::uint16_t fieldPort = 9200;
     std::int64_t ticketTtl = 60;
     unsigned threads = 0;
     unsigned authThreads = 4;
@@ -57,7 +58,7 @@ struct Options {
 
     // 로그인 후 캐릭터를 고를 때까지 연결을 열어두는 상한(초).
     int sessionLifetime = 120;
-    heaven::login::OdbcSettings db;
+    heaven::data::OdbcSettings db;
 
     // 아래 셋 중 하나라도 지정되면 그 일만 하고 종료한다. 서버는 뜨지 않는다.
     bool hashOnly = false;
@@ -76,8 +77,8 @@ void printUsage() {
                  "                     (default certs/auth.key, see tools\\gen-auth-key.ps1)\n"
                  "  --key-id <id>      key identifier embedded in tickets (default dev-1)\n"
                  "  --issuer <name>    issuer claim (default hhv-login)\n"
-                 "  --audience <name>  audience claim: which service the ticket is for\n"
-                 "                     (default chat; a verifier rejects any other value)\n"
+                 "  --field-host <h>   field host handed to clients (default 127.0.0.1)\n"
+                 "  --field-port <n>   field port handed to clients (default 9200)\n"
                  "  --chat-host <h>    chat host handed to clients (default 127.0.0.1)\n"
                  "  --chat-port <n>    chat port handed to clients (default 9000)\n"
                  "  --ticket-ttl <s>   ticket lifetime in seconds (default 60)\n"
@@ -133,8 +134,10 @@ Options parseArgs(int argc, char** argv) {
             options.keyId = next("--key-id");
         } else if (arg == "--issuer") {
             options.issuer = next("--issuer");
-        } else if (arg == "--audience") {
-            options.audience = next("--audience");
+        } else if (arg == "--field-host") {
+            options.fieldHost = next("--field-host");
+        } else if (arg == "--field-port") {
+            options.fieldPort = static_cast<std::uint16_t>(std::stoi(next("--field-port")));
         } else if (arg == "--chat-host") {
             options.chatHost = next("--chat-host");
         } else if (arg == "--chat-port") {
@@ -186,16 +189,16 @@ Options parseArgs(int argc, char** argv) {
 // --hash-password 처리. 해시는 stdout 으로, 진단은 stderr 로 내보내
 // `LoginServer --hash-password x 2>NUL` 로 해시만 뽑아 쓸 수 있게 한다.
 int printPasswordHash(const std::string& password) {
-    const auto params = heaven::login::currentHashParameters();
+    const auto params = heaven::data::currentHashParameters();
 
     const auto started = std::chrono::steady_clock::now();
-    const std::string encoded = heaven::login::hashPassword(password);
+    const std::string encoded = heaven::data::hashPassword(password);
     const auto hashed = std::chrono::steady_clock::now();
 
     // 만든 해시가 실제로 검증되는지 왕복 확인한다.
-    const bool roundTrip = heaven::login::verifyPassword(password, encoded);
+    const bool roundTrip = heaven::data::verifyPassword(password, encoded);
     const auto verified = std::chrono::steady_clock::now();
-    const bool rejectsWrong = !heaven::login::verifyPassword(password + "x", encoded);
+    const bool rejectsWrong = !heaven::data::verifyPassword(password + "x", encoded);
 
     const auto ms = [](auto from, auto to) {
         return std::chrono::duration<double, std::milli>(to - from).count();
@@ -296,17 +299,17 @@ int main(int argc, char** argv) {
 
         // 계정과 캐릭터는 인터페이스가 나뉘어 있지만 구현은 하나다.
         // store 가 소유하고, 아래 두 포인터는 같은 객체를 가리킨다.
-        std::unique_ptr<heaven::login::DevStore> devStore;
-        std::unique_ptr<heaven::login::OdbcStore> odbcStore;
-        heaven::login::AccountStore* accounts = nullptr;
-        heaven::login::CharacterStore* characters = nullptr;
+        std::unique_ptr<heaven::data::DevStore> devStore;
+        std::unique_ptr<heaven::data::OdbcStore> odbcStore;
+        heaven::data::AccountStore* accounts = nullptr;
+        heaven::data::CharacterStore* characters = nullptr;
 
         if (options.accountStore == "dev") {
-            devStore = std::make_unique<heaven::login::DevStore>();
+            devStore = std::make_unique<heaven::data::DevStore>();
             accounts = devStore.get();
             characters = devStore.get();
         } else {
-            heaven::login::OdbcSettings db = options.db;
+            heaven::data::OdbcSettings db = options.db;
             db.poolSize = options.authThreads;
 
             // DB 비밀번호는 명령줄로 받지 않는다. 프로세스 목록에서 다 보이기 때문이다.
@@ -328,23 +331,27 @@ int main(int argc, char** argv) {
                     "  Or pass a full connection string with --db-conn,\n"
                     "  or run with --account-store dev to skip the database.");
             }
-            odbcStore = std::make_unique<heaven::login::OdbcStore>(db);
+            odbcStore = std::make_unique<heaven::data::OdbcStore>(db);
             accounts = odbcStore.get();
             characters = odbcStore.get();
         }
 
         // 인증 스레드 풀. server.run() 이 끝난 뒤 명시적으로 정리한다.
-        heaven::login::WorkQueue authQueue(options.authThreads);
+        heaven::net::WorkQueue authQueue(options.authThreads);
 
         heaven::login::LoginContext context;
         context.accounts = accounts;
         context.characters = characters;
         context.signer = &signer;
         context.authQueue = &authQueue;
-        context.chat = {options.chatHost, options.chatPort};
+        // 캐릭터를 고르면 이 목록의 서비스마다 티켓이 한 장씩 나간다.
+        // 음성 서버가 생기면 여기에 한 줄 추가하면 된다.
+        context.targets = {
+            {std::string(heaven::proto::kAudienceField), options.fieldHost, options.fieldPort},
+            {std::string(heaven::proto::kAudienceChat), options.chatHost, options.chatPort},
+        };
         context.ticketTtlSeconds = options.ticketTtl;
         context.issuer = options.issuer;
-        context.audience = options.audience;
 
         heaven::net::TlsServerOptions serverOptions;
         serverOptions.port = options.port;
@@ -362,15 +369,17 @@ int main(int argc, char** argv) {
 
         spdlog::info("LoginServer listening on port {} (TLS, IOCP)", options.port);
         spdlog::info("signing key: {} (key_id={})", authKey, options.keyId);
-        spdlog::info("issues tickets for chat at {}:{}, audience={}, valid {}s", options.chatHost,
-                     options.chatPort, options.audience, options.ticketTtl);
+        for (const auto& target : context.targets) {
+            spdlog::info("issues '{}' tickets for {}:{}, valid {}s", target.service, target.host,
+                         target.port, options.ticketTtl);
+        }
         spdlog::info("account store: {} ({} auth threads)", accounts->describe(),
                      authQueue.threadCount());
         spdlog::info("registration: {}",
                      accounts->supportsRegistration() ? "enabled" : "disabled");
         spdlog::info("character creation: {} (up to {} per account, {}s to choose)",
                      characters->supportsCreation() ? "enabled" : "disabled",
-                     heaven::login::kMaxCharactersPerAccount, options.sessionLifetime);
+                     heaven::data::kMaxCharactersPerAccount, options.sessionLifetime);
         if (options.accountStore == "dev") {
             spdlog::warn("ANY non-empty username is accepted with no password check.");
         }

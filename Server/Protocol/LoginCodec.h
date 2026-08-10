@@ -250,18 +250,39 @@ inline Bytes encodeSelectCharacterFailure(std::string_view message) {
                         builder.Finish().Union());
 }
 
-inline Bytes encodeSelectCharacterSuccess(const Bytes& ticket, std::string_view chatHost,
-                                          std::uint16_t chatPort, std::string_view nickname) {
+// 서비스 하나에 붙는 데 필요한 것. 티켓은 이미 그 service 의 audience 로
+// 서명돼 있어야 한다.
+struct EndpointInfo {
+    std::string service;
+    std::string host;
+    std::uint16_t port = 0;
+    Bytes ticket;
+};
+
+inline Bytes encodeSelectCharacterSuccess(const std::vector<EndpointInfo>& endpoints,
+                                          std::string_view nickname) {
     flatbuffers::FlatBufferBuilder fbb;
-    auto blob = fbb.CreateVector(ticket);
-    auto host = fbb.CreateString(chatHost.data(), chatHost.size());
+
+    std::vector<flatbuffers::Offset<HeavenLogin::ServiceEndpoint>> entries;
+    entries.reserve(endpoints.size());
+    for (const EndpointInfo& endpoint : endpoints) {
+        auto service = fbb.CreateString(endpoint.service);
+        auto host = fbb.CreateString(endpoint.host);
+        auto blob = fbb.CreateVector(endpoint.ticket);
+
+        HeavenLogin::ServiceEndpointBuilder builder(fbb);
+        builder.add_service(service);
+        builder.add_host(host);
+        builder.add_port(endpoint.port);
+        builder.add_ticket(blob);
+        entries.push_back(builder.Finish());
+    }
+    auto list = fbb.CreateVector(entries);
     auto nick = fbb.CreateString(nickname.data(), nickname.size());
 
     HeavenLogin::SelectCharacterResponseBuilder builder(fbb);
     builder.add_ok(true);
-    builder.add_ticket(blob);
-    builder.add_chat_host(host);
-    builder.add_chat_port(chatPort);
+    builder.add_endpoints(list);
     builder.add_nickname(nick);
     return detail::wrap(fbb, HeavenLogin::Payload::SelectCharacterResponse,
                         builder.Finish().Union());

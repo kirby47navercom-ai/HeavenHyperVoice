@@ -14,7 +14,7 @@
 #include <string>
 #include <string_view>
 
-namespace heaven::login {
+namespace heaven::data {
 
 struct HashParameters {
     std::uint32_t memoryKiB = 0;
@@ -33,4 +33,4 @@ std::string hashPassword(std::string_view password);
 // 비교는 상수 시간이며, 잘못된 형식이면 그냥 false 를 반환한다.
 bool verifyPassword(std::string_view password, const std::string& encoded);
 
-}  // namespace heaven::login
+}  // namespace heaven::data

@@ -83,15 +83,24 @@ table SelectCharacterRequest {
   character_id:ulong;
 }
 
+// 서비스 하나에 붙는 데 필요한 전부. 티켓은 service 별로 따로 서명되므로
+// 필드 티켓을 채팅 서버에 낼 수 없다 (audience 검증).
+//
+// 음성 서버가 생기면 이 목록에 한 줄 늘어날 뿐 프로토콜은 그대로다.
+table ServiceEndpoint {
+  service:string;   // "field" / "chat" / 추후 "voice"
+  host:string;
+  port:ushort;
+  ticket:[ubyte];
+}
+
 // 서버 -> 클라. 응답 후 서버가 연결을 끊는다.
-// 티켓과 접속 주소가 같이 온다 — 붙는 데 필요한 것이 한 프레임에 모인다.
+// 붙는 데 필요한 것이 한 프레임에 모인다.
 table SelectCharacterResponse {
   ok:bool;
   message:string;
 
-  ticket:[ubyte];
-  chat_host:string;
-  chat_port:ushort;
+  endpoints:[ServiceEndpoint];
 
   // 표시용. 권위 있는 값은 티켓 안에 있다.
   nickname:string;

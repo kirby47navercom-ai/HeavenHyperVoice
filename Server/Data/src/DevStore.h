@@ -6,7 +6,7 @@
 #include "AccountStore.h"
 #include "CharacterStore.h"
 
-namespace heaven::login {
+namespace heaven::data {
 
 // 개발용 임시 구현. **자격증명을 실제로 검증하지 않는다.**
 //
@@ -34,6 +34,10 @@ public:
     CreateCharacterResult create(std::uint64_t accountId, std::string_view nickname,
                                  std::uint16_t speciesId) override;
     void touchPlayed(std::uint64_t) override {}
+
+    // 개발용이라 위치를 들고 있지 않다. 항상 스폰 지점에서 시작한다.
+    std::optional<Position> loadPosition(std::uint64_t) override { return std::nullopt; }
+    void savePosition(std::uint64_t, const Position&) override {}
     bool supportsCreation() const override { return true; }
 
 private:
@@ -42,4 +46,4 @@ private:
     std::uint64_t nextCharacterId_ = 1;
 };
 
-}  // namespace heaven::login
+}  // namespace heaven::data

@@ -7,7 +7,7 @@
 
 #include "PasswordHash.h"
 
-namespace heaven::login {
+namespace heaven::data {
 
 namespace {
 
@@ -114,6 +114,13 @@ void bindUInt32(SQLHSTMT statement, SQLUSMALLINT index, std::uint32_t& value, SQ
             SQL_HANDLE_STMT, statement, "SQLBindParameter(uint32)");
 }
 
+void bindDouble(SQLHSTMT statement, SQLUSMALLINT index, double& value, SQLLEN& length) {
+    length = 0;
+    require(SQLBindParameter(statement, index, SQL_PARAM_INPUT, SQL_C_DOUBLE, SQL_DOUBLE, 0, 0,
+                             &value, 0, &length),
+            SQL_HANDLE_STMT, statement, "SQLBindParameter(double)");
+}
+
 void bindUInt16(SQLHSTMT statement, SQLUSMALLINT index, std::uint16_t& value, SQLLEN& length) {
     length = 0;
     require(SQLBindParameter(statement, index, SQL_PARAM_INPUT, SQL_C_USHORT, SQL_SMALLINT, 0, 0,
@@ -188,12 +195,14 @@ struct OdbcStore::Connection {
     SQLHSTMT lastInsertId = SQL_NULL_HSTMT;
     SQLHSTMT insertPokemon = SQL_NULL_HSTMT;
     SQLHSTMT touchPlayed = SQL_NULL_HSTMT;
+    SQLHSTMT selectPosition = SQL_NULL_HSTMT;
+    SQLHSTMT updatePosition = SQL_NULL_HSTMT;
 
     // 모든 구문 핸들을 한 번에 돌기 위한 목록.
     std::vector<SQLHSTMT*> all() {
         return {&selectAccount,   &touchLogin,      &insertAccount,   &listCharacters,
                 &findCharacter,   &countCharacters, &insertCharacter, &lastInsertId,
-                &insertPokemon,   &touchPlayed};
+                &insertPokemon,   &touchPlayed,     &selectPosition,  &updatePosition};
     }
 };
 
@@ -269,6 +278,9 @@ OdbcStore::OdbcStore(const OdbcSettings& settings) {
         prepare(connection->countCharacters,
                 "SELECT COUNT(*) FROM characters WHERE account_id = ?",
                 "SQLPrepare(countCharacters)");
+        prepare(connection->selectPosition,
+                "SELECT map_id, pos_x, pos_y FROM characters WHERE id = ?",
+                "SQLPrepare(selectPosition)");
 
         // 쓰기 경로. 권한이 없는 배포도 있을 수 있으므로 실패해도 죽지 않는다.
         // 로그인과 캐릭터 조회는 SELECT/UPDATE 만으로 동작한다.
@@ -290,6 +302,9 @@ OdbcStore::OdbcStore(const OdbcSettings& settings) {
             prepare(connection->touchPlayed,
                     "UPDATE characters SET last_played_at = CURRENT_TIMESTAMP(3) WHERE id = ?",
                     "SQLPrepare(touchPlayed)");
+            prepare(connection->updatePosition,
+                    "UPDATE characters SET map_id = ?, pos_x = ?, pos_y = ? WHERE id = ?",
+                    "SQLPrepare(updatePosition)");
             writable = true;
         } catch (const std::exception& e) {
             if (i == 0) {
@@ -745,4 +760,76 @@ void OdbcStore::touchPlayed(std::uint64_t characterId) {
     }
 }
 
-}  // namespace heaven::login
+std::optional<Position> OdbcStore::loadPosition(std::uint64_t characterId) {
+    Connection* connection = acquire();
+    struct Release {
+        OdbcStore* store;
+        Connection* connection;
+        ~Release() { store->release(connection); }
+    } releaseGuard{this, connection};
+
+    std::uint32_t mapId = 0;
+    double x = 0.0, y = 0.0;
+    SQLLEN mapLength = 0, xLength = 0, yLength = 0;
+
+    try {
+        SQLLEN idLength = 0;
+        bindUInt64(connection->selectPosition, 1, characterId, idLength);
+        require(SQLExecute(connection->selectPosition), SQL_HANDLE_STMT,
+                connection->selectPosition, "SQLExecute(selectPosition)");
+
+        SQLBindCol(connection->selectPosition, 1, SQL_C_ULONG, &mapId, sizeof(mapId), &mapLength);
+        SQLBindCol(connection->selectPosition, 2, SQL_C_DOUBLE, &x, sizeof(x), &xLength);
+        SQLBindCol(connection->selectPosition, 3, SQL_C_DOUBLE, &y, sizeof(y), &yLength);
+
+        const bool found = SQLFetch(connection->selectPosition) == SQL_SUCCESS;
+        SQLCloseCursor(connection->selectPosition);
+        if (!found) {
+            return std::nullopt;
+        }
+    } catch (const std::exception& e) {
+        SQLCloseCursor(connection->selectPosition);
+        spdlog::error("position load failed for character {}: {}", characterId, e.what());
+        return std::nullopt;
+    }
+
+    Position position;
+    position.mapId = mapId;
+    position.x = static_cast<float>(x);
+    position.y = static_cast<float>(y);
+    return position;
+}
+
+void OdbcStore::savePosition(std::uint64_t characterId, const Position& position) {
+    if (!canWrite_) {
+        return;
+    }
+
+    Connection* connection = acquire();
+    struct Release {
+        OdbcStore* store;
+        Connection* connection;
+        ~Release() { store->release(connection); }
+    } releaseGuard{this, connection};
+
+    std::uint32_t mapId = position.mapId;
+    double x = position.x;
+    double y = position.y;
+    std::uint64_t id = characterId;
+    SQLLEN lengths[4] = {};
+
+    try {
+        bindUInt32(connection->updatePosition, 1, mapId, lengths[0]);
+        bindDouble(connection->updatePosition, 2, x, lengths[1]);
+        bindDouble(connection->updatePosition, 3, y, lengths[2]);
+        bindUInt64(connection->updatePosition, 4, id, lengths[3]);
+        require(SQLExecute(connection->updatePosition), SQL_HANDLE_STMT,
+                connection->updatePosition, "SQLExecute(updatePosition)");
+        SQLCloseCursor(connection->updatePosition);
+    } catch (const std::exception& e) {
+        SQLCloseCursor(connection->updatePosition);
+        spdlog::warn("position save failed for character {}: {}", characterId, e.what());
+    }
+}
+
+}  // namespace heaven::data

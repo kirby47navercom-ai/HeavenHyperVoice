@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace heaven::login {
+namespace heaven::data {
 
 namespace {
 
@@ -54,4 +54,4 @@ bool verifyPassword(std::string_view password, const std::string& encoded) {
     return argon2id_verify(encoded.c_str(), password.data(), password.size()) == ARGON2_OK;
 }
 
-}  // namespace heaven::login
+}  // namespace heaven::data

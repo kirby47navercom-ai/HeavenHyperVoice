@@ -136,7 +136,7 @@ bool LoginHandler::handleRegister(TlsSession& session,
     context_.authQueue->submit([self, context, handler, user, secret] {
         std::string hash;
         try {
-            hash = hashPassword(secret);
+            hash = data::hashPassword(secret);
         } catch (const std::exception& e) {
             spdlog::error("failed to hash password for {}: {}", user, e.what());
             handler->finish(*self, proto::encodeRegisterResult(
@@ -324,34 +324,42 @@ bool LoginHandler::handleSelectCharacter(TlsSession& session,
             return;
         }
 
-        proto::TicketClaims claims;
-        claims.issuer = context->issuer;
-        claims.audience = context->audience;
-        claims.accountId = accountId;
-        claims.characterId = character->id;
-        claims.nickname = character->nickname;
-        claims.issuedUnix = nowUnix();
-        claims.expiresUnix = claims.issuedUnix + context->ticketTtlSeconds;
+        // 서비스마다 audience 를 달리해 따로 서명한다. 한 장을 돌려쓰면
+        // 필드 티켓으로 채팅 서버에 들어갈 수 있게 된다.
+        const std::int64_t issued = nowUnix();
+        std::vector<proto::EndpointInfo> endpoints;
+        endpoints.reserve(context->targets.size());
 
-        proto::Bytes ticket;
-        try {
-            ticket = context->signer->sign(claims);
-        } catch (const std::exception& e) {
-            spdlog::error("failed to sign ticket for character {}: {}", character->id, e.what());
-            handler->finish(
-                *self, proto::encodeSelectCharacterFailure("서버 오류로 입장에 실패했습니다"));
-            return;
+        for (const ServiceTarget& target : context->targets) {
+            proto::TicketClaims claims;
+            claims.issuer = context->issuer;
+            claims.audience = target.service;
+            claims.accountId = accountId;
+            claims.characterId = character->id;
+            claims.nickname = character->nickname;
+            claims.issuedUnix = issued;
+            claims.expiresUnix = issued + context->ticketTtlSeconds;
+
+            try {
+                endpoints.push_back({target.service, target.host, target.port,
+                                     context->signer->sign(claims)});
+            } catch (const std::exception& e) {
+                spdlog::error("failed to sign the {} ticket for character {}: {}",
+                              target.service, character->id, e.what());
+                handler->finish(*self, proto::encodeSelectCharacterFailure(
+                                           "서버 오류로 입장에 실패했습니다"));
+                return;
+            }
         }
 
         context->characters->touchPlayed(character->id);
 
-        spdlog::info("entering as {} (character {}, account {}, {}) - ticket valid {}s",
+        spdlog::info("entering as {} (character {}, account {}, {}) - {} ticket(s), valid {}s",
                      character->nickname, character->id, accountId, self->peer(),
-                     context->ticketTtlSeconds);
+                     endpoints.size(), context->ticketTtlSeconds);
 
-        handler->finish(*self, proto::encodeSelectCharacterSuccess(
-                                   ticket, context->chat.host, context->chat.port,
-                                   character->nickname));
+        handler->finish(*self,
+                        proto::encodeSelectCharacterSuccess(endpoints, character->nickname));
     });
 
     return true;

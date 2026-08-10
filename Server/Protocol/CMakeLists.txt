@@ -8,6 +8,7 @@ set(_schemas
     chat.fbs
     login.fbs
     auth.fbs
+    field.fbs
 )
 
 set(_gen_headers "")

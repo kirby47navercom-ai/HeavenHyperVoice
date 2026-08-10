@@ -28,7 +28,7 @@
 #include "AccountStore.h"
 #include "CharacterStore.h"
 
-namespace heaven::login {
+namespace heaven::data {
 
 // 설치된 ODBC 드라이버 중 유니코드 MySQL 드라이버를 찾는다.
 // 버전이 이름에 들어가므로(예: "MySQL ODBC 26.7 Unicode Driver") 고정할 수 없다.
@@ -76,6 +76,8 @@ public:
     CreateCharacterResult create(std::uint64_t accountId, std::string_view nickname,
                                  std::uint16_t speciesId) override;
     void touchPlayed(std::uint64_t characterId) override;
+    std::optional<Position> loadPosition(std::uint64_t characterId) override;
+    void savePosition(std::uint64_t characterId, const Position& position) override;
     bool supportsCreation() const override { return canWrite_; }
 
 private:
@@ -105,4 +107,4 @@ private:
     std::string dummyHash_;
 };
 
-}  // namespace heaven::login
+}  // namespace heaven::data

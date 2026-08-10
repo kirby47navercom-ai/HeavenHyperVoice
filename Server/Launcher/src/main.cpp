@@ -20,6 +20,7 @@ namespace {
 struct Options {
     std::uint16_t loginPort = 9100;
     std::uint16_t chatPort = 9000;
+    std::uint16_t fieldPort = 9200;
     std::string chatHost = "127.0.0.1";
     bool verbose = false;
 };
@@ -36,6 +37,7 @@ void printUsage() {
                  "\n"
                  "  --login-port <n>  login server port (default 9100)\n"
                  "  --chat-port <n>   chat server port (default 9000)\n"
+                 "  --field-port <n>  field server port (default 9200)\n"
                  "  --chat-host <h>   chat host advertised to clients (default 127.0.0.1)\n"
                  "  --verbose         pass --verbose to the servers\n"
                  "  --help            show this message\n"
@@ -59,6 +61,8 @@ Options parseArgs(int argc, char** argv) {
             options.loginPort = static_cast<std::uint16_t>(std::stoi(next("--login-port")));
         } else if (arg == "--chat-port") {
             options.chatPort = static_cast<std::uint16_t>(std::stoi(next("--chat-port")));
+        } else if (arg == "--field-port") {
+            options.fieldPort = static_cast<std::uint16_t>(std::stoi(next("--field-port")));
         } else if (arg == "--chat-host") {
             options.chatHost = next("--chat-host");
         } else if (arg == "--verbose") {
@@ -160,17 +164,25 @@ int main(int argc, char** argv) {
         const std::filesystem::path loginExe = dir / "LoginServer.exe";
         const std::string loginArgs = "LoginServer --port " + std::to_string(options.loginPort) +
                                       " --chat-host " + options.chatHost + " --chat-port " +
-                                      std::to_string(options.chatPort) + verbose;
+                                      std::to_string(options.chatPort) + " --field-host " +
+                                      options.chatHost + " --field-port " +
+                                      std::to_string(options.fieldPort) + verbose;
 
         const std::filesystem::path chatExe = dir / "ChatServer.exe";
         const std::string chatArgs =
             "ChatServer --port " + std::to_string(options.chatPort) + verbose;
 
+        const std::filesystem::path fieldExe = dir / "FieldServer.exe";
+        const std::string fieldArgs =
+            "FieldServer --port " + std::to_string(options.fieldPort) + verbose;
+
         children.push_back(startServer(loginExe, loginArgs, "LoginServer"));
         children.push_back(startServer(chatExe, chatArgs, "ChatServer"));
+        children.push_back(startServer(fieldExe, fieldArgs, "FieldServer"));
 
         std::cout << "[launcher] login on " << options.loginPort << ", chat on "
-                  << options.chatPort << ". Ctrl+C to stop both." << std::endl;
+                  << options.chatPort << ", field on " << options.fieldPort
+                  << ". Ctrl+C to stop all." << std::endl;
 
         // 아무 자식이나 죽으면 나머지도 정리한다. 반쪽만 살아있는 상태를 만들지 않는다.
         std::vector<HANDLE> handles;

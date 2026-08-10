@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace heaven::login {
+namespace heaven::data {
 
 CreateAccountResult DevStore::createAccount(std::string_view, const std::string&) {
     return CreateAccountResult::NotSupported;
@@ -85,4 +85,4 @@ CreateCharacterResult DevStore::create(std::uint64_t accountId, std::string_view
     return CreateCharacterResult::Created;
 }
 
-}  // namespace heaven::login
+}  // namespace heaven::data

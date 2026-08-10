@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <mutex>
 #include <string>
+#include <vector>
 #include <string_view>
 
 #include "AccountStore.h"
@@ -17,10 +18,21 @@ namespace heaven::login {
 
 using net::FrameHandler;
 using net::TlsSession;
+using net::WorkQueue;
 
-// 로그인 서버가 클라이언트에게 알려주는 접속지.
-// 필드 서버가 생기면 여기가 게이트웨이 주소가 된다.
-struct ChatEndpoint {
+// 저장소는 Data 라이브러리로 나갔다. FieldServer 도 같은 것을 쓴다.
+using data::Account;
+using data::AccountStore;
+using data::Character;
+using data::CharacterStore;
+using data::CreateAccountResult;
+using data::CreateCharacterResult;
+using data::kMaxCharactersPerAccount;
+
+// 클라이언트가 붙어야 하는 서비스 하나. 티켓은 service 이름을 audience 로
+// 삼아 따로 서명되므로 필드 티켓을 채팅 서버에 낼 수 없다.
+struct ServiceTarget {
+    std::string service;  // proto::kAudienceField / kAudienceChat
     std::string host;
     std::uint16_t port = 0;
 };
@@ -31,10 +43,12 @@ struct LoginContext {
     CharacterStore* characters = nullptr;
     const proto::TicketSigner* signer = nullptr;
     WorkQueue* authQueue = nullptr;
-    ChatEndpoint chat;
+
+    // 캐릭터를 고르면 이 전부에 대해 티켓이 한 장씩 발급된다.
+    std::vector<ServiceTarget> targets;
+
     std::int64_t ticketTtlSeconds = 60;
     std::string issuer;
-    std::string audience;
 };
 
 // 세션 하나의 로그인 처리.

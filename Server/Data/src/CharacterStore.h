@@ -13,7 +13,7 @@
 
 #include "LoginCodec.h"
 
-namespace heaven::login {
+namespace heaven::data {
 
 // 저장소가 읽어온 모양 그대로 와이어에 실린다. 중간 변환 구조체를 두면
 // 필드 하나 추가할 때 세 곳을 고쳐야 한다.
@@ -45,6 +45,17 @@ inline const char* describe(CreateCharacterResult result) {
 // 계정당 캐릭터 수 상한. 없으면 무한 생성이 된다.
 inline constexpr std::size_t kMaxCharactersPerAccount = 3;
 
+// 마지막으로 저장된 위치. 실시간 위치는 여기 없다 — 필드 서버 메모리와
+// Redis 에 있고, 이건 입장할 때 읽고 퇴장할 때 쓰는 값이다.
+//
+// 높이는 아직 없다. 넣을 때 z 를 추가하고 스키마에 컬럼을 하나 더 만든다.
+struct Position {
+    std::uint32_t mapId = 0;
+    float x = 0.f;
+    float y = 0.f;
+    float facing = 0.f;
+};
+
 class CharacterStore {
 public:
     virtual ~CharacterStore() = default;
@@ -63,7 +74,11 @@ public:
     // 마지막 플레이 시각. 실패해도 입장은 막지 않는다.
     virtual void touchPlayed(std::uint64_t characterId) = 0;
 
+    // 필드 입장/퇴장에서 쓴다. 없는 캐릭터면 nullopt.
+    virtual std::optional<Position> loadPosition(std::uint64_t characterId) = 0;
+    virtual void savePosition(std::uint64_t characterId, const Position& position) = 0;
+
     virtual bool supportsCreation() const = 0;
 };
 
-}  // namespace heaven::login
+}  // namespace heaven::data

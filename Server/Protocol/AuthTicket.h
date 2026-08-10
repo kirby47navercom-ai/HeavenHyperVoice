@@ -20,7 +20,11 @@ namespace heaven::proto {
 inline constexpr std::size_t kEd25519SignatureBytes = 64;
 
 // 서비스별 audience 값. 음성/게이트웨이가 생기면 여기에 추가한다.
+//
+// 검증하는 쪽이 자기 값과 일치하는지 반드시 확인한다. 이게 없으면 필드 티켓을
+// 채팅 서버에, 채팅 티켓을 음성 서버에 재사용할 수 있다.
 inline constexpr std::string_view kAudienceChat = "chat";
+inline constexpr std::string_view kAudienceField = "field";
 
 struct TicketClaims {
     std::string issuer;
