@@ -11,7 +11,7 @@ SOURCE_ROOT = PROJECT_ROOT / "Intermediate" / "VRoidOutfitCatalog"
 MANIFEST_PATH = SOURCE_ROOT / "outfit_manifest.json"
 DESTINATION_ROOT = "/Game/CharacterCustomization/Assets/VRoid/Outfits"
 CATALOG_PATH = "/Game/CharacterCustomization/Blueprints/DA_CustomizationCatalog"
-SKELETON_PATH = "/Game/VRoidGenerated/SK_BodySkin_Skeleton"
+SKELETON_PATH = "/Game/CharacterCustomization/Assets/VRoid/Skeletons/SK_VRoidCommon"
 PROPERTY_NAMES = {
     ("Male", "Tops"): "MaleTopCatalog",
     ("Male", "Bottoms"): "MaleBottomCatalog",

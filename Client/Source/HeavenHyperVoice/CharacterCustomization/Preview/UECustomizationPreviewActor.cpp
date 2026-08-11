@@ -11,6 +11,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/SpotLightComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Animation/Skeleton.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/Texture2D.h"
 #include "HAL/PlatformMisc.h"
@@ -27,15 +28,6 @@ const FString AUECustomizationPreviewActor::SaveSlotName(TEXT("UECharacterAppear
 namespace
 {
 	const FName DiffuseColorParameter(TEXT("DiffuseColor"));
-
-	FLinearColor MakeFaceSkinTint(const FLinearColor& Target, const FLinearColor& Reference)
-	{
-		return FLinearColor(
-			FMath::Clamp(Target.R / FMath::Max(Reference.R, UE_SMALL_NUMBER), 0.0f, 4.0f),
-			FMath::Clamp(Target.G / FMath::Max(Reference.G, UE_SMALL_NUMBER), 0.0f, 4.0f),
-			FMath::Clamp(Target.B / FMath::Max(Reference.B, UE_SMALL_NUMBER), 0.0f, 4.0f),
-			1.0f);
-	}
 }
 
 AUECustomizationPreviewActor::AUECustomizationPreviewActor()
@@ -256,6 +248,93 @@ void AUECustomizationPreviewActor::ApplyCatalogAsset()
 	UE_COPY_TEXTURE_CATALOG(LipTextureCatalog);
 	UE_COPY_TEXTURE_CATALOG(MouthLineTextureCatalog);
 #undef UE_COPY_TEXTURE_CATALOG
+	ValidateCatalogSkeletons();
+}
+
+void AUECustomizationPreviewActor::ValidateCatalogSkeletons() const
+{
+	if (!CatalogAsset->CommonSkeleton)
+	{
+		UE_LOG(LogTemp, Error, TEXT("VRoid customization catalog has no CommonSkeleton assigned."));
+		return;
+	}
+
+	int32 Checked = 0;
+	int32 Mismatches = 0;
+	auto CheckCatalog = [&Checked, &Mismatches, this](const TCHAR* CatalogName, const TArray<TObjectPtr<USkeletalMesh>>& Meshes)
+	{
+		for (USkeletalMesh* Mesh : Meshes)
+		{
+			if (!Mesh)
+			{
+				continue;
+			}
+			++Checked;
+			if (Mesh->GetSkeleton() != CatalogAsset->CommonSkeleton)
+			{
+				++Mismatches;
+				UE_LOG(LogTemp, Error, TEXT("VRoid mesh %s in %s uses a different Skeleton (%s)."),
+					*Mesh->GetPathName(), CatalogName, Mesh->GetSkeleton() ? *Mesh->GetSkeleton()->GetPathName() : TEXT("None"));
+			}
+		}
+	};
+
+#define UE_CHECK_MESH_CATALOG(Name) CheckCatalog(TEXT(#Name), Name)
+	UE_CHECK_MESH_CATALOG(MaleBodyCatalog);
+	UE_CHECK_MESH_CATALOG(MaleFaceSkinCatalog);
+	UE_CHECK_MESH_CATALOG(MaleEyeWhiteCatalog);
+	UE_CHECK_MESH_CATALOG(MaleEyeIrisCatalog);
+	UE_CHECK_MESH_CATALOG(MaleEyeHighlightCatalog);
+	UE_CHECK_MESH_CATALOG(MaleEyeExtraCatalog);
+	UE_CHECK_MESH_CATALOG(MaleBrowCatalog);
+	UE_CHECK_MESH_CATALOG(MaleEyelashCatalog);
+	UE_CHECK_MESH_CATALOG(MaleEyelineCatalog);
+	UE_CHECK_MESH_CATALOG(MaleMouthCatalog);
+	UE_CHECK_MESH_CATALOG(MaleHairBaseCatalog);
+	UE_CHECK_MESH_CATALOG(MaleHairFrontCatalog);
+	UE_CHECK_MESH_CATALOG(MaleHairSideCatalog);
+	UE_CHECK_MESH_CATALOG(MaleHairBackCatalog);
+	UE_CHECK_MESH_CATALOG(MaleHairExtraCatalog);
+	UE_CHECK_MESH_CATALOG(MaleTopCatalog);
+	UE_CHECK_MESH_CATALOG(MaleBottomCatalog);
+	UE_CHECK_MESH_CATALOG(MaleOnepieceCatalog);
+	UE_CHECK_MESH_CATALOG(MaleShoesCatalog);
+	UE_CHECK_MESH_CATALOG(MaleHeadAccessoryCatalog);
+	UE_CHECK_MESH_CATALOG(MaleFaceAccessoryCatalog);
+	UE_CHECK_MESH_CATALOG(MaleEarAccessoryCatalog);
+	UE_CHECK_MESH_CATALOG(MaleTailAccessoryCatalog);
+	UE_CHECK_MESH_CATALOG(MaleNeckAccessoryCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleBodyCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleFaceSkinCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleEyeWhiteCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleEyeIrisCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleEyeHighlightCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleEyeExtraCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleBrowCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleEyelashCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleEyelineCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleMouthCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleHairBaseCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleHairFrontCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleHairSideCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleHairBackCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleHairExtraCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleTopCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleBottomCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleOnepieceCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleShoesCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleHeadAccessoryCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleFaceAccessoryCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleEarAccessoryCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleTailAccessoryCatalog);
+	UE_CHECK_MESH_CATALOG(FemaleNeckAccessoryCatalog);
+#undef UE_CHECK_MESH_CATALOG
+
+	if (Mismatches == 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("VRoid customization skeleton validation passed: %d mesh entries use %s."),
+			Checked, *CatalogAsset->CommonSkeleton->GetPathName());
+	}
 }
 
 int32 AUECustomizationPreviewActor::GetOptionCount(EUECustomizationPart Part) const
@@ -384,17 +463,17 @@ bool AUECustomizationPreviewActor::UpdateMeshes()
 	};
 
 	Assign(BodyMesh, SelectMesh(GetCatalog(EUECustomizationPart::Body), 0));
-	Assign(FaceSkinMesh, SelectMesh(GetCatalog(EUECustomizationPart::FaceSkin), 0));
-	Assign(EyeWhiteMesh, SelectMesh(GetCatalog(EUECustomizationPart::EyeWhite), 0));
-	Assign(EyeIrisMesh, SelectMesh(GetCatalog(EUECustomizationPart::EyeIris), 0));
-	Assign(EyeHighlightMesh, SelectMesh(GetCatalog(EUECustomizationPart::EyeHighlight), 0));
+	Assign(FaceSkinMesh, SelectMesh(GetCatalog(EUECustomizationPart::FaceSkin), Appearance.FaceStyle));
+	Assign(EyeWhiteMesh, SelectMesh(GetCatalog(EUECustomizationPart::EyeWhite), Appearance.EyeWhiteStyle));
+	Assign(EyeIrisMesh, SelectMesh(GetCatalog(EUECustomizationPart::EyeIris), Appearance.EyeIrisStyle));
+	Assign(EyeHighlightMesh, SelectMesh(GetCatalog(EUECustomizationPart::EyeHighlight), Appearance.EyeHighlightStyle));
 	Assign(EyeExtraMesh, SelectMesh(GetCatalog(EUECustomizationPart::EyeExtra), Appearance.EyeExtraStyle));
-	Assign(BrowMesh, SelectMesh(GetCatalog(EUECustomizationPart::Brow), 0));
-	Assign(EyelashMesh, SelectMesh(GetCatalog(EUECustomizationPart::Eyelash), 0));
-	Assign(EyelineMesh, SelectMesh(GetCatalog(EUECustomizationPart::Eyeline), 0));
-	Assign(MouthMesh, SelectMesh(GetCatalog(EUECustomizationPart::Mouth), 0));
-	Assign(LipOverlayMesh, SelectMesh(GetCatalog(EUECustomizationPart::FaceSkin), 0));
-	Assign(MouthLineOverlayMesh, SelectMesh(GetCatalog(EUECustomizationPart::FaceSkin), 0));
+	Assign(BrowMesh, SelectMesh(GetCatalog(EUECustomizationPart::Brow), Appearance.BrowStyle));
+	Assign(EyelashMesh, SelectMesh(GetCatalog(EUECustomizationPart::Eyelash), Appearance.EyelashStyle));
+	Assign(EyelineMesh, SelectMesh(GetCatalog(EUECustomizationPart::Eyeline), Appearance.EyelineStyle));
+	Assign(MouthMesh, SelectMesh(GetCatalog(EUECustomizationPart::Mouth), Appearance.MouthStyle));
+	Assign(LipOverlayMesh, SelectMesh(GetCatalog(EUECustomizationPart::FaceSkin), Appearance.FaceStyle));
+	Assign(MouthLineOverlayMesh, SelectMesh(GetCatalog(EUECustomizationPart::FaceSkin), Appearance.FaceStyle));
 	Assign(HairScalpMesh, SelectMesh(GetCatalog(EUECustomizationPart::HairBase), Appearance.HairBaseStyle));
 	Assign(HairBaseMesh, SelectMesh(GetCatalog(EUECustomizationPart::HairBase), Appearance.HairBaseStyle));
 	Assign(HairFrontMesh, SelectMesh(GetCatalog(EUECustomizationPart::HairFront), Appearance.HairFrontStyle));
@@ -423,21 +502,23 @@ void AUECustomizationPreviewActor::BindFollowerPoses()
 	const TArray<USkeletalMeshComponent*> Followers = {
 		FaceSkinMesh, EyeWhiteMesh, EyeIrisMesh, EyeHighlightMesh, EyeExtraMesh, BrowMesh, EyelashMesh,
 		EyelineMesh, MouthMesh, LipOverlayMesh, MouthLineOverlayMesh,
+		HairScalpMesh, HairBaseMesh, HairFrontMesh, HairSideMesh, HairBackMesh, HairExtraMesh,
 		TopMesh, BottomMesh, OnepieceMesh, ShoesMesh,
 		HeadAccessoryMesh, FaceAccessoryMesh, EarAccessoryMesh, TailAccessoryMesh, NeckAccessoryMesh};
 	for (USkeletalMeshComponent* Follower : Followers)
 	{
-		Follower->SetLeaderPoseComponent(BodyMesh);
-	}
-	FaceAccessoryMesh->SetLeaderPoseComponent(nullptr);
-
-	// Hair FBX files use their own VRoid head bind pose. Copying the body's pose
-	// applies a different inverse bind transform and folds the strands into bars.
-	const TArray<USkeletalMeshComponent*> HairParts = {
-		HairScalpMesh, HairBaseMesh, HairFrontMesh, HairSideMesh, HairBackMesh, HairExtraMesh};
-	for (USkeletalMeshComponent* HairPart : HairParts)
-	{
-		HairPart->SetLeaderPoseComponent(nullptr);
+		if (!Follower)
+		{
+			continue;
+		}
+		if (Follower->GetAttachParent() != CharacterRoot)
+		{
+			Follower->AttachToComponent(CharacterRoot, FAttachmentTransformRules::KeepRelativeTransform);
+		}
+		Follower->SetRelativeLocation(FVector::ZeroVector);
+		Follower->SetRelativeRotation(FRotator::ZeroRotator);
+		Follower->SetRelativeScale3D(FVector::OneVector);
+		Follower->SetLeaderPoseComponent(BodyMesh, true, false);
 	}
 }
 
@@ -641,6 +722,11 @@ void AUECustomizationPreviewActor::RandomizeAppearance()
 	RandomAppearance.EyeColor = EyeTints[FMath::RandRange(0, EyeTints.Num() - 1)];
 	RandomAppearance.LipColor = LipTints[FMath::RandRange(0, LipTints.Num() - 1)];
 	RandomAppearance.OutfitColor = OutfitTints[FMath::RandRange(0, OutfitTints.Num() - 1)];
+	RandomAppearance.TopColor = OutfitTints[FMath::RandRange(0, OutfitTints.Num() - 1)];
+	RandomAppearance.BottomColor = OutfitTints[FMath::RandRange(0, OutfitTints.Num() - 1)];
+	RandomAppearance.OnepieceColor = OutfitTints[FMath::RandRange(0, OutfitTints.Num() - 1)];
+	RandomAppearance.ShoesColor = OutfitTints[FMath::RandRange(0, OutfitTints.Num() - 1)];
+	RandomAppearance.AccessoryColor = OutfitTints[FMath::RandRange(0, OutfitTints.Num() - 1)];
 	auto RandomIndex = [this](EUECustomizationPart Part)
 	{
 		return FMath::RandRange(0, FMath::Max(GetOptionCount(Part) - 1, 0));
@@ -692,7 +778,7 @@ bool AUECustomizationPreviewActor::SaveAppearance() const
 		return false;
 	}
 	SaveGame->Appearance = Appearance;
-	SaveGame->DataVersion = 8;
+	SaveGame->DataVersion = 9;
 	return UGameplayStatics::SaveGameToSlot(SaveGame, SaveSlotName, SaveUserIndex);
 }
 
@@ -750,6 +836,14 @@ bool AUECustomizationPreviewActor::LoadAppearance()
 		Appearance.EarAccessoryStyle = 0;
 		Appearance.TailAccessoryStyle = 0;
 		Appearance.NeckAccessoryStyle = 0;
+	}
+	if (SaveGame->DataVersion < 9)
+	{
+		Appearance.TopColor = Appearance.OutfitColor;
+		Appearance.BottomColor = Appearance.OutfitColor;
+		Appearance.OnepieceColor = Appearance.OutfitColor;
+		Appearance.ShoesColor = Appearance.OutfitColor;
+		Appearance.AccessoryColor = Appearance.OutfitColor;
 	}
 	Appearance.Normalize();
 	return true;
@@ -845,7 +939,16 @@ void AUECustomizationPreviewActor::CreateDynamicMaterials()
 	MouthMaterials.Empty();
 	LipMaterials.Empty();
 	MouthLineMaterials.Empty();
+	TopMaterials.Empty();
+	BottomMaterials.Empty();
+	OnepieceMaterials.Empty();
+	ShoesMaterials.Empty();
 	OutfitMaterials.Empty();
+	HeadAccessoryMaterials.Empty();
+	FaceAccessoryMaterials.Empty();
+	EarAccessoryMaterials.Empty();
+	TailAccessoryMaterials.Empty();
+	NeckAccessoryMaterials.Empty();
 	AccessoryMaterials.Empty();
 
 	CreateMaterialsForComponent(BodyMesh, BodySkinMaterials);
@@ -872,15 +975,38 @@ void AUECustomizationPreviewActor::CreateDynamicMaterials()
 	CreateMaterialsForComponent(HairSideMesh, HairMaterials);
 	CreateMaterialsForComponent(HairBackMesh, HairMaterials);
 	CreateMaterialsForComponent(HairExtraMesh, HairMaterials);
-	CreateMaterialsForComponent(TopMesh, OutfitMaterials);
-	CreateMaterialsForComponent(BottomMesh, OutfitMaterials);
-	CreateMaterialsForComponent(OnepieceMesh, OutfitMaterials);
-	CreateMaterialsForComponent(ShoesMesh, OutfitMaterials);
-	CreateMaterialsForComponent(HeadAccessoryMesh, AccessoryMaterials);
-	CreateMaterialsForComponent(FaceAccessoryMesh, AccessoryMaterials);
-	CreateMaterialsForComponent(EarAccessoryMesh, AccessoryMaterials);
-	CreateMaterialsForComponent(TailAccessoryMesh, AccessoryMaterials);
-	CreateMaterialsForComponent(NeckAccessoryMesh, AccessoryMaterials);
+	CreateMaterialsForComponent(TopMesh, TopMaterials);
+	CreateMaterialsForComponent(BottomMesh, BottomMaterials);
+	CreateMaterialsForComponent(OnepieceMesh, OnepieceMaterials);
+	CreateMaterialsForComponent(ShoesMesh, ShoesMaterials);
+	OutfitMaterials.Append(TopMaterials);
+	OutfitMaterials.Append(BottomMaterials);
+	OutfitMaterials.Append(OnepieceMaterials);
+	OutfitMaterials.Append(ShoesMaterials);
+	CreateMaterialsForComponent(HeadAccessoryMesh, HeadAccessoryMaterials);
+	CreateMaterialsForComponent(FaceAccessoryMesh, FaceAccessoryMaterials);
+	CreateMaterialsForComponent(EarAccessoryMesh, EarAccessoryMaterials);
+	CreateMaterialsForComponent(TailAccessoryMesh, TailAccessoryMaterials);
+	CreateMaterialsForComponent(NeckAccessoryMesh, NeckAccessoryMaterials);
+	AccessoryMaterials.Append(HeadAccessoryMaterials);
+	AccessoryMaterials.Append(FaceAccessoryMaterials);
+	AccessoryMaterials.Append(EarAccessoryMaterials);
+	AccessoryMaterials.Append(TailAccessoryMaterials);
+	AccessoryMaterials.Append(NeckAccessoryMaterials);
+	TArray<TObjectPtr<UMaterialInstanceDynamic>> OpaqueAccessoryMaterials;
+	OpaqueAccessoryMaterials.Append(HeadAccessoryMaterials);
+	OpaqueAccessoryMaterials.Append(EarAccessoryMaterials);
+	OpaqueAccessoryMaterials.Append(TailAccessoryMaterials);
+	OpaqueAccessoryMaterials.Append(NeckAccessoryMaterials);
+	for (UMaterialInstanceDynamic* Material : OpaqueAccessoryMaterials)
+	{
+		if (!Material)
+		{
+			continue;
+		}
+		Material->SetScalarParameterValue(TEXT("OpacityMask"), 1.0f);
+		Material->SetScalarParameterValue(TEXT("OpacityMaskMapWeight"), 0.0f);
+	}
 	ApplySelectedTextures();
 	ApplyNeutralMaterialLighting();
 }
@@ -891,7 +1017,8 @@ void AUECustomizationPreviewActor::ApplySelectedTextures()
 		EUECustomizationPart Part,
 		int32 Index,
 		USkeletalMeshComponent* Component,
-		const TArray<TObjectPtr<UMaterialInstanceDynamic>>& Materials)
+		const TArray<TObjectPtr<UMaterialInstanceDynamic>>& Materials,
+		bool bKeepCoreGeometryVisible)
 	{
 		UTexture2D* Texture = GetOptionTexture(Part, Index);
 		UTexture2D* NormalTexture = Part == EUECustomizationPart::FaceSkin &&
@@ -900,10 +1027,21 @@ void AUECustomizationPreviewActor::ApplySelectedTextures()
 			: nullptr;
 		if (Component)
 		{
-			Component->SetVisibility(Texture != nullptr, true);
+			Component->SetVisibility(bKeepCoreGeometryVisible || Texture != nullptr, true);
 		}
 		if (!Texture)
 		{
+			for (UMaterialInstanceDynamic* Material : Materials)
+			{
+				if (!Material)
+				{
+					continue;
+				}
+				Material->SetScalarParameterValue(TEXT("DiffuseColorMapWeight"), 0.0f);
+				Material->SetScalarParameterValue(TEXT("OpacityMaskMapWeight"), bKeepCoreGeometryVisible ? 0.0f : 1.0f);
+				Material->SetScalarParameterValue(TEXT("EmissiveColorMapWeight"), 0.0f);
+				Material->SetScalarParameterValue(TEXT("NormalMapWeight"), 0.0f);
+			}
 			return;
 		}
 		for (UMaterialInstanceDynamic* Material : Materials)
@@ -925,16 +1063,16 @@ void AUECustomizationPreviewActor::ApplySelectedTextures()
 		}
 	};
 
-	Apply(EUECustomizationPart::FaceSkin, Appearance.FaceStyle, FaceSkinMesh, FaceSkinMaterials);
-	Apply(EUECustomizationPart::EyeWhite, Appearance.EyeWhiteStyle, EyeWhiteMesh, EyeWhiteMaterials);
-	Apply(EUECustomizationPart::EyeIris, Appearance.EyeIrisStyle, EyeIrisMesh, EyeMaterials);
-	Apply(EUECustomizationPart::EyeHighlight, Appearance.EyeHighlightStyle, EyeHighlightMesh, EyeHighlightMaterials);
-	Apply(EUECustomizationPart::Brow, Appearance.BrowStyle, BrowMesh, BrowMaterials);
-	Apply(EUECustomizationPart::Eyelash, Appearance.EyelashStyle, EyelashMesh, EyelashMaterials);
-	Apply(EUECustomizationPart::Eyeline, Appearance.EyelineStyle, EyelineMesh, EyelineMaterials);
-	Apply(EUECustomizationPart::Mouth, Appearance.MouthStyle, MouthMesh, MouthMaterials);
-	Apply(EUECustomizationPart::Lip, Appearance.LipStyle, LipOverlayMesh, LipMaterials);
-	Apply(EUECustomizationPart::MouthLine, Appearance.MouthLineStyle, MouthLineOverlayMesh, MouthLineMaterials);
+	Apply(EUECustomizationPart::FaceSkin, Appearance.FaceStyle, FaceSkinMesh, FaceSkinMaterials, true);
+	Apply(EUECustomizationPart::EyeWhite, Appearance.EyeWhiteStyle, EyeWhiteMesh, EyeWhiteMaterials, true);
+	Apply(EUECustomizationPart::EyeIris, Appearance.EyeIrisStyle, EyeIrisMesh, EyeMaterials, true);
+	Apply(EUECustomizationPart::EyeHighlight, Appearance.EyeHighlightStyle, EyeHighlightMesh, EyeHighlightMaterials, false);
+	Apply(EUECustomizationPart::Brow, Appearance.BrowStyle, BrowMesh, BrowMaterials, false);
+	Apply(EUECustomizationPart::Eyelash, Appearance.EyelashStyle, EyelashMesh, EyelashMaterials, false);
+	Apply(EUECustomizationPart::Eyeline, Appearance.EyelineStyle, EyelineMesh, EyelineMaterials, false);
+	Apply(EUECustomizationPart::Mouth, Appearance.MouthStyle, MouthMesh, MouthMaterials, true);
+	Apply(EUECustomizationPart::Lip, Appearance.LipStyle, LipOverlayMesh, LipMaterials, false);
+	Apply(EUECustomizationPart::MouthLine, Appearance.MouthLineStyle, MouthLineOverlayMesh, MouthLineMaterials, false);
 }
 
 void AUECustomizationPreviewActor::ApplyColors()
@@ -960,18 +1098,7 @@ void AUECustomizationPreviewActor::ApplyColors()
 		SetMaterialScalar(Materials, TEXT("SpecularColorMapWeight"), 0.0f);
 		SetMaterialScalar(Materials, TEXT("Shininess"), 0.0f);
 	};
-	const FLinearColor ReferenceSkinColor = CatalogAsset
-		? CatalogAsset->ReferenceFaceSkinColor
-		: FLinearColor::White;
-	const FLinearColor SkinTint = MakeFaceSkinTint(Appearance.SkinColor, ReferenceSkinColor);
-	const FLinearColor BodySkinGain = CatalogAsset
-		? CatalogAsset->BodySkinColorGain
-		: FLinearColor(1.15f, 1.50f, 1.50f, 1.0f);
-	const FLinearColor BodySkinColor(
-		FMath::Clamp(Appearance.SkinColor.R * BodySkinGain.R, 0.0f, 1.0f),
-		FMath::Clamp(Appearance.SkinColor.G * BodySkinGain.G, 0.0f, 1.0f),
-		FMath::Clamp(Appearance.SkinColor.B * BodySkinGain.B, 0.0f, 1.0f),
-		Appearance.SkinColor.A);
+	const FLinearColor SkinColor = Appearance.SkinColor;
 	const FLinearColor BrowColor(
 		0.26f * Appearance.HairColor.R,
 		0.075f * Appearance.HairColor.G,
@@ -982,14 +1109,18 @@ void AUECustomizationPreviewActor::ApplyColors()
 		0.018f * Appearance.HairColor.G,
 		0.012f * Appearance.HairColor.B,
 		1.0f);
-	SetMaterialColor(BodySkinMaterials, DiffuseColorParameter, BodySkinColor);
-	SetMaterialColor(BodySkinMaterials, TEXT("EmissiveColor"), BodySkinColor);
-	SetMaterialColor(BodySkinMaterials, TEXT("TintColor"), BodySkinColor);
+	SetMaterialColor(BodySkinMaterials, DiffuseColorParameter, SkinColor);
+	SetMaterialColor(BodySkinMaterials, TEXT("EmissiveColor"), SkinColor);
+	SetMaterialColor(BodySkinMaterials, TEXT("TintColor"), SkinColor);
 	SetMaterialScalar(BodySkinMaterials, TEXT("DiffuseColorMapWeight"), 0.0f);
 	SetMaterialScalar(BodySkinMaterials, TEXT("EmissiveColorMapWeight"), 0.0f);
 	SetMaterialScalar(BodySkinMaterials, TEXT("SpecularColorMapWeight"), 0.0f);
-	SetMaterialColor(FaceSkinMaterials, DiffuseColorParameter, SkinTint);
-	SetMaterialColor(FaceSkinMaterials, TEXT("EmissiveColor"), SkinTint);
+	SetMaterialColor(FaceSkinMaterials, DiffuseColorParameter, SkinColor);
+	SetMaterialColor(FaceSkinMaterials, TEXT("EmissiveColor"), SkinColor);
+	SetMaterialColor(FaceSkinMaterials, TEXT("TintColor"), SkinColor);
+	SetMaterialScalar(FaceSkinMaterials, TEXT("DiffuseColorMapWeight"), 0.0f);
+	SetMaterialScalar(FaceSkinMaterials, TEXT("EmissiveColorMapWeight"), 0.0f);
+	SetMaterialScalar(FaceSkinMaterials, TEXT("SpecularColorMapWeight"), 0.0f);
 	SetMaterialColor(HairMaterials, DiffuseColorParameter, Appearance.HairColor);
 	SetMaterialScalar(HairScalpMaterials, TEXT("OpacityMask"), 1.0f);
 	SetMaterialScalar(HairScalpMaterials, TEXT("OpacityMaskMapWeight"), 0.0f);
@@ -1054,7 +1185,16 @@ void AUECustomizationPreviewActor::ApplyColors()
 	SetMaterialScalar(MouthLineMaterials, TEXT("OpacityMaskMapWeight"), 1.0f);
 	SetMaterialScalar(MouthLineMaterials, TEXT("SpecularColorMapWeight"), 0.0f);
 	SetMaterialScalar(MouthLineMaterials, TEXT("Shininess"), 0.0f);
-	SetMaterialColor(OutfitMaterials, DiffuseColorParameter, Appearance.OutfitColor);
+	SetMaterialColor(TopMaterials, DiffuseColorParameter, Appearance.TopColor);
+	SetMaterialColor(TopMaterials, TEXT("TintColor"), Appearance.TopColor);
+	SetMaterialColor(BottomMaterials, DiffuseColorParameter, Appearance.BottomColor);
+	SetMaterialColor(BottomMaterials, TEXT("TintColor"), Appearance.BottomColor);
+	SetMaterialColor(OnepieceMaterials, DiffuseColorParameter, Appearance.OnepieceColor);
+	SetMaterialColor(OnepieceMaterials, TEXT("TintColor"), Appearance.OnepieceColor);
+	SetMaterialColor(ShoesMaterials, DiffuseColorParameter, Appearance.ShoesColor);
+	SetMaterialColor(ShoesMaterials, TEXT("TintColor"), Appearance.ShoesColor);
+	SetMaterialColor(AccessoryMaterials, DiffuseColorParameter, Appearance.AccessoryColor);
+	SetMaterialColor(AccessoryMaterials, TEXT("TintColor"), Appearance.AccessoryColor);
 }
 
 void AUECustomizationPreviewActor::ApplyNeutralMaterialLighting()
@@ -1101,66 +1241,26 @@ void AUECustomizationPreviewActor::ApplyTransforms()
 	const float HeightScale = FMath::Lerp(0.94f, 1.06f, Appearance.Height);
 	CharacterRoot->SetRelativeScale3D(FVector(WidthScale, FMath::Sqrt(WidthScale), HeightScale));
 
-	const float HeadScale = FMath::Lerp(0.94f, 1.06f, Appearance.HeadSize);
-	const bool bFemale = Appearance.Gender == EUECharacterGender::Female;
-	const float HeadPivotY = CatalogAsset
-		? (bFemale ? CatalogAsset->FemaleHeadPivotY : CatalogAsset->MaleHeadPivotY)
-		: 0.0f;
-	const float HeadPivotZ = CatalogAsset
-		? (bFemale ? CatalogAsset->FemaleHeadPivotZ : CatalogAsset->MaleHeadPivotZ)
-		: 0.0f;
-	const float HeadVerticalOffset = CatalogAsset
-		? (bFemale ? CatalogAsset->FemaleHeadVerticalOffset : CatalogAsset->MaleHeadVerticalOffset)
-		: 0.0f;
-	const FVector HeadOffset(
-		0.0f,
-		HeadPivotY * (1.0f - HeadScale),
-		HeadPivotZ * (1.0f - HeadScale) + HeadVerticalOffset);
-	const TArray<USkeletalMeshComponent*> FaceParts = {
-		FaceSkinMesh, EyeWhiteMesh, EyeIrisMesh, EyeHighlightMesh, EyeExtraMesh, BrowMesh, EyelashMesh,
-		EyelineMesh, MouthMesh, LipOverlayMesh, MouthLineOverlayMesh};
-	for (USkeletalMeshComponent* Part : FaceParts)
+	const TArray<USkeletalMeshComponent*> ModularParts = {
+		BodyMesh, FaceSkinMesh, EyeWhiteMesh, EyeIrisMesh, EyeHighlightMesh, EyeExtraMesh, BrowMesh, EyelashMesh,
+		EyelineMesh, MouthMesh, LipOverlayMesh, MouthLineOverlayMesh,
+		HairScalpMesh, HairBaseMesh, HairFrontMesh, HairSideMesh, HairBackMesh, HairExtraMesh,
+		TopMesh, BottomMesh, OnepieceMesh, ShoesMesh,
+		HeadAccessoryMesh, FaceAccessoryMesh, EarAccessoryMesh, TailAccessoryMesh, NeckAccessoryMesh};
+	for (USkeletalMeshComponent* Part : ModularParts)
 	{
-		Part->SetRelativeLocation(HeadOffset);
-		Part->SetRelativeScale3D(FVector(HeadScale));
+		if (!Part)
+		{
+			continue;
+		}
+		if (Part != BodyMesh && Part->GetAttachParent() != CharacterRoot)
+		{
+			Part->AttachToComponent(CharacterRoot, FAttachmentTransformRules::KeepRelativeTransform);
+		}
+		Part->SetRelativeLocation(FVector::ZeroVector);
+		Part->SetRelativeRotation(FRotator::ZeroRotator);
+		Part->SetRelativeScale3D(FVector::OneVector);
 	}
-	const float HairRadialScale = HeadScale * (CatalogAsset ? CatalogAsset->HairRadialScale : 1.0f);
-	const FVector HairOffset(
-		0.0f,
-		HeadPivotY * (1.0f - HairRadialScale),
-		HeadPivotZ * (1.0f - HeadScale) + HeadVerticalOffset);
-	const TArray<USkeletalMeshComponent*> HairParts = {
-		HairBaseMesh, HairFrontMesh, HairSideMesh, HairBackMesh, HairExtraMesh};
-	for (USkeletalMeshComponent* Part : HairParts)
-	{
-		Part->SetRelativeLocation(HairOffset);
-		Part->SetRelativeScale3D(FVector(HairRadialScale, HairRadialScale, HeadScale));
-	}
-	HeadAccessoryMesh->SetRelativeLocation(HeadOffset + FVector(
-		0.0f,
-		0.0f,
-		CatalogAsset ? CatalogAsset->HeadAccessoryVerticalOffset : 9.0f));
-	HeadAccessoryMesh->SetRelativeScale3D(FVector(HeadScale));
-	EarAccessoryMesh->SetRelativeLocation(HeadOffset);
-	EarAccessoryMesh->SetRelativeScale3D(FVector(HeadScale));
-	FaceAccessoryMesh->SetRelativeLocation(HeadOffset + FVector(
-		0.0f,
-		CatalogAsset ? CatalogAsset->FaceAccessoryForwardOffset : 6.5f,
-		CatalogAsset ? CatalogAsset->FaceAccessoryVerticalOffset : 17.5f));
-	FaceAccessoryMesh->SetRelativeScale3D(FVector(HeadScale));
-	const float ScalpRadialScale = HairRadialScale *
-		(CatalogAsset ? CatalogAsset->HairScalpInsetScale : 0.985f);
-	HairScalpMesh->SetRelativeLocation(FVector(
-		0.0f,
-		HeadPivotY * (1.0f - ScalpRadialScale),
-		HeadPivotZ * (1.0f - HeadScale) + HeadVerticalOffset));
-	HairScalpMesh->SetRelativeScale3D(FVector(ScalpRadialScale, ScalpRadialScale, HeadScale));
-	EyeWhiteMesh->AddRelativeLocation(FVector(
-		0.0f,
-		CatalogAsset ? CatalogAsset->ScleraDepthOffsetY : 0.0f,
-		0.0f));
-	LipOverlayMesh->SetRelativeScale3D(FVector(HeadScale * 1.0008f));
-	MouthLineOverlayMesh->SetRelativeScale3D(FVector(HeadScale * 1.0012f));
 }
 
 void AUECustomizationPreviewActor::HideLegacyPreviewParts()

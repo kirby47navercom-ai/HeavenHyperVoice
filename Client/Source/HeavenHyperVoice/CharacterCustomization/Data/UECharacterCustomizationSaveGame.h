@@ -13,7 +13,7 @@ class HEAVENHYPERVOICE_API UUECharacterCustomizationSaveGame : public USaveGame
 
 public:
 	UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Customization")
-	int32 DataVersion = 8;
+	int32 DataVersion = 9;
 
 	UPROPERTY(SaveGame, VisibleAnywhere, BlueprintReadOnly, Category = "Customization")
 	FUECharacterCustomizationData Appearance;

@@ -5,6 +5,7 @@
 #include "UECustomizationCatalog.generated.h"
 
 class USkeletalMesh;
+class USkeleton;
 class UTexture2D;
 
 UCLASS(BlueprintType)
@@ -13,6 +14,10 @@ class HEAVENHYPERVOICE_API UUECustomizationCatalog : public UDataAsset
 	GENERATED_BODY()
 
 public:
+	/** Every modular VRoid mesh in this catalog must reference this skeleton. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Rig")
+	TObjectPtr<USkeleton> CommonSkeleton = nullptr;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Meshes|Male")
 	TArray<TObjectPtr<USkeletalMesh>> MaleBodyCatalog;
 

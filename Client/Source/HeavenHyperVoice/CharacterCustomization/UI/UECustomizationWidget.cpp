@@ -12,6 +12,7 @@
 #include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
 #include "Components/Slider.h"
+#include "Components/SpinBox.h"
 #include "Components/Spacer.h"
 #include "Components/TextBlock.h"
 #include "Components/UniformGridPanel.h"
@@ -61,6 +62,25 @@ void UUECustomizationOptionButton::HandleClicked()
 	else
 	{
 		OwnerWidget->SelectPartOption(Part, Index);
+	}
+}
+
+void UUECustomizationColorButton::Configure(
+	UUECustomizationWidget* InOwner,
+	EUECustomizationColorChannel InChannel,
+	const FLinearColor& InColor)
+{
+	OwnerWidget = InOwner;
+	Channel = InChannel;
+	Color = InColor;
+	OnClicked.AddUniqueDynamic(this, &ThisClass::HandleClicked);
+}
+
+void UUECustomizationColorButton::HandleClicked()
+{
+	if (OwnerWidget)
+	{
+		OwnerWidget->SelectColor(Channel, Color);
 	}
 }
 
@@ -186,8 +206,11 @@ void UUECustomizationWidget::BuildInterface()
 	ParameterPanel->SetBrushColor(PanelColor);
 	ParameterPanel->SetPadding(FMargin(16.0f));
 	ParameterSize->AddChild(ParameterPanel);
+	UScrollBox* ParameterScroll = WidgetTree->ConstructWidget<UScrollBox>();
+	ParameterScroll->SetAlwaysShowScrollbar(true);
+	ParameterPanel->AddChild(ParameterScroll);
 	UVerticalBox* Parameters = WidgetTree->ConstructWidget<UVerticalBox>();
-	ParameterPanel->AddChild(Parameters);
+	ParameterScroll->AddChild(Parameters);
 
 	AddSectionTitle(Parameters, TEXT("PARAMETERS"));
 	AddSliderRow(Parameters, TEXT("Height"), HeightSlider);
@@ -198,43 +221,136 @@ void UUECustomizationWidget::BuildInterface()
 	ShoulderSlider->OnValueChanged.AddDynamic(this, &ThisClass::ShoulderWidthChanged);
 
 	TArray<UButton*> SkinButtons;
-	AddColorRow(Parameters, TEXT("Skin"), {
+	AddColorRow(Parameters, TEXT("Skin color"), EUECustomizationColorChannel::Skin, {
+		FLinearColor::FromSRGBColor(FColor(255, 224, 196)),
 		FLinearColor::FromSRGBColor(FColor(239, 185, 151)),
+		FLinearColor::FromSRGBColor(FColor(220, 154, 115)),
 		FLinearColor::FromSRGBColor(FColor(184, 128, 92)),
-		FLinearColor::FromSRGBColor(FColor(105, 66, 47))}, SkinButtons);
-	SkinButtons[0]->OnClicked.AddDynamic(this, &ThisClass::SkinLight);
-	SkinButtons[1]->OnClicked.AddDynamic(this, &ThisClass::SkinMedium);
-	SkinButtons[2]->OnClicked.AddDynamic(this, &ThisClass::SkinDeep);
+		FLinearColor::FromSRGBColor(FColor(152, 98, 67)),
+		FLinearColor::FromSRGBColor(FColor(105, 66, 47)),
+		FLinearColor::FromSRGBColor(FColor(255, 196, 170)),
+		FLinearColor::FromSRGBColor(FColor(242, 170, 143)),
+		FLinearColor::FromSRGBColor(FColor(197, 143, 116)),
+		FLinearColor::FromSRGBColor(FColor(139, 91, 70)),
+		FLinearColor::FromSRGBColor(FColor(92, 55, 44)),
+		FLinearColor::FromSRGBColor(FColor(66, 42, 38))}, SkinButtons);
+	AddRGBColorRow(Parameters, TEXT("Skin RGB 0-255"), SkinRedInput, SkinGreenInput, SkinBlueInput);
 
 	TArray<UButton*> EyeButtons;
-	AddColorRow(Parameters, TEXT("Iris"), {
-		FLinearColor(0.38f, 0.16f, 0.06f),
-		FLinearColor(0.12f, 0.38f, 0.72f),
-		FLinearColor(0.16f, 0.42f, 0.22f)}, EyeButtons);
-	EyeButtons[0]->OnClicked.AddDynamic(this, &ThisClass::EyeOriginal);
-	EyeButtons[1]->OnClicked.AddDynamic(this, &ThisClass::EyeBlue);
-	EyeButtons[2]->OnClicked.AddDynamic(this, &ThisClass::EyeBrown);
+	AddColorRow(Parameters, TEXT("Iris color"), EUECustomizationColorChannel::Eye, {
+		FLinearColor::FromSRGBColor(FColor(28, 22, 18)),
+		FLinearColor::FromSRGBColor(FColor(92, 51, 25)),
+		FLinearColor::FromSRGBColor(FColor(145, 85, 38)),
+		FLinearColor::FromSRGBColor(FColor(201, 140, 54)),
+		FLinearColor::FromSRGBColor(FColor(70, 105, 145)),
+		FLinearColor::FromSRGBColor(FColor(45, 150, 210)),
+		FLinearColor::FromSRGBColor(FColor(45, 155, 95)),
+		FLinearColor::FromSRGBColor(FColor(127, 65, 165)),
+		FLinearColor::FromSRGBColor(FColor(190, 65, 115)),
+		FLinearColor::FromSRGBColor(FColor(190, 45, 48)),
+		FLinearColor::FromSRGBColor(FColor(230, 220, 165)),
+		FLinearColor::FromSRGBColor(FColor(190, 195, 205))}, EyeButtons);
+	AddRGBColorRow(Parameters, TEXT("Iris RGB 0-255"), EyeRedInput, EyeGreenInput, EyeBlueInput);
 
 	TArray<UButton*> LipButtons;
-	AddColorRow(Parameters, TEXT("Lips"), {
+	AddColorRow(Parameters, TEXT("Lip color"), EUECustomizationColorChannel::Lip, {
+		FLinearColor::FromSRGBColor(FColor(105, 34, 48)),
+		FLinearColor::FromSRGBColor(FColor(133, 52, 70)),
+		FLinearColor::FromSRGBColor(FColor(166, 70, 89)),
 		FLinearColor::FromSRGBColor(FColor(196, 102, 116)),
 		FLinearColor::FromSRGBColor(FColor(225, 154, 165)),
-		FLinearColor::FromSRGBColor(FColor(133, 52, 70))}, LipButtons);
-	LipButtons[0]->OnClicked.AddDynamic(this, &ThisClass::LipNatural);
-	LipButtons[1]->OnClicked.AddDynamic(this, &ThisClass::LipSoft);
-	LipButtons[2]->OnClicked.AddDynamic(this, &ThisClass::LipDeep);
+		FLinearColor::FromSRGBColor(FColor(244, 190, 193)),
+		FLinearColor::FromSRGBColor(FColor(145, 49, 110)),
+		FLinearColor::FromSRGBColor(FColor(191, 62, 135)),
+		FLinearColor::FromSRGBColor(FColor(103, 42, 88)),
+		FLinearColor::FromSRGBColor(FColor(218, 88, 75)),
+		FLinearColor::FromSRGBColor(FColor(239, 119, 100)),
+		FLinearColor::FromSRGBColor(FColor(92, 38, 38))}, LipButtons);
+	AddRGBColorRow(Parameters, TEXT("Lip RGB 0-255"), LipRedInput, LipGreenInput, LipBlueInput);
 
 	TArray<UButton*> HairButtons;
-	AddColorRow(Parameters, TEXT("Hair"), {FLinearColor::White, FLinearColor(0.12f, 0.22f, 0.55f), FLinearColor(0.55f, 0.12f, 0.16f)}, HairButtons);
-	HairButtons[0]->OnClicked.AddDynamic(this, &ThisClass::HairOriginal);
-	HairButtons[1]->OnClicked.AddDynamic(this, &ThisClass::HairBlue);
-	HairButtons[2]->OnClicked.AddDynamic(this, &ThisClass::HairCoral);
+	AddColorRow(Parameters, TEXT("Hair color"), EUECustomizationColorChannel::Hair, {
+		FLinearColor::FromSRGBColor(FColor(28, 15, 12)),
+		FLinearColor::FromSRGBColor(FColor(67, 28, 17)),
+		FLinearColor::FromSRGBColor(FColor(108, 48, 23)),
+		FLinearColor::FromSRGBColor(FColor(155, 76, 35)),
+		FLinearColor::FromSRGBColor(FColor(212, 133, 78)),
+		FLinearColor::FromSRGBColor(FColor(235, 188, 112)),
+		FLinearColor::FromSRGBColor(FColor(28, 35, 72)),
+		FLinearColor::FromSRGBColor(FColor(52, 92, 180)),
+		FLinearColor::FromSRGBColor(FColor(112, 57, 155)),
+		FLinearColor::FromSRGBColor(FColor(186, 56, 116)),
+		FLinearColor::FromSRGBColor(FColor(45, 145, 103)),
+		FLinearColor::FromSRGBColor(FColor(222, 205, 69))}, HairButtons);
+	AddRGBColorRow(Parameters, TEXT("Hair RGB 0-255"), HairRedInput, HairGreenInput, HairBlueInput);
 
+	const TArray<FLinearColor> OutfitPalette = {
+		FLinearColor::FromSRGBColor(FColor(245, 245, 245)),
+		FLinearColor::FromSRGBColor(FColor(28, 50, 80)),
+		FLinearColor::FromSRGBColor(FColor(54, 104, 160)),
+		FLinearColor::FromSRGBColor(FColor(61, 164, 190)),
+		FLinearColor::FromSRGBColor(FColor(51, 145, 110)),
+		FLinearColor::FromSRGBColor(FColor(120, 158, 64)),
+		FLinearColor::FromSRGBColor(FColor(231, 193, 65)),
+		FLinearColor::FromSRGBColor(FColor(230, 134, 58)),
+		FLinearColor::FromSRGBColor(FColor(190, 63, 52)),
+		FLinearColor::FromSRGBColor(FColor(158, 55, 117)),
+		FLinearColor::FromSRGBColor(FColor(102, 69, 156)),
+		FLinearColor::FromSRGBColor(FColor(70, 70, 78))};
 	TArray<UButton*> OutfitButtons;
-	AddColorRow(Parameters, TEXT("Outfit"), {FLinearColor::White, FLinearColor(0.25f, 0.65f, 1.0f), FLinearColor(1.0f, 0.20f, 0.16f)}, OutfitButtons);
-	OutfitButtons[0]->OnClicked.AddDynamic(this, &ThisClass::OutfitOriginal);
-	OutfitButtons[1]->OnClicked.AddDynamic(this, &ThisClass::OutfitCyan);
-	OutfitButtons[2]->OnClicked.AddDynamic(this, &ThisClass::OutfitRed);
+	AddColorRow(Parameters, TEXT("All outfit color"), EUECustomizationColorChannel::Outfit, OutfitPalette, OutfitButtons);
+	AddRGBColorRow(Parameters, TEXT("Outfit RGB 0-255"), OutfitRedInput, OutfitGreenInput, OutfitBlueInput);
+
+	TArray<UButton*> TopButtons;
+	AddColorRow(Parameters, TEXT("Top color"), EUECustomizationColorChannel::Top, OutfitPalette, TopButtons);
+	AddRGBColorRow(Parameters, TEXT("Top RGB 0-255"), TopRedInput, TopGreenInput, TopBlueInput);
+
+	TArray<UButton*> BottomButtons;
+	AddColorRow(Parameters, TEXT("Bottom color"), EUECustomizationColorChannel::Bottom, OutfitPalette, BottomButtons);
+	AddRGBColorRow(Parameters, TEXT("Bottom RGB 0-255"), BottomRedInput, BottomGreenInput, BottomBlueInput);
+
+	TArray<UButton*> OnepieceButtons;
+	AddColorRow(Parameters, TEXT("Onepiece color"), EUECustomizationColorChannel::Onepiece, OutfitPalette, OnepieceButtons);
+	AddRGBColorRow(Parameters, TEXT("Onepiece RGB 0-255"), OnepieceRedInput, OnepieceGreenInput, OnepieceBlueInput);
+
+	TArray<UButton*> ShoesButtons;
+	AddColorRow(Parameters, TEXT("Shoes color"), EUECustomizationColorChannel::Shoes, OutfitPalette, ShoesButtons);
+	AddRGBColorRow(Parameters, TEXT("Shoes RGB 0-255"), ShoesRedInput, ShoesGreenInput, ShoesBlueInput);
+
+	TArray<UButton*> AccessoryButtons;
+	AddColorRow(Parameters, TEXT("Accessory color"), EUECustomizationColorChannel::Accessory, OutfitPalette, AccessoryButtons);
+	AddRGBColorRow(Parameters, TEXT("Accessory RGB 0-255"), AccessoryRedInput, AccessoryGreenInput, AccessoryBlueInput);
+
+	SkinRedInput->OnValueChanged.AddDynamic(this, &ThisClass::SkinRedChanged);
+	SkinGreenInput->OnValueChanged.AddDynamic(this, &ThisClass::SkinGreenChanged);
+	SkinBlueInput->OnValueChanged.AddDynamic(this, &ThisClass::SkinBlueChanged);
+	HairRedInput->OnValueChanged.AddDynamic(this, &ThisClass::HairRedChanged);
+	HairGreenInput->OnValueChanged.AddDynamic(this, &ThisClass::HairGreenChanged);
+	HairBlueInput->OnValueChanged.AddDynamic(this, &ThisClass::HairBlueChanged);
+	EyeRedInput->OnValueChanged.AddDynamic(this, &ThisClass::EyeRedChanged);
+	EyeGreenInput->OnValueChanged.AddDynamic(this, &ThisClass::EyeGreenChanged);
+	EyeBlueInput->OnValueChanged.AddDynamic(this, &ThisClass::EyeBlueChanged);
+	LipRedInput->OnValueChanged.AddDynamic(this, &ThisClass::LipRedChanged);
+	LipGreenInput->OnValueChanged.AddDynamic(this, &ThisClass::LipGreenChanged);
+	LipBlueInput->OnValueChanged.AddDynamic(this, &ThisClass::LipBlueChanged);
+	OutfitRedInput->OnValueChanged.AddDynamic(this, &ThisClass::OutfitRedChanged);
+	OutfitGreenInput->OnValueChanged.AddDynamic(this, &ThisClass::OutfitGreenChanged);
+	OutfitBlueInput->OnValueChanged.AddDynamic(this, &ThisClass::OutfitBlueChanged);
+	TopRedInput->OnValueChanged.AddDynamic(this, &ThisClass::TopRedChanged);
+	TopGreenInput->OnValueChanged.AddDynamic(this, &ThisClass::TopGreenChanged);
+	TopBlueInput->OnValueChanged.AddDynamic(this, &ThisClass::TopBlueChanged);
+	BottomRedInput->OnValueChanged.AddDynamic(this, &ThisClass::BottomRedChanged);
+	BottomGreenInput->OnValueChanged.AddDynamic(this, &ThisClass::BottomGreenChanged);
+	BottomBlueInput->OnValueChanged.AddDynamic(this, &ThisClass::BottomBlueChanged);
+	OnepieceRedInput->OnValueChanged.AddDynamic(this, &ThisClass::OnepieceRedChanged);
+	OnepieceGreenInput->OnValueChanged.AddDynamic(this, &ThisClass::OnepieceGreenChanged);
+	OnepieceBlueInput->OnValueChanged.AddDynamic(this, &ThisClass::OnepieceBlueChanged);
+	ShoesRedInput->OnValueChanged.AddDynamic(this, &ThisClass::ShoesRedChanged);
+	ShoesGreenInput->OnValueChanged.AddDynamic(this, &ThisClass::ShoesGreenChanged);
+	ShoesBlueInput->OnValueChanged.AddDynamic(this, &ThisClass::ShoesBlueChanged);
+	AccessoryRedInput->OnValueChanged.AddDynamic(this, &ThisClass::AccessoryRedChanged);
+	AccessoryGreenInput->OnValueChanged.AddDynamic(this, &ThisClass::AccessoryGreenChanged);
+	AccessoryBlueInput->OnValueChanged.AddDynamic(this, &ThisClass::AccessoryBlueChanged);
 
 	AddSectionTitle(Parameters, TEXT("PREVIEW"));
 	UHorizontalBox* RotateRow = WidgetTree->ConstructWidget<UHorizontalBox>();
@@ -321,23 +437,64 @@ void UUECustomizationWidget::AddSliderRow(UVerticalBox* Parent, const FString& L
 void UUECustomizationWidget::AddColorRow(
 	UVerticalBox* Parent,
 	const FString& Label,
+	EUECustomizationColorChannel Channel,
 	const TArray<FLinearColor>& Colors,
 	TArray<UButton*>& OutButtons)
 {
 	Parent->AddChild(CreateText(Label, 12, MutedTextColor));
-	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>();
+	UUniformGridPanel* Row = WidgetTree->ConstructWidget<UUniformGridPanel>();
+	Row->SetSlotPadding(FMargin(2.0f));
 	Parent->AddChild(Row);
-	for (const FLinearColor& Color : Colors)
+	for (int32 Index = 0; Index < Colors.Num(); ++Index)
 	{
+		const FLinearColor& Color = Colors[Index];
 		USizeBox* Size = WidgetTree->ConstructWidget<USizeBox>();
-		Size->SetWidthOverride(54.0f);
-		Size->SetHeightOverride(30.0f);
-		Row->AddChild(Size);
-		CastChecked<UHorizontalBoxSlot>(Size->Slot)->SetPadding(FMargin(3.0f));
-		UButton* Button = WidgetTree->ConstructWidget<UButton>();
+		Size->SetWidthOverride(38.0f);
+		Size->SetHeightOverride(26.0f);
+		Row->AddChildToUniformGrid(Size, Index / 6, Index % 6);
+		UUECustomizationColorButton* Button = WidgetTree->ConstructWidget<UUECustomizationColorButton>();
+		Button->Configure(this, Channel, Color);
 		Button->SetBackgroundColor(Color);
 		Size->AddChild(Button);
 		OutButtons.Add(Button);
+	}
+}
+
+void UUECustomizationWidget::AddRGBColorRow(
+	UVerticalBox* Parent,
+	const FString& Label,
+	TObjectPtr<USpinBox>& OutRed,
+	TObjectPtr<USpinBox>& OutGreen,
+	TObjectPtr<USpinBox>& OutBlue)
+{
+	Parent->AddChild(CreateText(Label, 11, MutedTextColor));
+	UHorizontalBox* Row = WidgetTree->ConstructWidget<UHorizontalBox>();
+	Parent->AddChild(Row);
+
+	const TCHAR* ChannelLabels[] = {TEXT("R"), TEXT("G"), TEXT("B")};
+	TObjectPtr<USpinBox>* Outputs[] = {&OutRed, &OutGreen, &OutBlue};
+	for (int32 Index = 0; Index < 3; ++Index)
+	{
+		UHorizontalBox* ChannelRow = WidgetTree->ConstructWidget<UHorizontalBox>();
+		Row->AddChild(ChannelRow);
+		CastChecked<UHorizontalBoxSlot>(ChannelRow->Slot)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		CastChecked<UHorizontalBoxSlot>(ChannelRow->Slot)->SetPadding(FMargin(1.0f));
+
+		UTextBlock* ChannelLabel = CreateText(ChannelLabels[Index], 11, TextColor);
+		ChannelRow->AddChild(ChannelLabel);
+		CastChecked<UHorizontalBoxSlot>(ChannelLabel->Slot)->SetVerticalAlignment(VAlign_Center);
+		CastChecked<UHorizontalBoxSlot>(ChannelLabel->Slot)->SetPadding(FMargin(0.0f, 0.0f, 2.0f, 0.0f));
+
+		USpinBox* Input = WidgetTree->ConstructWidget<USpinBox>();
+		Input->SetMinValue(0.0f);
+		Input->SetMaxValue(255.0f);
+		Input->SetDelta(1.0f);
+		Input->SetMinFractionalDigits(0);
+		Input->SetMaxFractionalDigits(0);
+		Input->SetValue(0.0f);
+		Input->SetForegroundColor(TextColor);
+		ChannelRow->AddChild(Input);
+		*Outputs[Index] = Input;
 	}
 }
 
@@ -476,8 +633,8 @@ void UUECustomizationWidget::RebuildCatalog()
 	for (int32 Index = 0; Index < Count; ++Index)
 	{
 		USizeBox* TileSize = WidgetTree->ConstructWidget<USizeBox>();
-		TileSize->SetWidthOverride(130.0f);
-		TileSize->SetHeightOverride(108.0f);
+		TileSize->SetWidthOverride(122.0f);
+		TileSize->SetHeightOverride(144.0f);
 		TileSize->SetClipping(EWidgetClipping::ClipToBounds);
 		OptionGrid->AddChildToUniformGrid(TileSize, Index / 3, Index % 3);
 
@@ -489,25 +646,43 @@ void UUECustomizationWidget::RebuildCatalog()
 		UVerticalBox* Tile = WidgetTree->ConstructWidget<UVerticalBox>();
 		Button->AddChild(Tile);
 
+		USizeBox* ThumbnailSize = WidgetTree->ConstructWidget<USizeBox>();
+		ThumbnailSize->SetWidthOverride(114.0f);
+		ThumbnailSize->SetHeightOverride(92.0f);
+		UBorder* ThumbnailFrame = WidgetTree->ConstructWidget<UBorder>();
+		ThumbnailFrame->SetBrushColor(FLinearColor(0.035f, 0.045f, 0.055f, 1.0f));
+		ThumbnailFrame->SetPadding(FMargin(3.0f));
+		ThumbnailSize->AddChild(ThumbnailFrame);
+		Tile->AddChild(ThumbnailSize);
+
 		if (PreviewActor)
 		{
 			if (UTexture2D* Texture = PreviewActor->GetOptionTexture(CurrentPart, Index))
 			{
 				UImage* Thumbnail = WidgetTree->ConstructWidget<UImage>();
 				Thumbnail->SetBrushFromTexture(Texture, true);
-				Thumbnail->SetDesiredSizeOverride(FVector2D(118.0f, 76.0f));
-				Tile->AddChild(Thumbnail);
-				CastChecked<UVerticalBoxSlot>(Thumbnail->Slot)->SetHorizontalAlignment(HAlign_Fill);
+				Thumbnail->SetColorAndOpacity(FLinearColor::White);
+				ThumbnailFrame->AddChild(Thumbnail);
+			}
+			else
+			{
+				UTextBlock* MeshHint = CreateText(TEXT("MESH"), 11, MutedTextColor);
+				MeshHint->SetJustification(ETextJustify::Center);
+				ThumbnailFrame->AddChild(MeshHint);
 			}
 		}
 		UTextBlock* Label = CreateText(
-			PreviewActor ? PreviewActor->GetOptionLabel(CurrentPart, Index) : FString::Printf(TEXT("Style %02d"), Index + 1),
+			FString::Printf(
+				TEXT("#%02d  %s"),
+				Index + 1,
+				PreviewActor ? *PreviewActor->GetOptionLabel(CurrentPart, Index) : *FString::Printf(TEXT("Style %02d"), Index + 1)),
 			11,
 			TextColor);
 		Label->SetJustification(ETextJustify::Center);
+		Label->SetAutoWrapText(true);
 		Tile->AddChild(Label);
 		CastChecked<UVerticalBoxSlot>(Label->Slot)->SetVerticalAlignment(VAlign_Center);
-		CastChecked<UVerticalBoxSlot>(Label->Slot)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+		CastChecked<UVerticalBoxSlot>(Label->Slot)->SetPadding(FMargin(2.0f, 4.0f, 2.0f, 0.0f));
 	}
 
 	if (Count == 0)
@@ -635,6 +810,7 @@ void UUECustomizationWidget::SynchronizeControls()
 	HeightSlider->SetValue(Data.Height);
 	HeadSizeSlider->SetValue(Data.HeadSize);
 	ShoulderSlider->SetValue(Data.ShoulderWidth);
+	SynchronizeColorControls();
 	bSynchronizingControls = false;
 	RebuildCategories();
 	RebuildCatalog();
@@ -670,6 +846,154 @@ void UUECustomizationWidget::ShoulderWidthChanged(float Value)
 	PreviewActor->ApplyAppearance(Data);
 }
 
+FColor UUECustomizationWidget::ToSRGB8(const FLinearColor& Color)
+{
+	return Color.ToFColorSRGB();
+}
+
+void UUECustomizationWidget::SynchronizeColorControls()
+{
+	if (!PreviewActor)
+	{
+		return;
+	}
+	const FUECharacterCustomizationData& Data = PreviewActor->GetAppearance();
+	const FColor Skin = ToSRGB8(Data.SkinColor);
+	const FColor Hair = ToSRGB8(Data.HairColor);
+	const FColor Eye = ToSRGB8(Data.EyeColor);
+	const FColor Lip = ToSRGB8(Data.LipColor);
+	const FColor Outfit = ToSRGB8(Data.OutfitColor);
+	const FColor Top = ToSRGB8(Data.TopColor);
+	const FColor Bottom = ToSRGB8(Data.BottomColor);
+	const FColor Onepiece = ToSRGB8(Data.OnepieceColor);
+	const FColor Shoes = ToSRGB8(Data.ShoesColor);
+	const FColor Accessory = ToSRGB8(Data.AccessoryColor);
+
+	const auto SetInputs = [](const FColor& Color, USpinBox* Red, USpinBox* Green, USpinBox* Blue)
+	{
+		if (Red) Red->SetValue(static_cast<float>(Color.R));
+		if (Green) Green->SetValue(static_cast<float>(Color.G));
+		if (Blue) Blue->SetValue(static_cast<float>(Color.B));
+	};
+	SetInputs(Skin, SkinRedInput, SkinGreenInput, SkinBlueInput);
+	SetInputs(Hair, HairRedInput, HairGreenInput, HairBlueInput);
+	SetInputs(Eye, EyeRedInput, EyeGreenInput, EyeBlueInput);
+	SetInputs(Lip, LipRedInput, LipGreenInput, LipBlueInput);
+	SetInputs(Outfit, OutfitRedInput, OutfitGreenInput, OutfitBlueInput);
+	SetInputs(Top, TopRedInput, TopGreenInput, TopBlueInput);
+	SetInputs(Bottom, BottomRedInput, BottomGreenInput, BottomBlueInput);
+	SetInputs(Onepiece, OnepieceRedInput, OnepieceGreenInput, OnepieceBlueInput);
+	SetInputs(Shoes, ShoesRedInput, ShoesGreenInput, ShoesBlueInput);
+	SetInputs(Accessory, AccessoryRedInput, AccessoryGreenInput, AccessoryBlueInput);
+}
+
+void UUECustomizationWidget::SelectColor(
+	EUECustomizationColorChannel Channel,
+	const FLinearColor& Color)
+{
+	if (!PreviewActor)
+	{
+		return;
+	}
+	FUECharacterCustomizationData Data = PreviewActor->GetAppearance();
+	switch (Channel)
+	{
+	case EUECustomizationColorChannel::Skin: Data.SkinColor = Color; break;
+	case EUECustomizationColorChannel::Hair: Data.HairColor = Color; break;
+	case EUECustomizationColorChannel::Eye: Data.EyeColor = Color; break;
+	case EUECustomizationColorChannel::Lip: Data.LipColor = Color; break;
+	case EUECustomizationColorChannel::Outfit:
+		Data.OutfitColor = Color;
+		Data.TopColor = Color;
+		Data.BottomColor = Color;
+		Data.OnepieceColor = Color;
+		Data.ShoesColor = Color;
+		Data.AccessoryColor = Color;
+		break;
+	case EUECustomizationColorChannel::Top: Data.TopColor = Color; break;
+	case EUECustomizationColorChannel::Bottom: Data.BottomColor = Color; break;
+	case EUECustomizationColorChannel::Onepiece: Data.OnepieceColor = Color; break;
+	case EUECustomizationColorChannel::Shoes: Data.ShoesColor = Color; break;
+	case EUECustomizationColorChannel::Accessory: Data.AccessoryColor = Color; break;
+	}
+	PreviewActor->ApplyAppearance(Data);
+	SynchronizeColorControls();
+	if (StatusText)
+	{
+		StatusText->SetText(FText::FromString(TEXT("Color applied immediately")));
+	}
+}
+
+void UUECustomizationWidget::UpdateColorChannel(
+	EUECustomizationColorChannel Channel,
+	int32 Component,
+	float Value)
+{
+	if (!PreviewActor || bSynchronizingControls)
+	{
+		return;
+	}
+	FUECharacterCustomizationData Data = PreviewActor->GetAppearance();
+	FLinearColor* Target = nullptr;
+	switch (Channel)
+	{
+	case EUECustomizationColorChannel::Skin: Target = &Data.SkinColor; break;
+	case EUECustomizationColorChannel::Hair: Target = &Data.HairColor; break;
+	case EUECustomizationColorChannel::Eye: Target = &Data.EyeColor; break;
+	case EUECustomizationColorChannel::Lip: Target = &Data.LipColor; break;
+	case EUECustomizationColorChannel::Outfit: Target = &Data.OutfitColor; break;
+	case EUECustomizationColorChannel::Top: Target = &Data.TopColor; break;
+	case EUECustomizationColorChannel::Bottom: Target = &Data.BottomColor; break;
+	case EUECustomizationColorChannel::Onepiece: Target = &Data.OnepieceColor; break;
+	case EUECustomizationColorChannel::Shoes: Target = &Data.ShoesColor; break;
+	case EUECustomizationColorChannel::Accessory: Target = &Data.AccessoryColor; break;
+	}
+	if (!Target)
+	{
+		return;
+	}
+	FColor Current = ToSRGB8(*Target);
+	uint8* ChannelValue = Component == 0
+		? &Current.R
+		: Component == 1
+			? &Current.G
+			: &Current.B;
+	*ChannelValue = static_cast<uint8>(FMath::Clamp(FMath::RoundToInt(Value), 0, 255));
+	*Target = FLinearColor::FromSRGBColor(Current);
+	PreviewActor->ApplyAppearance(Data);
+	}
+
+void UUECustomizationWidget::SkinRedChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Skin, 0, Value); }
+void UUECustomizationWidget::SkinGreenChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Skin, 1, Value); }
+void UUECustomizationWidget::SkinBlueChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Skin, 2, Value); }
+void UUECustomizationWidget::HairRedChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Hair, 0, Value); }
+void UUECustomizationWidget::HairGreenChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Hair, 1, Value); }
+void UUECustomizationWidget::HairBlueChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Hair, 2, Value); }
+void UUECustomizationWidget::EyeRedChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Eye, 0, Value); }
+void UUECustomizationWidget::EyeGreenChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Eye, 1, Value); }
+void UUECustomizationWidget::EyeBlueChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Eye, 2, Value); }
+void UUECustomizationWidget::LipRedChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Lip, 0, Value); }
+void UUECustomizationWidget::LipGreenChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Lip, 1, Value); }
+void UUECustomizationWidget::LipBlueChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Lip, 2, Value); }
+void UUECustomizationWidget::OutfitRedChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Outfit, 0, Value); }
+void UUECustomizationWidget::OutfitGreenChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Outfit, 1, Value); }
+void UUECustomizationWidget::OutfitBlueChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Outfit, 2, Value); }
+void UUECustomizationWidget::TopRedChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Top, 0, Value); }
+void UUECustomizationWidget::TopGreenChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Top, 1, Value); }
+void UUECustomizationWidget::TopBlueChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Top, 2, Value); }
+void UUECustomizationWidget::BottomRedChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Bottom, 0, Value); }
+void UUECustomizationWidget::BottomGreenChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Bottom, 1, Value); }
+void UUECustomizationWidget::BottomBlueChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Bottom, 2, Value); }
+void UUECustomizationWidget::OnepieceRedChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Onepiece, 0, Value); }
+void UUECustomizationWidget::OnepieceGreenChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Onepiece, 1, Value); }
+void UUECustomizationWidget::OnepieceBlueChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Onepiece, 2, Value); }
+void UUECustomizationWidget::ShoesRedChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Shoes, 0, Value); }
+void UUECustomizationWidget::ShoesGreenChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Shoes, 1, Value); }
+void UUECustomizationWidget::ShoesBlueChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Shoes, 2, Value); }
+void UUECustomizationWidget::AccessoryRedChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Accessory, 0, Value); }
+void UUECustomizationWidget::AccessoryGreenChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Accessory, 1, Value); }
+void UUECustomizationWidget::AccessoryBlueChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Accessory, 2, Value); }
+
 void UUECustomizationWidget::RotateLeft() { if (PreviewActor) PreviewActor->RotatePreview(-15.0f); }
 void UUECustomizationWidget::RotateRight() { if (PreviewActor) PreviewActor->RotatePreview(15.0f); }
 
@@ -693,30 +1017,3 @@ void UUECustomizationWidget::Randomize()
 	SynchronizeControls();
 	if (StatusText) StatusText->SetText(FText::FromString(TEXT("Randomized from extracted presets")));
 }
-
-#define UE_SET_LINEAR_COLOR(FunctionName, FieldName, ColorValue) \
-	void UUECustomizationWidget::FunctionName() \
-	{ \
-		if (!PreviewActor) return; \
-		FUECharacterCustomizationData Data = PreviewActor->GetAppearance(); \
-		Data.FieldName = ColorValue; \
-		PreviewActor->ApplyAppearance(Data); \
-	}
-
-UE_SET_LINEAR_COLOR(SkinLight, SkinColor, FLinearColor::FromSRGBColor(FColor(239, 185, 151)))
-UE_SET_LINEAR_COLOR(SkinMedium, SkinColor, FLinearColor::FromSRGBColor(FColor(184, 128, 92)))
-UE_SET_LINEAR_COLOR(SkinDeep, SkinColor, FLinearColor::FromSRGBColor(FColor(105, 66, 47)))
-UE_SET_LINEAR_COLOR(HairOriginal, HairColor, FLinearColor::White)
-UE_SET_LINEAR_COLOR(HairBlue, HairColor, FLinearColor(0.12f, 0.22f, 0.55f))
-UE_SET_LINEAR_COLOR(HairCoral, HairColor, FLinearColor(0.55f, 0.12f, 0.16f))
-UE_SET_LINEAR_COLOR(EyeOriginal, EyeColor, FLinearColor(0.38f, 0.16f, 0.06f))
-UE_SET_LINEAR_COLOR(EyeBlue, EyeColor, FLinearColor(0.12f, 0.38f, 0.72f))
-UE_SET_LINEAR_COLOR(EyeBrown, EyeColor, FLinearColor(0.16f, 0.42f, 0.22f))
-UE_SET_LINEAR_COLOR(LipNatural, LipColor, FLinearColor::FromSRGBColor(FColor(196, 102, 116)))
-UE_SET_LINEAR_COLOR(LipSoft, LipColor, FLinearColor::FromSRGBColor(FColor(225, 154, 165)))
-UE_SET_LINEAR_COLOR(LipDeep, LipColor, FLinearColor::FromSRGBColor(FColor(133, 52, 70)))
-UE_SET_LINEAR_COLOR(OutfitOriginal, OutfitColor, FLinearColor::White)
-UE_SET_LINEAR_COLOR(OutfitCyan, OutfitColor, FLinearColor(0.25f, 0.65f, 1.0f))
-UE_SET_LINEAR_COLOR(OutfitRed, OutfitColor, FLinearColor(1.0f, 0.20f, 0.16f))
-
-#undef UE_SET_LINEAR_COLOR

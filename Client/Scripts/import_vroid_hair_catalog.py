@@ -6,7 +6,7 @@ import unreal
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = PROJECT_ROOT / "Intermediate" / "VRoidHairCatalog"
 DESTINATION_ROOT = "/Game/VRoidCatalog/HairDetermined"
-SKELETON_PATH = "/Game/VRoidGenerated/SK_BodySkin_Skeleton"
+SKELETON_PATH = "/Game/CharacterCustomization/Assets/VRoid/Skeletons/SK_VRoidCommon"
 SEMANTICS = ("HairFront", "HairSide", "HairBack", "HairExtra")
 
 

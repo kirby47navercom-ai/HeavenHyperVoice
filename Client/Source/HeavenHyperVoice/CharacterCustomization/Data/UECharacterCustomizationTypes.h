@@ -119,5 +119,20 @@ struct HEAVENHYPERVOICE_API FUECharacterCustomizationData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization")
 	FLinearColor OutfitColor = FLinearColor::White;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Outfit")
+	FLinearColor TopColor = FLinearColor::White;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Outfit")
+	FLinearColor BottomColor = FLinearColor::White;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Outfit")
+	FLinearColor OnepieceColor = FLinearColor::White;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Outfit")
+	FLinearColor ShoesColor = FLinearColor::White;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Outfit")
+	FLinearColor AccessoryColor = FLinearColor::White;
+
 	void Normalize();
 };

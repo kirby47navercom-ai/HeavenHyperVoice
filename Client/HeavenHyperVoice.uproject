@@ -42,6 +42,13 @@
 			]
 		},
 		{
+			"Name": "MCPUnreal",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
 			"Name": "PythonScriptPlugin",
 			"Enabled": true,
 			"TargetAllowList": [

@@ -5,7 +5,7 @@ import unreal
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = PROJECT_ROOT / "Intermediate" / "VRoidFaceGeometry"
-SKELETON_PATH = "/Game/VRoidGenerated/SK_BodySkin_Skeleton"
+SKELETON_PATH = "/Game/CharacterCustomization/Assets/VRoid/Skeletons/SK_VRoidCommon"
 SEMANTICS = (
     "Skin",
     "EyeWhite",

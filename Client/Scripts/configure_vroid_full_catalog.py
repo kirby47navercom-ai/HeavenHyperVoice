@@ -4,6 +4,7 @@ import unreal
 
 
 CATALOG_PATH = "/Game/CharacterCustomization/Blueprints/DA_CustomizationCatalog"
+SKELETON_PATH = "/Game/CharacterCustomization/Assets/VRoid/Skeletons/SK_VRoidCommon"
 HAIR_ROOT = "/Game/VRoidCatalog/HairDetermined"
 STYLE_IDS = list(range(2388, 2414))
 
@@ -29,6 +30,11 @@ def main() -> None:
     catalog = unreal.load_asset(CATALOG_PATH)
     if catalog is None:
         raise RuntimeError(f"Missing catalog: {CATALOG_PATH}")
+
+    skeleton = unreal.load_asset(SKELETON_PATH)
+    if not isinstance(skeleton, unreal.Skeleton):
+        raise RuntimeError(f"Missing common VRoid skeleton: {SKELETON_PATH}")
+    catalog.set_editor_property("CommonSkeleton", skeleton)
 
     catalog.set_editor_property("HeadAccessoryVerticalOffset", 9.0)
     catalog.set_editor_property("FaceAccessoryForwardOffset", 6.5)

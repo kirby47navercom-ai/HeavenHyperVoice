@@ -38,5 +38,11 @@ void FUECharacterCustomizationData::Normalize()
 	SkinColor.A = 1.0f;
 	HairColor.A = 1.0f;
 	EyeColor.A = 1.0f;
+	LipColor.A = 1.0f;
 	OutfitColor.A = 1.0f;
+	TopColor.A = 1.0f;
+	BottomColor.A = 1.0f;
+	OnepieceColor.A = 1.0f;
+	ShoesColor.A = 1.0f;
+	AccessoryColor.A = 1.0f;
 }

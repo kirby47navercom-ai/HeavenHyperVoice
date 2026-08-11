@@ -170,6 +170,7 @@ private:
 	const TArray<TObjectPtr<USkeletalMesh>>& GetCatalog(EUECustomizationPart Part) const;
 	const TArray<TObjectPtr<UTexture2D>>& GetTextureCatalog(EUECustomizationPart Part) const;
 	void ApplyCatalogAsset();
+	void ValidateCatalogSkeletons() const;
 	bool UpdateMeshes();
 	void BindFollowerPoses();
 	void CreateDynamicMaterials();
@@ -205,7 +206,16 @@ private:
 	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> MouthMaterials;
 	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> LipMaterials;
 	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> MouthLineMaterials;
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> TopMaterials;
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> BottomMaterials;
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> OnepieceMaterials;
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> ShoesMaterials;
 	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> OutfitMaterials;
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> HeadAccessoryMaterials;
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> FaceAccessoryMaterials;
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> EarAccessoryMaterials;
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> TailAccessoryMaterials;
+	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> NeckAccessoryMaterials;
 	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> AccessoryMaterials;
 	FTimerHandle QAScreenshotTimer;
 	FTimerHandle QAPrepareHeadTimer;

@@ -10,7 +10,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = PROJECT_ROOT / "Intermediate" / "VRoidAccessoryCatalog" / "accessory_manifest.json"
 DESTINATION_ROOT = "/Game/CharacterCustomization/Assets/VRoid/Accessories"
 CATALOG_PATH = "/Game/CharacterCustomization/Blueprints/DA_CustomizationCatalog"
-SKELETON_PATH = "/Game/VRoidGenerated/SK_BodySkin_Skeleton"
+SKELETON_PATH = "/Game/CharacterCustomization/Assets/VRoid/Skeletons/SK_VRoidCommon"
 LABELS = ("GlassesHi", "GlassesLow")
 
 

@@ -73,7 +73,7 @@ def main() -> None:
         values = catalog.get_editor_property(property_name)
         valid = sum(value is not None for value in values)
         sample = values[1].get_path_name() if len(values) > 1 and values[1] else "None"
-        unreal.log_warning(
+        unreal.log(
             f"CATALOG_VALIDATE {property_name} count={len(values)} valid={valid} sample={sample}"
         )
 
@@ -100,7 +100,7 @@ def main() -> None:
                 if value.parameter_value is not None
             ]
             details = f" parent={parent.get_path_name() if parent else 'None'}"
-        unreal.log_warning(
+        unreal.log(
             f"MATERIAL_VALIDATE path={material_path} class={material.get_class().get_name()} "
             f"textures={texture_paths}{details}"
         )
@@ -156,7 +156,7 @@ def main() -> None:
                 f"override_two_sided={override_two_sided} two_sided={two_sided} "
                 f"scalars={scalars} vectors={vectors}"
             )
-        unreal.log_warning(
+        unreal.log(
             f"ACCESSORY_MATERIAL_VALIDATE path={mesh_path} "
             f"bounds={mesh.get_bounds()} materials={material_details}"
         )
