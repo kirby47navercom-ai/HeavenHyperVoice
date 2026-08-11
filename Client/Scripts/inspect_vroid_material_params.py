@@ -19,8 +19,12 @@ MATERIALS = (
     "/Game/CharacterCustomization/Assets/VRoid/Accessories/HeadAccessory/SK_HeadAccessory_WitchHat/M_HeadAccessory.M_HeadAccessory",
     "/Game/CharacterCustomization/Assets/VRoid/Accessories/EarAccessory/SK_EarAccessory_CatEar/M_EarAccessory.M_EarAccessory",
     "/Game/CharacterCustomization/Assets/VRoid/Outfits/Female/Onepiece/Style_N00_005/M_Onepiece_Female_N00_005.M_Onepiece_Female_N00_005",
+    "/Game/CharacterCustomization/Assets/VRoid/Outfits/Female/Tops/Style_N00_009/M_Top_Female_N00_009.M_Top_Female_N00_009",
+    "/Game/VRoidCatalog/HairDetermined/Female/Style_2388/HairSide.HairSide",
+    "/Game/VRoidCatalog/HairDetermined/Female/Style_2388/Hair_481f10_F00_000_Hair_00_87.Hair_481f10_F00_000_Hair_00_87",
     "/Game/CharacterCustomization/Assets/VRoid/Outfits/Male/Tops/Style_N00_157/M_Top_Male_N00_157.M_Top_Male_N00_157",
     "/Game/CharacterCustomization/Materials/M_UEFaceAccessoryTranslucent.M_UEFaceAccessoryTranslucent",
+    "/Game/CharacterCustomization/Materials/M_UEOutfitTextured.M_UEOutfitTextured",
     "/InterchangeAssets/Materials/FBXLegacyPhongSurfaceMaterial",
 )
 
@@ -28,6 +32,24 @@ MATERIALS = (
 def _param_name(value) -> str:
     info = value.get_editor_property("parameter_info")
     return str(info.get_editor_property("name"))
+
+
+def _vector_param(value) -> str:
+    name = _param_name(value)
+    parameter_value = value.get_editor_property("parameter_value")
+    return f"{name}={parameter_value}"
+
+
+def _scalar_param(value) -> str:
+    name = _param_name(value)
+    parameter_value = value.get_editor_property("parameter_value")
+    return f"{name}={parameter_value}"
+
+
+def _texture_param(value) -> str:
+    name = _param_name(value)
+    parameter_value = value.get_editor_property("parameter_value")
+    return f"{name}={parameter_value.get_path_name() if parameter_value else 'None'}"
 
 
 for path in MATERIALS:
@@ -41,9 +63,9 @@ for path in MATERIALS:
     textures = []
     if isinstance(material, unreal.MaterialInstanceConstant):
         parent = material.get_editor_property("parent")
-        vectors = [_param_name(value) for value in material.get_editor_property("vector_parameter_values")]
-        scalars = [_param_name(value) for value in material.get_editor_property("scalar_parameter_values")]
-        textures = [_param_name(value) for value in material.get_editor_property("texture_parameter_values")]
+        vectors = [_vector_param(value) for value in material.get_editor_property("vector_parameter_values")]
+        scalars = [_scalar_param(value) for value in material.get_editor_property("scalar_parameter_values")]
+        textures = [_texture_param(value) for value in material.get_editor_property("texture_parameter_values")]
     try:
         blend_mode = material.get_editor_property("blend_mode")
     except Exception:

@@ -115,6 +115,8 @@ void UUECustomizationWidget::NativeConstruct()
 
 void UUECustomizationWidget::BuildInterface()
 {
+	const TGuardValue<bool> SynchronizeGuard(bSynchronizingControls, true);
+
 	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("CustomizationRoot"));
 	WidgetTree->RootWidget = Root;
 
@@ -491,7 +493,7 @@ void UUECustomizationWidget::AddRGBColorRow(
 		Input->SetDelta(1.0f);
 		Input->SetMinFractionalDigits(0);
 		Input->SetMaxFractionalDigits(0);
-		Input->SetValue(0.0f);
+		Input->SetValue(255.0f);
 		Input->SetForegroundColor(TextColor);
 		ChannelRow->AddChild(Input);
 		*Outputs[Index] = Input;
@@ -975,7 +977,12 @@ void UUECustomizationWidget::UpdateColorChannel(
 		: Component == 1
 			? &Current.G
 			: &Current.B;
-	*ChannelValue = static_cast<uint8>(FMath::Clamp(FMath::RoundToInt(Value), 0, 255));
+	const uint8 NewValue = static_cast<uint8>(FMath::Clamp(FMath::RoundToInt(Value), 0, 255));
+	if (*ChannelValue == NewValue)
+	{
+		return;
+	}
+	*ChannelValue = NewValue;
 	*Target = FLinearColor::FromSRGBColor(Current);
 	if (Channel == EUECustomizationColorChannel::Outfit)
 	{

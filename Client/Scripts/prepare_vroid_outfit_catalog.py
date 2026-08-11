@@ -50,13 +50,47 @@ def clean_style(model: str, style: str) -> str:
     return "".join(character if character.isalnum() else "_" for character in value)
 
 
-def write_clothing_obj(obj_data, target: Path, semantic: str) -> Path:
+def material_values(material_path: Path) -> dict:
+    data = json.loads(material_path.read_text(encoding="utf-8"))
+    return next(iter(data.values())) if data else {}
+
+
+def copy_texture(material_root: Path, item_root: Path, texture_name: str) -> str:
+    if not texture_name:
+        return ""
+    source = material_root / texture_name
+    if not source.exists():
+        return ""
+    target = item_root / source.name
+    if source.resolve() != target.resolve():
+        shutil.copy2(source, target)
+    return target.name
+
+
+def write_clothing_obj(obj_data, target: Path, semantic: str, values: dict, material_root: Path) -> Path:
     material_name = f"M_{semantic}"
     mtl_path = target.with_suffix(".mtl")
-    mtl_path.write_text(
-        f"newmtl {material_name}\nKd 1 1 1\nd 1\nillum 2\n",
-        encoding="utf-8",
-    )
+    color = values.get("color", [1.0, 1.0, 1.0, 1.0])
+    alpha = float(color[3]) if len(color) > 3 else 1.0
+    main_texture = copy_texture(material_root, target.parent, values.get("main_texture", ""))
+    normal_texture = copy_texture(material_root, target.parent, values.get("normal_texture", ""))
+    shade_texture = copy_texture(material_root, target.parent, values.get("shade_texture", ""))
+    lines = [
+        f"newmtl {material_name}",
+        "Ka 0 0 0",
+        f"Kd {float(color[0]):.9g} {float(color[1]):.9g} {float(color[2]):.9g}",
+        "Ks 0 0 0",
+        f"d {alpha:.9g}",
+        "illum 2",
+    ]
+    if main_texture:
+        lines.append(f"map_Kd {main_texture}")
+    if normal_texture:
+        lines.append(f"map_Bump {normal_texture}")
+        lines.append(f"bump {normal_texture}")
+    if shade_texture and shade_texture != main_texture:
+        lines.append(f"# VRoid shade_texture {shade_texture}")
+    mtl_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     with target.open("w", encoding="utf-8", newline="\n") as output:
         output.write(f"mtllib {mtl_path.name}\n")
         for x, y, z in obj_data.verts:
@@ -114,10 +148,13 @@ def prepare(limit_per_category: int, genders: tuple[str, ...]) -> Path:
                 source_materials = preset.obj_for_gender(gender).with_name(
                     f"{gender.lower()}.materials.json"
                 )
+                values = material_values(source_materials)
                 source_obj = write_clothing_obj(
                     deformed,
                     item_root / f"{SEMANTICS[category]}_{gender}_{style}.obj",
                     SEMANTICS[category],
+                    values,
+                    source_materials.parent,
                 )
                 target_name = f"SK_{SEMANTICS[category]}_{gender}_{style}.fbx"
                 manifest_items.append(

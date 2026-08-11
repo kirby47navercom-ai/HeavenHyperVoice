@@ -105,16 +105,16 @@ struct HEAVENHYPERVOICE_API FUECharacterCustomizationData
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 NeckAccessoryStyle = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization")
-	FLinearColor SkinColor = FLinearColor(0.863157f, 0.485150f, 0.309469f, 1.0f);
+	FLinearColor SkinColor = FLinearColor::White;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization")
 	FLinearColor HairColor = FLinearColor::White;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization")
-	FLinearColor EyeColor = FLinearColor(0.38f, 0.16f, 0.06f, 1.0f);
+	FLinearColor EyeColor = FLinearColor::White;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization")
-	FLinearColor LipColor = FLinearColor::FromSRGBColor(FColor(196, 102, 116));
+	FLinearColor LipColor = FLinearColor::White;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization")
 	FLinearColor OutfitColor = FLinearColor::White;
