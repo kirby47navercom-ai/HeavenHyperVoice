@@ -632,6 +632,9 @@ void UUECustomizationWidget::RebuildCatalog()
 
 	for (int32 Index = 0; Index < Count; ++Index)
 	{
+		const FString OptionLabel = PreviewActor
+			? PreviewActor->GetOptionLabel(CurrentPart, Index)
+			: FString::Printf(TEXT("Style %02d"), Index + 1);
 		USizeBox* TileSize = WidgetTree->ConstructWidget<USizeBox>();
 		TileSize->SetWidthOverride(122.0f);
 		TileSize->SetHeightOverride(144.0f);
@@ -666,8 +669,9 @@ void UUECustomizationWidget::RebuildCatalog()
 			}
 			else
 			{
-				UTextBlock* MeshHint = CreateText(TEXT("MESH"), 11, MutedTextColor);
+				UTextBlock* MeshHint = CreateText(OptionLabel, 10, MutedTextColor);
 				MeshHint->SetJustification(ETextJustify::Center);
+				MeshHint->SetAutoWrapText(true);
 				ThumbnailFrame->AddChild(MeshHint);
 			}
 		}
@@ -675,7 +679,7 @@ void UUECustomizationWidget::RebuildCatalog()
 			FString::Printf(
 				TEXT("#%02d  %s"),
 				Index + 1,
-				PreviewActor ? *PreviewActor->GetOptionLabel(CurrentPart, Index) : *FString::Printf(TEXT("Style %02d"), Index + 1)),
+				*OptionLabel),
 			11,
 			TextColor);
 		Label->SetJustification(ETextJustify::Center);
@@ -896,20 +900,22 @@ void UUECustomizationWidget::SelectColor(
 		return;
 	}
 	FUECharacterCustomizationData Data = PreviewActor->GetAppearance();
+	auto ApplyWholeOutfitColor = [&Data](const FLinearColor& NewColor)
+	{
+		Data.OutfitColor = NewColor;
+		Data.TopColor = NewColor;
+		Data.BottomColor = NewColor;
+		Data.OnepieceColor = NewColor;
+		Data.ShoesColor = NewColor;
+		Data.AccessoryColor = NewColor;
+	};
 	switch (Channel)
 	{
 	case EUECustomizationColorChannel::Skin: Data.SkinColor = Color; break;
 	case EUECustomizationColorChannel::Hair: Data.HairColor = Color; break;
 	case EUECustomizationColorChannel::Eye: Data.EyeColor = Color; break;
 	case EUECustomizationColorChannel::Lip: Data.LipColor = Color; break;
-	case EUECustomizationColorChannel::Outfit:
-		Data.OutfitColor = Color;
-		Data.TopColor = Color;
-		Data.BottomColor = Color;
-		Data.OnepieceColor = Color;
-		Data.ShoesColor = Color;
-		Data.AccessoryColor = Color;
-		break;
+	case EUECustomizationColorChannel::Outfit: ApplyWholeOutfitColor(Color); break;
 	case EUECustomizationColorChannel::Top: Data.TopColor = Color; break;
 	case EUECustomizationColorChannel::Bottom: Data.BottomColor = Color; break;
 	case EUECustomizationColorChannel::Onepiece: Data.OnepieceColor = Color; break;
@@ -917,7 +923,9 @@ void UUECustomizationWidget::SelectColor(
 	case EUECustomizationColorChannel::Accessory: Data.AccessoryColor = Color; break;
 	}
 	PreviewActor->ApplyAppearance(Data);
+	bSynchronizingControls = true;
 	SynchronizeColorControls();
+	bSynchronizingControls = false;
 	if (StatusText)
 	{
 		StatusText->SetText(FText::FromString(TEXT("Color applied immediately")));
@@ -934,6 +942,15 @@ void UUECustomizationWidget::UpdateColorChannel(
 		return;
 	}
 	FUECharacterCustomizationData Data = PreviewActor->GetAppearance();
+	auto ApplyWholeOutfitColor = [&Data](const FLinearColor& NewColor)
+	{
+		Data.OutfitColor = NewColor;
+		Data.TopColor = NewColor;
+		Data.BottomColor = NewColor;
+		Data.OnepieceColor = NewColor;
+		Data.ShoesColor = NewColor;
+		Data.AccessoryColor = NewColor;
+	};
 	FLinearColor* Target = nullptr;
 	switch (Channel)
 	{
@@ -960,8 +977,18 @@ void UUECustomizationWidget::UpdateColorChannel(
 			: &Current.B;
 	*ChannelValue = static_cast<uint8>(FMath::Clamp(FMath::RoundToInt(Value), 0, 255));
 	*Target = FLinearColor::FromSRGBColor(Current);
-	PreviewActor->ApplyAppearance(Data);
+	if (Channel == EUECustomizationColorChannel::Outfit)
+	{
+		ApplyWholeOutfitColor(*Target);
 	}
+	PreviewActor->ApplyAppearance(Data);
+	if (Channel == EUECustomizationColorChannel::Outfit)
+	{
+		bSynchronizingControls = true;
+		SynchronizeColorControls();
+		bSynchronizingControls = false;
+	}
+}
 
 void UUECustomizationWidget::SkinRedChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Skin, 0, Value); }
 void UUECustomizationWidget::SkinGreenChanged(float Value) { UpdateColorChannel(EUECustomizationColorChannel::Skin, 1, Value); }

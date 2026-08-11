@@ -171,15 +171,22 @@ private:
 	const TArray<TObjectPtr<UTexture2D>>& GetTextureCatalog(EUECustomizationPart Part) const;
 	void ApplyCatalogAsset();
 	void ValidateCatalogSkeletons() const;
+	void ClampAppearanceToCatalogs();
 	bool UpdateMeshes();
 	void BindFollowerPoses();
 	void CreateDynamicMaterials();
-	void CreateMaterialsForComponent(USkeletalMeshComponent* Component, TArray<TObjectPtr<UMaterialInstanceDynamic>>& OutMaterials);
+	void CreateMaterialsForComponent(
+		USkeletalMeshComponent* Component,
+		TArray<TObjectPtr<UMaterialInstanceDynamic>>& OutMaterials,
+		UMaterialInterface* TemplateMaterial = nullptr);
 	void CreateOpaqueFaceMaterials(
 		USkeletalMeshComponent* Component,
 		TArray<TObjectPtr<UMaterialInstanceDynamic>>& OutMaterials,
 		UMaterialInterface* TemplateMaterial = nullptr);
-	void CreateMaskedOverlayMaterials(USkeletalMeshComponent* Component, TArray<TObjectPtr<UMaterialInstanceDynamic>>& OutMaterials);
+	void CreateMaskedOverlayMaterials(
+		USkeletalMeshComponent* Component,
+		TArray<TObjectPtr<UMaterialInstanceDynamic>>& OutMaterials,
+		UMaterialInterface* TemplateMaterial = nullptr);
 	void ApplySelectedTextures();
 	void ApplyColors();
 	void ApplyNeutralMaterialLighting();
@@ -190,6 +197,7 @@ private:
 	void CaptureQAHeadScreenshot();
 	void ExitAfterQAScreenshot();
 	static void SetMaterialColor(const TArray<TObjectPtr<UMaterialInstanceDynamic>>& Materials, const FName& Parameter, const FLinearColor& Color);
+	static void SetMaterialScalar(const TArray<TObjectPtr<UMaterialInstanceDynamic>>& Materials, const FName& Parameter, float Value);
 
 	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> BodySkinMaterials;
 	UPROPERTY(Transient) TArray<TObjectPtr<UMaterialInstanceDynamic>> FaceSkinMaterials;

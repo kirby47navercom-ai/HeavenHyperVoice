@@ -80,12 +80,12 @@ struct HEAVENHYPERVOICE_API FUECharacterCustomizationData
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 FaceStyle = 0;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 EyeWhiteStyle = 0;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 EyeIrisStyle = 0;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 EyeHighlightStyle = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 EyeIrisStyle = 2;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 EyeHighlightStyle = 2;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 EyeExtraStyle = 0;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 BrowStyle = 0;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 EyelashStyle = 0;
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 EyelineStyle = 0;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 BrowStyle = 2;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 EyelashStyle = 1;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 EyelineStyle = 2;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 MouthStyle = 0;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 LipStyle = 0;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Parts") int32 MouthLineStyle = 0;

@@ -47,8 +47,6 @@ def make_material(item: dict, values: dict):
             texture = nodes.new("ShaderNodeTexImage")
             texture.image = image
             links.new(texture.outputs["Color"], principled.inputs["Base Color"])
-            if "Alpha" in texture.outputs and "Alpha" in principled.inputs:
-                links.new(texture.outputs["Alpha"], principled.inputs["Alpha"])
 
     normal_name = values.get("normal_texture", "")
     if normal_name:
