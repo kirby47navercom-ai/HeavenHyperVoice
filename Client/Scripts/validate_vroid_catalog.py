@@ -25,6 +25,8 @@ PROPERTIES = (
     "FemaleEyelineCatalog",
     "MaleMouthCatalog",
     "FemaleMouthCatalog",
+    "MaleHairBaseCatalog",
+    "FemaleHairBaseCatalog",
     "FaceSkinTextureCatalog",
     "FaceSkinNormalTextureCatalog",
     "EyeWhiteTextureCatalog",

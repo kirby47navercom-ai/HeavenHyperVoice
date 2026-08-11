@@ -77,6 +77,9 @@ def _last_index(actor, part_name: str) -> int:
 def main() -> None:
     actor = _load_preview_actor()
     actor.initialize_catalogs()
+    catalog = unreal.load_asset("/Game/CharacterCustomization/Blueprints/DA_CustomizationCatalog")
+    if catalog is None:
+        raise RuntimeError("Missing customization catalog")
 
     data = actor.get_appearance()
     data.face_style = _last_index(actor, "FACE_SKIN")
@@ -96,9 +99,12 @@ def main() -> None:
 
     head_location = _relative_location(_component(actor, "HeadAccessory"))
     face_location = _relative_location(_component(actor, "FaceAccessory"))
-    if abs(head_location.z - 9.0) > 0.01 or abs(head_location.x) > 0.01 or abs(head_location.y) > 0.01:
+    expected_head_z = catalog.get_editor_property("HeadAccessoryVerticalOffset")
+    expected_face_y = catalog.get_editor_property("FaceAccessoryForwardOffset")
+    expected_face_z = catalog.get_editor_property("FaceAccessoryVerticalOffset")
+    if abs(head_location.z - expected_head_z) > 0.01 or abs(head_location.x) > 0.01 or abs(head_location.y) > 0.01:
         raise RuntimeError(f"HeadAccessory fit offset is wrong: {head_location}")
-    if abs(face_location.y - 6.5) > 0.01 or abs(face_location.z - 12.5) > 0.01 or abs(face_location.x) > 0.01:
+    if abs(face_location.y - expected_face_y) > 0.01 or abs(face_location.z - expected_face_z) > 0.01 or abs(face_location.x) > 0.01:
         raise RuntimeError(f"FaceAccessory fit offset is wrong: {face_location}")
     unreal.log(
         "PREVIEW_VALIDATE accessory_offsets "

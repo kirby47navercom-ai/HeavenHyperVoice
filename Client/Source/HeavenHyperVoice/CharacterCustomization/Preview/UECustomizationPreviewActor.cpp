@@ -31,12 +31,19 @@ namespace
 {
 	const FName DiffuseColorParameter(TEXT("DiffuseColor"));
 	const FLinearColor DefaultBodySkinColor(0.937254902f, 0.725490196f, 0.592156863f, 1.0f);
+	const FLinearColor DefaultEyeIrisColor(0.138431615f, 0.323143209f, 0.445201195f, 1.0f);
 	const TCHAR* WhiteTexturePath = TEXT("/Engine/EngineResources/WhiteSquareTexture.WhiteSquareTexture");
 	const TCHAR* FemaleBodyNormalTexturePath = TEXT("/Game/VRoidGenerated/Female/BodySkin_SubmeshKey_N00_000_00_Body_00_SKIN_female_body_normal.BodySkin_SubmeshKey_N00_000_00_Body_00_SKIN_female_body_normal");
 
 	bool IsIdentityTint(const FLinearColor& Color)
 	{
 		return Color.Equals(FLinearColor::White, 0.003f);
+	}
+
+	bool IsBrokenHairFrontStyle(int32 Index)
+	{
+		// Style 2393's extracted front mesh contains flat horizontal strips across the face.
+		return Index == 5;
 	}
 
 	bool ReadTextureParameter(UMaterialInterface* SourceMaterial, const FName& ParameterName, UTexture*& OutTexture)
@@ -125,19 +132,25 @@ namespace
 			TEXT("TintColor")};
 
 		FLinearColor SourceTint = FLinearColor::White;
-		if (!CopyFirstVectorParameter(SourceMaterial, TargetMaterial, SourceTintParameterNames, TEXT("OriginalTint"), SourceTint))
+		const bool bHasSourceTint = CopyFirstVectorParameter(
+			SourceMaterial, TargetMaterial, SourceTintParameterNames, TEXT("OriginalTint"), SourceTint);
+		if (!bHasSourceTint)
 		{
 			TargetMaterial->SetVectorParameterValue(TEXT("OriginalTint"), FLinearColor::White);
 		}
 		TargetMaterial->SetVectorParameterValue(TEXT("CustomTint"), FLinearColor::White);
-		TargetMaterial->SetVectorParameterValue(TEXT("DiffuseColor"), FLinearColor::White);
-		TargetMaterial->SetVectorParameterValue(TEXT("BaseColor"), FLinearColor::White);
-		TargetMaterial->SetVectorParameterValue(TEXT("Base Color"), FLinearColor::White);
-		TargetMaterial->SetVectorParameterValue(TEXT("TintColor"), FLinearColor::White);
-		TargetMaterial->SetVectorParameterValue(TEXT("Color"), FLinearColor::White);
 
 		UTexture* DiffuseTexture = nullptr;
-		if (CopyFirstTextureParameter(SourceMaterial, TargetMaterial, DiffuseParameterNames, TEXT("DiffuseColorMap"), DiffuseTexture))
+		const bool bHasDiffuseTexture = CopyFirstTextureParameter(
+			SourceMaterial, TargetMaterial, DiffuseParameterNames, TEXT("DiffuseColorMap"), DiffuseTexture);
+		const FLinearColor RuntimeBaseColor = bHasDiffuseTexture ? FLinearColor::White : SourceTint;
+		TargetMaterial->SetVectorParameterValue(TEXT("DiffuseColor"), RuntimeBaseColor);
+		TargetMaterial->SetVectorParameterValue(TEXT("BaseColor"), RuntimeBaseColor);
+		TargetMaterial->SetVectorParameterValue(TEXT("Base Color"), RuntimeBaseColor);
+		TargetMaterial->SetVectorParameterValue(TEXT("TintColor"), RuntimeBaseColor);
+		TargetMaterial->SetVectorParameterValue(TEXT("Color"), RuntimeBaseColor);
+
+		if (bHasDiffuseTexture)
 		{
 			TargetMaterial->SetTextureParameterValue(TEXT("EmissiveColorMap"), DiffuseTexture);
 			TargetMaterial->SetScalarParameterValue(TEXT("DiffuseColorMapWeight"), 1.0f);
@@ -147,18 +160,20 @@ namespace
 			DiffuseTexture = WhiteTexture;
 			TargetMaterial->SetTextureParameterValue(TEXT("DiffuseColorMap"), WhiteTexture);
 			TargetMaterial->SetTextureParameterValue(TEXT("EmissiveColorMap"), WhiteTexture);
-			TargetMaterial->SetScalarParameterValue(TEXT("DiffuseColorMapWeight"), 1.0f);
+			TargetMaterial->SetScalarParameterValue(TEXT("DiffuseColorMapWeight"), 0.0f);
 		}
 
 		UTexture* OpacityTexture = nullptr;
-		if (!CopyFirstTextureParameter(SourceMaterial, TargetMaterial, OpacityParameterNames, TEXT("OpacityMaskMap"), OpacityTexture) &&
+		const bool bHasOpacityTexture = CopyFirstTextureParameter(
+			SourceMaterial, TargetMaterial, OpacityParameterNames, TEXT("OpacityMaskMap"), OpacityTexture);
+		if (!bHasOpacityTexture &&
 			DiffuseTexture)
 		{
 			TargetMaterial->SetTextureParameterValue(TEXT("OpacityMaskMap"), DiffuseTexture);
 		}
 		TargetMaterial->SetScalarParameterValue(TEXT("Opacity"), 1.0f);
 		TargetMaterial->SetScalarParameterValue(TEXT("OpacityMask"), 1.0f);
-		TargetMaterial->SetScalarParameterValue(TEXT("OpacityMaskMapWeight"), DiffuseTexture ? 1.0f : 0.0f);
+		TargetMaterial->SetScalarParameterValue(TEXT("OpacityMaskMapWeight"), (bHasDiffuseTexture || bHasOpacityTexture) ? 1.0f : 0.0f);
 
 		UTexture* NormalTexture = nullptr;
 		if (CopyFirstTextureParameter(SourceMaterial, TargetMaterial, NormalParameterNames, TEXT("NormalMap"), NormalTexture))
@@ -174,6 +189,59 @@ namespace
 		{
 			TargetMaterial->SetScalarParameterValue(TEXT("NormalMapWeight"), 0.0f);
 		}
+	}
+
+	void PreserveRuntimeTextureWeights(const TArray<TObjectPtr<UMaterialInstanceDynamic>>& Materials)
+	{
+		for (UMaterialInstanceDynamic* Material : Materials)
+		{
+			if (!Material)
+			{
+				continue;
+			}
+
+			const float DiffuseWeight = Material->K2_GetScalarParameterValue(TEXT("DiffuseColorMapWeight"));
+			const float OpacityWeight = Material->K2_GetScalarParameterValue(TEXT("OpacityMaskMapWeight"));
+			Material->SetScalarParameterValue(TEXT("DiffuseColorMapWeight"), DiffuseWeight > 0.5f ? 1.0f : 0.0f);
+			Material->SetScalarParameterValue(TEXT("Opacity"), 1.0f);
+			Material->SetScalarParameterValue(TEXT("OpacityMask"), 1.0f);
+			Material->SetScalarParameterValue(TEXT("OpacityMaskMapWeight"), OpacityWeight > 0.5f ? 1.0f : 0.0f);
+		}
+	}
+
+	UTexture2D* FindPreviewTextureFromMesh(const USkeletalMesh* Mesh)
+	{
+		if (!Mesh)
+		{
+			return nullptr;
+		}
+
+		static const FName DiffuseParameterNames[] = {
+			TEXT("DiffuseColorMap"),
+			TEXT("MainImage"),
+			TEXT("BaseColorMap"),
+			TEXT("BaseMap"),
+			TEXT("_MainTex")};
+		for (const FSkeletalMaterial& Slot : Mesh->GetMaterials())
+		{
+			UMaterialInterface* Material = Slot.MaterialInterface;
+			if (!Material)
+			{
+				continue;
+			}
+			for (const FName& ParameterName : DiffuseParameterNames)
+			{
+				UTexture* Texture = nullptr;
+				if (ReadTextureParameter(Material, ParameterName, Texture))
+				{
+					if (UTexture2D* Texture2D = Cast<UTexture2D>(Texture))
+					{
+						return Texture2D;
+					}
+				}
+			}
+		}
+		return nullptr;
 	}
 }
 
@@ -639,7 +707,13 @@ FString AUECustomizationPreviewActor::GetOptionLabel(EUECustomizationPart Part, 
 UTexture2D* AUECustomizationPreviewActor::GetOptionTexture(EUECustomizationPart Part, int32 Index) const
 {
 	const TArray<TObjectPtr<UTexture2D>>& Catalog = GetTextureCatalog(Part);
-	return Catalog.IsValidIndex(Index) ? Catalog[Index].Get() : nullptr;
+	if (Catalog.IsValidIndex(Index))
+	{
+		return Catalog[Index].Get();
+	}
+
+	const TArray<TObjectPtr<USkeletalMesh>>& MeshCatalog = GetCatalog(Part);
+	return MeshCatalog.IsValidIndex(Index) ? FindPreviewTextureFromMesh(MeshCatalog[Index].Get()) : nullptr;
 }
 
 bool AUECustomizationPreviewActor::UpdateMeshes()
@@ -698,9 +772,13 @@ bool AUECustomizationPreviewActor::UpdateMeshes()
 	Assign(MouthMesh, SelectTexturedMesh(EUECustomizationPart::Mouth, Appearance.MouthStyle));
 	Assign(LipOverlayMesh, SelectTexturedMesh(EUECustomizationPart::FaceSkin, Appearance.FaceStyle));
 	Assign(MouthLineOverlayMesh, SelectTexturedMesh(EUECustomizationPart::FaceSkin, Appearance.FaceStyle));
+	USkeletalMesh* SelectedHairBase = SelectOptionalMesh(EUECustomizationPart::HairBase, Appearance.HairBaseStyle);
+	const int32 VisibleHairFrontStyle = IsBrokenHairFrontStyle(Appearance.HairFrontStyle)
+		? 0
+		: Appearance.HairFrontStyle;
 	Assign(HairScalpMesh, nullptr);
-	Assign(HairBaseMesh, SelectMesh(GetCatalog(EUECustomizationPart::HairBase), Appearance.HairBaseStyle));
-	Assign(HairFrontMesh, SelectMesh(GetCatalog(EUECustomizationPart::HairFront), Appearance.HairFrontStyle));
+	Assign(HairBaseMesh, SelectedHairBase);
+	Assign(HairFrontMesh, SelectMesh(GetCatalog(EUECustomizationPart::HairFront), VisibleHairFrontStyle));
 	Assign(HairSideMesh, SelectMesh(GetCatalog(EUECustomizationPart::HairSide), Appearance.HairSideStyle));
 	Assign(HairBackMesh, SelectMesh(GetCatalog(EUECustomizationPart::HairBack), Appearance.HairBackStyle));
 	Assign(HairExtraMesh, SelectMesh(GetCatalog(EUECustomizationPart::HairExtra), Appearance.HairExtraStyle));
@@ -769,9 +847,14 @@ void AUECustomizationPreviewActor::BeginPlay()
 	CharacterRoot->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
 	HideLegacyPreviewParts();
 	LoadAppearance();
+	if (IsIdentityTint(Appearance.EyeColor))
+	{
+		Appearance.EyeColor = DefaultEyeIrisColor;
+	}
 	if (FParse::Param(FCommandLine::Get(), TEXT("VRoidQAReset")))
 	{
 		Appearance = FUECharacterCustomizationData();
+		Appearance.EyeColor = DefaultEyeIrisColor;
 	}
 	if (FParse::Param(FCommandLine::Get(), TEXT("VRoidQAFemale")))
 	{
@@ -821,6 +904,11 @@ void AUECustomizationPreviewActor::BeginPlay()
 	if (FParse::Value(FCommandLine::Get(), TEXT("VRoidQAHairBaseIndex="), QAHairBaseIndex))
 	{
 		Appearance.HairBaseStyle = QAHairBaseIndex;
+	}
+	int32 QAHairExtraIndex = INDEX_NONE;
+	if (FParse::Value(FCommandLine::Get(), TEXT("VRoidQAHairExtraIndex="), QAHairExtraIndex))
+	{
+		Appearance.HairExtraStyle = QAHairExtraIndex;
 	}
 	if (FParse::Param(FCommandLine::Get(), TEXT("VRoidQANoOutfit")))
 	{
@@ -899,6 +987,10 @@ void AUECustomizationPreviewActor::BeginPlay()
 void AUECustomizationPreviewActor::ApplyAppearance(const FUECharacterCustomizationData& NewAppearance)
 {
 	Appearance = NewAppearance;
+	if (IsIdentityTint(Appearance.EyeColor))
+	{
+		Appearance.EyeColor = DefaultEyeIrisColor;
+	}
 	Appearance.Normalize();
 	ClampAppearanceToCatalogs();
 	UpdateMeshes();
@@ -916,7 +1008,9 @@ void AUECustomizationPreviewActor::RotatePreview(float DeltaYaw)
 
 void AUECustomizationPreviewActor::ResetAppearance()
 {
-	ApplyAppearance(FUECharacterCustomizationData());
+	FUECharacterCustomizationData DefaultAppearance;
+	DefaultAppearance.EyeColor = DefaultEyeIrisColor;
+	ApplyAppearance(DefaultAppearance);
 }
 
 void AUECustomizationPreviewActor::RandomizeAppearance()
@@ -930,7 +1024,7 @@ void AUECustomizationPreviewActor::RandomizeAppearance()
 
 	RandomAppearance.SkinColor = FLinearColor::White;
 	RandomAppearance.HairColor = FLinearColor::White;
-	RandomAppearance.EyeColor = FLinearColor::White;
+	RandomAppearance.EyeColor = DefaultEyeIrisColor;
 	RandomAppearance.LipColor = FLinearColor::White;
 	RandomAppearance.OutfitColor = FLinearColor::White;
 	RandomAppearance.TopColor = FLinearColor::White;
@@ -953,7 +1047,7 @@ void AUECustomizationPreviewActor::RandomizeAppearance()
 	RandomAppearance.MouthStyle = RandomIndex(EUECustomizationPart::Mouth);
 	RandomAppearance.LipStyle = RandomIndex(EUECustomizationPart::Lip);
 	RandomAppearance.MouthLineStyle = RandomIndex(EUECustomizationPart::MouthLine);
-	RandomAppearance.HairBaseStyle = FMath::Max(1, RandomIndex(EUECustomizationPart::HairBase));
+	RandomAppearance.HairBaseStyle = 1;
 	const int32 HairSetIndex = RandomIndex(EUECustomizationPart::HairSet);
 	RandomAppearance.HairFrontStyle = HairSetIndex;
 	RandomAppearance.HairSideStyle = HairSetIndex;
@@ -989,7 +1083,7 @@ bool AUECustomizationPreviewActor::SaveAppearance() const
 		return false;
 	}
 	SaveGame->Appearance = Appearance;
-	SaveGame->DataVersion = 12;
+	SaveGame->DataVersion = 15;
 	return UGameplayStatics::SaveGameToSlot(SaveGame, SaveSlotName, SaveUserIndex);
 }
 
@@ -1019,7 +1113,7 @@ bool AUECustomizationPreviewActor::LoadAppearance()
 		Appearance.MouthStyle = 0;
 		Appearance.LipStyle = 0;
 		Appearance.MouthLineStyle = 0;
-		Appearance.EyeColor = FLinearColor::White;
+		Appearance.EyeColor = DefaultEyeIrisColor;
 	}
 	if (SaveGame->DataVersion < 4 && Appearance.HairBaseStyle == 0)
 	{
@@ -1084,7 +1178,6 @@ bool AUECustomizationPreviewActor::LoadAppearance()
 	{
 		Appearance.SkinColor = FLinearColor::White;
 		Appearance.HairColor = FLinearColor::White;
-		Appearance.EyeColor = FLinearColor::White;
 		Appearance.LipColor = FLinearColor::White;
 		Appearance.OutfitColor = FLinearColor::White;
 		Appearance.TopColor = FLinearColor::White;
@@ -1092,6 +1185,14 @@ bool AUECustomizationPreviewActor::LoadAppearance()
 		Appearance.OnepieceColor = FLinearColor::White;
 		Appearance.ShoesColor = FLinearColor::White;
 		Appearance.AccessoryColor = FLinearColor::White;
+	}
+	if (SaveGame->DataVersion < 13 && IsIdentityTint(Appearance.EyeColor))
+	{
+		Appearance.EyeColor = DefaultEyeIrisColor;
+	}
+	if (SaveGame->DataVersion < 15)
+	{
+		Appearance.HairBaseStyle = 1;
 	}
 	Appearance.Normalize();
 	return true;
@@ -1144,8 +1245,6 @@ void AUECustomizationPreviewActor::CreateMaskedOverlayMaterials(
 		}
 		UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(SourceMaterial, this);
 		PreserveSourceMaterialTextures(Component->GetMaterial(Index), Material);
-		Material->SetScalarParameterValue(TEXT("OpacityMask"), 1.0f);
-		Material->SetScalarParameterValue(TEXT("OpacityMaskMapWeight"), 1.0f);
 		Component->SetMaterial(Index, Material);
 		OutMaterials.Add(Material);
 	}
@@ -1208,10 +1307,14 @@ void AUECustomizationPreviewActor::CreateDynamicMaterials()
 
 	UMaterialInterface* OutfitTemplateMaterial = LoadObject<UMaterialInterface>(nullptr,
 		TEXT("/Game/CharacterCustomization/Materials/M_UEOutfitTextured.M_UEOutfitTextured"));
+	UMaterialInterface* EyeWhiteTemplateMaterial = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/CharacterCustomization/Materials/M_UEEyeWhiteSolid.M_UEEyeWhiteSolid"));
+	UMaterialInterface* IrisTemplateMaterial = LoadObject<UMaterialInterface>(nullptr,
+		TEXT("/Game/CharacterCustomization/Materials/M_UEIrisTintMasked.M_UEIrisTintMasked"));
 	CreateMaterialsForComponent(BodyMesh, BodySkinMaterials, OutfitTemplateMaterial);
 	CreateMaterialsForComponent(FaceSkinMesh, FaceSkinMaterials);
-	CreateMaterialsForComponent(EyeIrisMesh, EyeMaterials);
-	CreateMaterialsForComponent(EyeWhiteMesh, EyeWhiteMaterials);
+	CreateMaterialsForComponent(EyeIrisMesh, EyeMaterials, IrisTemplateMaterial);
+	CreateMaterialsForComponent(EyeWhiteMesh, EyeWhiteMaterials, EyeWhiteTemplateMaterial);
 	CreateMaterialsForComponent(EyeHighlightMesh, EyeHighlightMaterials);
 	CreateMaterialsForComponent(EyeExtraMesh, EyeExtraMaterials);
 	CreateMaterialsForComponent(BrowMesh, BrowMaterials);
@@ -1228,18 +1331,17 @@ void AUECustomizationPreviewActor::CreateDynamicMaterials()
 		MouthLineMaterials,
 		LoadObject<UMaterialInterface>(nullptr,
 			TEXT("/Game/VRoidCatalog/FaceGeometryDetermined/Mouth.Mouth")));
-	CreateMaterialsForComponent(HairScalpMesh, HairScalpMaterials);
-	HairMaterials.Append(HairScalpMaterials);
+	CreateMaterialsForComponent(HairScalpMesh, HairScalpMaterials, OutfitTemplateMaterial);
 	CreateMaterialsForComponent(HairBaseMesh, HairBaseMaterials);
 	HairMaterials.Append(HairBaseMaterials);
 	CreateMaterialsForComponent(HairFrontMesh, HairMaterials);
 	CreateMaterialsForComponent(HairSideMesh, HairMaterials);
 	CreateMaterialsForComponent(HairBackMesh, HairMaterials);
 	CreateMaterialsForComponent(HairExtraMesh, HairMaterials);
-	CreateMaterialsForComponent(TopMesh, TopMaterials, OutfitTemplateMaterial);
-	CreateMaterialsForComponent(BottomMesh, BottomMaterials, OutfitTemplateMaterial);
-	CreateMaterialsForComponent(OnepieceMesh, OnepieceMaterials, OutfitTemplateMaterial);
-	CreateMaterialsForComponent(ShoesMesh, ShoesMaterials, OutfitTemplateMaterial);
+	CreateMaterialsForComponent(TopMesh, TopMaterials);
+	CreateMaterialsForComponent(BottomMesh, BottomMaterials);
+	CreateMaterialsForComponent(OnepieceMesh, OnepieceMaterials);
+	CreateMaterialsForComponent(ShoesMesh, ShoesMaterials);
 	OutfitMaterials.Append(TopMaterials);
 	OutfitMaterials.Append(BottomMaterials);
 	OutfitMaterials.Append(OnepieceMaterials);
@@ -1263,7 +1365,8 @@ void AUECustomizationPreviewActor::CreateDynamicMaterials()
 		}
 		Material->SetScalarParameterValue(TEXT("Opacity"), 1.0f);
 		Material->SetScalarParameterValue(TEXT("OpacityMask"), 1.0f);
-		Material->SetScalarParameterValue(TEXT("OpacityMaskMapWeight"), 1.0f);
+		const float OpacityWeight = Material->K2_GetScalarParameterValue(TEXT("OpacityMaskMapWeight"));
+		Material->SetScalarParameterValue(TEXT("OpacityMaskMapWeight"), OpacityWeight > 0.5f ? 1.0f : 0.0f);
 	}
 	ApplySelectedTextures();
 	ApplyNeutralMaterialLighting();
@@ -1350,38 +1453,39 @@ void AUECustomizationPreviewActor::ApplyColors()
 	};
 	auto ApplyOutfitMaterial = [](const TArray<TObjectPtr<UMaterialInstanceDynamic>>& Materials, const FLinearColor& Color)
 	{
-		const FLinearColor TintColor = Color.GetClamped();
-		SetMaterialColor(Materials, DiffuseColorParameter, TintColor);
-		SetMaterialColor(Materials, TEXT("BaseColor"), TintColor);
-		SetMaterialColor(Materials, TEXT("Base Color"), TintColor);
-		SetMaterialColor(Materials, TEXT("AmbientColor"), TintColor);
-		SetMaterialColor(Materials, TEXT("TintColor"), TintColor);
-		SetMaterialColor(Materials, TEXT("Color"), TintColor);
-		SetMaterialColor(Materials, TEXT("CustomTint"), TintColor);
-		SetMaterialScalar(Materials, TEXT("DiffuseColorMapWeight"), 1.0f);
-		SetMaterialScalar(Materials, TEXT("Opacity"), 1.0f);
-		SetMaterialScalar(Materials, TEXT("OpacityMask"), 1.0f);
-		SetMaterialScalar(Materials, TEXT("OpacityMaskMapWeight"), 1.0f);
+		if (!IsIdentityTint(Color))
+		{
+			const FLinearColor TintColor = Color.GetClamped();
+			SetMaterialColor(Materials, DiffuseColorParameter, TintColor);
+			SetMaterialColor(Materials, TEXT("BaseColor"), TintColor);
+			SetMaterialColor(Materials, TEXT("Base Color"), TintColor);
+			SetMaterialColor(Materials, TEXT("AmbientColor"), TintColor);
+			SetMaterialColor(Materials, TEXT("TintColor"), TintColor);
+			SetMaterialColor(Materials, TEXT("Color"), TintColor);
+			SetMaterialColor(Materials, TEXT("CustomTint"), TintColor);
+		}
+		PreserveRuntimeTextureWeights(Materials);
 		SetMaterialScalar(Materials, TEXT("TextureEmissionWeight"), 0.08f);
 	};
 	auto ApplyAccessoryTint = [](const TArray<TObjectPtr<UMaterialInstanceDynamic>>& Materials, const FLinearColor& Color)
 	{
-		if (IsIdentityTint(Color))
+		if (!IsIdentityTint(Color))
 		{
-			return;
+			SetMaterialColor(Materials, DiffuseColorParameter, Color);
+			SetMaterialColor(Materials, TEXT("BaseColor"), Color);
+			SetMaterialColor(Materials, TEXT("Base Color"), Color);
+			SetMaterialColor(Materials, TEXT("AmbientColor"), Color);
+			SetMaterialColor(Materials, TEXT("TintColor"), Color);
+			SetMaterialColor(Materials, TEXT("Color"), Color);
+			SetMaterialColor(Materials, TEXT("AccessoryColor"), Color);
+			SetMaterialColor(Materials, TEXT("CustomTint"), Color);
+			SetMaterialColor(Materials, TEXT("EmissiveColor"), Color * 0.08f);
 		}
-		SetMaterialColor(Materials, DiffuseColorParameter, Color);
-		SetMaterialColor(Materials, TEXT("BaseColor"), Color);
-		SetMaterialColor(Materials, TEXT("Base Color"), Color);
-		SetMaterialColor(Materials, TEXT("AmbientColor"), Color);
-		SetMaterialColor(Materials, TEXT("TintColor"), Color);
-		SetMaterialColor(Materials, TEXT("Color"), Color);
-		SetMaterialColor(Materials, TEXT("AccessoryColor"), Color);
-		SetMaterialColor(Materials, TEXT("EmissiveColor"), Color * 0.08f);
 		SetMaterialColor(Materials, TEXT("SpecularColor"), FLinearColor::Black);
-		SetMaterialScalar(Materials, TEXT("DiffuseColorMapWeight"), 1.0f);
+		PreserveRuntimeTextureWeights(Materials);
 		SetMaterialScalar(Materials, TEXT("SpecularColorMapWeight"), 0.0f);
 		SetMaterialScalar(Materials, TEXT("Shininess"), 0.0f);
+		SetMaterialScalar(Materials, TEXT("TextureEmissionWeight"), 0.08f);
 	};
 	const FLinearColor SkinColor = Appearance.SkinColor;
 	const FLinearColor EffectiveBodySkinColor = IsIdentityTint(SkinColor) ? DefaultBodySkinColor : SkinColor.GetClamped();
@@ -1435,7 +1539,7 @@ void AUECustomizationPreviewActor::ApplyColors()
 	SetMaterialScalar(BodySkinMaterials, TEXT("OpacityMask"), 1.0f);
 	SetMaterialScalar(BodySkinMaterials, TEXT("OpacityMaskMapWeight"), 1.0f);
 	SetMaterialScalar(BodySkinMaterials, TEXT("EmissiveColorMapWeight"), 0.0f);
-	SetMaterialScalar(BodySkinMaterials, TEXT("TextureEmissionWeight"), 0.5f);
+	SetMaterialScalar(BodySkinMaterials, TEXT("TextureEmissionWeight"), 0.85f);
 	SetMaterialScalar(BodySkinMaterials, TEXT("SpecularColorMapWeight"), 0.0f);
 	SetMaterialScalar(BodySkinMaterials, TEXT("Shininess"), 0.0f);
 	if (!IsIdentityTint(SkinColor))
@@ -1466,8 +1570,22 @@ void AUECustomizationPreviewActor::ApplyColors()
 	}
 	SetMaterialScalar(HairMaterials, TEXT("SpecularColorMapWeight"), 0.0f);
 	SetMaterialScalar(HairMaterials, TEXT("Shininess"), 0.0f);
+	PreserveRuntimeTextureWeights(HairMaterials);
+	SetMaterialScalar(HairMaterials, TEXT("TextureEmissionWeight"), 0.18f);
+
+	const FLinearColor HairUnderlayColor = IsIdentityTint(Appearance.HairColor)
+		? FLinearColor(0.11f, 0.035f, 0.018f, 1.0f)
+		: Appearance.HairColor.GetClamped();
+	SetMaterialColor(HairScalpMaterials, DiffuseColorParameter, HairUnderlayColor);
+	SetMaterialColor(HairScalpMaterials, TEXT("BaseColor"), HairUnderlayColor);
+	SetMaterialColor(HairScalpMaterials, TEXT("Base Color"), HairUnderlayColor);
+	SetMaterialColor(HairScalpMaterials, TEXT("AmbientColor"), HairUnderlayColor);
+	SetMaterialColor(HairScalpMaterials, TEXT("TintColor"), HairUnderlayColor);
+	SetMaterialColor(HairScalpMaterials, TEXT("Color"), HairUnderlayColor);
+	SetMaterialScalar(HairScalpMaterials, TEXT("DiffuseColorMapWeight"), 0.0f);
 	SetMaterialScalar(HairScalpMaterials, TEXT("OpacityMask"), 1.0f);
 	SetMaterialScalar(HairScalpMaterials, TEXT("OpacityMaskMapWeight"), 0.0f);
+	SetMaterialScalar(HairScalpMaterials, TEXT("TextureEmissionWeight"), 0.08f);
 	const FLinearColor EyeSource = Appearance.EyeColor.GetClamped();
 	const bool bUseEyeTint = !IsIdentityTint(EyeSource);
 	const FLinearColor IrisLightColor = bUseEyeTint
@@ -1495,7 +1613,15 @@ void AUECustomizationPreviewActor::ApplyColors()
 	SetMaterialScalar(EyeMaterials, TEXT("EmissiveColorMapWeight"), 0.48f);
 	SetMaterialScalar(EyeMaterials, TEXT("IrisFill"), bUseEyeTint ? 0.62f : 0.0f);
 	SetMaterialColor(EyeWhiteMaterials, TEXT("EyeWhiteTint"), FLinearColor::White);
+	SetMaterialColor(EyeWhiteMaterials, DiffuseColorParameter, FLinearColor::White);
+	SetMaterialColor(EyeWhiteMaterials, TEXT("BaseColor"), FLinearColor::White);
+	SetMaterialColor(EyeWhiteMaterials, TEXT("Base Color"), FLinearColor::White);
+	SetMaterialColor(EyeWhiteMaterials, TEXT("AmbientColor"), FLinearColor::White);
+	SetMaterialColor(EyeWhiteMaterials, TEXT("EmissiveColor"), FLinearColor::White);
+	SetMaterialColor(EyeWhiteMaterials, TEXT("TintColor"), FLinearColor::White);
+	SetMaterialColor(EyeWhiteMaterials, TEXT("Color"), FLinearColor::White);
 	SetMaterialScalar(EyeWhiteMaterials, TEXT("DiffuseColorMapWeight"), 1.0f);
+	SetMaterialScalar(EyeWhiteMaterials, TEXT("Opacity"), 1.0f);
 	SetMaterialScalar(EyeWhiteMaterials, TEXT("OpacityMask"), 1.0f);
 	SetMaterialScalar(EyeWhiteMaterials, TEXT("OpacityMaskMapWeight"), 1.0f);
 	SetMaterialScalar(EyeWhiteMaterials, TEXT("EmissiveColorMapWeight"), 0.22f);
@@ -1651,7 +1777,7 @@ void AUECustomizationPreviewActor::ApplyTransforms()
 		Part->SetRelativeScale3D(FVector::OneVector);
 	}
 
-	const float FaceLayerDepth = FMath::Max(CatalogAsset ? CatalogAsset->ScleraDepthOffsetY : 0.005f, 0.04f);
+	const float FaceLayerDepth = FMath::Clamp(CatalogAsset ? CatalogAsset->ScleraDepthOffsetY : 0.005f, 0.002f, 0.012f);
 	auto OffsetFaceLayer = [FaceLayerDepth](USkeletalMeshComponent* Component, float Order)
 	{
 		if (Component)
@@ -1670,14 +1796,23 @@ void AUECustomizationPreviewActor::ApplyTransforms()
 	OffsetFaceLayer(LipOverlayMesh, 5.0f);
 	OffsetFaceLayer(MouthLineOverlayMesh, 6.0f);
 
+	if (HairScalpMesh && HairScalpMesh->GetSkeletalMeshAsset())
+	{
+		HairScalpMesh->SetVisibility(false, true);
+	}
+
 	if (HeadAccessoryMesh)
 	{
-		HeadAccessoryMesh->SetRelativeLocation(FVector::ZeroVector);
+		const float HeadAccessoryZ = CatalogAsset ? CatalogAsset->HeadAccessoryVerticalOffset : 9.0f;
+		HeadAccessoryMesh->SetRelativeLocation(FVector(0.0f, 0.0f, HeadAccessoryZ));
 	}
 	if (FaceAccessoryMesh)
 	{
-		FaceAccessoryMesh->SetRelativeLocation(FVector::ZeroVector);
+		const float FaceAccessoryY = CatalogAsset ? CatalogAsset->FaceAccessoryForwardOffset : 6.5f;
+		const float FaceAccessoryZ = CatalogAsset ? CatalogAsset->FaceAccessoryVerticalOffset : 17.5f;
+		FaceAccessoryMesh->SetRelativeLocation(FVector(0.0f, FaceAccessoryY, FaceAccessoryZ));
 	}
+
 }
 
 void AUECustomizationPreviewActor::HideLegacyPreviewParts()
@@ -1703,6 +1838,16 @@ void AUECustomizationPreviewActor::CaptureQAScreenshot()
 		Widget->RemoveFromParent();
 	}
 	UE_LOG(LogTemp, Display, TEXT("VRoid QA hid %d widgets"), QAWidgets.Num());
+	UE_LOG(LogTemp, Display, TEXT("VRoid QA colors skin=%s hair=%s eye=%s lip=%s top=%s bottom=%s onepiece=%s shoes=%s accessory=%s"),
+		*Appearance.SkinColor.ToString(),
+		*Appearance.HairColor.ToString(),
+		*Appearance.EyeColor.ToString(),
+		*Appearance.LipColor.ToString(),
+		*Appearance.TopColor.ToString(),
+		*Appearance.BottomColor.ToString(),
+		*Appearance.OnepieceColor.ToString(),
+		*Appearance.ShoesColor.ToString(),
+		*Appearance.AccessoryColor.ToString());
 
 	auto LogPart = [](const TCHAR* Name, USkeletalMeshComponent* Component)
 	{
@@ -1877,6 +2022,13 @@ void AUECustomizationPreviewActor::CaptureQAHeadScreenshot()
 
 void AUECustomizationPreviewActor::ExitAfterQAScreenshot()
 {
+	if (UWorld* World = GetWorld())
+	{
+		if (APlayerController* PlayerController = UGameplayStatics::GetPlayerController(World, 0))
+		{
+			PlayerController->ConsoleCommand(TEXT("quit"), true);
+		}
+	}
 	FPlatformMisc::RequestExit(false);
 }
 

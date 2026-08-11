@@ -763,6 +763,7 @@ void UUECustomizationWidget::SelectPartOption(EUECustomizationPart Part, int32 I
 	case EUECustomizationPart::Lip: Data.LipStyle = Index; break;
 	case EUECustomizationPart::MouthLine: Data.MouthLineStyle = Index; break;
 	case EUECustomizationPart::HairSet:
+		Data.HairBaseStyle = 1;
 		Data.HairFrontStyle = Index;
 		Data.HairSideStyle = Index;
 		Data.HairBackStyle = Index;
