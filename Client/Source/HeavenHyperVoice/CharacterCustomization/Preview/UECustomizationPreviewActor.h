@@ -42,6 +42,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Customization")
 	UTexture2D* GetOptionTexture(EUECustomizationPart Part, int32 Index) const;
 
+	UFUNCTION(BlueprintPure, Category = "Customization")
+	int32 ResolveOptionIndex(EUECustomizationPart Part, int32 DisplayIndex) const;
+
+	UFUNCTION(BlueprintPure, Category = "Customization")
+	int32 GetDisplayIndex(EUECustomizationPart Part, int32 RawIndex) const;
+
 	UFUNCTION(BlueprintCallable, Category = "Customization")
 	void InitializeCatalogs();
 
@@ -169,6 +175,7 @@ private:
 	USkeletalMesh* SelectMesh(const TArray<TObjectPtr<USkeletalMesh>>& Catalog, int32 Index) const;
 	const TArray<TObjectPtr<USkeletalMesh>>& GetCatalog(EUECustomizationPart Part) const;
 	const TArray<TObjectPtr<UTexture2D>>& GetTextureCatalog(EUECustomizationPart Part) const;
+	void BuildOptionIndexMap(EUECustomizationPart Part, TArray<int32>& OutRawIndices) const;
 	void ApplyCatalogAsset();
 	void ValidateCatalogSkeletons() const;
 	void ClampAppearanceToCatalogs();

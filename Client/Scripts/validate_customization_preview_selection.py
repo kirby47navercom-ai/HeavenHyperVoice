@@ -74,24 +74,61 @@ def _last_index(actor, part_name: str) -> int:
     return count - 1
 
 
+def _last_raw_index(actor, part_name: str) -> int:
+    part = _enum(part_name)
+    return actor.resolve_option_index(part, _last_index(actor, part_name))
+
+
+def _assert_option_catalog_mapping(actor, catalog) -> None:
+    hair_set = _enum("HAIR_SET")
+    hair_set_count = actor.get_option_count(hair_set)
+    if hair_set_count <= 0:
+        raise RuntimeError("HairSet has no display options")
+    raw_hair_set_count = len(catalog.get_editor_property("MaleHairFrontCatalog") or [])
+    if raw_hair_set_count > 0 and hair_set_count >= raw_hair_set_count:
+        raise RuntimeError(
+            "HairSet shape duplicate entries were not collapsed: "
+            f"display={hair_set_count} raw={raw_hair_set_count}"
+        )
+    first_hair_label = actor.get_option_label(hair_set, 0)
+    if "Preset 87" in first_hair_label:
+        raise RuntimeError(f"HairSet still uses the wrong fallback label: {first_hair_label}")
+
+    hair_extra = _enum("HAIR_EXTRA")
+    raw_hair_extra_count = len(catalog.get_editor_property("MaleHairExtraCatalog") or [])
+    display_hair_extra_count = actor.get_option_count(hair_extra)
+    if raw_hair_extra_count > 0 and display_hair_extra_count >= raw_hair_extra_count:
+        raise RuntimeError(
+            "HairExtra duplicate None entries were not collapsed: "
+            f"display={display_hair_extra_count} raw={raw_hair_extra_count}"
+        )
+    unreal.log(
+        "PREVIEW_VALIDATE option_mapping "
+        f"hair_set_display={hair_set_count} hair_set_raw={raw_hair_set_count} "
+        f"hair_set_label={first_hair_label} "
+        f"hair_extra_display={display_hair_extra_count} hair_extra_raw={raw_hair_extra_count}"
+    )
+
+
 def main() -> None:
     actor = _load_preview_actor()
     actor.initialize_catalogs()
     catalog = unreal.load_asset("/Game/CharacterCustomization/Blueprints/DA_CustomizationCatalog")
     if catalog is None:
         raise RuntimeError("Missing customization catalog")
+    _assert_option_catalog_mapping(actor, catalog)
 
     data = actor.get_appearance()
-    data.face_style = _last_index(actor, "FACE_SKIN")
-    data.eye_white_style = _last_index(actor, "EYE_WHITE")
-    data.eye_iris_style = _last_index(actor, "EYE_IRIS")
-    data.eye_highlight_style = _last_index(actor, "EYE_HIGHLIGHT")
-    data.brow_style = _last_index(actor, "BROW")
-    data.eyelash_style = _last_index(actor, "EYELASH")
-    data.eyeline_style = _last_index(actor, "EYELINE")
-    data.mouth_style = _last_index(actor, "MOUTH")
-    data.lip_style = _last_index(actor, "LIP")
-    data.mouth_line_style = _last_index(actor, "MOUTH_LINE")
+    data.face_style = _last_raw_index(actor, "FACE_SKIN")
+    data.eye_white_style = _last_raw_index(actor, "EYE_WHITE")
+    data.eye_iris_style = _last_raw_index(actor, "EYE_IRIS")
+    data.eye_highlight_style = _last_raw_index(actor, "EYE_HIGHLIGHT")
+    data.brow_style = _last_raw_index(actor, "BROW")
+    data.eyelash_style = _last_raw_index(actor, "EYELASH")
+    data.eyeline_style = _last_raw_index(actor, "EYELINE")
+    data.mouth_style = _last_raw_index(actor, "MOUTH")
+    data.lip_style = _last_raw_index(actor, "LIP")
+    data.mouth_line_style = _last_raw_index(actor, "MOUTH_LINE")
     actor.apply_appearance(data)
 
     for name in ("FaceSkin", "EyeWhite", "EyeIris", "Mouth"):

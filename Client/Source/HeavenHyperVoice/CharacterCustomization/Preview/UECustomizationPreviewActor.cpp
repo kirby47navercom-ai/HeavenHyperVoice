@@ -243,6 +243,35 @@ namespace
 		}
 		return nullptr;
 	}
+
+	FString BuildMeshShapeKey(const USkeletalMesh* Mesh)
+	{
+		if (!Mesh)
+		{
+			return TEXT("None");
+		}
+
+		const FBoxSphereBounds Bounds = Mesh->GetBounds();
+		const FVector Origin = Bounds.Origin;
+		const FVector Extent = Bounds.BoxExtent;
+		const UTexture2D* PreviewTexture = FindPreviewTextureFromMesh(Mesh);
+		return FString::Printf(
+			TEXT("O=%.2f,%.2f,%.2f|E=%.2f,%.2f,%.2f|R=%.2f|Slots=%d|Tex=%s"),
+			Origin.X, Origin.Y, Origin.Z,
+			Extent.X, Extent.Y, Extent.Z,
+			Bounds.SphereRadius,
+			Mesh->GetMaterials().Num(),
+			PreviewTexture ? *PreviewTexture->GetName() : TEXT("None"));
+	}
+
+	bool ShouldUseShapeKeyForOptions(EUECustomizationPart Part)
+	{
+		return Part == EUECustomizationPart::HairBase ||
+			Part == EUECustomizationPart::HairFront ||
+			Part == EUECustomizationPart::HairSide ||
+			Part == EUECustomizationPart::HairBack ||
+			Part == EUECustomizationPart::HairExtra;
+	}
 }
 
 AUECustomizationPreviewActor::AUECustomizationPreviewActor()
@@ -336,6 +365,7 @@ const TArray<TObjectPtr<USkeletalMesh>>& AUECustomizationPreviewActor::GetCatalo
 #define UE_SELECT_CATALOG(Name) (bFemale ? Female##Name##Catalog : Male##Name##Catalog)
 	switch (Part)
 	{
+	case EUECustomizationPart::Body: return UE_SELECT_CATALOG(Body);
 	case EUECustomizationPart::FaceSkin: return UE_SELECT_CATALOG(FaceSkin);
 	case EUECustomizationPart::EyeWhite: return UE_SELECT_CATALOG(EyeWhite);
 	case EUECustomizationPart::EyeIris: return UE_SELECT_CATALOG(EyeIris);
@@ -359,7 +389,11 @@ const TArray<TObjectPtr<USkeletalMesh>>& AUECustomizationPreviewActor::GetCatalo
 	case EUECustomizationPart::EarAccessory: return UE_SELECT_CATALOG(EarAccessory);
 	case EUECustomizationPart::TailAccessory: return UE_SELECT_CATALOG(TailAccessory);
 	case EUECustomizationPart::NeckAccessory: return UE_SELECT_CATALOG(NeckAccessory);
-	default: return UE_SELECT_CATALOG(Body);
+	default:
+	{
+		static const TArray<TObjectPtr<USkeletalMesh>> EmptyCatalog;
+		return EmptyCatalog;
+	}
 	}
 #undef UE_SELECT_CATALOG
 }
@@ -561,7 +595,8 @@ void AUECustomizationPreviewActor::ClampAppearanceToCatalogs()
 	};
 	auto ClampOptionIndex = [this](EUECustomizationPart Part, int32& Index)
 	{
-		const int32 Count = GetOptionCount(Part);
+		const TArray<TObjectPtr<UTexture2D>>& Textures = GetTextureCatalog(Part);
+		const int32 Count = Textures.IsEmpty() ? GetCatalog(Part).Num() : Textures.Num();
 		Index = Count > 0 ? FMath::Clamp(Index, 0, Count - 1) : 0;
 	};
 
@@ -600,38 +635,168 @@ void AUECustomizationPreviewActor::ClampAppearanceToCatalogs()
 
 int32 AUECustomizationPreviewActor::GetOptionCount(EUECustomizationPart Part) const
 {
+	TArray<int32> RawIndices;
+	BuildOptionIndexMap(Part, RawIndices);
+	return RawIndices.Num();
+}
+
+int32 AUECustomizationPreviewActor::ResolveOptionIndex(EUECustomizationPart Part, int32 DisplayIndex) const
+{
+	TArray<int32> RawIndices;
+	BuildOptionIndexMap(Part, RawIndices);
+	return RawIndices.IsValidIndex(DisplayIndex)
+		? RawIndices[DisplayIndex]
+		: FMath::Max(DisplayIndex, 0);
+}
+
+int32 AUECustomizationPreviewActor::GetDisplayIndex(EUECustomizationPart Part, int32 RawIndex) const
+{
+	TArray<int32> RawIndices;
+	BuildOptionIndexMap(Part, RawIndices);
+	for (int32 DisplayIndex = 0; DisplayIndex < RawIndices.Num(); ++DisplayIndex)
+	{
+		if (RawIndices[DisplayIndex] == RawIndex)
+		{
+			return DisplayIndex;
+		}
+	}
+	return RawIndices.IsEmpty() ? 0 : FMath::Clamp(RawIndex, 0, RawIndices.Num() - 1);
+}
+
+void AUECustomizationPreviewActor::BuildOptionIndexMap(EUECustomizationPart Part, TArray<int32>& OutRawIndices) const
+{
+	OutRawIndices.Reset();
 	if (Part == EUECustomizationPart::Gender)
 	{
-		return 2;
+		OutRawIndices.Add(0);
+		OutRawIndices.Add(1);
+		return;
 	}
 	if (Part == EUECustomizationPart::Body)
 	{
-		return 3;
+		OutRawIndices.Add(0);
+		OutRawIndices.Add(1);
+		OutRawIndices.Add(2);
+		return;
 	}
+
+	TSet<FString> SeenKeys;
+	auto AddUnique = [&OutRawIndices, &SeenKeys](int32 RawIndex, FString Key)
+	{
+		if (Key.IsEmpty())
+		{
+			Key = FString::Printf(TEXT("Raw:%d"), RawIndex);
+		}
+		if (SeenKeys.Contains(Key))
+		{
+			return;
+		}
+		SeenKeys.Add(Key);
+		OutRawIndices.Add(RawIndex);
+	};
+
 	if (Part == EUECustomizationPart::HairSet)
 	{
-		return FMath::Min(
+		const int32 Count = FMath::Min(
 			GetCatalog(EUECustomizationPart::HairFront).Num(),
 			FMath::Min(GetCatalog(EUECustomizationPart::HairBack).Num(), GetCatalog(EUECustomizationPart::HairSide).Num()));
+		for (int32 RawIndex = 0; RawIndex < Count; ++RawIndex)
+		{
+			FString Key;
+			for (EUECustomizationPart HairPart : {
+				EUECustomizationPart::HairFront,
+				EUECustomizationPart::HairSide,
+				EUECustomizationPart::HairBack,
+				EUECustomizationPart::HairExtra})
+			{
+				const TArray<TObjectPtr<USkeletalMesh>>& Catalog = GetCatalog(HairPart);
+				USkeletalMesh* Mesh = Catalog.IsValidIndex(RawIndex) ? Catalog[RawIndex].Get() : nullptr;
+				Key += BuildMeshShapeKey(Mesh);
+				Key += TEXT("|");
+			}
+			AddUnique(RawIndex, Key);
+		}
+		return;
 	}
+
 	const TArray<TObjectPtr<UTexture2D>>& Textures = GetTextureCatalog(Part);
 	if (!Textures.IsEmpty())
 	{
-		return Textures.Num();
+		for (int32 RawIndex = 0; RawIndex < Textures.Num(); ++RawIndex)
+		{
+			UTexture2D* Texture = Textures[RawIndex].Get();
+			AddUnique(RawIndex, Texture ? Texture->GetPathName() : TEXT("None"));
+		}
+		return;
 	}
-	return GetCatalog(Part).Num();
+
+	const TArray<TObjectPtr<USkeletalMesh>>& Meshes = GetCatalog(Part);
+	for (int32 RawIndex = 0; RawIndex < Meshes.Num(); ++RawIndex)
+	{
+		USkeletalMesh* Mesh = Meshes[RawIndex].Get();
+		AddUnique(RawIndex, ShouldUseShapeKeyForOptions(Part)
+			? BuildMeshShapeKey(Mesh)
+			: (Mesh ? Mesh->GetPathName() : TEXT("None")));
+	}
 }
 
 FString AUECustomizationPreviewActor::GetOptionLabel(EUECustomizationPart Part, int32 Index) const
 {
+	const int32 RawIndex = ResolveOptionIndex(Part, Index);
 	if (Part == EUECustomizationPart::Gender)
 	{
-		return Index == 0 ? TEXT("Male") : TEXT("Female");
+		return RawIndex == 0 ? TEXT("Male") : TEXT("Female");
 	}
 	if (Part == EUECustomizationPart::Body)
 	{
 		static const TCHAR* Names[] = {TEXT("Slim"), TEXT("Standard"), TEXT("Wide")};
-		return Names[FMath::Clamp(Index, 0, 2)];
+		return Names[FMath::Clamp(RawIndex, 0, 2)];
+	}
+	if (Part == EUECustomizationPart::HairSet ||
+		Part == EUECustomizationPart::HairFront ||
+		Part == EUECustomizationPart::HairSide ||
+		Part == EUECustomizationPart::HairBack ||
+		Part == EUECustomizationPart::HairExtra)
+	{
+		static const TArray<int32> EmptyStyleIds;
+		const TArray<int32>& StyleIds = !CatalogAsset
+			? EmptyStyleIds
+			: Appearance.Gender == EUECharacterGender::Female
+				? CatalogAsset->FemaleHairStyleIds
+				: CatalogAsset->MaleHairStyleIds;
+		if (StyleIds.IsValidIndex(RawIndex))
+		{
+			FString HairDescriptor;
+			if (Part == EUECustomizationPart::HairSet)
+			{
+				const TArray<TObjectPtr<USkeletalMesh>>& BackCatalog = GetCatalog(EUECustomizationPart::HairBack);
+				const TArray<TObjectPtr<USkeletalMesh>>& SideCatalog = GetCatalog(EUECustomizationPart::HairSide);
+				const TArray<TObjectPtr<USkeletalMesh>>& ExtraCatalog = GetCatalog(EUECustomizationPart::HairExtra);
+				USkeletalMesh* BackMesh = BackCatalog.IsValidIndex(RawIndex) ? BackCatalog[RawIndex].Get() : nullptr;
+				USkeletalMesh* SideMesh = SideCatalog.IsValidIndex(RawIndex) ? SideCatalog[RawIndex].Get() : nullptr;
+				USkeletalMesh* ExtraMesh = ExtraCatalog.IsValidIndex(RawIndex) ? ExtraCatalog[RawIndex].Get() : nullptr;
+				if (BackMesh && BackMesh->GetBounds().BoxExtent.Z > 25.0f)
+				{
+					HairDescriptor = TEXT("Long Back");
+				}
+				else if (SideMesh && SideMesh->GetBounds().BoxExtent.X > 12.0f)
+				{
+					HairDescriptor = TEXT("Side Volume");
+				}
+				else
+				{
+					HairDescriptor = TEXT("Short");
+				}
+				if (ExtraMesh)
+				{
+					HairDescriptor += TEXT(" + Extra");
+				}
+			}
+			return Part == EUECustomizationPart::HairSet
+				? FString::Printf(TEXT("Hair Set %d\n%s"), StyleIds[RawIndex], *HairDescriptor)
+				: FString::Printf(TEXT("Hair %d"), StyleIds[RawIndex]);
+		}
+		return FString::Printf(TEXT("Hair %02d"), RawIndex + 1);
 	}
 	if (UTexture2D* Texture = GetOptionTexture(Part, Index))
 	{
@@ -652,68 +817,52 @@ FString AUECustomizationPreviewActor::GetOptionLabel(EUECustomizationPart Part, 
 		}
 		return FString::Printf(TEXT("Preset %s"), *StyleId);
 	}
-	if (!GetTextureCatalog(Part).IsEmpty() && GetTextureCatalog(Part).IsValidIndex(Index) &&
-		GetTextureCatalog(Part)[Index] == nullptr)
+	if (!GetTextureCatalog(Part).IsEmpty() && GetTextureCatalog(Part).IsValidIndex(RawIndex) &&
+		GetTextureCatalog(Part)[RawIndex] == nullptr)
 	{
 		return TEXT("None");
 	}
-	if (Part == EUECustomizationPart::EyeExtra && Index == 0)
+	if (Part == EUECustomizationPart::EyeExtra && RawIndex == 0)
 	{
 		return TEXT("None");
 	}
 	if (Part == EUECustomizationPart::HairBase)
 	{
 		static const TCHAR* Names[] = {TEXT("None"), TEXT("Default"), TEXT("Preset 001"), TEXT("Initial")};
-		return Names[FMath::Clamp(Index, 0, 3)];
-	}
-	if (Part == EUECustomizationPart::HairExtra &&
-		GetCatalog(Part).IsValidIndex(Index) && GetCatalog(Part)[Index] == nullptr)
-	{
-		return TEXT("None");
-	}
-	if (Part == EUECustomizationPart::HairSet ||
-		Part == EUECustomizationPart::HairFront ||
-		Part == EUECustomizationPart::HairSide ||
-		Part == EUECustomizationPart::HairBack ||
-		Part == EUECustomizationPart::HairExtra)
-	{
-		static const TArray<int32> EmptyStyleIds;
-		const TArray<int32>& StyleIds = !CatalogAsset
-			? EmptyStyleIds
-			: Appearance.Gender == EUECharacterGender::Female
-				? CatalogAsset->FemaleHairStyleIds
-				: CatalogAsset->MaleHairStyleIds;
-		return StyleIds.IsValidIndex(Index)
-			? FString::Printf(TEXT("Hair %d"), StyleIds[Index])
-			: TEXT("Hair");
+		return Names[FMath::Clamp(RawIndex, 0, 3)];
 	}
 	const TArray<TObjectPtr<USkeletalMesh>>& MeshCatalog = GetCatalog(Part);
-	if (MeshCatalog.IsValidIndex(Index) && MeshCatalog[Index] == nullptr)
+	if (MeshCatalog.IsValidIndex(RawIndex) && MeshCatalog[RawIndex] == nullptr)
 	{
 		return TEXT("None");
 	}
-	if (MeshCatalog.IsValidIndex(Index) && MeshCatalog[Index])
+	if (MeshCatalog.IsValidIndex(RawIndex) && MeshCatalog[RawIndex])
 	{
-		FString Label = MeshCatalog[Index]->GetName();
+		FString Label = MeshCatalog[RawIndex]->GetName();
 		Label.RemoveFromStart(TEXT("SK_"));
 		Label.ReplaceInline(TEXT("_Male_"), TEXT(" "));
 		Label.ReplaceInline(TEXT("_Female_"), TEXT(" "));
 		Label.ReplaceInline(TEXT("_"), TEXT(" "));
 		return Label;
 	}
-	return FString::Printf(TEXT("Style %02d"), Index + 1);
+	return FString::Printf(TEXT("Style %02d"), RawIndex + 1);
 }
 
 UTexture2D* AUECustomizationPreviewActor::GetOptionTexture(EUECustomizationPart Part, int32 Index) const
 {
-	const TArray<TObjectPtr<UTexture2D>>& Catalog = GetTextureCatalog(Part);
-	if (Catalog.IsValidIndex(Index))
+	const int32 RawIndex = ResolveOptionIndex(Part, Index);
+	if (Part == EUECustomizationPart::HairSet || ShouldUseShapeKeyForOptions(Part))
 	{
-		return Catalog[Index].Get();
+		return nullptr;
+	}
+	const TArray<TObjectPtr<UTexture2D>>& Catalog = GetTextureCatalog(Part);
+	if (Catalog.IsValidIndex(RawIndex))
+	{
+		return Catalog[RawIndex].Get();
 	}
 
 	const TArray<TObjectPtr<USkeletalMesh>>& MeshCatalog = GetCatalog(Part);
-	return MeshCatalog.IsValidIndex(Index) ? FindPreviewTextureFromMesh(MeshCatalog[Index].Get()) : nullptr;
+	return MeshCatalog.IsValidIndex(RawIndex) ? FindPreviewTextureFromMesh(MeshCatalog[RawIndex].Get()) : nullptr;
 }
 
 bool AUECustomizationPreviewActor::UpdateMeshes()
@@ -1034,7 +1183,8 @@ void AUECustomizationPreviewActor::RandomizeAppearance()
 	RandomAppearance.AccessoryColor = FLinearColor::White;
 	auto RandomIndex = [this](EUECustomizationPart Part)
 	{
-		return FMath::RandRange(0, FMath::Max(GetOptionCount(Part) - 1, 0));
+		const int32 DisplayIndex = FMath::RandRange(0, FMath::Max(GetOptionCount(Part) - 1, 0));
+		return ResolveOptionIndex(Part, DisplayIndex);
 	};
 	RandomAppearance.FaceStyle = RandomIndex(EUECustomizationPart::FaceSkin);
 	RandomAppearance.EyeWhiteStyle = RandomIndex(EUECustomizationPart::EyeWhite);
@@ -1667,7 +1817,9 @@ void AUECustomizationPreviewActor::ApplyColors()
 	PreserveMaskedLayerTexture(EyelineMaterials);
 	SetMaterialScalar(MouthMaterials, TEXT("Opacity"), 1.0f);
 	SetMaterialScalar(MouthMaterials, TEXT("OpacityMask"), 1.0f);
-	SetMaterialScalar(MouthMaterials, TEXT("OpacityMaskMapWeight"), 0.0f);
+	SetMaterialScalar(MouthMaterials, TEXT("OpacityMaskMapWeight"), 1.0f);
+	SetMaterialScalar(MouthMaterials, TEXT("SpecularColorMapWeight"), 0.0f);
+	SetMaterialScalar(MouthMaterials, TEXT("Shininess"), 0.0f);
 	const bool bUseLipTint = !IsIdentityTint(Appearance.LipColor);
 	if (bUseLipTint)
 	{

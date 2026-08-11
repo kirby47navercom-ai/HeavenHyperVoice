@@ -706,38 +706,39 @@ int32 UUECustomizationWidget::GetSelectedIndex(EUECustomizationPart Part) const
 		return 0;
 	}
 	const FUECharacterCustomizationData& Data = PreviewActor->GetAppearance();
+	int32 RawIndex = 0;
 	switch (Part)
 	{
-	case EUECustomizationPart::Gender: return static_cast<int32>(Data.Gender);
-	case EUECustomizationPart::Body: return static_cast<int32>(Data.BodyPreset);
-	case EUECustomizationPart::FaceSkin: return Data.FaceStyle;
-	case EUECustomizationPart::EyeWhite: return Data.EyeWhiteStyle;
-	case EUECustomizationPart::EyeIris: return Data.EyeIrisStyle;
-	case EUECustomizationPart::EyeHighlight: return Data.EyeHighlightStyle;
-	case EUECustomizationPart::EyeExtra: return Data.EyeExtraStyle;
-	case EUECustomizationPart::Brow: return Data.BrowStyle;
-	case EUECustomizationPart::Eyelash: return Data.EyelashStyle;
-	case EUECustomizationPart::Eyeline: return Data.EyelineStyle;
-	case EUECustomizationPart::Mouth: return Data.MouthStyle;
-	case EUECustomizationPart::Lip: return Data.LipStyle;
-	case EUECustomizationPart::MouthLine: return Data.MouthLineStyle;
+	case EUECustomizationPart::Gender: RawIndex = static_cast<int32>(Data.Gender); break;
+	case EUECustomizationPart::Body: RawIndex = static_cast<int32>(Data.BodyPreset); break;
+	case EUECustomizationPart::FaceSkin: RawIndex = Data.FaceStyle; break;
+	case EUECustomizationPart::EyeWhite: RawIndex = Data.EyeWhiteStyle; break;
+	case EUECustomizationPart::EyeIris: RawIndex = Data.EyeIrisStyle; break;
+	case EUECustomizationPart::EyeHighlight: RawIndex = Data.EyeHighlightStyle; break;
+	case EUECustomizationPart::EyeExtra: RawIndex = Data.EyeExtraStyle; break;
+	case EUECustomizationPart::Brow: RawIndex = Data.BrowStyle; break;
+	case EUECustomizationPart::Eyelash: RawIndex = Data.EyelashStyle; break;
+	case EUECustomizationPart::Eyeline: RawIndex = Data.EyelineStyle; break;
+	case EUECustomizationPart::Mouth: RawIndex = Data.MouthStyle; break;
+	case EUECustomizationPart::Lip: RawIndex = Data.LipStyle; break;
+	case EUECustomizationPart::MouthLine: RawIndex = Data.MouthLineStyle; break;
 	case EUECustomizationPart::HairSet:
-	case EUECustomizationPart::HairFront: return Data.HairFrontStyle;
-	case EUECustomizationPart::HairSide: return Data.HairSideStyle;
-	case EUECustomizationPart::HairBack: return Data.HairBackStyle;
-	case EUECustomizationPart::HairExtra: return Data.HairExtraStyle;
-	case EUECustomizationPart::HairBase: return Data.HairBaseStyle;
-	case EUECustomizationPart::Top: return Data.TopStyle;
-	case EUECustomizationPart::Bottom: return Data.BottomStyle;
-	case EUECustomizationPart::Onepiece: return Data.OnepieceStyle;
-	case EUECustomizationPart::Shoes: return Data.ShoesStyle;
-	case EUECustomizationPart::HeadAccessory: return Data.HeadAccessoryStyle;
-	case EUECustomizationPart::FaceAccessory: return Data.FaceAccessoryStyle;
-	case EUECustomizationPart::EarAccessory: return Data.EarAccessoryStyle;
-	case EUECustomizationPart::TailAccessory: return Data.TailAccessoryStyle;
-	case EUECustomizationPart::NeckAccessory: return Data.NeckAccessoryStyle;
+	case EUECustomizationPart::HairFront: RawIndex = Data.HairFrontStyle; break;
+	case EUECustomizationPart::HairSide: RawIndex = Data.HairSideStyle; break;
+	case EUECustomizationPart::HairBack: RawIndex = Data.HairBackStyle; break;
+	case EUECustomizationPart::HairExtra: RawIndex = Data.HairExtraStyle; break;
+	case EUECustomizationPart::HairBase: RawIndex = Data.HairBaseStyle; break;
+	case EUECustomizationPart::Top: RawIndex = Data.TopStyle; break;
+	case EUECustomizationPart::Bottom: RawIndex = Data.BottomStyle; break;
+	case EUECustomizationPart::Onepiece: RawIndex = Data.OnepieceStyle; break;
+	case EUECustomizationPart::Shoes: RawIndex = Data.ShoesStyle; break;
+	case EUECustomizationPart::HeadAccessory: RawIndex = Data.HeadAccessoryStyle; break;
+	case EUECustomizationPart::FaceAccessory: RawIndex = Data.FaceAccessoryStyle; break;
+	case EUECustomizationPart::EarAccessory: RawIndex = Data.EarAccessoryStyle; break;
+	case EUECustomizationPart::TailAccessory: RawIndex = Data.TailAccessoryStyle; break;
+	case EUECustomizationPart::NeckAccessory: RawIndex = Data.NeckAccessoryStyle; break;
 	}
-	return 0;
+	return PreviewActor->GetDisplayIndex(Part, RawIndex);
 }
 
 void UUECustomizationWidget::SelectPartOption(EUECustomizationPart Part, int32 Index)
@@ -746,56 +747,57 @@ void UUECustomizationWidget::SelectPartOption(EUECustomizationPart Part, int32 I
 	{
 		return;
 	}
+	const int32 RawIndex = PreviewActor->ResolveOptionIndex(Part, Index);
 	FUECharacterCustomizationData Data = PreviewActor->GetAppearance();
 	switch (Part)
 	{
-	case EUECustomizationPart::Gender: Data.Gender = static_cast<EUECharacterGender>(Index); break;
-	case EUECustomizationPart::Body: Data.BodyPreset = static_cast<EUEBodyPreset>(Index); break;
-	case EUECustomizationPart::FaceSkin: Data.FaceStyle = Index; break;
-	case EUECustomizationPart::EyeWhite: Data.EyeWhiteStyle = Index; break;
-	case EUECustomizationPart::EyeIris: Data.EyeIrisStyle = Index; break;
-	case EUECustomizationPart::EyeHighlight: Data.EyeHighlightStyle = Index; break;
-	case EUECustomizationPart::EyeExtra: Data.EyeExtraStyle = Index; break;
-	case EUECustomizationPart::Brow: Data.BrowStyle = Index; break;
-	case EUECustomizationPart::Eyelash: Data.EyelashStyle = Index; break;
-	case EUECustomizationPart::Eyeline: Data.EyelineStyle = Index; break;
-	case EUECustomizationPart::Mouth: Data.MouthStyle = Index; break;
-	case EUECustomizationPart::Lip: Data.LipStyle = Index; break;
-	case EUECustomizationPart::MouthLine: Data.MouthLineStyle = Index; break;
+	case EUECustomizationPart::Gender: Data.Gender = static_cast<EUECharacterGender>(RawIndex); break;
+	case EUECustomizationPart::Body: Data.BodyPreset = static_cast<EUEBodyPreset>(RawIndex); break;
+	case EUECustomizationPart::FaceSkin: Data.FaceStyle = RawIndex; break;
+	case EUECustomizationPart::EyeWhite: Data.EyeWhiteStyle = RawIndex; break;
+	case EUECustomizationPart::EyeIris: Data.EyeIrisStyle = RawIndex; break;
+	case EUECustomizationPart::EyeHighlight: Data.EyeHighlightStyle = RawIndex; break;
+	case EUECustomizationPart::EyeExtra: Data.EyeExtraStyle = RawIndex; break;
+	case EUECustomizationPart::Brow: Data.BrowStyle = RawIndex; break;
+	case EUECustomizationPart::Eyelash: Data.EyelashStyle = RawIndex; break;
+	case EUECustomizationPart::Eyeline: Data.EyelineStyle = RawIndex; break;
+	case EUECustomizationPart::Mouth: Data.MouthStyle = RawIndex; break;
+	case EUECustomizationPart::Lip: Data.LipStyle = RawIndex; break;
+	case EUECustomizationPart::MouthLine: Data.MouthLineStyle = RawIndex; break;
 	case EUECustomizationPart::HairSet:
 		Data.HairBaseStyle = 1;
-		Data.HairFrontStyle = Index;
-		Data.HairSideStyle = Index;
-		Data.HairBackStyle = Index;
-		Data.HairExtraStyle = Index;
+		Data.HairFrontStyle = RawIndex;
+		Data.HairSideStyle = RawIndex;
+		Data.HairBackStyle = RawIndex;
+		Data.HairExtraStyle = RawIndex;
 		break;
-	case EUECustomizationPart::HairFront: Data.HairFrontStyle = Index; break;
-	case EUECustomizationPart::HairSide: Data.HairSideStyle = Index; break;
-	case EUECustomizationPart::HairBack: Data.HairBackStyle = Index; break;
-	case EUECustomizationPart::HairExtra: Data.HairExtraStyle = Index; break;
-	case EUECustomizationPart::HairBase: Data.HairBaseStyle = Index; break;
+	case EUECustomizationPart::HairFront: Data.HairFrontStyle = RawIndex; break;
+	case EUECustomizationPart::HairSide: Data.HairSideStyle = RawIndex; break;
+	case EUECustomizationPart::HairBack: Data.HairBackStyle = RawIndex; break;
+	case EUECustomizationPart::HairExtra: Data.HairExtraStyle = RawIndex; break;
+	case EUECustomizationPart::HairBase: Data.HairBaseStyle = RawIndex; break;
 	case EUECustomizationPart::Top:
-		Data.TopStyle = Index;
-		if (Index > 0) Data.OnepieceStyle = 0;
+		Data.TopStyle = RawIndex;
+		if (RawIndex > 0) Data.OnepieceStyle = 0;
 		break;
 	case EUECustomizationPart::Bottom:
-		Data.BottomStyle = Index;
-		if (Index > 0) Data.OnepieceStyle = 0;
+		Data.BottomStyle = RawIndex;
+		if (RawIndex > 0) Data.OnepieceStyle = 0;
 		break;
 	case EUECustomizationPart::Onepiece:
-		Data.OnepieceStyle = Index;
-		if (Index > 0)
+		Data.OnepieceStyle = RawIndex;
+		if (RawIndex > 0)
 		{
 			Data.TopStyle = 0;
 			Data.BottomStyle = 0;
 		}
 		break;
-	case EUECustomizationPart::Shoes: Data.ShoesStyle = Index; break;
-	case EUECustomizationPart::HeadAccessory: Data.HeadAccessoryStyle = Index; break;
-	case EUECustomizationPart::FaceAccessory: Data.FaceAccessoryStyle = Index; break;
-	case EUECustomizationPart::EarAccessory: Data.EarAccessoryStyle = Index; break;
-	case EUECustomizationPart::TailAccessory: Data.TailAccessoryStyle = Index; break;
-	case EUECustomizationPart::NeckAccessory: Data.NeckAccessoryStyle = Index; break;
+	case EUECustomizationPart::Shoes: Data.ShoesStyle = RawIndex; break;
+	case EUECustomizationPart::HeadAccessory: Data.HeadAccessoryStyle = RawIndex; break;
+	case EUECustomizationPart::FaceAccessory: Data.FaceAccessoryStyle = RawIndex; break;
+	case EUECustomizationPart::EarAccessory: Data.EarAccessoryStyle = RawIndex; break;
+	case EUECustomizationPart::TailAccessory: Data.TailAccessoryStyle = RawIndex; break;
+	case EUECustomizationPart::NeckAccessory: Data.NeckAccessoryStyle = RawIndex; break;
 	}
 	PreviewActor->ApplyAppearance(Data);
 	if (StatusText)
