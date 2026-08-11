@@ -272,6 +272,37 @@ namespace
 			Part == EUECustomizationPart::HairBack ||
 			Part == EUECustomizationPart::HairExtra;
 	}
+
+	void ScaleComponentAroundPivot(USkeletalMeshComponent* Component, const FVector& Pivot, float Scale)
+	{
+		if (!Component)
+		{
+			return;
+		}
+		Component->SetRelativeScale3D(FVector(Scale));
+		Component->SetRelativeLocation(Pivot - Pivot * Scale);
+	}
+
+	UTexture2D* LoadHairThumbnail(EUECustomizationPart Part, bool bFemale, int32 RawIndex)
+	{
+		if (Part != EUECustomizationPart::HairSet &&
+			!ShouldUseShapeKeyForOptions(Part))
+		{
+			return nullptr;
+		}
+		if (Part == EUECustomizationPart::HairExtra && RawIndex == 0)
+		{
+			return nullptr;
+		}
+
+		const TCHAR* GenderName = bFemale ? TEXT("Female") : TEXT("Male");
+		const FString AssetName = FString::Printf(TEXT("T_%s_Hair_%d"), GenderName, RawIndex);
+		const FString AssetPath = FString::Printf(
+			TEXT("/Game/CharacterCustomization/UI/HairThumbnails/%s.%s"),
+			*AssetName,
+			*AssetName);
+		return LoadObject<UTexture2D>(nullptr, *AssetPath);
+	}
 }
 
 AUECustomizationPreviewActor::AUECustomizationPreviewActor()
@@ -853,7 +884,7 @@ UTexture2D* AUECustomizationPreviewActor::GetOptionTexture(EUECustomizationPart 
 	const int32 RawIndex = ResolveOptionIndex(Part, Index);
 	if (Part == EUECustomizationPart::HairSet || ShouldUseShapeKeyForOptions(Part))
 	{
-		return nullptr;
+		return LoadHairThumbnail(Part, Appearance.Gender == EUECharacterGender::Female, RawIndex);
 	}
 	const TArray<TObjectPtr<UTexture2D>>& Catalog = GetTextureCatalog(Part);
 	if (Catalog.IsValidIndex(RawIndex))
@@ -925,7 +956,7 @@ bool AUECustomizationPreviewActor::UpdateMeshes()
 	const int32 VisibleHairFrontStyle = IsBrokenHairFrontStyle(Appearance.HairFrontStyle)
 		? 0
 		: Appearance.HairFrontStyle;
-	Assign(HairScalpMesh, nullptr);
+	Assign(HairScalpMesh, SelectedHairBase);
 	Assign(HairBaseMesh, SelectedHairBase);
 	Assign(HairFrontMesh, SelectMesh(GetCatalog(EUECustomizationPart::HairFront), VisibleHairFrontStyle));
 	Assign(HairSideMesh, SelectMesh(GetCatalog(EUECustomizationPart::HairSide), Appearance.HairSideStyle));
@@ -1883,8 +1914,8 @@ void AUECustomizationPreviewActor::ApplyNeutralMaterialLighting()
 		}
 	};
 
-	ApplyTextureEmission(BodySkinMaterials, 0.0f);
-	ApplyTextureEmission(FaceSkinMaterials, 1.35f);
+	ApplyTextureEmission(BodySkinMaterials, 0.82f);
+	ApplyTextureEmission(FaceSkinMaterials, 1.05f);
 	ApplyTextureEmission(EyeWhiteMaterials, 0.55f);
 	ApplyTextureEmission(EyeHighlightMaterials, 1.2f);
 	ApplyTextureEmission(EyeExtraMaterials, 0.65f);
@@ -1929,12 +1960,39 @@ void AUECustomizationPreviewActor::ApplyTransforms()
 		Part->SetRelativeScale3D(FVector::OneVector);
 	}
 
+	const bool bFemale = Appearance.Gender == EUECharacterGender::Female;
+	const float HeadPivotY = CatalogAsset
+		? (bFemale ? CatalogAsset->FemaleHeadPivotY : CatalogAsset->MaleHeadPivotY)
+		: (bFemale ? 4.15f : 5.5f);
+	const float HeadPivotZ = CatalogAsset
+		? ((bFemale ? CatalogAsset->FemaleHeadPivotZ : CatalogAsset->MaleHeadPivotZ) +
+			(bFemale ? CatalogAsset->FemaleHeadVerticalOffset : CatalogAsset->MaleHeadVerticalOffset))
+		: (bFemale ? 143.0f : 162.0f);
+	const FVector HeadPivot(0.0f, HeadPivotY, HeadPivotZ);
+	const float HeadScale = FMath::Lerp(0.92f, 1.08f, Appearance.HeadSize);
+	const float HairScale = HeadScale * (CatalogAsset ? CatalogAsset->HairRadialScale : 1.02f);
+	const float HairUnderlayScale = HairScale * (CatalogAsset ? CatalogAsset->HairScalpInsetScale : 0.985f);
+
+	const TArray<USkeletalMeshComponent*> HeadParts = {
+		FaceSkinMesh, EyeWhiteMesh, EyeIrisMesh, EyeHighlightMesh, EyeExtraMesh, BrowMesh, EyelashMesh,
+		EyelineMesh, MouthMesh, LipOverlayMesh, MouthLineOverlayMesh,
+		HeadAccessoryMesh, FaceAccessoryMesh, EarAccessoryMesh};
+	for (USkeletalMeshComponent* Part : HeadParts)
+	{
+		ScaleComponentAroundPivot(Part, HeadPivot, HeadScale);
+	}
+	ScaleComponentAroundPivot(HairScalpMesh, HeadPivot, HairUnderlayScale);
+	for (USkeletalMeshComponent* Part : {HairBaseMesh, HairFrontMesh, HairSideMesh, HairBackMesh, HairExtraMesh})
+	{
+		ScaleComponentAroundPivot(Part, HeadPivot, HairScale);
+	}
+
 	const float FaceLayerDepth = FMath::Clamp(CatalogAsset ? CatalogAsset->ScleraDepthOffsetY : 0.005f, 0.002f, 0.012f);
-	auto OffsetFaceLayer = [FaceLayerDepth](USkeletalMeshComponent* Component, float Order)
+	auto OffsetFaceLayer = [FaceLayerDepth, HeadScale](USkeletalMeshComponent* Component, float Order)
 	{
 		if (Component)
 		{
-			Component->AddLocalOffset(FVector(0.0f, FaceLayerDepth * Order, 0.0f));
+			Component->AddLocalOffset(FVector(0.0f, FaceLayerDepth * Order * HeadScale, 0.0f));
 		}
 	};
 	OffsetFaceLayer(EyeWhiteMesh, 1.0f);
@@ -1948,21 +2006,16 @@ void AUECustomizationPreviewActor::ApplyTransforms()
 	OffsetFaceLayer(LipOverlayMesh, 5.0f);
 	OffsetFaceLayer(MouthLineOverlayMesh, 6.0f);
 
-	if (HairScalpMesh && HairScalpMesh->GetSkeletalMeshAsset())
-	{
-		HairScalpMesh->SetVisibility(false, true);
-	}
-
 	if (HeadAccessoryMesh)
 	{
 		const float HeadAccessoryZ = CatalogAsset ? CatalogAsset->HeadAccessoryVerticalOffset : 9.0f;
-		HeadAccessoryMesh->SetRelativeLocation(FVector(0.0f, 0.0f, HeadAccessoryZ));
+		HeadAccessoryMesh->AddLocalOffset(FVector(0.0f, 0.0f, HeadAccessoryZ * HeadScale));
 	}
 	if (FaceAccessoryMesh)
 	{
 		const float FaceAccessoryY = CatalogAsset ? CatalogAsset->FaceAccessoryForwardOffset : 6.5f;
 		const float FaceAccessoryZ = CatalogAsset ? CatalogAsset->FaceAccessoryVerticalOffset : 17.5f;
-		FaceAccessoryMesh->SetRelativeLocation(FVector(0.0f, FaceAccessoryY, FaceAccessoryZ));
+		FaceAccessoryMesh->AddLocalOffset(FVector(0.0f, FaceAccessoryY * HeadScale, FaceAccessoryZ * HeadScale));
 	}
 
 }

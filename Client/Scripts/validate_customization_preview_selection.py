@@ -93,6 +93,10 @@ def _assert_option_catalog_mapping(actor, catalog) -> None:
     first_hair_label = actor.get_option_label(hair_set, 0)
     if "Preset 87" in first_hair_label:
         raise RuntimeError(f"HairSet still uses the wrong fallback label: {first_hair_label}")
+    for display_index in range(hair_set_count):
+        texture = actor.get_option_texture(hair_set, display_index)
+        if texture is None:
+            raise RuntimeError(f"HairSet option {display_index} has no model thumbnail")
 
     hair_extra = _enum("HAIR_EXTRA")
     raw_hair_extra_count = len(catalog.get_editor_property("MaleHairExtraCatalog") or [])
@@ -102,6 +106,17 @@ def _assert_option_catalog_mapping(actor, catalog) -> None:
             "HairExtra duplicate None entries were not collapsed: "
             f"display={display_hair_extra_count} raw={raw_hair_extra_count}"
         )
+    for part_name in ("HAIR_FRONT", "HAIR_SIDE", "HAIR_BACK"):
+        part = _enum(part_name)
+        count = actor.get_option_count(part)
+        if count <= 0:
+            raise RuntimeError(f"{part_name} has no display options")
+        for display_index in range(count):
+            texture = actor.get_option_texture(part, display_index)
+            if texture is None:
+                raise RuntimeError(f"{part_name} option {display_index} has no model thumbnail")
+    if display_hair_extra_count > 1 and actor.get_option_texture(hair_extra, display_hair_extra_count - 1) is None:
+        raise RuntimeError("HairExtra non-empty option has no model thumbnail")
     unreal.log(
         "PREVIEW_VALIDATE option_mapping "
         f"hair_set_display={hair_set_count} hair_set_raw={raw_hair_set_count} "
