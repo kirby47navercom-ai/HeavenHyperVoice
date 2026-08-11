@@ -3,10 +3,15 @@
 A browser cannot open a raw TLS socket, so this process sits in between:
 it serves index.html and translates JSON into the FlatBuffers protocols.
 
-    python bridge.py                # then open http://127.0.0.1:8080
+    python bridge.py                    # loopback only, plain HTTP
+    python bridge.py --bind 0.0.0.0 --tls-cert cert.pem --tls-key key.pem
 
-Each browser tab gets its own session, keyed by a cookie, so two tabs can play
-two accounts against the same bridge. Closing a tab leaves the world.
+Each browser tab gets its own session, so two tabs can play two accounts
+against the same bridge. Closing a tab leaves the world.
+
+The bridge receives the account password as plain JSON before it re-encodes it
+for the login server, so it refuses to listen on anything but loopback without
+TLS. See --insecure if the link is already private (VPN, SSH tunnel).
 
 Login is request/response over POST. Field movement runs at 20 Hz, which is
 too chatty for one HTTP request per update, so the field and chat traffic go
@@ -742,13 +747,57 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--login-host", default="127.0.0.1")
 parser.add_argument("--login-port", type=int, default=9100)
 parser.add_argument("--port", type=int, default=8080, help="port for this bridge")
+parser.add_argument("--bind", default="127.0.0.1",
+                    help="listen address (default loopback only)")
+parser.add_argument("--tls-cert", help="PEM certificate chain; serves HTTPS and wss")
+parser.add_argument("--tls-key", help="PEM private key for --tls-cert")
+parser.add_argument("--insecure", action="store_true",
+                    help="allow a non-loopback bind without TLS. Only when the link is "
+                         "already private (VPN, SSH tunnel).")
 args = parser.parse_args()
 
+LOOPBACK = {"127.0.0.1", "::1", "localhost"}
+
+
+def build_tls_context():
+    """None when serving plain HTTP."""
+    if bool(args.tls_cert) != bool(args.tls_key):
+        raise SystemExit("--tls-cert and --tls-key must be given together")
+
+    if not args.tls_cert:
+        if args.bind not in LOOPBACK and not args.insecure:
+            raise SystemExit("\n".join([
+                f"refusing to listen on {args.bind} without TLS.",
+                "  The browser sends the account password as plain JSON to this bridge.",
+                "  Without TLS anyone on the path can read it.",
+                "    --tls-cert <pem> --tls-key <pem>   serve HTTPS and wss",
+                "    --insecure                         only if the link is already",
+                "                                       private (VPN, SSH tunnel)",
+            ]))
+        return None
+
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(args.tls_cert, args.tls_key)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
+    return context
+
+
 if __name__ == "__main__":
-    print(f"bridge on http://127.0.0.1:{args.port} "
+    tls = build_tls_context()
+    scheme = "https" if tls else "http"
+    shown = "127.0.0.1" if args.bind == "0.0.0.0" else args.bind
+
+    print(f"bridge on {scheme}://{shown}:{args.port} "
           f"-> login {args.login_host}:{args.login_port}")
+    if tls is None and args.bind not in LOOPBACK:
+        print("WARNING: serving plain HTTP on a non-loopback address. "
+              "Passwords are readable on the wire.")
+
+    server = Server((args.bind, args.port), Handler)
+    if tls is not None:
+        server.socket = tls.wrap_socket(server.socket, server_side=True)
     try:
-        Server(("127.0.0.1", args.port), Handler).serve_forever()
+        server.serve_forever()
     except KeyboardInterrupt:
         for token in list(sessions):
             drop_session(token)

@@ -337,9 +337,18 @@ function say(el, text, ok) {
 
 // 탭마다 다른 세션을 쓰기 위한 토큰. sessionStorage 는 탭 단위라 같은 주소를
 // 두 번 열어도 값이 갈린다 (쿠키는 오리진 단위라 공유된다).
-const TOKEN = sessionStorage.getItem('hhv') ||
-              (v => (sessionStorage.setItem('hhv', v), v))(
-                  Math.random().toString(36).slice(2) + Date.now().toString(36));
+//
+// 이 토큰을 아는 사람은 그 세션으로 이동과 채팅을 보낼 수 있다. Math.random 은
+// 예측 가능하므로 암호학적 난수를 쓴다 — 브리지가 로컬 밖으로 나가는 순간
+// 남의 세션을 넘겨받는 통로가 된다.
+const TOKEN = sessionStorage.getItem('hhv') || (() => {
+  const value = crypto.randomUUID
+    ? crypto.randomUUID()
+    : [...crypto.getRandomValues(new Uint8Array(16))]
+        .map(b => b.toString(16).padStart(2, '0')).join('');
+  sessionStorage.setItem('hhv', value);
+  return value;
+})();
 
 async function post(path, body) {
   const r = await fetch(path, {
@@ -765,7 +774,10 @@ requestAnimationFrame(draw);
 
 function openSocket() {
   // 핸드셰이크에는 헤더를 붙일 수 없어 질의 문자열로 넘긴다.
-  ws = new WebSocket('ws://' + location.host + '/ws?s=' + encodeURIComponent(TOKEN));
+  // 페이지가 HTTPS 면 소켓도 wss 여야 한다. 브라우저가 혼합 콘텐츠를 막기도 하고,
+  // ws 로 두면 이동과 채팅이 평문으로 나간다.
+  const scheme = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  ws = new WebSocket(scheme + location.host + '/ws?s=' + encodeURIComponent(TOKEN));
   ws.onmessage = e => handle(JSON.parse(e.data));
   ws.onclose = () => { ws = null; };
 }
