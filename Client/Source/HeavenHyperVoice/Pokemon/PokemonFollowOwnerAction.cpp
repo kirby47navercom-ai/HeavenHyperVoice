@@ -30,25 +30,37 @@ namespace HHV::PokemonAI
 
 	Command FollowOwnerAction::Tick(const CompanionContext& Context)
 	{
-		HHV::Map::Vec3 DesiredTarget;
-		if (!TryFindWalkableTarget(Context, DesiredTarget))
+		if (Distance2D(Context.PokemonLocation, Context.OwnerLocation) >= Settings.TeleportDistance)
 		{
-			return MakeStopCommand();
+			return MakeTeleportCommand(CalculateOwnerTeleportTarget(Context));
 		}
 
-		if (Distance2D(Context.PokemonLocation, DesiredTarget) <= Settings.StopDistance)
+		if (!Context.ServerMap || !Context.ServerMap->IsLoaded())
 		{
-			return MakeStopCommand();
+			const HHV::Map::Vec3 RightFrontTarget = CalculateOffsetTarget(Context, 1.0f);
+			return Distance2D(Context.PokemonLocation, RightFrontTarget) <= Settings.StopDistance
+				? MakeStopCommand()
+				: MakeDirectMoveCommand(RightFrontTarget);
 		}
 
 		Command MoveCommand;
-		if (TryMakeMoveCommand(Context, DesiredTarget, MoveCommand))
+		if (TryMakeMoveCommandForTarget(Context, CalculateOffsetTarget(Context, 1.0f), MoveCommand))
 		{
 			return MoveCommand;
 		}
 
-		// If the owner area cannot be reached by pathfinding, the server snaps the companion back near the owner.
-		return MakeTeleportCommand(DesiredTarget);
+		if (TryMakeMoveCommandForTarget(Context, CalculateOffsetTarget(Context, -1.0f), MoveCommand))
+		{
+			return MoveCommand;
+		}
+
+		if (TryMakeFallbackMoveCommand(Context, MoveCommand))
+		{
+			return MoveCommand;
+		}
+
+		// If every ranked target fails pathfinding, the server snaps the companion back to the owner.
+		return MakeTeleportCommand(CalculateOwnerTeleportTarget(Context));
 	}
 
 	Command FollowOwnerAction::MakeStopCommand() const
@@ -66,24 +78,32 @@ namespace HHV::PokemonAI
 		return Result;
 	}
 
-	bool FollowOwnerAction::TryMakeMoveCommand(const CompanionContext& Context, const HHV::Map::Vec3& TargetLocation, Command& OutCommand) const
+	Command FollowOwnerAction::MakeDirectMoveCommand(const HHV::Map::Vec3& TargetLocation) const
 	{
-		if (!Context.ServerMap || !Context.ServerMap->IsLoaded())
-		{
-			OutCommand.Type = CommandType::MoveTo;
-			OutCommand.TargetLocation = TargetLocation;
-			OutCommand.AcceptanceRadius = Settings.MoveAcceptanceRadius;
-			return true;
-		}
+		Command Result;
+		Result.Type = CommandType::MoveTo;
+		Result.TargetLocation = TargetLocation;
+		Result.AcceptanceRadius = Settings.MoveAcceptanceRadius;
+		return Result;
+	}
 
-		if (Distance2D(Context.PokemonLocation, Context.OwnerLocation) >= Settings.TeleportDistance)
+	bool FollowOwnerAction::TryMakeMoveCommandForTarget(const CompanionContext& Context, const HHV::Map::Vec3& CandidateLocation, Command& OutCommand) const
+	{
+		HHV::Map::Vec3 GroundedTarget;
+		if (!Context.ServerMap || !Context.ServerMap->IsWalkableLocation(CandidateLocation, Context.Agent, &GroundedTarget))
 		{
 			return false;
 		}
 
+		if (Distance2D(Context.PokemonLocation, GroundedTarget) <= Settings.StopDistance)
+		{
+			OutCommand = MakeStopCommand();
+			return true;
+		}
+
 		HHV::Map::PathRequest PathRequest;
 		PathRequest.Start = Context.PokemonLocation;
-		PathRequest.Goal = TargetLocation;
+		PathRequest.Goal = GroundedTarget;
 		PathRequest.Agent = Context.Agent;
 
 		const HHV::Map::AStarPathfinder Pathfinder;
@@ -100,26 +120,8 @@ namespace HHV::PokemonAI
 		return true;
 	}
 
-	bool FollowOwnerAction::TryFindWalkableTarget(const CompanionContext& Context, HHV::Map::Vec3& OutTargetLocation) const
+	bool FollowOwnerAction::TryMakeFallbackMoveCommand(const CompanionContext& Context, Command& OutCommand) const
 	{
-		const HHV::Map::Vec3 RightFrontTarget = CalculateOffsetTarget(Context, 1.0f);
-		if (!Context.ServerMap)
-		{
-			OutTargetLocation = RightFrontTarget;
-			return true;
-		}
-
-		if (Context.ServerMap->IsWalkableLocation(RightFrontTarget, Context.Agent, &OutTargetLocation))
-		{
-			return true;
-		}
-
-		const HHV::Map::Vec3 LeftFrontTarget = CalculateOffsetTarget(Context, -1.0f);
-		if (Context.ServerMap->IsWalkableLocation(LeftFrontTarget, Context.Agent, &OutTargetLocation))
-		{
-			return true;
-		}
-
 		const int CandidateCount = Settings.FallbackCandidateCount > 0 ? Settings.FallbackCandidateCount : 1;
 		for (int Index = 0; Index < CandidateCount; ++Index)
 		{
@@ -132,7 +134,7 @@ namespace HHV::PokemonAI
 				Context.OwnerLocation.Z
 			};
 
-			if (Context.ServerMap->IsWalkableLocation(Candidate, Context.Agent, &OutTargetLocation))
+			if (TryMakeMoveCommandForTarget(Context, Candidate, OutCommand))
 			{
 				return true;
 			}
@@ -152,6 +154,17 @@ namespace HHV::PokemonAI
 			Context.OwnerLocation.Y + Forward.Y * Settings.ForwardOffset + Right.Y * Settings.RightOffset * SideSign,
 			Context.OwnerLocation.Z
 		};
+	}
+
+	HHV::Map::Vec3 FollowOwnerAction::CalculateOwnerTeleportTarget(const CompanionContext& Context) const
+	{
+		HHV::Map::Vec3 GroundedOwnerLocation;
+		if (Context.ServerMap && Context.ServerMap->IsLoaded() && Context.ServerMap->IsWalkableLocation(Context.OwnerLocation, Context.Agent, &GroundedOwnerLocation))
+		{
+			return GroundedOwnerLocation;
+		}
+
+		return Context.OwnerLocation;
 	}
 
 	float FollowOwnerAction::Distance2D(const HHV::Map::Vec3& A, const HHV::Map::Vec3& B) const

@@ -26,9 +26,11 @@ namespace HHV::PokemonAI
 	private:
 		Command MakeStopCommand() const;
 		Command MakeTeleportCommand(const HHV::Map::Vec3& TargetLocation) const;
-		bool TryMakeMoveCommand(const CompanionContext& Context, const HHV::Map::Vec3& TargetLocation, Command& OutCommand) const;
-		bool TryFindWalkableTarget(const CompanionContext& Context, HHV::Map::Vec3& OutTargetLocation) const;
+		Command MakeDirectMoveCommand(const HHV::Map::Vec3& TargetLocation) const;
+		bool TryMakeMoveCommandForTarget(const CompanionContext& Context, const HHV::Map::Vec3& CandidateLocation, Command& OutCommand) const;
+		bool TryMakeFallbackMoveCommand(const CompanionContext& Context, Command& OutCommand) const;
 		HHV::Map::Vec3 CalculateOffsetTarget(const CompanionContext& Context, float SideSign) const;
+		HHV::Map::Vec3 CalculateOwnerTeleportTarget(const CompanionContext& Context) const;
 		float Distance2D(const HHV::Map::Vec3& A, const HHV::Map::Vec3& B) const;
 
 		FollowOwnerSettings Settings;

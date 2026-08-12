@@ -212,14 +212,7 @@ FString UUEPokemonTestServerComponent::ResolveServerMapFilePath() const
 
 float UUEPokemonTestServerComponent::GetFollowTargetYawDegrees(const AActor& CurrentFollowTargetActor) const
 {
-	if (const APawn* Pawn = Cast<APawn>(&CurrentFollowTargetActor))
-	{
-		if (const AController* Controller = Pawn->GetController())
-		{
-			return Controller->GetControlRotation().Yaw;
-		}
-	}
-
+	// Companion placement follows the character body yaw, not the camera/control yaw.
 	return CurrentFollowTargetActor.GetActorRotation().Yaw;
 }
 
