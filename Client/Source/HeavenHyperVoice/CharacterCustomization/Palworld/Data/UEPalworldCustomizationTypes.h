@@ -107,7 +107,7 @@ struct HEAVENHYPERVOICE_API FUEPalworldAppearance
 	int32 BodyEquipmentIndex = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld")
-	int32 HeadEquipmentIndex = 0;
+	int32 HeadEquipmentIndex = -1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld|Color")
 	FLinearColor SkinColor = FLinearColor::White;

@@ -7,8 +7,10 @@
 
 class UCameraComponent;
 class UMaterialInterface;
+class UPointLightComponent;
 class USceneComponent;
 class USkeletalMeshComponent;
+class USkyLightComponent;
 class USpotLightComponent;
 class UUEPalworldCustomizationCatalog;
 
@@ -75,6 +77,12 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
 	TObjectPtr<USpotLightComponent> KeyLight = nullptr;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
+	TObjectPtr<USkyLightComponent> FillLight = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
+	TObjectPtr<UPointLightComponent> FrontLight = nullptr;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Palworld")
 	TObjectPtr<UUEPalworldCustomizationCatalog> Catalog = nullptr;
 
@@ -82,6 +90,12 @@ protected:
 	FUEPalworldAppearance Appearance;
 
 private:
+	void ApplyQACommandLineAppearance();
+	void CaptureQAScreenshot();
+	void PrepareQAHeadScreenshot();
+	void CaptureQAHeadScreenshot();
+	void ExitAfterQAScreenshot();
+	void ConfigurePreviewLighting();
 	void RefreshMeshes();
 	void RefreshFollowerPose();
 	void AttachHeadEquipment(const FUEPalworldCustomizationOption& Option);
@@ -89,9 +103,15 @@ private:
 	void ApplyEyeMaterial(const FUEPalworldCustomizationOption& Option);
 	void ApplyColorToSlots(USkeletalMeshComponent* Component, const FLinearColor& Color, const TArray<FString>& SlotContains);
 	void ApplyScale();
+	void FitHeadEquipmentToHead(const FUEPalworldCustomizationOption& Option);
 	void EnsureSocketFallbacks();
 	const FUEPalworldCustomizationOption& GetOption(EUEPalworldCustomizationCategory Category, int32 Index) const;
 	int32& MutableIndex(EUEPalworldCustomizationCategory Category);
 	int32 GetIndex(EUEPalworldCustomizationCategory Category) const;
 	static int32 ClampIndex(int32 Index, int32 Count);
+
+	FTimerHandle QAScreenshotTimer;
+	FTimerHandle QAPrepareHeadTimer;
+	FTimerHandle QAHeadScreenshotTimer;
+	FTimerHandle QAExitTimer;
 };
