@@ -40,12 +40,11 @@ namespace
 	TConstArrayView<FCategoryEntry> GetCategoryEntries()
 	{
 		static const TArray<FCategoryEntry> Entries = {
-			{EUEPalworldCustomizationCategory::Body, TEXT("TYPE")},
+			{EUEPalworldCustomizationCategory::Body, TEXT("BODY")},
 			{EUEPalworldCustomizationCategory::Head, TEXT("FACE")},
 			{EUEPalworldCustomizationCategory::Hair, TEXT("HAIR")},
 			{EUEPalworldCustomizationCategory::Eyes, TEXT("EYES")},
-			{EUEPalworldCustomizationCategory::BodyEquipment, TEXT("OUTFIT")},
-			{EUEPalworldCustomizationCategory::HeadEquipment, TEXT("HEAD GEAR")}
+			{EUEPalworldCustomizationCategory::BodyEquipment, TEXT("OUTFIT")}
 		};
 		return Entries;
 	}
@@ -98,6 +97,8 @@ void UUEPalworldColorSpinBox::Configure(
 	SetMaxSliderValue(255.0f);
 	SetDelta(1.0f);
 	SetAlwaysUsesDeltaSnap(true);
+	SetMinFractionalDigits(0);
+	SetMaxFractionalDigits(0);
 	OnValueChanged.AddUniqueDynamic(this, &ThisClass::HandleValueChanged);
 }
 
@@ -105,22 +106,7 @@ void UUEPalworldColorSpinBox::HandleValueChanged(float NewValue)
 {
 	if (OwnerWidget)
 	{
-		OwnerWidget->SetColorComponent(Channel, Component, NewValue);
-	}
-}
-
-void UUEPalworldGenderButton::Configure(UUEPalworldCustomizationWidget* InOwner, EUEPalworldGender InGender)
-{
-	OwnerWidget = InOwner;
-	Gender = InGender;
-	OnClicked.AddUniqueDynamic(this, &ThisClass::HandleClicked);
-}
-
-void UUEPalworldGenderButton::HandleClicked()
-{
-	if (OwnerWidget)
-	{
-		OwnerWidget->SelectGender(Gender);
+		OwnerWidget->SetColorComponent(Channel, Component, FMath::RoundToFloat(NewValue));
 	}
 }
 
@@ -260,6 +246,17 @@ FString UUEPalworldCustomizationWidget::GetOptionLabel(EUEPalworldCustomizationC
 	}
 
 	const FUEPalworldCustomizationOption& Option = Catalog->GetOption(Category, Index);
+	if (Category == EUEPalworldCustomizationCategory::Body)
+	{
+		if (Option.Id.Equals(TEXT("TypeA"), ESearchCase::IgnoreCase))
+		{
+			return TEXT("Type 1");
+		}
+		if (Option.Id.Equals(TEXT("TypeB"), ESearchCase::IgnoreCase))
+		{
+			return TEXT("Type 2");
+		}
+	}
 	return Option.DisplayName.IsEmpty() ? Option.Id : Option.DisplayName;
 }
 
@@ -303,7 +300,7 @@ TSharedRef<SWidget> UUEPalworldCustomizationWidget::RebuildWidget()
 	{
 		WidgetTree = NewObject<UWidgetTree>(this, TEXT("PalworldCustomizationWidgetTree"));
 	}
-	if (!WidgetTree->RootWidget)
+	if (!WidgetTree->RootWidget || WidgetTree->RootWidget->GetName().Equals(TEXT("PalworldDesignerCanvas")))
 	{
 		BuildInterface();
 	}
@@ -323,15 +320,23 @@ void UUEPalworldCustomizationWidget::BuildInterface()
 {
 	const TGuardValue<bool> SynchronizeGuard(bSynchronizingControls, true);
 
-	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("PalworldCustomizationRoot"));
-	WidgetTree->RootWidget = Root;
+	UCanvasPanel* Root = Cast<UCanvasPanel>(WidgetTree->RootWidget);
+	if (!Root)
+	{
+		Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("PalworldCustomizationRoot"));
+		WidgetTree->RootWidget = Root;
+	}
+	Root->ClearChildren();
 
-	UTextBlock* Title = CreateText(TEXT("PALWORLD CHARACTER EDITOR"), 25, TextColor);
+	ColorInputs.Empty();
+	ScaleSliders.Empty();
+
+	UTextBlock* Title = CreateText(TEXT("CHARACTER CREATION"), 25, TextColor);
 	Root->AddChild(Title);
 	CastChecked<UCanvasPanelSlot>(Title->Slot)->SetPosition(FVector2D(20.0f, 18.0f));
 	CastChecked<UCanvasPanelSlot>(Title->Slot)->SetSize(FVector2D(700.0f, 38.0f));
 
-	UTextBlock* Subtitle = CreateText(TEXT("DataTable items + source materials"), 13, MutedTextColor);
+	UTextBlock* Subtitle = CreateText(TEXT("Preset and custom item workflow"), 13, MutedTextColor);
 	Root->AddChild(Subtitle);
 	CastChecked<UCanvasPanelSlot>(Subtitle->Slot)->SetPosition(FVector2D(22.0f, 52.0f));
 	CastChecked<UCanvasPanelSlot>(Subtitle->Slot)->SetSize(FVector2D(700.0f, 24.0f));
@@ -353,21 +358,6 @@ void UUEPalworldCustomizationWidget::BuildInterface()
 
 	UVerticalBox* EditorColumn = WidgetTree->ConstructWidget<UVerticalBox>();
 	EditorPanel->AddChild(EditorColumn);
-
-	UHorizontalBox* GenderRow = WidgetTree->ConstructWidget<UHorizontalBox>();
-	EditorColumn->AddChild(GenderRow);
-	for (const TPair<EUEPalworldGender, FString> Entry : {
-		TPair<EUEPalworldGender, FString>(EUEPalworldGender::TypeA, TEXT("TYPE A")),
-		TPair<EUEPalworldGender, FString>(EUEPalworldGender::TypeB, TEXT("TYPE B"))
-	})
-	{
-		UUEPalworldGenderButton* Button = WidgetTree->ConstructWidget<UUEPalworldGenderButton>();
-		Button->Configure(this, Entry.Key);
-		Button->SetBackgroundColor(TileColor);
-		Button->AddChild(CreateText(Entry.Value, 13, TextColor));
-		GenderRow->AddChild(Button);
-		CastChecked<UHorizontalBoxSlot>(Button->Slot)->SetPadding(FMargin(0.0f, 0.0f, 6.0f, 8.0f));
-	}
 
 	UHorizontalBox* EditorBody = WidgetTree->ConstructWidget<UHorizontalBox>();
 	EditorColumn->AddChild(EditorBody);
@@ -408,7 +398,7 @@ void UUEPalworldCustomizationWidget::BuildInterface()
 	CastChecked<UHorizontalBoxSlot>(CenterSpace->Slot)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 
 	USizeBox* ParameterSize = WidgetTree->ConstructWidget<USizeBox>();
-	ParameterSize->SetWidthOverride(300.0f);
+	ParameterSize->SetWidthOverride(330.0f);
 	MainLayout->AddChild(ParameterSize);
 	UBorder* ParameterPanel = WidgetTree->ConstructWidget<UBorder>();
 	ParameterPanel->SetBrushColor(PanelColor);
@@ -420,10 +410,16 @@ void UUEPalworldCustomizationWidget::BuildInterface()
 	UVerticalBox* Parameters = WidgetTree->ConstructWidget<UVerticalBox>();
 	ParameterScroll->AddChild(Parameters);
 
-	AddSectionTitle(Parameters, TEXT("PALWORLD DATA"));
-	AddInfoLine(Parameters, TEXT("Options come from the extracted character creation tables."));
-	AddInfoLine(Parameters, TEXT("Source materials stay active by default for clothes, shoes, hair, eyes, and gear."));
-	AddInfoLine(Parameters, TEXT("Shape sliders are hidden until a real Palworld morph/retarget bridge is added."));
+	AddSectionTitle(Parameters, TEXT("RGB 0-255"));
+	AddRGBRow(Parameters, TEXT("Skin"), EUEPalworldColorChannel::Skin);
+	AddRGBRow(Parameters, TEXT("Hair"), EUEPalworldColorChannel::Hair);
+	AddRGBRow(Parameters, TEXT("Eyes"), EUEPalworldColorChannel::Eye);
+	AddRGBRow(Parameters, TEXT("Outfit"), EUEPalworldColorChannel::BodyEquipment);
+
+	AddSectionTitle(Parameters, TEXT("Scale"));
+	AddScaleRow(Parameters, TEXT("Height"), EUEPalworldScaleChannel::Height);
+	AddScaleRow(Parameters, TEXT("Head Size"), EUEPalworldScaleChannel::HeadSize);
+	AddScaleRow(Parameters, TEXT("Body Width"), EUEPalworldScaleChannel::BodyWidth);
 
 	StatusText = CreateText(TEXT("Select an item"), 12, MutedTextColor);
 	StatusText->SetAutoWrapText(true);
@@ -445,7 +441,7 @@ void UUEPalworldCustomizationWidget::RebuildCategories()
 
 	for (const FCategoryEntry& Entry : GetCategoryEntries())
 	{
-		const int32 Count = GetOptionCount(Entry.Category);
+		const int32 Count = GetVisibleOptionCount(Entry.Category);
 		UUEPalworldOptionButton* Button = WidgetTree->ConstructWidget<UUEPalworldOptionButton>();
 		Button->Configure(this, Entry.Category, INDEX_NONE);
 		Button->SetBackgroundColor(Entry.Category == CurrentCategory ? AccentColor : TileColor);
@@ -469,19 +465,20 @@ void UUEPalworldCustomizationWidget::RebuildOptions()
 	}
 
 	OptionGrid->ClearChildren();
-	const int32 Count = GetOptionCount(CurrentCategory);
+	const int32 Count = GetVisibleOptionCount(CurrentCategory);
 	OptionTitle->SetText(FText::FromString(GetCategoryLabel(CurrentCategory)));
 	OptionCount->SetText(FText::FromString(FString::Printf(TEXT("%d Palworld table items"), Count)));
 
 	const int32 SelectedIndex = GetSelectedIndex(CurrentCategory);
-	for (int32 Index = 0; Index < Count; ++Index)
+	for (int32 VisibleIndex = 0; VisibleIndex < Count; ++VisibleIndex)
 	{
+		const int32 Index = GetActualOptionIndex(CurrentCategory, VisibleIndex);
 		const FString OptionLabel = GetOptionLabel(CurrentCategory, Index);
 		USizeBox* TileSize = WidgetTree->ConstructWidget<USizeBox>();
 		TileSize->SetWidthOverride(132.0f);
 		TileSize->SetHeightOverride(152.0f);
 		TileSize->SetClipping(EWidgetClipping::ClipToBounds);
-		OptionGrid->AddChildToUniformGrid(TileSize, Index / 3, Index % 3);
+		OptionGrid->AddChildToUniformGrid(TileSize, VisibleIndex / 3, VisibleIndex % 3);
 
 		UUEPalworldOptionButton* Button = WidgetTree->ConstructWidget<UUEPalworldOptionButton>();
 		Button->Configure(this, CurrentCategory, Index);
@@ -520,7 +517,7 @@ void UUEPalworldCustomizationWidget::RebuildOptions()
 		}
 
 		UTextBlock* Label = CreateText(
-			FString::Printf(TEXT("#%02d  %s"), Index + 1, *OptionLabel),
+			FString::Printf(TEXT("#%02d  %s"), VisibleIndex + 1, *OptionLabel),
 			11,
 			TextColor);
 		Label->SetAutoWrapText(true);
@@ -599,6 +596,35 @@ int32 UUEPalworldCustomizationWidget::GetSelectedIndex(EUEPalworldCustomizationC
 	default:
 		return 0;
 	}
+}
+
+int32 UUEPalworldCustomizationWidget::GetVisibleOptionCount(EUEPalworldCustomizationCategory Category) const
+{
+	const int32 RawCount = GetOptionCount(Category);
+	if (Category == EUEPalworldCustomizationCategory::HeadEquipment)
+	{
+		return 0;
+	}
+	if (Category == EUEPalworldCustomizationCategory::Body && RawCount > 2)
+	{
+		return 2;
+	}
+	return RawCount;
+}
+
+int32 UUEPalworldCustomizationWidget::GetActualOptionIndex(
+	EUEPalworldCustomizationCategory Category,
+	int32 VisibleIndex) const
+{
+	if (Category == EUEPalworldCustomizationCategory::HeadEquipment)
+	{
+		return -1;
+	}
+	if (Category == EUEPalworldCustomizationCategory::Body && GetOptionCount(Category) > 2)
+	{
+		return FMath::Clamp(VisibleIndex + 1, 1, GetOptionCount(Category) - 1);
+	}
+	return VisibleIndex;
 }
 
 FLinearColor UUEPalworldCustomizationWidget::GetChannelColor(EUEPalworldColorChannel Channel) const
@@ -694,8 +720,11 @@ void UUEPalworldCustomizationWidget::AddRGBRow(
 
 		UUEPalworldColorSpinBox* Input = WidgetTree->ConstructWidget<UUEPalworldColorSpinBox>();
 		Input->Configure(this, Channel, Component);
-		Row->AddChild(Input);
-		CastChecked<UHorizontalBoxSlot>(Input->Slot)->SetPadding(FMargin(0.0f, 0.0f, 7.0f, 0.0f));
+		USizeBox* InputSize = WidgetTree->ConstructWidget<USizeBox>();
+		InputSize->SetWidthOverride(58.0f);
+		InputSize->AddChild(Input);
+		Row->AddChild(InputSize);
+		CastChecked<UHorizontalBoxSlot>(InputSize->Slot)->SetPadding(FMargin(0.0f, 0.0f, 8.0f, 0.0f));
 
 		const int32 RequiredSize = ColorInputIndex(Channel, Component) + 1;
 		if (ColorInputs.Num() < RequiredSize)
@@ -727,7 +756,7 @@ FString UUEPalworldCustomizationWidget::GetCategoryLabel(EUEPalworldCustomizatio
 	switch (Category)
 	{
 	case EUEPalworldCustomizationCategory::Body:
-		return TEXT("Body Type");
+		return TEXT("Body");
 	case EUEPalworldCustomizationCategory::Head:
 		return TEXT("Face");
 	case EUEPalworldCustomizationCategory::Hair:
@@ -737,7 +766,7 @@ FString UUEPalworldCustomizationWidget::GetCategoryLabel(EUEPalworldCustomizatio
 	case EUEPalworldCustomizationCategory::BodyEquipment:
 		return TEXT("Outfit");
 	case EUEPalworldCustomizationCategory::HeadEquipment:
-		return TEXT("Head Gear");
+		return TEXT("Disabled");
 	default:
 		return TEXT("Items");
 	}

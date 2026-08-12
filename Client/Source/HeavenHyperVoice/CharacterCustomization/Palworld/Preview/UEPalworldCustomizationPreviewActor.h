@@ -59,20 +59,19 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
 	TObjectPtr<USceneComponent> CharacterRoot = nullptr;
 
-	// The outfit mesh is the animation leader for the modular Palworld player parts.
-	// The current extract does not include a separate naked base body skeletal mesh.
+	// 팔월드 추출본은 별도 알몸 베이스 바디가 없어서 의상 메쉬가 모듈러 파츠의 애니메이션 기준이 된다.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
 	TObjectPtr<USkeletalMeshComponent> BodyEquipmentMesh = nullptr;
 
-	// Face/head mesh selected from Palworld character creation tables.
+	// 팔월드 캐릭터 생성 테이블에서 선택한 얼굴/머리 메쉬.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
 	TObjectPtr<USkeletalMeshComponent> HeadMesh = nullptr;
 
-	// Hair mesh selected from Palworld character creation tables.
+	// 팔월드 캐릭터 생성 테이블에서 선택한 헤어 메쉬.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
 	TObjectPtr<USkeletalMeshComponent> HairMesh = nullptr;
 
-	// Hats, ears, glasses, and other head equipment. Socket names come from the Palworld table.
+	// 머리 장비용 예비 컴포넌트. 현재 캐릭터 생성 화면에서는 얼굴을 가리지 않도록 항상 비활성화한다.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
 	TObjectPtr<USkeletalMeshComponent> HeadEquipmentMesh = nullptr;
 
@@ -96,6 +95,7 @@ protected:
 
 private:
 	void ApplyQACommandLineAppearance();
+	void CaptureQAWidgetScreenshot();
 	void CaptureQAScreenshot();
 	void PrepareQAHeadScreenshot();
 	void CaptureQAHeadScreenshot();
@@ -116,6 +116,7 @@ private:
 	static int32 ClampIndex(int32 Index, int32 Count);
 
 	FTimerHandle QAScreenshotTimer;
+	FTimerHandle QAWidgetScreenshotTimer;
 	FTimerHandle QAPrepareHeadTimer;
 	FTimerHandle QAHeadScreenshotTimer;
 	FTimerHandle QAExitTimer;

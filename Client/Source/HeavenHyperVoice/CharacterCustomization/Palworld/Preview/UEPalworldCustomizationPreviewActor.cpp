@@ -128,6 +128,10 @@ void AUEPalworldCustomizationPreviewActor::BeginPlay()
 	{
 		GetWorldTimerManager().SetTimer(QAScreenshotTimer, this, &ThisClass::CaptureQAScreenshot, 8.0f, false);
 	}
+	if (FParse::Param(FCommandLine::Get(), TEXT("PalworldQAWidgetScreenshot")))
+	{
+		GetWorldTimerManager().SetTimer(QAWidgetScreenshotTimer, this, &ThisClass::CaptureQAWidgetScreenshot, 8.0f, false);
+	}
 }
 
 void AUEPalworldCustomizationPreviewActor::ApplyAppearance(const FUEPalworldAppearance& NewAppearance)
@@ -173,6 +177,7 @@ FString AUEPalworldCustomizationPreviewActor::GetOptionLabel(
 void AUEPalworldCustomizationPreviewActor::SelectGender(EUEPalworldGender NewGender)
 {
 	Appearance.Gender = NewGender;
+	Appearance.BodyIndex = NewGender == EUEPalworldGender::TypeA ? 1 : 2;
 	RefreshMeshes();
 }
 
@@ -204,7 +209,7 @@ void AUEPalworldCustomizationPreviewActor::SetColor(EUEPalworldColorChannel Chan
 
 void AUEPalworldCustomizationPreviewActor::SetScaleValue(EUEPalworldScaleChannel Channel, float Value)
 {
-	const float ClampedValue = 1.0f;
+	const float ClampedValue = FMath::Clamp(Value, 0.75f, 1.25f);
 	switch (Channel)
 	{
 	case EUEPalworldScaleChannel::Height:
@@ -234,10 +239,9 @@ void AUEPalworldCustomizationPreviewActor::RefreshMeshes()
 	Appearance.HairIndex = ClampIndex(Appearance.HairIndex, GetOptionCount(EUEPalworldCustomizationCategory::Hair));
 	Appearance.EyeIndex = ClampIndex(Appearance.EyeIndex, GetOptionCount(EUEPalworldCustomizationCategory::Eyes));
 	Appearance.BodyEquipmentIndex = ClampIndex(Appearance.BodyEquipmentIndex, GetOptionCount(EUEPalworldCustomizationCategory::BodyEquipment));
-	if (Appearance.HeadEquipmentIndex >= 0)
-	{
-		Appearance.HeadEquipmentIndex = ClampIndex(Appearance.HeadEquipmentIndex, GetOptionCount(EUEPalworldCustomizationCategory::HeadEquipment));
-	}
+	// 캐릭터 생성 화면에서는 머리 장비를 빼둔다.
+	// 얼굴, 머리카락, 피부를 조정할 때 모자나 마스크가 얼굴을 가리지 않게 하기 위해서다.
+	Appearance.HeadEquipmentIndex = -1;
 
 	const FUEPalworldCustomizationOption& BodyEquipment = GetOption(
 		EUEPalworldCustomizationCategory::BodyEquipment,
@@ -302,6 +306,15 @@ void AUEPalworldCustomizationPreviewActor::ApplyQACommandLineAppearance()
 	{
 		Appearance.HeadEquipmentIndex = FCString::Atoi(*Value);
 	}
+}
+
+void AUEPalworldCustomizationPreviewActor::CaptureQAWidgetScreenshot()
+{
+	// UI 구조를 확인할 때는 위젯을 지우지 않고 Slate/UMG까지 같이 캡처한다.
+	const FString ScreenshotPath = FPaths::ProjectSavedDir() /
+		TEXT("Screenshots/Customization/Palworld_Widget_UI.png");
+	FScreenshotRequest::RequestScreenshot(ScreenshotPath, true, false);
+	GetWorldTimerManager().SetTimer(QAExitTimer, this, &ThisClass::ExitAfterQAScreenshot, 1.5f, false);
 }
 
 void AUEPalworldCustomizationPreviewActor::CaptureQAScreenshot()
@@ -536,9 +549,9 @@ void AUEPalworldCustomizationPreviewActor::FitHeadEquipmentToHead(const FUEPalwo
 	FVector TargetPoint = HeadBox.GetCenter();
 	FVector EquipmentAnchor = EquipmentBox.GetCenter();
 
-	// CUE4Parse/FBX import keeps the Palworld table socket names, but not every socket object
-	// survives on the imported skeleton. When a socket is absent, use the table name as a
-	// placement hint instead of leaving the gear at the component origin.
+	// CUE4Parse/FBX 임포트에는 팔월드 테이블의 소켓 이름이 남아 있지만,
+	// 실제 소켓 오브젝트가 스켈레톤에 항상 살아남지는 않는다.
+	// 소켓이 없을 때는 원점에 방치하지 말고 테이블 이름을 위치 힌트로 쓴다.
 	if (!SocketName.IsEmpty() && SocketName != TEXT("none"))
 	{
 		if (SocketName.Contains(TEXT("ear")))
@@ -584,8 +597,8 @@ void AUEPalworldCustomizationPreviewActor::FitHeadEquipmentToHead(const FUEPalwo
 
 void AUEPalworldCustomizationPreviewActor::ApplyMaterialColors()
 {
-	// Palworld's original MI assets already carry the authored outfit/accessory colors.
-	// Runtime tint is kept as a Blueprint API for later palette work, but white means "use source material".
+	// 팔월드 원본 MI 에셋에는 의상/부착물 색과 텍스처가 이미 들어 있다.
+	// 런타임 틴트는 블루프린트 팔레트용 API로만 남기고, 흰색은 원본 머티리얼을 그대로 쓴다는 뜻이다.
 	if (!Appearance.SkinColor.Equals(FLinearColor::White, 0.003f))
 	{
 		ApplyColorToSlots(HeadMesh, Appearance.SkinColor, {TEXT("Head"), TEXT("Body"), TEXT("Skin")});
@@ -668,18 +681,42 @@ void AUEPalworldCustomizationPreviewActor::ApplyColorToSlots(
 
 void AUEPalworldCustomizationPreviewActor::ApplyScale()
 {
-	// Do not scale modular parts independently. These extracted Palworld meshes only stay
-	// attached correctly when body, head, hair, and equipment share the same reference scale.
-	Appearance.HeightScale = 1.0f;
-	Appearance.HeadScale = 1.0f;
-	Appearance.BodyWidthScale = 1.0f;
-	CharacterRoot->SetRelativeScale3D(FVector::OneVector);
+	Appearance.HeightScale = FMath::Clamp(Appearance.HeightScale, 0.75f, 1.25f);
+	Appearance.HeadScale = FMath::Clamp(Appearance.HeadScale, 0.75f, 1.25f);
+	Appearance.BodyWidthScale = FMath::Clamp(Appearance.BodyWidthScale, 0.75f, 1.25f);
 
-	for (USkeletalMeshComponent* Component : {BodyEquipmentMesh.Get(), HeadMesh.Get(), HairMesh.Get(), HeadEquipmentMesh.Get()})
+	// 폭과 키는 공용 루트에 적용한다.
+	// 그래야 몸, 얼굴, 머리카락, 의상이 목에서 따로 벌어지지 않고 같은 애니메이션을 따라간다.
+	CharacterRoot->SetRelativeScale3D(FVector(
+		Appearance.BodyWidthScale,
+		Appearance.BodyWidthScale,
+		Appearance.HeightScale));
+
+	if (BodyEquipmentMesh)
+	{
+		BodyEquipmentMesh->SetRelativeScale3D(FVector::OneVector);
+	}
+
+	const FVector HeadCenterBefore = HeadMesh ? HeadMesh->Bounds.Origin : FVector::ZeroVector;
+	for (USkeletalMeshComponent* Component : {HeadMesh.Get(), HairMesh.Get(), HeadEquipmentMesh.Get()})
 	{
 		if (Component)
 		{
-			Component->SetRelativeScale3D(FVector::OneVector);
+			Component->SetRelativeScale3D(FVector(Appearance.HeadScale));
+		}
+	}
+
+	if (HeadMesh && !FMath::IsNearlyEqual(Appearance.HeadScale, 1.0f))
+	{
+		HeadMesh->UpdateBounds();
+		const FVector WorldDelta = HeadCenterBefore - HeadMesh->Bounds.Origin;
+		const FVector LocalDelta = CharacterRoot->GetComponentTransform().InverseTransformVectorNoScale(WorldDelta);
+		for (USkeletalMeshComponent* Component : {HeadMesh.Get(), HairMesh.Get(), HeadEquipmentMesh.Get()})
+		{
+			if (Component)
+			{
+				Component->AddLocalOffset(LocalDelta);
+			}
 		}
 	}
 }

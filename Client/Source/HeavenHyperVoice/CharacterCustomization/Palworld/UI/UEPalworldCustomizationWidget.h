@@ -59,21 +59,6 @@ private:
 };
 
 UCLASS()
-class HEAVENHYPERVOICE_API UUEPalworldGenderButton : public UButton
-{
-	GENERATED_BODY()
-
-public:
-	void Configure(UUEPalworldCustomizationWidget* InOwner, EUEPalworldGender InGender);
-
-private:
-	UFUNCTION() void HandleClicked();
-
-	UPROPERTY(Transient) TObjectPtr<UUEPalworldCustomizationWidget> OwnerWidget = nullptr;
-	EUEPalworldGender Gender = EUEPalworldGender::TypeA;
-};
-
-UCLASS()
 class HEAVENHYPERVOICE_API UUEPalworldScaleSlider : public USlider
 {
 	GENERATED_BODY()
@@ -150,6 +135,8 @@ private:
 	void RebuildCategories();
 	void RebuildOptions();
 	void SynchronizeControls();
+	int32 GetVisibleOptionCount(EUEPalworldCustomizationCategory Category) const;
+	int32 GetActualOptionIndex(EUEPalworldCustomizationCategory Category, int32 VisibleIndex) const;
 	int32 GetSelectedIndex(EUEPalworldCustomizationCategory Category) const;
 	FLinearColor GetChannelColor(EUEPalworldColorChannel Channel) const;
 	float GetScaleValue(EUEPalworldScaleChannel Channel) const;
@@ -173,6 +160,6 @@ private:
 	UPROPERTY(Transient) TArray<TObjectPtr<UUEPalworldScaleSlider>> ScaleSliders;
 
 	FUEPalworldAppearance CachedAppearance;
-	EUEPalworldCustomizationCategory CurrentCategory = EUEPalworldCustomizationCategory::Hair;
+	EUEPalworldCustomizationCategory CurrentCategory = EUEPalworldCustomizationCategory::Body;
 	bool bSynchronizingControls = false;
 };
