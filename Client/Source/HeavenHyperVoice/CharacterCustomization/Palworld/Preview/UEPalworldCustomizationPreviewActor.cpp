@@ -86,26 +86,26 @@ AUEPalworldCustomizationPreviewActor::AUEPalworldCustomizationPreviewActor()
 	PreviewCamera->PostProcessSettings.bOverride_AutoExposureMethod = true;
 	PreviewCamera->PostProcessSettings.AutoExposureMethod = EAutoExposureMethod::AEM_Manual;
 	PreviewCamera->PostProcessSettings.bOverride_AutoExposureBias = true;
-	PreviewCamera->PostProcessSettings.AutoExposureBias = 1.9f;
+	PreviewCamera->PostProcessSettings.AutoExposureBias = 3.2f;
 
 	KeyLight = CreateDefaultSubobject<USpotLightComponent>(TEXT("KeyLight"));
 	KeyLight->SetupAttachment(SceneRoot);
 	KeyLight->SetRelativeLocation(FVector(80.0f, 210.0f, 230.0f));
 	KeyLight->SetRelativeRotation(FRotator(-42.0f, -115.0f, 0.0f));
-	KeyLight->SetIntensity(12500.0f);
+	KeyLight->SetIntensity(42000.0f);
 	KeyLight->SetAttenuationRadius(600.0f);
 	KeyLight->SetLightColor(FLinearColor::White);
 	KeyLight->SetCastShadows(false);
 
 	FillLight = CreateDefaultSubobject<USkyLightComponent>(TEXT("FillLight"));
 	FillLight->SetupAttachment(SceneRoot);
-	FillLight->SetIntensity(5.0f);
+	FillLight->SetIntensity(9.0f);
 	FillLight->SetLightColor(FLinearColor::White);
 
 	FrontLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("FrontLight"));
 	FrontLight->SetupAttachment(SceneRoot);
 	FrontLight->SetRelativeLocation(FVector(0.0f, 90.0f, 130.0f));
-	FrontLight->SetIntensity(14000.0f);
+	FrontLight->SetIntensity(30000.0f);
 	FrontLight->SetAttenuationRadius(650.0f);
 	FrontLight->SetCastShadows(false);
 	FrontLight->SetLightColor(FLinearColor::White);
@@ -204,7 +204,7 @@ void AUEPalworldCustomizationPreviewActor::SetColor(EUEPalworldColorChannel Chan
 
 void AUEPalworldCustomizationPreviewActor::SetScaleValue(EUEPalworldScaleChannel Channel, float Value)
 {
-	const float ClampedValue = FMath::Clamp(Value, 0.75f, 1.25f);
+	const float ClampedValue = 1.0f;
 	switch (Channel)
 	{
 	case EUEPalworldScaleChannel::Height:
@@ -407,14 +407,14 @@ void AUEPalworldCustomizationPreviewActor::ConfigurePreviewLighting()
 		PreviewCamera->PostProcessSettings.bOverride_AutoExposureMethod = true;
 		PreviewCamera->PostProcessSettings.AutoExposureMethod = EAutoExposureMethod::AEM_Manual;
 		PreviewCamera->PostProcessSettings.bOverride_AutoExposureBias = true;
-		PreviewCamera->PostProcessSettings.AutoExposureBias = 1.9f;
+		PreviewCamera->PostProcessSettings.AutoExposureBias = 3.2f;
 	}
 
 	if (KeyLight)
 	{
 		KeyLight->SetRelativeLocation(FVector(0.0f, 140.0f, 155.0f));
 		KeyLight->SetRelativeRotation(FRotator(-5.0f, -90.0f, 0.0f));
-		KeyLight->SetIntensity(12500.0f);
+		KeyLight->SetIntensity(42000.0f);
 		KeyLight->SetAttenuationRadius(1200.0f);
 		KeyLight->SetOuterConeAngle(90.0f);
 		KeyLight->SetInnerConeAngle(70.0f);
@@ -424,14 +424,14 @@ void AUEPalworldCustomizationPreviewActor::ConfigurePreviewLighting()
 
 	if (FillLight)
 	{
-		FillLight->SetIntensity(5.0f);
+		FillLight->SetIntensity(9.0f);
 		FillLight->SetLightColor(FLinearColor::White);
 	}
 
 	if (FrontLight)
 	{
 		FrontLight->SetRelativeLocation(FVector(0.0f, 90.0f, 130.0f));
-		FrontLight->SetIntensity(14000.0f);
+		FrontLight->SetIntensity(30000.0f);
 		FrontLight->SetAttenuationRadius(650.0f);
 		FrontLight->SetCastShadows(false);
 		FrontLight->SetLightColor(FLinearColor::White);
@@ -466,6 +466,7 @@ void AUEPalworldCustomizationPreviewActor::RefreshFollowerPose()
 
 void AUEPalworldCustomizationPreviewActor::AttachHeadEquipment(const FUEPalworldCustomizationOption& Option)
 {
+	bHeadEquipmentAttachedToSocket = false;
 	if (!HeadEquipmentMesh)
 	{
 		return;
@@ -478,13 +479,35 @@ void AUEPalworldCustomizationPreviewActor::AttachHeadEquipment(const FUEPalworld
 	}
 
 	HeadEquipmentMesh->SetVisibility(true, true);
-	HeadEquipmentMesh->AttachToComponent(CharacterRoot, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+	USceneComponent* AttachParent = CharacterRoot;
+	FName AttachSocket = NAME_None;
+	const FName TableSocket = Option.GetAttachSocket(Appearance.Gender);
+
+	if (!TableSocket.IsNone())
+	{
+		const TArray<USkeletalMeshComponent*> SocketOwners = Option.bIsHairAttachAccessory
+			? TArray<USkeletalMeshComponent*>{HairMesh.Get(), HeadMesh.Get(), BodyEquipmentMesh.Get()}
+			: TArray<USkeletalMeshComponent*>{HeadMesh.Get(), BodyEquipmentMesh.Get(), HairMesh.Get()};
+
+		for (USkeletalMeshComponent* Candidate : SocketOwners)
+		{
+			if (Candidate && Candidate->DoesSocketExist(TableSocket))
+			{
+				AttachParent = Candidate;
+				AttachSocket = TableSocket;
+				bHeadEquipmentAttachedToSocket = true;
+				break;
+			}
+		}
+	}
+
+	HeadEquipmentMesh->AttachToComponent(AttachParent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, AttachSocket);
 	HeadEquipmentMesh->SetRelativeTransform(FTransform::Identity);
 }
 
 void AUEPalworldCustomizationPreviewActor::FitHeadEquipmentToHead(const FUEPalworldCustomizationOption& Option)
 {
-	if (!HeadEquipmentMesh || !HeadEquipmentMesh->GetSkeletalMeshAsset() || !HeadMesh)
+	if (bHeadEquipmentAttachedToSocket || !HeadEquipmentMesh || !HeadEquipmentMesh->GetSkeletalMeshAsset() || !HeadMesh)
 	{
 		return;
 	}
@@ -508,30 +531,82 @@ void AUEPalworldCustomizationPreviewActor::FitHeadEquipmentToHead(const FUEPalwo
 		return;
 	}
 
-	const FVector TargetCenter = TargetBox.GetCenter();
-	const FVector EquipmentCenter = EquipmentBox.GetCenter();
 	const float HeadHeight = FMath::Max(1.0f, HeadBox.GetSize().Z);
-	if (EquipmentCenter.Z > HeadBox.Min.Z - HeadHeight * 0.25f)
+	const FString SocketName = Option.GetAttachSocket(Appearance.Gender).ToString().ToLower();
+	FVector TargetPoint = HeadBox.GetCenter();
+	FVector EquipmentAnchor = EquipmentBox.GetCenter();
+
+	// CUE4Parse/FBX import keeps the Palworld table socket names, but not every socket object
+	// survives on the imported skeleton. When a socket is absent, use the table name as a
+	// placement hint instead of leaving the gear at the component origin.
+	if (!SocketName.IsEmpty() && SocketName != TEXT("none"))
 	{
-		return;
+		if (SocketName.Contains(TEXT("ear")))
+		{
+			const bool bLeftSide = SocketName.EndsWith(TEXT("_l")) || SocketName.EndsWith(TEXT("l"));
+			TargetPoint = FVector(
+				bLeftSide ? HeadBox.Min.X : HeadBox.Max.X,
+				HeadBox.GetCenter().Y,
+				HeadBox.GetCenter().Z + HeadHeight * 0.12f);
+			EquipmentAnchor = FVector(
+				bLeftSide ? EquipmentBox.Max.X : EquipmentBox.Min.X,
+				EquipmentBox.GetCenter().Y,
+				EquipmentBox.GetCenter().Z);
+		}
+		else if (SocketName.Contains(TEXT("top")) || SocketName.Contains(TEXT("root")))
+		{
+			TargetPoint = FVector(
+				TargetBox.GetCenter().X,
+				TargetBox.GetCenter().Y,
+				TargetBox.Max.Z - HeadHeight * 0.04f);
+			EquipmentAnchor = FVector(
+				EquipmentBox.GetCenter().X,
+				EquipmentBox.GetCenter().Y,
+				EquipmentBox.Min.Z);
+		}
+		else if (SocketName.Contains(TEXT("front")))
+		{
+			TargetPoint = FVector(
+				HeadBox.GetCenter().X,
+				FMath::Max(HeadBox.Max.Y, TargetBox.Max.Y) + 1.0f,
+				HeadBox.Max.Z - HeadHeight * 0.18f);
+			EquipmentAnchor = FVector(
+				EquipmentBox.GetCenter().X,
+				EquipmentBox.Min.Y,
+				EquipmentBox.Min.Z + EquipmentBox.GetSize().Z * 0.25f);
+		}
 	}
 
-	const FVector WorldDelta(
-		TargetCenter.X - EquipmentCenter.X,
-		TargetCenter.Y - EquipmentCenter.Y,
-		TargetCenter.Z - EquipmentCenter.Z);
+	const FVector WorldDelta = TargetPoint - EquipmentAnchor;
 	const FVector LocalDelta = CharacterRoot->GetComponentTransform().InverseTransformVectorNoScale(WorldDelta);
 	HeadEquipmentMesh->AddLocalOffset(LocalDelta);
 }
 
 void AUEPalworldCustomizationPreviewActor::ApplyMaterialColors()
 {
-	ApplyColorToSlots(HeadMesh, Appearance.SkinColor, {TEXT("Head"), TEXT("Body")});
-	ApplyColorToSlots(BodyEquipmentMesh, Appearance.SkinColor, {TEXT("Body")});
-	ApplyColorToSlots(HairMesh, Appearance.HairColor, {TEXT("Hair")});
-	ApplyColorToSlots(HeadMesh, Appearance.EyeColor, {TEXT("Eye")});
-	ApplyColorToSlots(BodyEquipmentMesh, Appearance.BodyEquipmentColor, {TEXT("Outfit"), TEXT("Equip")});
-	ApplyColorToSlots(HeadEquipmentMesh, Appearance.HeadEquipmentColor, {TEXT("Head"), TEXT("Hat"), TEXT("Helmet"), TEXT("Accessory")});
+	// Palworld's original MI assets already carry the authored outfit/accessory colors.
+	// Runtime tint is kept as a Blueprint API for later palette work, but white means "use source material".
+	if (!Appearance.SkinColor.Equals(FLinearColor::White, 0.003f))
+	{
+		ApplyColorToSlots(HeadMesh, Appearance.SkinColor, {TEXT("Head"), TEXT("Body"), TEXT("Skin")});
+		ApplyColorToSlots(BodyEquipmentMesh, Appearance.SkinColor, {TEXT("Body"), TEXT("Skin")});
+	}
+	if (!Appearance.HairColor.Equals(FLinearColor::White, 0.003f))
+	{
+		ApplyColorToSlots(HairMesh, Appearance.HairColor, {TEXT("Hair")});
+	}
+	if (!Appearance.EyeColor.Equals(FLinearColor::White, 0.003f))
+	{
+		ApplyColorToSlots(HeadMesh, Appearance.EyeColor, {TEXT("Eye")});
+	}
+	if (!Appearance.BodyEquipmentColor.Equals(FLinearColor::White, 0.003f))
+	{
+		ApplyColorToSlots(BodyEquipmentMesh, Appearance.BodyEquipmentColor, {TEXT("Outfit"), TEXT("Equip")});
+	}
+	if (!Appearance.HeadEquipmentColor.Equals(FLinearColor::White, 0.003f))
+	{
+		ApplyColorToSlots(HeadEquipmentMesh, Appearance.HeadEquipmentColor, {TEXT("Head"), TEXT("Hat"), TEXT("Helmet"), TEXT("Accessory")});
+	}
 }
 
 void AUEPalworldCustomizationPreviewActor::ApplyEyeMaterial(const FUEPalworldCustomizationOption& Option)
@@ -593,18 +668,18 @@ void AUEPalworldCustomizationPreviewActor::ApplyColorToSlots(
 
 void AUEPalworldCustomizationPreviewActor::ApplyScale()
 {
-	const FVector BodyScale(
-		FMath::Max(0.01f, Appearance.BodyWidthScale),
-		FMath::Max(0.01f, Appearance.BodyWidthScale),
-		FMath::Max(0.01f, Appearance.HeightScale));
-	CharacterRoot->SetRelativeScale3D(BodyScale);
+	// Do not scale modular parts independently. These extracted Palworld meshes only stay
+	// attached correctly when body, head, hair, and equipment share the same reference scale.
+	Appearance.HeightScale = 1.0f;
+	Appearance.HeadScale = 1.0f;
+	Appearance.BodyWidthScale = 1.0f;
+	CharacterRoot->SetRelativeScale3D(FVector::OneVector);
 
-	const FVector HeadScale(FMath::Max(0.01f, Appearance.HeadScale));
-	for (USkeletalMeshComponent* Component : {HeadMesh.Get(), HairMesh.Get(), HeadEquipmentMesh.Get()})
+	for (USkeletalMeshComponent* Component : {BodyEquipmentMesh.Get(), HeadMesh.Get(), HairMesh.Get(), HeadEquipmentMesh.Get()})
 	{
 		if (Component)
 		{
-			Component->SetRelativeScale3D(HeadScale);
+			Component->SetRelativeScale3D(FVector::OneVector);
 		}
 	}
 }

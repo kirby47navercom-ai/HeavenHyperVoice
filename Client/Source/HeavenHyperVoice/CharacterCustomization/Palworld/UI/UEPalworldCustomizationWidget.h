@@ -156,6 +156,7 @@ private:
 	UTextBlock* CreateText(const FString& Text, int32 FontSize, const FLinearColor& Color);
 	UButton* CreateTextButton(const FString& Text);
 	void AddSectionTitle(UVerticalBox* Parent, const FString& Text);
+	void AddInfoLine(UVerticalBox* Parent, const FString& Text);
 	void AddRGBRow(UVerticalBox* Parent, const FString& Label, EUEPalworldColorChannel Channel);
 	void AddScaleRow(UVerticalBox* Parent, const FString& Label, EUEPalworldScaleChannel Channel);
 	static FString GetCategoryLabel(EUEPalworldCustomizationCategory Category);

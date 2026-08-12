@@ -59,15 +59,20 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
 	TObjectPtr<USceneComponent> CharacterRoot = nullptr;
 
+	// The outfit mesh is the animation leader for the modular Palworld player parts.
+	// The current extract does not include a separate naked base body skeletal mesh.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
 	TObjectPtr<USkeletalMeshComponent> BodyEquipmentMesh = nullptr;
 
+	// Face/head mesh selected from Palworld character creation tables.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
 	TObjectPtr<USkeletalMeshComponent> HeadMesh = nullptr;
 
+	// Hair mesh selected from Palworld character creation tables.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
 	TObjectPtr<USkeletalMeshComponent> HairMesh = nullptr;
 
+	// Hats, ears, glasses, and other head equipment. Socket names come from the Palworld table.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
 	TObjectPtr<USkeletalMeshComponent> HeadEquipmentMesh = nullptr;
 
@@ -114,4 +119,5 @@ private:
 	FTimerHandle QAPrepareHeadTimer;
 	FTimerHandle QAHeadScreenshotTimer;
 	FTimerHandle QAExitTimer;
+	bool bHeadEquipmentAttachedToSocket = false;
 };

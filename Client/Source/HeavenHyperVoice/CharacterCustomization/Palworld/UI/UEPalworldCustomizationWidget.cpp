@@ -40,12 +40,12 @@ namespace
 	TConstArrayView<FCategoryEntry> GetCategoryEntries()
 	{
 		static const TArray<FCategoryEntry> Entries = {
-			{EUEPalworldCustomizationCategory::Body, TEXT("BODY")},
-			{EUEPalworldCustomizationCategory::Head, TEXT("HEAD")},
+			{EUEPalworldCustomizationCategory::Body, TEXT("TYPE")},
+			{EUEPalworldCustomizationCategory::Head, TEXT("FACE")},
 			{EUEPalworldCustomizationCategory::Hair, TEXT("HAIR")},
 			{EUEPalworldCustomizationCategory::Eyes, TEXT("EYES")},
 			{EUEPalworldCustomizationCategory::BodyEquipment, TEXT("OUTFIT")},
-			{EUEPalworldCustomizationCategory::HeadEquipment, TEXT("ACCESSORY")}
+			{EUEPalworldCustomizationCategory::HeadEquipment, TEXT("HEAD GEAR")}
 		};
 		return Entries;
 	}
@@ -326,21 +326,21 @@ void UUEPalworldCustomizationWidget::BuildInterface()
 	UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("PalworldCustomizationRoot"));
 	WidgetTree->RootWidget = Root;
 
-	UTextBlock* Title = CreateText(TEXT("PALWORLD CHARACTER CUSTOMIZATION"), 25, TextColor);
+	UTextBlock* Title = CreateText(TEXT("PALWORLD CHARACTER EDITOR"), 25, TextColor);
 	Root->AddChild(Title);
-	CastChecked<UCanvasPanelSlot>(Title->Slot)->SetPosition(FVector2D(24.0f, 18.0f));
+	CastChecked<UCanvasPanelSlot>(Title->Slot)->SetPosition(FVector2D(20.0f, 18.0f));
 	CastChecked<UCanvasPanelSlot>(Title->Slot)->SetSize(FVector2D(700.0f, 38.0f));
 
-	UTextBlock* Subtitle = CreateText(TEXT("Original Palworld item catalog"), 13, MutedTextColor);
+	UTextBlock* Subtitle = CreateText(TEXT("DataTable items + source materials"), 13, MutedTextColor);
 	Root->AddChild(Subtitle);
-	CastChecked<UCanvasPanelSlot>(Subtitle->Slot)->SetPosition(FVector2D(26.0f, 52.0f));
+	CastChecked<UCanvasPanelSlot>(Subtitle->Slot)->SetPosition(FVector2D(22.0f, 52.0f));
 	CastChecked<UCanvasPanelSlot>(Subtitle->Slot)->SetSize(FVector2D(700.0f, 24.0f));
 
 	UHorizontalBox* MainLayout = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("MainLayout"));
 	Root->AddChild(MainLayout);
 	UCanvasPanelSlot* MainSlot = CastChecked<UCanvasPanelSlot>(MainLayout->Slot);
 	MainSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
-	MainSlot->SetOffsets(FMargin(24.0f, 84.0f, 24.0f, 24.0f));
+	MainSlot->SetOffsets(FMargin(20.0f, 84.0f, 20.0f, 24.0f));
 
 	USizeBox* EditorSize = WidgetTree->ConstructWidget<USizeBox>();
 	EditorSize->SetWidthOverride(630.0f);
@@ -393,7 +393,7 @@ void UUEPalworldCustomizationWidget::BuildInterface()
 
 	OptionTitle = CreateText(GetCategoryLabel(CurrentCategory), 24, TextColor);
 	CatalogColumn->AddChild(OptionTitle);
-	OptionCount = CreateText(TEXT("0 extracted items"), 13, MutedTextColor);
+	OptionCount = CreateText(TEXT("0 Palworld table items"), 13, MutedTextColor);
 	CatalogColumn->AddChild(OptionCount);
 
 	UScrollBox* CatalogScroll = WidgetTree->ConstructWidget<UScrollBox>();
@@ -420,17 +420,10 @@ void UUEPalworldCustomizationWidget::BuildInterface()
 	UVerticalBox* Parameters = WidgetTree->ConstructWidget<UVerticalBox>();
 	ParameterScroll->AddChild(Parameters);
 
-	AddSectionTitle(Parameters, TEXT("RGB 0-255"));
-	AddRGBRow(Parameters, TEXT("Skin"), EUEPalworldColorChannel::Skin);
-	AddRGBRow(Parameters, TEXT("Hair"), EUEPalworldColorChannel::Hair);
-	AddRGBRow(Parameters, TEXT("Eyes"), EUEPalworldColorChannel::Eye);
-	AddRGBRow(Parameters, TEXT("Outfit"), EUEPalworldColorChannel::BodyEquipment);
-	AddRGBRow(Parameters, TEXT("Accessory"), EUEPalworldColorChannel::HeadEquipment);
-
-	AddSectionTitle(Parameters, TEXT("Scale"));
-	AddScaleRow(Parameters, TEXT("Height"), EUEPalworldScaleChannel::Height);
-	AddScaleRow(Parameters, TEXT("Head Size"), EUEPalworldScaleChannel::HeadSize);
-	AddScaleRow(Parameters, TEXT("Body Width"), EUEPalworldScaleChannel::BodyWidth);
+	AddSectionTitle(Parameters, TEXT("PALWORLD DATA"));
+	AddInfoLine(Parameters, TEXT("Options come from the extracted character creation tables."));
+	AddInfoLine(Parameters, TEXT("Source materials stay active by default for clothes, shoes, hair, eyes, and gear."));
+	AddInfoLine(Parameters, TEXT("Shape sliders are hidden until a real Palworld morph/retarget bridge is added."));
 
 	StatusText = CreateText(TEXT("Select an item"), 12, MutedTextColor);
 	StatusText->SetAutoWrapText(true);
@@ -478,7 +471,7 @@ void UUEPalworldCustomizationWidget::RebuildOptions()
 	OptionGrid->ClearChildren();
 	const int32 Count = GetOptionCount(CurrentCategory);
 	OptionTitle->SetText(FText::FromString(GetCategoryLabel(CurrentCategory)));
-	OptionCount->SetText(FText::FromString(FString::Printf(TEXT("%d extracted items"), Count)));
+	OptionCount->SetText(FText::FromString(FString::Printf(TEXT("%d Palworld table items"), Count)));
 
 	const int32 SelectedIndex = GetSelectedIndex(CurrentCategory);
 	for (int32 Index = 0; Index < Count; ++Index)
@@ -671,6 +664,14 @@ void UUEPalworldCustomizationWidget::AddSectionTitle(UVerticalBox* Parent, const
 	CastChecked<UVerticalBoxSlot>(Title->Slot)->SetPadding(FMargin(0.0f, 10.0f, 0.0f, 6.0f));
 }
 
+void UUEPalworldCustomizationWidget::AddInfoLine(UVerticalBox* Parent, const FString& Text)
+{
+	UTextBlock* Line = CreateText(Text, 12, MutedTextColor);
+	Line->SetAutoWrapText(true);
+	Parent->AddChild(Line);
+	CastChecked<UVerticalBoxSlot>(Line->Slot)->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 7.0f));
+}
+
 void UUEPalworldCustomizationWidget::AddRGBRow(
 	UVerticalBox* Parent,
 	const FString& Label,
@@ -726,9 +727,9 @@ FString UUEPalworldCustomizationWidget::GetCategoryLabel(EUEPalworldCustomizatio
 	switch (Category)
 	{
 	case EUEPalworldCustomizationCategory::Body:
-		return TEXT("Base Body");
+		return TEXT("Body Type");
 	case EUEPalworldCustomizationCategory::Head:
-		return TEXT("Head");
+		return TEXT("Face");
 	case EUEPalworldCustomizationCategory::Hair:
 		return TEXT("Hair");
 	case EUEPalworldCustomizationCategory::Eyes:
@@ -736,7 +737,7 @@ FString UUEPalworldCustomizationWidget::GetCategoryLabel(EUEPalworldCustomizatio
 	case EUEPalworldCustomizationCategory::BodyEquipment:
 		return TEXT("Outfit");
 	case EUEPalworldCustomizationCategory::HeadEquipment:
-		return TEXT("Accessory");
+		return TEXT("Head Gear");
 	default:
 		return TEXT("Items");
 	}
