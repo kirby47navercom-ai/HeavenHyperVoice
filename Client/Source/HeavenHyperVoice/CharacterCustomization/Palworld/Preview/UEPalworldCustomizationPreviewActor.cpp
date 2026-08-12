@@ -77,7 +77,6 @@ AUEPalworldCustomizationPreviewActor::AUEPalworldCustomizationPreviewActor()
 	BodyEquipmentMesh = CreateSkeletalPart(this, CharacterRoot, TEXT("BodyEquipment"));
 	HeadMesh = CreateSkeletalPart(this, CharacterRoot, TEXT("Head"));
 	HairMesh = CreateSkeletalPart(this, CharacterRoot, TEXT("Hair"));
-	HeadEquipmentMesh = CreateSkeletalPart(this, CharacterRoot, TEXT("HeadEquipment"));
 
 	PreviewCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("PreviewCamera"));
 	PreviewCamera->SetupAttachment(SceneRoot);
@@ -137,6 +136,7 @@ void AUEPalworldCustomizationPreviewActor::BeginPlay()
 void AUEPalworldCustomizationPreviewActor::ApplyAppearance(const FUEPalworldAppearance& NewAppearance)
 {
 	Appearance = NewAppearance;
+	NormalizeLegacyDefaultColors();
 	RefreshMeshes();
 }
 
@@ -183,6 +183,7 @@ void AUEPalworldCustomizationPreviewActor::SelectGender(EUEPalworldGender NewGen
 
 void AUEPalworldCustomizationPreviewActor::SetColor(EUEPalworldColorChannel Channel, const FLinearColor& Color)
 {
+	NormalizeLegacyDefaultColors();
 	const FLinearColor ClampedColor = Color.GetClamped();
 	switch (Channel)
 	{
@@ -195,13 +196,8 @@ void AUEPalworldCustomizationPreviewActor::SetColor(EUEPalworldColorChannel Chan
 	case EUEPalworldColorChannel::Eye:
 		Appearance.EyeColor = ClampedColor;
 		break;
-	case EUEPalworldColorChannel::BodyEquipment:
-		Appearance.BodyEquipmentColor = ClampedColor;
-		break;
-	case EUEPalworldColorChannel::HeadEquipment:
-		Appearance.HeadEquipmentColor = ClampedColor;
-		break;
 	default:
+		// 의상 색은 Palworld 원본 머티리얼과 텍스처를 그대로 사용한다.
 		break;
 	}
 	RefreshMeshes();
@@ -209,17 +205,19 @@ void AUEPalworldCustomizationPreviewActor::SetColor(EUEPalworldColorChannel Chan
 
 void AUEPalworldCustomizationPreviewActor::SetScaleValue(EUEPalworldScaleChannel Channel, float Value)
 {
+	NormalizeLegacyDefaultColors();
 	const float ClampedValue = FMath::Clamp(Value, 0.75f, 1.25f);
+	const float VolumeValue = FMath::Clamp((ClampedValue - 1.0f) / 0.25f, -1.0f, 1.0f);
 	switch (Channel)
 	{
-	case EUEPalworldScaleChannel::Height:
-		Appearance.HeightScale = ClampedValue;
+	case EUEPalworldScaleChannel::TorsoSize:
+		Appearance.TorsoVolume = VolumeValue;
 		break;
-	case EUEPalworldScaleChannel::HeadSize:
-		Appearance.HeadScale = ClampedValue;
+	case EUEPalworldScaleChannel::ArmSize:
+		Appearance.ArmVolume = VolumeValue;
 		break;
-	case EUEPalworldScaleChannel::BodyWidth:
-		Appearance.BodyWidthScale = ClampedValue;
+	case EUEPalworldScaleChannel::LegSize:
+		Appearance.LegVolume = VolumeValue;
 		break;
 	default:
 		break;
@@ -233,16 +231,14 @@ void AUEPalworldCustomizationPreviewActor::RefreshMeshes()
 	{
 		return;
 	}
+	NormalizeLegacyDefaultColors();
 
 	Appearance.BodyIndex = ClampIndex(Appearance.BodyIndex, GetOptionCount(EUEPalworldCustomizationCategory::Body));
 	Appearance.HeadIndex = ClampIndex(Appearance.HeadIndex, GetOptionCount(EUEPalworldCustomizationCategory::Head));
 	Appearance.HairIndex = ClampIndex(Appearance.HairIndex, GetOptionCount(EUEPalworldCustomizationCategory::Hair));
 	Appearance.EyeIndex = ClampIndex(Appearance.EyeIndex, GetOptionCount(EUEPalworldCustomizationCategory::Eyes));
 	Appearance.BodyEquipmentIndex = ClampIndex(Appearance.BodyEquipmentIndex, GetOptionCount(EUEPalworldCustomizationCategory::BodyEquipment));
-	// 캐릭터 생성 화면에서는 머리 장비를 빼둔다.
-	// 얼굴, 머리카락, 피부를 조정할 때 모자나 마스크가 얼굴을 가리지 않게 하기 위해서다.
-	Appearance.HeadEquipmentIndex = -1;
-
+	// 얼굴을 가리는 장비성 섹션은 숨기고, 머리장비 컴포넌트는 사용하지 않는다.
 	const FUEPalworldCustomizationOption& BodyEquipment = GetOption(
 		EUEPalworldCustomizationCategory::BodyEquipment,
 		Appearance.BodyEquipmentIndex);
@@ -255,21 +251,19 @@ void AUEPalworldCustomizationPreviewActor::RefreshMeshes()
 	const FUEPalworldCustomizationOption& Eyes = GetOption(
 		EUEPalworldCustomizationCategory::Eyes,
 		Appearance.EyeIndex);
-	const FUEPalworldCustomizationOption& HeadEquipment = Appearance.HeadEquipmentIndex >= 0
-		? GetOption(EUEPalworldCustomizationCategory::HeadEquipment, Appearance.HeadEquipmentIndex)
-		: PreviewEmptyOption;
-
 	BodyEquipmentMesh->SetSkeletalMesh(BodyEquipment.LoadMesh(Appearance.Gender));
+	ResetComponentMaterials(BodyEquipmentMesh);
+	HideFaceCoverSections(BodyEquipmentMesh);
 	HeadMesh->SetSkeletalMesh(Head.LoadMesh(Appearance.Gender));
+	ResetComponentMaterials(HeadMesh);
+	HideFaceCoverSections(HeadMesh);
 	HairMesh->SetSkeletalMesh(Hair.LoadMesh(Appearance.Gender));
-	HeadEquipmentMesh->SetSkeletalMesh(HeadEquipment.LoadMesh(Appearance.Gender));
+	ResetComponentMaterials(HairMesh);
 
 	RefreshFollowerPose();
-	AttachHeadEquipment(HeadEquipment);
 	ApplyEyeMaterial(Eyes);
 	ApplyMaterialColors();
 	ApplyScale();
-	FitHeadEquipmentToHead(HeadEquipment);
 }
 
 void AUEPalworldCustomizationPreviewActor::ApplyQACommandLineAppearance()
@@ -302,15 +296,11 @@ void AUEPalworldCustomizationPreviewActor::ApplyQACommandLineAppearance()
 	{
 		Appearance.BodyEquipmentIndex = FCString::Atoi(*Value);
 	}
-	if (FParse::Value(FCommandLine::Get(), TEXT("PalworldQAAccessory="), Value))
-	{
-		Appearance.HeadEquipmentIndex = FCString::Atoi(*Value);
-	}
 }
 
 void AUEPalworldCustomizationPreviewActor::CaptureQAWidgetScreenshot()
 {
-	// UI 구조를 확인할 때는 위젯을 지우지 않고 Slate/UMG까지 같이 캡처한다.
+	// UI 구조 검증 때는 위젯을 지우지 않고 Slate/UMG까지 같이 캡처한다.
 	const FString ScreenshotPath = FPaths::ProjectSavedDir() /
 		TEXT("Screenshots/Customization/Palworld_Widget_UI.png");
 	FScreenshotRequest::RequestScreenshot(ScreenshotPath, true, false);
@@ -345,28 +335,25 @@ void AUEPalworldCustomizationPreviewActor::CaptureQAScreenshot()
 	LogPart(TEXT("BodyEquipment"), BodyEquipmentMesh);
 	LogPart(TEXT("Head"), HeadMesh);
 	LogPart(TEXT("Hair"), HairMesh);
-	LogPart(TEXT("HeadEquipment"), HeadEquipmentMesh);
 
 	UE_LOG(LogTemp, Display,
-		TEXT("Palworld QA selection gender=%s body=%d head=%d hair=%d eyes=%d outfit=%d accessory=%d"),
+		TEXT("Palworld QA selection gender=%s body=%d head=%d hair=%d eyes=%d outfit=%d"),
 		Appearance.Gender == EUEPalworldGender::TypeA ? TEXT("TypeA") : TEXT("TypeB"),
 		Appearance.BodyIndex,
 		Appearance.HeadIndex,
 		Appearance.HairIndex,
 		Appearance.EyeIndex,
-		Appearance.BodyEquipmentIndex,
-		Appearance.HeadEquipmentIndex);
+		Appearance.BodyEquipmentIndex);
 
 	const TCHAR* GenderName = Appearance.Gender == EUEPalworldGender::TypeA ? TEXT("TypeA") : TEXT("TypeB");
 	const FString ScreenshotPath = FPaths::ProjectSavedDir() /
 		FString::Printf(
-			TEXT("Screenshots/Customization/Palworld_%s_H%02d_Hair%02d_Eye%02d_Outfit%02d_Acc%02d_Full.png"),
+			TEXT("Screenshots/Customization/Palworld_%s_H%02d_Hair%02d_Eye%02d_Outfit%02d_Full.png"),
 			GenderName,
 			Appearance.HeadIndex,
 			Appearance.HairIndex,
 			Appearance.EyeIndex,
-			Appearance.BodyEquipmentIndex,
-			Appearance.HeadEquipmentIndex);
+			Appearance.BodyEquipmentIndex);
 	FScreenshotRequest::RequestScreenshot(ScreenshotPath, true, false);
 	GetWorldTimerManager().SetTimer(QAPrepareHeadTimer, this, &ThisClass::PrepareQAHeadScreenshot, 1.0f, false);
 }
@@ -387,13 +374,12 @@ void AUEPalworldCustomizationPreviewActor::CaptureQAHeadScreenshot()
 	const TCHAR* GenderName = Appearance.Gender == EUEPalworldGender::TypeA ? TEXT("TypeA") : TEXT("TypeB");
 	const FString ScreenshotPath = FPaths::ProjectSavedDir() /
 		FString::Printf(
-			TEXT("Screenshots/Customization/Palworld_%s_H%02d_Hair%02d_Eye%02d_Outfit%02d_Acc%02d_Head.png"),
+			TEXT("Screenshots/Customization/Palworld_%s_H%02d_Hair%02d_Eye%02d_Outfit%02d_Head.png"),
 			GenderName,
 			Appearance.HeadIndex,
 			Appearance.HairIndex,
 			Appearance.EyeIndex,
-			Appearance.BodyEquipmentIndex,
-			Appearance.HeadEquipmentIndex);
+			Appearance.BodyEquipmentIndex);
 	FScreenshotRequest::RequestScreenshot(ScreenshotPath, true, false);
 	GetWorldTimerManager().SetTimer(QAExitTimer, this, &ThisClass::ExitAfterQAScreenshot, 1.5f, false);
 }
@@ -451,12 +437,29 @@ void AUEPalworldCustomizationPreviewActor::ConfigurePreviewLighting()
 	}
 }
 
+void AUEPalworldCustomizationPreviewActor::NormalizeLegacyDefaultColors()
+{
+	// 예전 프리뷰 BP가 저장한 검정 틴트는 원본 머티리얼을 덮어버린다.
+	// 아주 어두운 기본값은 흰색으로 되돌려 Palworld 원본 텍스처를 그대로 보이게 한다.
+	auto Normalize = [](FLinearColor& Color)
+	{
+		if (Color.R < 0.01f && Color.G < 0.01f && Color.B < 0.01f)
+		{
+			Color = FLinearColor::White;
+		}
+	};
+
+	Normalize(Appearance.SkinColor);
+	Normalize(Appearance.HairColor);
+	Normalize(Appearance.EyeColor);
+}
+
 void AUEPalworldCustomizationPreviewActor::RefreshFollowerPose()
 {
 	USkeletalMesh* LeaderMesh = BodyEquipmentMesh ? BodyEquipmentMesh->GetSkeletalMeshAsset() : nullptr;
 	const USkeleton* LeaderSkeleton = LeaderMesh ? LeaderMesh->GetSkeleton() : nullptr;
 
-	for (USkeletalMeshComponent* Follower : {HeadMesh.Get(), HairMesh.Get(), HeadEquipmentMesh.Get()})
+	for (USkeletalMeshComponent* Follower : {HeadMesh.Get(), HairMesh.Get()})
 	{
 		if (!Follower)
 		{
@@ -477,128 +480,9 @@ void AUEPalworldCustomizationPreviewActor::RefreshFollowerPose()
 	}
 }
 
-void AUEPalworldCustomizationPreviewActor::AttachHeadEquipment(const FUEPalworldCustomizationOption& Option)
-{
-	bHeadEquipmentAttachedToSocket = false;
-	if (!HeadEquipmentMesh)
-	{
-		return;
-	}
-
-	if (!HeadEquipmentMesh->GetSkeletalMeshAsset())
-	{
-		HeadEquipmentMesh->SetVisibility(false, true);
-		return;
-	}
-
-	HeadEquipmentMesh->SetVisibility(true, true);
-	USceneComponent* AttachParent = CharacterRoot;
-	FName AttachSocket = NAME_None;
-	const FName TableSocket = Option.GetAttachSocket(Appearance.Gender);
-
-	if (!TableSocket.IsNone())
-	{
-		const TArray<USkeletalMeshComponent*> SocketOwners = Option.bIsHairAttachAccessory
-			? TArray<USkeletalMeshComponent*>{HairMesh.Get(), HeadMesh.Get(), BodyEquipmentMesh.Get()}
-			: TArray<USkeletalMeshComponent*>{HeadMesh.Get(), BodyEquipmentMesh.Get(), HairMesh.Get()};
-
-		for (USkeletalMeshComponent* Candidate : SocketOwners)
-		{
-			if (Candidate && Candidate->DoesSocketExist(TableSocket))
-			{
-				AttachParent = Candidate;
-				AttachSocket = TableSocket;
-				bHeadEquipmentAttachedToSocket = true;
-				break;
-			}
-		}
-	}
-
-	HeadEquipmentMesh->AttachToComponent(AttachParent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, AttachSocket);
-	HeadEquipmentMesh->SetRelativeTransform(FTransform::Identity);
-}
-
-void AUEPalworldCustomizationPreviewActor::FitHeadEquipmentToHead(const FUEPalworldCustomizationOption& Option)
-{
-	if (bHeadEquipmentAttachedToSocket || !HeadEquipmentMesh || !HeadEquipmentMesh->GetSkeletalMeshAsset() || !HeadMesh)
-	{
-		return;
-	}
-
-	HeadEquipmentMesh->UpdateBounds();
-	HeadMesh->UpdateBounds();
-	if (HairMesh)
-	{
-		HairMesh->UpdateBounds();
-	}
-
-	const FBox HeadBox = HeadMesh->Bounds.GetBox();
-	const FBox HairBox = HairMesh && HairMesh->GetSkeletalMeshAsset()
-		? HairMesh->Bounds.GetBox()
-		: HeadBox;
-	const FBox TargetBox = HeadBox + HairBox;
-	const FBox EquipmentBox = HeadEquipmentMesh->Bounds.GetBox();
-
-	if (!TargetBox.IsValid || !EquipmentBox.IsValid)
-	{
-		return;
-	}
-
-	const float HeadHeight = FMath::Max(1.0f, HeadBox.GetSize().Z);
-	const FString SocketName = Option.GetAttachSocket(Appearance.Gender).ToString().ToLower();
-	FVector TargetPoint = HeadBox.GetCenter();
-	FVector EquipmentAnchor = EquipmentBox.GetCenter();
-
-	// CUE4Parse/FBX 임포트에는 팔월드 테이블의 소켓 이름이 남아 있지만,
-	// 실제 소켓 오브젝트가 스켈레톤에 항상 살아남지는 않는다.
-	// 소켓이 없을 때는 원점에 방치하지 말고 테이블 이름을 위치 힌트로 쓴다.
-	if (!SocketName.IsEmpty() && SocketName != TEXT("none"))
-	{
-		if (SocketName.Contains(TEXT("ear")))
-		{
-			const bool bLeftSide = SocketName.EndsWith(TEXT("_l")) || SocketName.EndsWith(TEXT("l"));
-			TargetPoint = FVector(
-				bLeftSide ? HeadBox.Min.X : HeadBox.Max.X,
-				HeadBox.GetCenter().Y,
-				HeadBox.GetCenter().Z + HeadHeight * 0.12f);
-			EquipmentAnchor = FVector(
-				bLeftSide ? EquipmentBox.Max.X : EquipmentBox.Min.X,
-				EquipmentBox.GetCenter().Y,
-				EquipmentBox.GetCenter().Z);
-		}
-		else if (SocketName.Contains(TEXT("top")) || SocketName.Contains(TEXT("root")))
-		{
-			TargetPoint = FVector(
-				TargetBox.GetCenter().X,
-				TargetBox.GetCenter().Y,
-				TargetBox.Max.Z - HeadHeight * 0.04f);
-			EquipmentAnchor = FVector(
-				EquipmentBox.GetCenter().X,
-				EquipmentBox.GetCenter().Y,
-				EquipmentBox.Min.Z);
-		}
-		else if (SocketName.Contains(TEXT("front")))
-		{
-			TargetPoint = FVector(
-				HeadBox.GetCenter().X,
-				FMath::Max(HeadBox.Max.Y, TargetBox.Max.Y) + 1.0f,
-				HeadBox.Max.Z - HeadHeight * 0.18f);
-			EquipmentAnchor = FVector(
-				EquipmentBox.GetCenter().X,
-				EquipmentBox.Min.Y,
-				EquipmentBox.Min.Z + EquipmentBox.GetSize().Z * 0.25f);
-		}
-	}
-
-	const FVector WorldDelta = TargetPoint - EquipmentAnchor;
-	const FVector LocalDelta = CharacterRoot->GetComponentTransform().InverseTransformVectorNoScale(WorldDelta);
-	HeadEquipmentMesh->AddLocalOffset(LocalDelta);
-}
-
 void AUEPalworldCustomizationPreviewActor::ApplyMaterialColors()
 {
-	// 팔월드 원본 MI 에셋에는 의상/부착물 색과 텍스처가 이미 들어 있다.
-	// 런타임 틴트는 블루프린트 팔레트용 API로만 남기고, 흰색은 원본 머티리얼을 그대로 쓴다는 뜻이다.
+	// 원본 의상 색은 건드리지 않고, 캐릭터 색상 항목만 선택적으로 틴트한다.
 	if (!Appearance.SkinColor.Equals(FLinearColor::White, 0.003f))
 	{
 		ApplyColorToSlots(HeadMesh, Appearance.SkinColor, {TEXT("Head"), TEXT("Body"), TEXT("Skin")});
@@ -611,14 +495,6 @@ void AUEPalworldCustomizationPreviewActor::ApplyMaterialColors()
 	if (!Appearance.EyeColor.Equals(FLinearColor::White, 0.003f))
 	{
 		ApplyColorToSlots(HeadMesh, Appearance.EyeColor, {TEXT("Eye")});
-	}
-	if (!Appearance.BodyEquipmentColor.Equals(FLinearColor::White, 0.003f))
-	{
-		ApplyColorToSlots(BodyEquipmentMesh, Appearance.BodyEquipmentColor, {TEXT("Outfit"), TEXT("Equip")});
-	}
-	if (!Appearance.HeadEquipmentColor.Equals(FLinearColor::White, 0.003f))
-	{
-		ApplyColorToSlots(HeadEquipmentMesh, Appearance.HeadEquipmentColor, {TEXT("Head"), TEXT("Hat"), TEXT("Helmet"), TEXT("Accessory")});
 	}
 }
 
@@ -679,44 +555,81 @@ void AUEPalworldCustomizationPreviewActor::ApplyColorToSlots(
 	}
 }
 
+void AUEPalworldCustomizationPreviewActor::ResetComponentMaterials(USkeletalMeshComponent* Component)
+{
+	if (!Component)
+	{
+		return;
+	}
+
+	// 저장된 MID override를 제거해서 선택한 메시의 원본 머티리얼 슬롯을 다시 쓰게 한다.
+	const int32 MaterialCount = Component->GetNumMaterials();
+	for (int32 Index = 0; Index < MaterialCount; ++Index)
+	{
+		Component->SetMaterial(Index, nullptr);
+	}
+}
+
+void AUEPalworldCustomizationPreviewActor::HideFaceCoverSections(USkeletalMeshComponent* Component)
+{
+	if (!Component || !Component->GetSkeletalMeshAsset())
+	{
+		return;
+	}
+
+	for (int32 LODIndex = 0; LODIndex < 8; ++LODIndex)
+	{
+		Component->ShowAllMaterialSections(LODIndex);
+	}
+
+	const TArray<FName> SlotNames = Component->GetMaterialSlotNames();
+	for (int32 MaterialIndex = 0; MaterialIndex < SlotNames.Num(); ++MaterialIndex)
+	{
+		const FString Slot = SlotNames[MaterialIndex].ToString().ToLower();
+		const UMaterialInterface* Material = Component->GetMaterial(MaterialIndex);
+		const FString MaterialPath = GetPathNameSafe(Material).ToLower();
+		const bool bIsFaceCover =
+			Slot.Contains(TEXT("mask")) ||
+			Slot.Contains(TEXT("mouthcover")) ||
+			Slot.Contains(TEXT("headcover")) ||
+			Slot.Contains(TEXT("headequ")) ||
+			Slot.Contains(TEXT("head_equip")) ||
+			MaterialPath.Contains(TEXT("mask")) ||
+			MaterialPath.Contains(TEXT("mouthcover")) ||
+			MaterialPath.Contains(TEXT("headcover"));
+
+		if (!bIsFaceCover)
+		{
+			continue;
+		}
+
+		// 얼굴을 가리는 장비 섹션은 커스터마이징 프리뷰에서 제외한다.
+		for (int32 LODIndex = 0; LODIndex < 8; ++LODIndex)
+		{
+			Component->ShowMaterialSection(MaterialIndex, MaterialIndex, false, LODIndex);
+		}
+	}
+}
+
 void AUEPalworldCustomizationPreviewActor::ApplyScale()
 {
 	Appearance.HeightScale = FMath::Clamp(Appearance.HeightScale, 0.75f, 1.25f);
-	Appearance.HeadScale = FMath::Clamp(Appearance.HeadScale, 0.75f, 1.25f);
-	Appearance.BodyWidthScale = FMath::Clamp(Appearance.BodyWidthScale, 0.75f, 1.25f);
+	Appearance.TorsoVolume = FMath::Clamp(Appearance.TorsoVolume, -1.0f, 1.0f);
+	Appearance.ArmVolume = FMath::Clamp(Appearance.ArmVolume, -1.0f, 1.0f);
+	Appearance.LegVolume = FMath::Clamp(Appearance.LegVolume, -1.0f, 1.0f);
 
-	// 폭과 키는 공용 루트에 적용한다.
-	// 그래야 몸, 얼굴, 머리카락, 의상이 목에서 따로 벌어지지 않고 같은 애니메이션을 따라간다.
-	CharacterRoot->SetRelativeScale3D(FVector(
-		Appearance.BodyWidthScale,
-		Appearance.BodyWidthScale,
-		Appearance.HeightScale));
+	// Palworld식 체형 값은 얼굴이나 머리만 따로 떼어 줄이지 않는다.
+	// 분리된 부품이 애니메이션과 같이 움직이도록 공통 루트만 조절한다.
+	const float WidthScale = 1.0f + Appearance.TorsoVolume * 0.08f;
+	const float HeightScale = 1.0f + Appearance.LegVolume * 0.05f;
+	CharacterRoot->SetRelativeScale3D(FVector(WidthScale, WidthScale, HeightScale));
 
-	if (BodyEquipmentMesh)
-	{
-		BodyEquipmentMesh->SetRelativeScale3D(FVector::OneVector);
-	}
-
-	const FVector HeadCenterBefore = HeadMesh ? HeadMesh->Bounds.Origin : FVector::ZeroVector;
-	for (USkeletalMeshComponent* Component : {HeadMesh.Get(), HairMesh.Get(), HeadEquipmentMesh.Get()})
+	for (USkeletalMeshComponent* Component : {BodyEquipmentMesh.Get(), HeadMesh.Get(), HairMesh.Get()})
 	{
 		if (Component)
 		{
-			Component->SetRelativeScale3D(FVector(Appearance.HeadScale));
-		}
-	}
-
-	if (HeadMesh && !FMath::IsNearlyEqual(Appearance.HeadScale, 1.0f))
-	{
-		HeadMesh->UpdateBounds();
-		const FVector WorldDelta = HeadCenterBefore - HeadMesh->Bounds.Origin;
-		const FVector LocalDelta = CharacterRoot->GetComponentTransform().InverseTransformVectorNoScale(WorldDelta);
-		for (USkeletalMeshComponent* Component : {HeadMesh.Get(), HairMesh.Get(), HeadEquipmentMesh.Get()})
-		{
-			if (Component)
-			{
-				Component->AddLocalOffset(LocalDelta);
-			}
+			Component->SetRelativeScale3D(FVector::OneVector);
+			Component->SetRelativeLocation(FVector::ZeroVector);
 		}
 	}
 }
@@ -742,8 +655,6 @@ int32& AUEPalworldCustomizationPreviewActor::MutableIndex(EUEPalworldCustomizati
 		return Appearance.EyeIndex;
 	case EUEPalworldCustomizationCategory::BodyEquipment:
 		return Appearance.BodyEquipmentIndex;
-	case EUEPalworldCustomizationCategory::HeadEquipment:
-		return Appearance.HeadEquipmentIndex;
 	default:
 		return Appearance.BodyIndex;
 	}
@@ -763,8 +674,6 @@ int32 AUEPalworldCustomizationPreviewActor::GetIndex(EUEPalworldCustomizationCat
 		return Appearance.EyeIndex;
 	case EUEPalworldCustomizationCategory::BodyEquipment:
 		return Appearance.BodyEquipmentIndex;
-	case EUEPalworldCustomizationCategory::HeadEquipment:
-		return Appearance.HeadEquipmentIndex;
 	default:
 		return 0;
 	}

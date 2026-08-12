@@ -22,8 +22,7 @@ enum class EUEPalworldCustomizationCategory : uint8
 	Head,
 	Hair,
 	Eyes,
-	BodyEquipment,
-	HeadEquipment
+	BodyEquipment
 };
 
 UENUM(BlueprintType)
@@ -31,17 +30,15 @@ enum class EUEPalworldColorChannel : uint8
 {
 	Skin,
 	Hair,
-	Eye,
-	BodyEquipment,
-	HeadEquipment
+	Eye
 };
 
 UENUM(BlueprintType)
 enum class EUEPalworldScaleChannel : uint8
 {
-	Height,
-	HeadSize,
-	BodyWidth
+	TorsoSize,
+	ArmSize,
+	LegSize
 };
 
 USTRUCT(BlueprintType)
@@ -70,17 +67,7 @@ struct HEAVENHYPERVOICE_API FUEPalworldCustomizationOption
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Palworld")
 	TObjectPtr<UMaterialInterface> Material = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Palworld|Attachment")
-	bool bIsHairAttachAccessory = false;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Palworld|Attachment")
-	FName FemaleAttachSocket;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Palworld|Attachment")
-	FName MaleAttachSocket;
-
 	USkeletalMesh* LoadMesh(EUEPalworldGender Gender) const;
-	FName GetAttachSocket(EUEPalworldGender Gender) const;
 };
 
 USTRUCT(BlueprintType)
@@ -106,11 +93,8 @@ struct HEAVENHYPERVOICE_API FUEPalworldAppearance
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld")
 	int32 BodyEquipmentIndex = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld")
-	int32 HeadEquipmentIndex = -1;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld|Color")
-	FLinearColor SkinColor = FLinearColor(0.98f, 0.58f, 0.44f, 1.0f);
+	FLinearColor SkinColor = FLinearColor::White;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld|Color")
 	FLinearColor HairColor = FLinearColor::White;
@@ -118,18 +102,15 @@ struct HEAVENHYPERVOICE_API FUEPalworldAppearance
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld|Color")
 	FLinearColor EyeColor = FLinearColor::White;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld|Color")
-	FLinearColor BodyEquipmentColor = FLinearColor::White;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld|Color")
-	FLinearColor HeadEquipmentColor = FLinearColor::White;
-
+	// 이전 임시 UI 호환값이다. Palworld 화면에서는 머리만 따로 줄이지 않는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld|Shape", meta = (ClampMin = "0.75", ClampMax = "1.25"))
 	float HeightScale = 1.0f;
 
+	// 이전 임시 UI 호환값이다. Palworld 화면에서는 얼굴만 따로 줄이지 않는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld|Shape", meta = (ClampMin = "0.75", ClampMax = "1.25"))
 	float HeadScale = 1.0f;
 
+	// 이전 임시 UI 호환값이다. Palworld 화면에서는 공통 루트를 자연스럽게 조절한다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld|Shape", meta = (ClampMin = "0.75", ClampMax = "1.25"))
 	float BodyWidthScale = 1.0f;
 
@@ -163,9 +144,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Palworld|Options")
 	TArray<FUEPalworldCustomizationOption> BodyEquipmentOptions;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Palworld|Options")
-	TArray<FUEPalworldCustomizationOption> HeadEquipmentOptions;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Palworld|Colors")
 	TArray<FLinearColor> SkinColors;

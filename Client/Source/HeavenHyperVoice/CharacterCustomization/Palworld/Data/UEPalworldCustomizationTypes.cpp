@@ -13,11 +13,6 @@ USkeletalMesh* FUEPalworldCustomizationOption::LoadMesh(EUEPalworldGender Gender
 	return Gender == EUEPalworldGender::TypeA ? FemaleMesh.Get() : MaleMesh.Get();
 }
 
-FName FUEPalworldCustomizationOption::GetAttachSocket(EUEPalworldGender Gender) const
-{
-	return Gender == EUEPalworldGender::TypeA ? FemaleAttachSocket : MaleAttachSocket;
-}
-
 const TArray<FUEPalworldCustomizationOption>& UUEPalworldCustomizationCatalog::GetOptions(
 	EUEPalworldCustomizationCategory Category) const
 {
@@ -33,8 +28,6 @@ const TArray<FUEPalworldCustomizationOption>& UUEPalworldCustomizationCatalog::G
 		return EyeOptions;
 	case EUEPalworldCustomizationCategory::BodyEquipment:
 		return BodyEquipmentOptions;
-	case EUEPalworldCustomizationCategory::HeadEquipment:
-		return HeadEquipmentOptions;
 	default:
 		return EmptyOptions;
 	}

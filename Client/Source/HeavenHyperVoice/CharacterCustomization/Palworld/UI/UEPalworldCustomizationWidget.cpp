@@ -16,6 +16,7 @@
 #include "Components/UniformGridPanel.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Components/Widget.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/Texture2D.h"
 
@@ -300,7 +301,7 @@ TSharedRef<SWidget> UUEPalworldCustomizationWidget::RebuildWidget()
 	{
 		WidgetTree = NewObject<UWidgetTree>(this, TEXT("PalworldCustomizationWidgetTree"));
 	}
-	if (!WidgetTree->RootWidget || WidgetTree->RootWidget->GetName().Equals(TEXT("PalworldDesignerCanvas")))
+	if (!BindDesignerInterface())
 	{
 		BuildInterface();
 	}
@@ -311,6 +312,7 @@ void UUEPalworldCustomizationWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	RefreshFromPreview();
+	BindDesignerInterface();
 	RebuildCategories();
 	RebuildOptions();
 	SynchronizeControls();
@@ -330,6 +332,9 @@ void UUEPalworldCustomizationWidget::BuildInterface()
 
 	ColorInputs.Empty();
 	ScaleSliders.Empty();
+	RGBControls = nullptr;
+	ScaleControls = nullptr;
+	OptionScroll = nullptr;
 
 	UTextBlock* Title = CreateText(TEXT("CHARACTER CREATION"), 25, TextColor);
 	Root->AddChild(Title);
@@ -387,6 +392,7 @@ void UUEPalworldCustomizationWidget::BuildInterface()
 	CatalogColumn->AddChild(OptionCount);
 
 	UScrollBox* CatalogScroll = WidgetTree->ConstructWidget<UScrollBox>();
+	OptionScroll = CatalogScroll;
 	CatalogColumn->AddChild(CatalogScroll);
 	CastChecked<UVerticalBoxSlot>(CatalogScroll->Slot)->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 	OptionGrid = WidgetTree->ConstructWidget<UUniformGridPanel>();
@@ -409,17 +415,18 @@ void UUEPalworldCustomizationWidget::BuildInterface()
 	ParameterPanel->AddChild(ParameterScroll);
 	UVerticalBox* Parameters = WidgetTree->ConstructWidget<UVerticalBox>();
 	ParameterScroll->AddChild(Parameters);
+	RGBControls = Parameters;
+	ScaleControls = Parameters;
 
 	AddSectionTitle(Parameters, TEXT("RGB 0-255"));
 	AddRGBRow(Parameters, TEXT("Skin"), EUEPalworldColorChannel::Skin);
 	AddRGBRow(Parameters, TEXT("Hair"), EUEPalworldColorChannel::Hair);
 	AddRGBRow(Parameters, TEXT("Eyes"), EUEPalworldColorChannel::Eye);
-	AddRGBRow(Parameters, TEXT("Outfit"), EUEPalworldColorChannel::BodyEquipment);
 
 	AddSectionTitle(Parameters, TEXT("Scale"));
-	AddScaleRow(Parameters, TEXT("Height"), EUEPalworldScaleChannel::Height);
-	AddScaleRow(Parameters, TEXT("Head Size"), EUEPalworldScaleChannel::HeadSize);
-	AddScaleRow(Parameters, TEXT("Body Width"), EUEPalworldScaleChannel::BodyWidth);
+	AddScaleRow(Parameters, TEXT("Torso Size"), EUEPalworldScaleChannel::TorsoSize);
+	AddScaleRow(Parameters, TEXT("Arm Size"), EUEPalworldScaleChannel::ArmSize);
+	AddScaleRow(Parameters, TEXT("Leg Size"), EUEPalworldScaleChannel::LegSize);
 
 	StatusText = CreateText(TEXT("Select an item"), 12, MutedTextColor);
 	StatusText->SetAutoWrapText(true);
@@ -429,6 +436,107 @@ void UUEPalworldCustomizationWidget::BuildInterface()
 	RebuildCategories();
 	RebuildOptions();
 	SynchronizeControls();
+}
+
+bool UUEPalworldCustomizationWidget::BindDesignerInterface()
+{
+	if (!WidgetTree || !WidgetTree->RootWidget)
+	{
+		return false;
+	}
+
+	UWidget* DesignerCanvas = WidgetTree->FindWidget(TEXT("PalworldDesignerCanvas"));
+	CategoryList = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("Designer_CategoryList")));
+	OptionScroll = Cast<UScrollBox>(WidgetTree->FindWidget(TEXT("Designer_OptionScroll")));
+	RGBControls = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("Designer_RGBControls")));
+	ScaleControls = Cast<UVerticalBox>(WidgetTree->FindWidget(TEXT("Designer_ScaleControls")));
+	OptionTitle = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Designer_OptionTitle")));
+	OptionCount = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Designer_OptionCount")));
+	StatusText = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Designer_StatusText")));
+	if (UTextBlock* DesignerTitle = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Designer_Title"))))
+	{
+		DesignerTitle->SetText(FText::FromString(TEXT("CHARACTER CREATION")));
+	}
+
+	if (!DesignerCanvas || !CategoryList || !OptionScroll || !RGBControls || !ScaleControls)
+	{
+		return false;
+	}
+
+	if (!OptionTitle)
+	{
+		OptionTitle = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Designer_Title")));
+	}
+
+	ColorInputs.Empty();
+	ScaleSliders.Empty();
+
+	if (!OptionGrid)
+	{
+		OptionGrid = Cast<UUniformGridPanel>(WidgetTree->FindWidget(TEXT("Designer_OptionGrid")));
+	}
+
+	if (!OptionGrid)
+	{
+		OptionGrid = WidgetTree->ConstructWidget<UUniformGridPanel>(
+			UUniformGridPanel::StaticClass(),
+			TEXT("Designer_OptionGrid"));
+	}
+
+	// WBP 디자이너는 큰 배치를 맡고, C++는 데이터에 따라 반복되는 컨트롤만 채운다.
+	ApplyDesignerCanvasLayout();
+	OptionGrid->RemoveFromParent();
+	OptionScroll->ClearChildren();
+	OptionScroll->AddChild(OptionGrid);
+
+	RGBControls->ClearChildren();
+	AddSectionTitle(RGBControls, TEXT("RGB 0-255"));
+	AddRGBRow(RGBControls, TEXT("Skin"), EUEPalworldColorChannel::Skin);
+	AddRGBRow(RGBControls, TEXT("Hair"), EUEPalworldColorChannel::Hair);
+	AddRGBRow(RGBControls, TEXT("Eyes"), EUEPalworldColorChannel::Eye);
+
+	ScaleControls->ClearChildren();
+	AddSectionTitle(ScaleControls, TEXT("Body Setting"));
+	AddScaleRow(ScaleControls, TEXT("Torso Size"), EUEPalworldScaleChannel::TorsoSize);
+	AddScaleRow(ScaleControls, TEXT("Arm Size"), EUEPalworldScaleChannel::ArmSize);
+	AddScaleRow(ScaleControls, TEXT("Leg Size"), EUEPalworldScaleChannel::LegSize);
+
+	return true;
+}
+
+void UUEPalworldCustomizationWidget::ApplyDesignerCanvasLayout()
+{
+	// WBP가 저장한 캔버스 슬롯이 비어 있을 때만 기본 위치를 보정한다.
+	auto Place = [this](const TCHAR* Name, const FVector2D& Position, const FVector2D& Size, int32 ZOrder)
+	{
+		UWidget* Widget = WidgetTree ? WidgetTree->FindWidget(Name) : nullptr;
+		UCanvasPanelSlot* Slot = Widget ? Cast<UCanvasPanelSlot>(Widget->Slot) : nullptr;
+		if (!Slot)
+		{
+			return;
+		}
+
+		Slot->SetAutoSize(false);
+		Slot->SetPosition(Position);
+		Slot->SetSize(Size);
+		Slot->SetZOrder(ZOrder);
+
+		if (UBorder* Border = Cast<UBorder>(Widget))
+		{
+			Border->SetBrushColor(PanelColor);
+		}
+	};
+
+	Place(TEXT("Designer_Title"), FVector2D(36.0f, 26.0f), FVector2D(650.0f, 44.0f), 10);
+	Place(TEXT("Designer_LeftOptionsPanel"), FVector2D(36.0f, 86.0f), FVector2D(630.0f, 800.0f), 5);
+	Place(TEXT("Designer_CategoryList"), FVector2D(52.0f, 112.0f), FVector2D(126.0f, 532.0f), 11);
+	Place(TEXT("Designer_OptionTitle"), FVector2D(198.0f, 112.0f), FVector2D(420.0f, 28.0f), 12);
+	Place(TEXT("Designer_OptionCount"), FVector2D(198.0f, 142.0f), FVector2D(420.0f, 22.0f), 12);
+	Place(TEXT("Designer_OptionScroll"), FVector2D(198.0f, 174.0f), FVector2D(420.0f, 560.0f), 12);
+	Place(TEXT("Designer_StatusText"), FVector2D(198.0f, 748.0f), FVector2D(420.0f, 42.0f), 12);
+	Place(TEXT("Designer_RightParametersPanel"), FVector2D(1518.0f, 86.0f), FVector2D(360.0f, 800.0f), 5);
+	Place(TEXT("Designer_RGBControls"), FVector2D(1540.0f, 112.0f), FVector2D(310.0f, 360.0f), 11);
+	Place(TEXT("Designer_ScaleControls"), FVector2D(1540.0f, 520.0f), FVector2D(310.0f, 230.0f), 11);
 }
 
 void UUEPalworldCustomizationWidget::RebuildCategories()
@@ -459,15 +567,21 @@ void UUEPalworldCustomizationWidget::RebuildCategories()
 
 void UUEPalworldCustomizationWidget::RebuildOptions()
 {
-	if (!OptionGrid || !OptionTitle || !OptionCount)
+	if (!OptionGrid)
 	{
 		return;
 	}
 
 	OptionGrid->ClearChildren();
 	const int32 Count = GetVisibleOptionCount(CurrentCategory);
-	OptionTitle->SetText(FText::FromString(GetCategoryLabel(CurrentCategory)));
-	OptionCount->SetText(FText::FromString(FString::Printf(TEXT("%d Palworld table items"), Count)));
+	if (OptionTitle)
+	{
+		OptionTitle->SetText(FText::FromString(GetCategoryLabel(CurrentCategory)));
+	}
+	if (OptionCount)
+	{
+		OptionCount->SetText(FText::FromString(FString::Printf(TEXT("%d Palworld table items"), Count)));
+	}
 
 	const int32 SelectedIndex = GetSelectedIndex(CurrentCategory);
 	for (int32 VisibleIndex = 0; VisibleIndex < Count; ++VisibleIndex)
@@ -591,8 +705,6 @@ int32 UUEPalworldCustomizationWidget::GetSelectedIndex(EUEPalworldCustomizationC
 		return Appearance.EyeIndex;
 	case EUEPalworldCustomizationCategory::BodyEquipment:
 		return Appearance.BodyEquipmentIndex;
-	case EUEPalworldCustomizationCategory::HeadEquipment:
-		return Appearance.HeadEquipmentIndex;
 	default:
 		return 0;
 	}
@@ -601,10 +713,6 @@ int32 UUEPalworldCustomizationWidget::GetSelectedIndex(EUEPalworldCustomizationC
 int32 UUEPalworldCustomizationWidget::GetVisibleOptionCount(EUEPalworldCustomizationCategory Category) const
 {
 	const int32 RawCount = GetOptionCount(Category);
-	if (Category == EUEPalworldCustomizationCategory::HeadEquipment)
-	{
-		return 0;
-	}
 	if (Category == EUEPalworldCustomizationCategory::Body && RawCount > 2)
 	{
 		return 2;
@@ -616,10 +724,6 @@ int32 UUEPalworldCustomizationWidget::GetActualOptionIndex(
 	EUEPalworldCustomizationCategory Category,
 	int32 VisibleIndex) const
 {
-	if (Category == EUEPalworldCustomizationCategory::HeadEquipment)
-	{
-		return -1;
-	}
 	if (Category == EUEPalworldCustomizationCategory::Body && GetOptionCount(Category) > 2)
 	{
 		return FMath::Clamp(VisibleIndex + 1, 1, GetOptionCount(Category) - 1);
@@ -638,10 +742,6 @@ FLinearColor UUEPalworldCustomizationWidget::GetChannelColor(EUEPalworldColorCha
 		return Appearance.HairColor;
 	case EUEPalworldColorChannel::Eye:
 		return Appearance.EyeColor;
-	case EUEPalworldColorChannel::BodyEquipment:
-		return Appearance.BodyEquipmentColor;
-	case EUEPalworldColorChannel::HeadEquipment:
-		return Appearance.HeadEquipmentColor;
 	default:
 		return FLinearColor::White;
 	}
@@ -652,12 +752,12 @@ float UUEPalworldCustomizationWidget::GetScaleValue(EUEPalworldScaleChannel Chan
 	const FUEPalworldAppearance& Appearance = GetAppearance();
 	switch (Channel)
 	{
-	case EUEPalworldScaleChannel::Height:
-		return Appearance.HeightScale;
-	case EUEPalworldScaleChannel::HeadSize:
-		return Appearance.HeadScale;
-	case EUEPalworldScaleChannel::BodyWidth:
-		return Appearance.BodyWidthScale;
+	case EUEPalworldScaleChannel::TorsoSize:
+		return 1.0f + Appearance.TorsoVolume * 0.25f;
+	case EUEPalworldScaleChannel::ArmSize:
+		return 1.0f + Appearance.ArmVolume * 0.25f;
+	case EUEPalworldScaleChannel::LegSize:
+		return 1.0f + Appearance.LegVolume * 0.25f;
 	default:
 		return 1.0f;
 	}
@@ -765,8 +865,6 @@ FString UUEPalworldCustomizationWidget::GetCategoryLabel(EUEPalworldCustomizatio
 		return TEXT("Eyes");
 	case EUEPalworldCustomizationCategory::BodyEquipment:
 		return TEXT("Outfit");
-	case EUEPalworldCustomizationCategory::HeadEquipment:
-		return TEXT("Disabled");
 	default:
 		return TEXT("Items");
 	}

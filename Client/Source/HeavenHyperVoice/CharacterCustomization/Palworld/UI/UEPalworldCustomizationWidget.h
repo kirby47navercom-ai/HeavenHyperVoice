@@ -12,6 +12,7 @@ class AUEPalworldCustomizationPreviewActor;
 class UTextBlock;
 class USkeletalMesh;
 class UTexture2D;
+class UScrollBox;
 class UUniformGridPanel;
 class UUEPalworldCustomizationWidget;
 class UUEPalworldCustomizationCatalog;
@@ -71,7 +72,7 @@ private:
 	UFUNCTION() void HandleValueChanged(float NewValue);
 
 	UPROPERTY(Transient) TObjectPtr<UUEPalworldCustomizationWidget> OwnerWidget = nullptr;
-	EUEPalworldScaleChannel Channel = EUEPalworldScaleChannel::Height;
+	EUEPalworldScaleChannel Channel = EUEPalworldScaleChannel::TorsoSize;
 };
 
 UCLASS(Blueprintable)
@@ -132,6 +133,8 @@ protected:
 
 private:
 	void BuildInterface();
+	bool BindDesignerInterface();
+	void ApplyDesignerCanvasLayout();
 	void RebuildCategories();
 	void RebuildOptions();
 	void SynchronizeControls();
@@ -152,6 +155,9 @@ private:
 	TObjectPtr<AUEPalworldCustomizationPreviewActor> PreviewActor = nullptr;
 
 	UPROPERTY(Transient) TObjectPtr<UVerticalBox> CategoryList = nullptr;
+	UPROPERTY(Transient) TObjectPtr<UVerticalBox> RGBControls = nullptr;
+	UPROPERTY(Transient) TObjectPtr<UVerticalBox> ScaleControls = nullptr;
+	UPROPERTY(Transient) TObjectPtr<UScrollBox> OptionScroll = nullptr;
 	UPROPERTY(Transient) TObjectPtr<UUniformGridPanel> OptionGrid = nullptr;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> OptionTitle = nullptr;
 	UPROPERTY(Transient) TObjectPtr<UTextBlock> OptionCount = nullptr;
