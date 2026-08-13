@@ -22,12 +22,6 @@ void UUEPlayerMovementSyncComponent::BeginPlay()
 		return;
 	}
 
-	if (UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement())
-	{
-		// Character input runs first; this component sends the state after CMC finishes movement.
-		MovementComponent->PrimaryComponentTick.AddPrerequisite(PlayerCharacter, PlayerCharacter->PrimaryActorTick);
-	}
-
 	PlayerCharacter->OnCharacterMovementUpdated.AddDynamic(this, &ThisClass::HandleCharacterMovementUpdated);
 }
 
@@ -35,11 +29,6 @@ void UUEPlayerMovementSyncComponent::EndPlay(const EEndPlayReason::Type EndPlayR
 {
 	if (AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter())
 	{
-		if (UCharacterMovementComponent* MovementComponent = PlayerCharacter->GetCharacterMovement())
-		{
-			MovementComponent->PrimaryComponentTick.RemovePrerequisite(PlayerCharacter, PlayerCharacter->PrimaryActorTick);
-		}
-
 		PlayerCharacter->OnCharacterMovementUpdated.RemoveDynamic(this, &ThisClass::HandleCharacterMovementUpdated);
 	}
 

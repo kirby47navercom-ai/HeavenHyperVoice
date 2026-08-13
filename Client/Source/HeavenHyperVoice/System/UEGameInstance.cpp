@@ -21,3 +21,26 @@ void UUEGameInstance::Shutdown()
 	Super::Shutdown();
 
 }
+
+void UUEGameInstance::SetPendingPalworldAppearance(const FUEPalworldAppearance& NewAppearance)
+{
+	PendingPalworldAppearance = NewAppearance;
+	bHasPendingPalworldAppearance = true;
+}
+
+bool UUEGameInstance::GetPendingPalworldAppearance(FUEPalworldAppearance& OutAppearance) const
+{
+	if (!bHasPendingPalworldAppearance)
+	{
+		return false;
+	}
+
+	OutAppearance = PendingPalworldAppearance;
+	return true;
+}
+
+void UUEGameInstance::ClearPendingPalworldAppearance()
+{
+	bHasPendingPalworldAppearance = false;
+	PendingPalworldAppearance = FUEPalworldAppearance();
+}

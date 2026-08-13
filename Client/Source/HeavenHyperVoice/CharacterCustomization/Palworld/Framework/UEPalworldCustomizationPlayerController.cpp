@@ -24,6 +24,13 @@ void AUEPalworldCustomizationPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (APawn* DefaultPawn = GetPawn())
+	{
+		DefaultPawn->SetActorHiddenInGame(true);
+		DefaultPawn->SetActorEnableCollision(false);
+		DefaultPawn->SetActorTickEnabled(false);
+	}
+
 	for (TActorIterator<AUEPalworldCustomizationPreviewActor> It(GetWorld()); It; ++It)
 	{
 		PreviewActor = *It;

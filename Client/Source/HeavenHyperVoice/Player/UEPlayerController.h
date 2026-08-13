@@ -33,6 +33,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void OnPossess(APawn* InPawn) override;
 	virtual void SetupInputComponent() override;
 
 	// Blueprint can continue the client flow after C++ has accepted the credentials.
@@ -68,6 +69,7 @@ private:
 	void BindLookInput(class UEnhancedInputComponent* EnhancedInputComponent);
 	void BindActionInput(class UEnhancedInputComponent* EnhancedInputComponent);
 	AUEPlayerCharacter* GetControlledPlayerCharacter() const;
+	bool HasPendingPalworldAppearance() const;
 	void PushMovementInputToCharacter();
 
 	void HandleMoveForward(const FInputActionValue& Value);

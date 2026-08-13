@@ -91,28 +91,16 @@ struct HEAVENHYPERVOICE_API FUEPalworldAppearance
 	int32 EyeIndex = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld")
-	int32 BodyEquipmentIndex = 0;
+	int32 BodyEquipmentIndex = 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld|Color")
-	FLinearColor SkinColor = FLinearColor::White;
+	FLinearColor SkinColor = FLinearColor(1.0f, 0.712f, 0.6458f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld|Color")
 	FLinearColor HairColor = FLinearColor::White;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld|Color")
-	FLinearColor EyeColor = FLinearColor::White;
-
-	// 이전 임시 UI 호환값이다. Palworld 화면에서는 머리만 따로 줄이지 않는다.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld|Shape", meta = (ClampMin = "0.75", ClampMax = "1.25"))
-	float HeightScale = 1.0f;
-
-	// 이전 임시 UI 호환값이다. Palworld 화면에서는 얼굴만 따로 줄이지 않는다.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld|Shape", meta = (ClampMin = "0.75", ClampMax = "1.25"))
-	float HeadScale = 1.0f;
-
-	// 이전 임시 UI 호환값이다. Palworld 화면에서는 공통 루트를 자연스럽게 조절한다.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld|Shape", meta = (ClampMin = "0.75", ClampMax = "1.25"))
-	float BodyWidthScale = 1.0f;
+	FLinearColor EyeColor = FLinearColor(0.070638f, 0.484375f, 0.243701f, 1.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld|Shape", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
 	float ArmVolume = 0.0f;

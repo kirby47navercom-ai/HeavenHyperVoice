@@ -1,8 +1,7 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
+#include "../CharacterCustomization/Palworld/Data/UEPalworldCustomizationTypes.h"
 #include "../Pokemon/PokemonFSM.h"
 #include "GameFramework/Character.h"
 #include "TimerManager.h"
@@ -11,6 +10,8 @@
 class AUEPokemonCharacter;
 class UCameraComponent;
 class USpringArmComponent;
+class USkeletalMeshComponent;
+class UUEPalworldCustomizationCatalog;
 class UUEPlayerMovementSyncComponent;
 
 UCLASS(Blueprintable)
@@ -43,6 +44,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Companion")
 	AUEPokemonCharacter* GetSpawnedPokemonCompanion() const { return SpawnedPokemon.Get(); }
+
+	UFUNCTION(BlueprintCallable, Category = "Palworld|Customization")
+	void ApplyPalworldAppearance(const FUEPalworldAppearance& NewAppearance);
 
 	void SetMovementInput(const FVector2D& NewMovementInput);
 	void ApplyServerMovementCorrection(const FVector& ServerPosition, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bUseHardCorrection);
@@ -81,6 +85,18 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Movement Sync")
 	TObjectPtr<UUEPlayerMovementSyncComponent> MovementSyncComponent = nullptr;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Customization")
+	TObjectPtr<USkeletalMeshComponent> PalworldBodyEquipmentMesh = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Customization")
+	TObjectPtr<USkeletalMeshComponent> PalworldHeadMesh = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Customization")
+	TObjectPtr<USkeletalMeshComponent> PalworldHairMesh = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Palworld|Customization")
+	TObjectPtr<UUEPalworldCustomizationCatalog> PalworldCustomizationCatalog = nullptr;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Movement", meta = (ClampMin = "0.0"))
 	float WalkSpeed = 260.0f;
 
@@ -107,6 +123,17 @@ private:
 
 	static HHV::Map::Vec3 ToServerVec3(const FVector& Vector);
 	static FVector ToUnrealVector(const HHV::Map::Vec3& Vector);
+
+	void ApplyPendingPalworldAppearance();
+	void ResetPalworldMaterials(USkeletalMeshComponent* Component) const;
+	void ApplyPalworldMorphSafeMaterials(USkeletalMeshComponent* Component) const;
+	void ApplyPalworldColorToSlots(USkeletalMeshComponent* Component, const FLinearColor& Color, const TArray<FString>& SlotContains) const;
+	void ApplyPalworldEyeMaterial(USkeletalMeshComponent* Component, const FUEPalworldCustomizationOption& EyeOption, const FLinearColor& EyeColor) const;
+	bool IsPalworldEyeMaterialSlot(USkeletalMeshComponent* Component, int32 MaterialIndex) const;
+	void HidePalworldFaceCoverSections(USkeletalMeshComponent* Component) const;
+	void HidePalworldBaseBodyOutfitSections(USkeletalMeshComponent* Component) const;
+	void HideUnsupportedPalworldAttachmentComponents() const;
+	void ApplyPalworldScale(const FUEPalworldAppearance& NewAppearance) const;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Character|State", meta = (AllowPrivateAccess = "true"))
 	FVector2D MovementInput = FVector2D::ZeroVector;

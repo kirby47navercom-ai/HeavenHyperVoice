@@ -3,7 +3,9 @@
 #include "UEPlayerController.h"
 
 #include "../Character/UEPlayerCharacter.h"
+#include "../CharacterCustomization/Palworld/Data/UEPalworldCustomizationTypes.h"
 #include "../Data/UEDataAsset.h"
+#include "../System/UEGameInstance.h"
 #include "../UI/Login/UELoginWidget.h"
 #include "../UEGameplayTags.h"
 
@@ -32,10 +34,43 @@ void AUEPlayerController::BeginPlay()
 
 	AddDefaultMappingContext();
 
+	if (HasPendingPalworldAppearance())
+	{
+		// 커마 완료 뒤 넘어온 게임 레벨은 로그인 화면을 다시 덮지 않고 곧바로 캐릭터를 보여준다.
+		HideLoginScreen();
+		return;
+	}
+
 	if (bShowLoginOnBeginPlay)
 	{
 		ShowLoginScreen();
 	}
+}
+
+void AUEPlayerController::OnPossess(APawn* InPawn)
+{
+	Super::OnPossess(InPawn);
+
+	AUEPlayerCharacter* PlayerCharacter = Cast<AUEPlayerCharacter>(InPawn);
+	UUEGameInstance* UEGameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	if (!PlayerCharacter || !UEGameInstance)
+	{
+		return;
+	}
+
+	FUEPalworldAppearance PendingAppearance;
+	if (UEGameInstance->GetPendingPalworldAppearance(PendingAppearance))
+	{
+		// 레벨 이동 직후 빙의 순서가 달라져도 저장한 커마를 다시 입힌다.
+		PlayerCharacter->ApplyPalworldAppearance(PendingAppearance);
+	}
+}
+
+bool AUEPlayerController::HasPendingPalworldAppearance() const
+{
+	FUEPalworldAppearance PendingAppearance;
+	const UUEGameInstance* UEGameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	return UEGameInstance && UEGameInstance->GetPendingPalworldAppearance(PendingAppearance);
 }
 
 void AUEPlayerController::SetupInputComponent()

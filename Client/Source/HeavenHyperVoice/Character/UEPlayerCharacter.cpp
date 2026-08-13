@@ -1,17 +1,176 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #include "UEPlayerCharacter.h"
 
+#include "../CharacterCustomization/Palworld/Data/UEPalworldCustomizationTypes.h"
 #include "../Component/UEPlayerMovementSyncComponent.h"
 #include "../Pokemon/UEPokemonCharacter.h"
 #include "../Pokemon/UEPokemonTestServerComponent.h"
+#include "../System/UEGameInstance.h"
 
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
+#include "Engine/Texture.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
+#include "Rendering/SkeletalMeshRenderData.h"
 #include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+	const TCHAR* PalworldMorphSafeMaterialFolder = TEXT("/Game/CharacterCustomization/Palworld/Generated/MorphSafeMaterials");
+	const TCHAR* PalworldEyeCompositeFolder = TEXT("/Game/CharacterCustomization/Palworld/Generated/EyeComposite");
+
+	void ApplyPlayerPalworldSignedMorphTarget(USkeletalMeshComponent* Component, const FName MinTarget, const FName MaxTarget, float Value)
+	{
+		if (!Component)
+		{
+			return;
+		}
+
+		const float ClampedValue = FMath::Clamp(Value, -1.0f, 1.0f);
+		Component->SetMorphTarget(MinTarget, ClampedValue < 0.0f ? -ClampedValue : 0.0f);
+		Component->SetMorphTarget(MaxTarget, ClampedValue > 0.0f ? ClampedValue : 0.0f);
+	}
+
+	int32 ClampOptionIndex(int32 Index, int32 Count)
+	{
+		return Count > 0 ? FMath::Clamp(Index, 0, Count - 1) : 0;
+	}
+
+	void SetPlayerPalworldMaterialShownOnAllLods(USkeletalMeshComponent* Component, int32 MaterialIndex, bool bShow)
+	{
+		if (!Component || MaterialIndex < 0)
+		{
+			return;
+		}
+
+		USkeletalMesh* Mesh = Component->GetSkeletalMeshAsset();
+		const FSkeletalMeshRenderData* RenderData = Mesh ? Mesh->GetResourceForRendering() : nullptr;
+		if (!RenderData || RenderData->LODRenderData.IsEmpty())
+		{
+			Component->ShowMaterialSection(MaterialIndex, MaterialIndex, bShow, 0);
+			return;
+		}
+
+		for (int32 LODIndex = 0; LODIndex < RenderData->LODRenderData.Num(); ++LODIndex)
+		{
+			const FSkeletalMeshLODRenderData& LODData = RenderData->LODRenderData[LODIndex];
+			bool bTouched = false;
+			for (int32 SectionIndex = 0; SectionIndex < LODData.RenderSections.Num(); ++SectionIndex)
+			{
+				if (LODData.RenderSections[SectionIndex].MaterialIndex == MaterialIndex)
+				{
+					Component->ShowMaterialSection(MaterialIndex, SectionIndex, bShow, LODIndex);
+					bTouched = true;
+				}
+			}
+
+			if (!bTouched)
+			{
+				Component->ShowMaterialSection(MaterialIndex, MaterialIndex, bShow, LODIndex);
+			}
+		}
+	}
+
+	FString MakePalworldMorphSafeMaterialName(const UMaterialInterface* Material)
+	{
+		FString AssetName = Material ? Material->GetName() : FString();
+		for (int32 Index = 0; Index < AssetName.Len(); ++Index)
+		{
+			TCHAR& Character = AssetName[Index];
+			if (!FChar::IsAlnum(Character) && Character != TEXT('_'))
+			{
+				Character = TCHAR('_');
+			}
+		}
+		return FString::Printf(TEXT("MI_MS_%s"), *AssetName);
+	}
+
+	int32 ExtractPlayerPalworldEyeNumber(const FUEPalworldCustomizationOption& Option)
+	{
+		const FString Identity = FString::Printf(
+			TEXT("%s %s %s"),
+			*Option.Id,
+			*Option.DisplayName,
+			*GetPathNameSafe(Option.Material));
+		const int32 EyeMarker = Identity.Find(TEXT("Eye"), ESearchCase::IgnoreCase);
+		const int32 TypeMarker = Identity.Find(TEXT("Type"), ESearchCase::IgnoreCase);
+		int32 Start = EyeMarker != INDEX_NONE ? EyeMarker + 3 : (TypeMarker != INDEX_NONE ? TypeMarker + 4 : 0);
+		while (Start < Identity.Len() && !FChar::IsDigit(Identity[Start]))
+		{
+			++Start;
+		}
+
+		FString Digits;
+		for (int32 Index = Start; Index < Identity.Len() && FChar::IsDigit(Identity[Index]); ++Index)
+		{
+			Digits.AppendChar(Identity[Index]);
+		}
+		return Digits.IsEmpty() ? 1 : FMath::Clamp(FCString::Atoi(*Digits), 1, 999);
+	}
+
+	int32 FindNearestPalworldEyePaletteIndex(const TArray<FLinearColor>& Palette, const FLinearColor& Color)
+	{
+		if (Palette.IsEmpty())
+		{
+			return 0;
+		}
+
+		int32 BestIndex = 0;
+		float BestDistance = TNumericLimits<float>::Max();
+		for (int32 Index = 0; Index < Palette.Num(); ++Index)
+		{
+			const FLinearColor Candidate = Palette[Index].GetClamped();
+			const float Distance =
+				FMath::Square(Candidate.R - Color.R) +
+				FMath::Square(Candidate.G - Color.G) +
+				FMath::Square(Candidate.B - Color.B);
+			if (Distance < BestDistance)
+			{
+				BestDistance = Distance;
+				BestIndex = Index;
+			}
+		}
+		return FMath::Clamp(BestIndex, 0, 9);
+	}
+
+	UTexture* LoadPalworldEyeCompositeTexture(
+		const FUEPalworldCustomizationOption& Option,
+		const FLinearColor& EyeColor,
+		const TArray<FLinearColor>& EyePalette)
+	{
+		const int32 EyeNumber = ExtractPlayerPalworldEyeNumber(Option);
+		const int32 ColorIndex = FindNearestPalworldEyePaletteIndex(EyePalette, EyeColor.GetClamped());
+		const FString TextureName = FString::Printf(
+			TEXT("T_Player_Eye%03d_Composite_C%02d"),
+			EyeNumber,
+			ColorIndex);
+		const FString TexturePath = FString::Printf(
+			TEXT("%s/Eye%03d/%s.%s"),
+			PalworldEyeCompositeFolder,
+			EyeNumber,
+			*TextureName,
+			*TextureName);
+		if (UTexture* Texture = LoadObject<UTexture>(nullptr, *TexturePath))
+		{
+			return Texture;
+		}
+
+		const FString FallbackName = FString::Printf(TEXT("T_Player_Eye%03d_Composite"), EyeNumber);
+		const FString FallbackPath = FString::Printf(
+			TEXT("%s/Eye%03d/%s.%s"),
+			PalworldEyeCompositeFolder,
+			EyeNumber,
+			*FallbackName,
+			*FallbackName);
+		return LoadObject<UTexture>(nullptr, *FallbackPath);
+	}
+
+}
 
 AUEPlayerCharacter::AUEPlayerCharacter()
 {
@@ -41,11 +200,37 @@ AUEPlayerCharacter::AUEPlayerCharacter()
 	{
 		PokemonCompanionClass = DefaultPokemonClass.Class;
 	}
+
+	GetCapsuleComponent()->InitCapsuleSize(34.0f, 88.0f);
+	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()));
+
+	PalworldBodyEquipmentMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("PalworldBodyEquipmentMesh"));
+	PalworldBodyEquipmentMesh->SetupAttachment(GetMesh());
+	PalworldBodyEquipmentMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	PalworldBodyEquipmentMesh->bReceivesDecals = false;
+
+	PalworldHeadMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("PalworldHeadMesh"));
+	PalworldHeadMesh->SetupAttachment(GetMesh());
+	PalworldHeadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	PalworldHeadMesh->bReceivesDecals = false;
+
+	PalworldHairMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("PalworldHairMesh"));
+	PalworldHairMesh->SetupAttachment(GetMesh());
+	PalworldHairMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	PalworldHairMesh->bReceivesDecals = false;
+
+	static ConstructorHelpers::FObjectFinder<UUEPalworldCustomizationCatalog> CatalogFinder(
+		TEXT("/Game/CharacterCustomization/Palworld/Data/DA_PalworldCustomizationCatalog"));
+	if (CatalogFinder.Succeeded())
+	{
+		PalworldCustomizationCatalog = CatalogFinder.Object;
+	}
 }
 
 void AUEPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	ApplyPendingPalworldAppearance();
 }
 
 void AUEPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -111,7 +296,7 @@ void AUEPlayerCharacter::ApplyLocalMovementInput()
 		return;
 	}
 
-	// Movement follows camera yaw; idle camera rotation does not rotate the character.
+	// 이동 입력은 카메라 yaw 기준으로 계산하고, 대기 중 카메라 회전만으로 캐릭터를 돌리지는 않는다.
 	const float InputStrength = FMath::Clamp(MovementInput.Size(), 0.0f, 1.0f);
 	AddMovementInput(DesiredDirection, InputStrength);
 }
@@ -138,7 +323,7 @@ void AUEPlayerCharacter::ApplyServerMovementCorrection(const FVector& ServerPosi
 {
 	const ETeleportType CorrectionTeleportType = bUseHardCorrection ? ETeleportType::TeleportPhysics : ETeleportType::None;
 
-	// Server correction updates the physical character state, then local movement continues next tick.
+	// 서버 보정은 실제 위치와 속도를 맞춘 뒤 다음 틱에서 로컬 입력을 다시 적용한다.
 	SetActorLocation(ServerPosition, false, nullptr, CorrectionTeleportType);
 	SetActorRotation(ServerRotation, CorrectionTeleportType);
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
@@ -366,4 +551,459 @@ HHV::Map::Vec3 AUEPlayerCharacter::ToServerVec3(const FVector& Vector)
 FVector AUEPlayerCharacter::ToUnrealVector(const HHV::Map::Vec3& Vector)
 {
 	return FVector(Vector.X, Vector.Y, Vector.Z);
+}
+
+void AUEPlayerCharacter::ApplyPalworldAppearance(const FUEPalworldAppearance& NewAppearance)
+{
+	if (!PalworldCustomizationCatalog)
+	{
+		PalworldCustomizationCatalog = LoadObject<UUEPalworldCustomizationCatalog>(
+			nullptr,
+			TEXT("/Game/CharacterCustomization/Palworld/Data/DA_PalworldCustomizationCatalog.DA_PalworldCustomizationCatalog"));
+		if (!PalworldCustomizationCatalog)
+		{
+			return;
+		}
+	}
+
+	FUEPalworldAppearance Appearance = NewAppearance;
+	Appearance.BodyIndex = ClampOptionIndex(Appearance.BodyIndex, PalworldCustomizationCatalog->GetOptionCount(EUEPalworldCustomizationCategory::Body));
+	Appearance.HeadIndex = ClampOptionIndex(Appearance.HeadIndex, PalworldCustomizationCatalog->GetOptionCount(EUEPalworldCustomizationCategory::Head));
+	Appearance.HairIndex = ClampOptionIndex(Appearance.HairIndex, PalworldCustomizationCatalog->GetOptionCount(EUEPalworldCustomizationCategory::Hair));
+	Appearance.EyeIndex = ClampOptionIndex(Appearance.EyeIndex, PalworldCustomizationCatalog->GetOptionCount(EUEPalworldCustomizationCategory::Eyes));
+	const int32 BodyEquipmentCount =
+		PalworldCustomizationCatalog->GetOptionCount(EUEPalworldCustomizationCategory::BodyEquipment);
+	if (BodyEquipmentCount > 1)
+	{
+		Appearance.BodyEquipmentIndex =
+			FMath::Clamp(Appearance.BodyEquipmentIndex, 1, FMath::Min(BodyEquipmentCount - 1, 14));
+	}
+
+	const FUEPalworldCustomizationOption& Body =
+		PalworldCustomizationCatalog->GetOption(EUEPalworldCustomizationCategory::Body, Appearance.BodyIndex);
+	const FUEPalworldCustomizationOption& Outfit =
+		PalworldCustomizationCatalog->GetOption(EUEPalworldCustomizationCategory::BodyEquipment, Appearance.BodyEquipmentIndex);
+	const FUEPalworldCustomizationOption& Head =
+		PalworldCustomizationCatalog->GetOption(EUEPalworldCustomizationCategory::Head, Appearance.HeadIndex);
+	const FUEPalworldCustomizationOption& Hair =
+		PalworldCustomizationCatalog->GetOption(EUEPalworldCustomizationCategory::Hair, Appearance.HairIndex);
+	const FUEPalworldCustomizationOption& Eyes =
+		PalworldCustomizationCatalog->GetOption(EUEPalworldCustomizationCategory::Eyes, Appearance.EyeIndex);
+
+	USkeletalMesh* BaseMesh = Body.LoadMesh(Appearance.Gender);
+	USkeletalMesh* OutfitMesh = Outfit.LoadMesh(Appearance.Gender);
+	const bool bSameOutfitAsBase =
+		OutfitMesh == BaseMesh || GetPathNameSafe(OutfitMesh).Equals(GetPathNameSafe(BaseMesh));
+	const bool bUsesSeparateOutfit = OutfitMesh && !bSameOutfitAsBase && Appearance.BodyEquipmentIndex > 0;
+	GetMesh()->SetSkeletalMesh(BaseMesh);
+	PalworldBodyEquipmentMesh->SetSkeletalMesh(bUsesSeparateOutfit ? OutfitMesh : nullptr);
+	PalworldBodyEquipmentMesh->SetVisibility(bUsesSeparateOutfit, true);
+	PalworldBodyEquipmentMesh->SetHiddenInGame(!bUsesSeparateOutfit, true);
+	PalworldHeadMesh->SetSkeletalMesh(Head.LoadMesh(Appearance.Gender));
+	PalworldHairMesh->SetSkeletalMesh(Hair.LoadMesh(Appearance.Gender));
+
+	ResetPalworldMaterials(GetMesh());
+	ApplyPalworldMorphSafeMaterials(GetMesh());
+	ResetPalworldMaterials(PalworldBodyEquipmentMesh);
+	ApplyPalworldMorphSafeMaterials(PalworldBodyEquipmentMesh);
+	ResetPalworldMaterials(PalworldHeadMesh);
+	ResetPalworldMaterials(PalworldHairMesh);
+	HidePalworldFaceCoverSections(GetMesh());
+	if (bUsesSeparateOutfit)
+	{
+		HidePalworldBaseBodyOutfitSections(GetMesh());
+	}
+	HidePalworldFaceCoverSections(PalworldBodyEquipmentMesh);
+	HidePalworldFaceCoverSections(PalworldHeadMesh);
+	HidePalworldFaceCoverSections(PalworldHairMesh);
+
+	const USkeleton* LeaderSkeleton = GetMesh() && GetMesh()->GetSkeletalMeshAsset()
+		? GetMesh()->GetSkeletalMeshAsset()->GetSkeleton()
+		: nullptr;
+	for (USkeletalMeshComponent* Follower : {PalworldBodyEquipmentMesh.Get(), PalworldHeadMesh.Get(), PalworldHairMesh.Get()})
+	{
+		USkeletalMesh* FollowerMesh = Follower ? Follower->GetSkeletalMeshAsset() : nullptr;
+		const USkeleton* FollowerSkeleton = FollowerMesh ? FollowerMesh->GetSkeleton() : nullptr;
+		if (FollowerMesh && LeaderSkeleton && FollowerSkeleton == LeaderSkeleton)
+		{
+			// 같은 Palworld 스켈레톤을 쓰는 파트만 애니메이션 포즈를 공유한다.
+			Follower->SetLeaderPoseComponent(GetMesh(), true, false);
+		}
+		else if (Follower)
+		{
+			Follower->SetLeaderPoseComponent(nullptr);
+		}
+	}
+	PalworldBodyEquipmentMesh->SetRelativeTransform(FTransform::Identity);
+	PalworldHeadMesh->SetRelativeTransform(FTransform::Identity);
+	PalworldHairMesh->SetRelativeTransform(FTransform::Identity);
+
+	if (!Appearance.SkinColor.Equals(FLinearColor::White, 0.003f))
+	{
+		ApplyPalworldColorToSlots(GetMesh(), Appearance.SkinColor, {TEXT("Body"), TEXT("Skin")});
+		ApplyPalworldColorToSlots(PalworldBodyEquipmentMesh, Appearance.SkinColor, {TEXT("Body"), TEXT("Skin")});
+		ApplyPalworldColorToSlots(PalworldHeadMesh, Appearance.SkinColor, {TEXT("Head"), TEXT("Skin")});
+	}
+	if (!Appearance.HairColor.Equals(FLinearColor::White, 0.003f))
+	{
+		ApplyPalworldColorToSlots(PalworldHairMesh, Appearance.HairColor, {TEXT("Hair")});
+	}
+
+	ApplyPalworldEyeMaterial(PalworldHeadMesh, Eyes, Appearance.EyeColor);
+	ApplyPalworldScale(Appearance);
+	HideUnsupportedPalworldAttachmentComponents();
+}
+
+void AUEPlayerCharacter::ApplyPendingPalworldAppearance()
+{
+	FUEPalworldAppearance PendingAppearance;
+	UUEGameInstance* UEGameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	if (!UEGameInstance || !UEGameInstance->GetPendingPalworldAppearance(PendingAppearance))
+	{
+		// 저장된 커마가 없으면 다른 레벨에서도 Palworld 기본 착장을 반드시 입힌다.
+		ApplyPalworldAppearance(FUEPalworldAppearance());
+		return;
+	}
+
+	ApplyPalworldAppearance(PendingAppearance);
+}
+
+void AUEPlayerCharacter::ResetPalworldMaterials(USkeletalMeshComponent* Component) const
+{
+	if (!Component)
+	{
+		return;
+	}
+
+	for (int32 Index = 0; Index < Component->GetNumMaterials(); ++Index)
+	{
+		Component->SetMaterial(Index, nullptr);
+	}
+}
+
+void AUEPlayerCharacter::ApplyPalworldMorphSafeMaterials(USkeletalMeshComponent* Component) const
+{
+	if (!Component)
+	{
+		return;
+	}
+
+	for (int32 Index = 0; Index < Component->GetNumMaterials(); ++Index)
+	{
+		UMaterialInterface* OriginalMaterial = Component->GetMaterial(Index);
+		const FString SafeName = MakePalworldMorphSafeMaterialName(OriginalMaterial);
+		const FString SafePath = FString::Printf(
+			TEXT("%s/%s.%s"),
+			PalworldMorphSafeMaterialFolder,
+			*SafeName,
+			*SafeName);
+		UMaterialInterface* SafeMaterial = LoadObject<UMaterialInterface>(nullptr, *SafePath);
+		if (SafeMaterial)
+		{
+			// 원본 머티리얼을 부모로 둔 안전한 머티리얼을 사용해, 체형 모프 후에도 원본 텍스처를 유지한다.
+			Component->SetMaterial(Index, SafeMaterial);
+		}
+	}
+}
+
+void AUEPlayerCharacter::ApplyPalworldColorToSlots(
+	USkeletalMeshComponent* Component,
+	const FLinearColor& Color,
+	const TArray<FString>& SlotContains) const
+{
+	if (!Component || Color.Equals(FLinearColor::White, 0.003f))
+	{
+		return;
+	}
+
+	const TArray<FName> SlotNames = Component->GetMaterialSlotNames();
+	for (int32 Index = 0; Index < Component->GetNumMaterials(); ++Index)
+	{
+		const FString SlotName = SlotNames.IsValidIndex(Index) ? SlotNames[Index].ToString() : FString();
+		const FString SlotIdentity = SlotName.ToLower();
+		const FString MaterialIdentity = GetPathNameSafe(Component->GetMaterial(Index)).ToLower();
+		const FString Combined = SlotIdentity + TEXT(" ") + MaterialIdentity;
+		const bool bFaceDetail =
+			Combined.Contains(TEXT("eye")) ||
+			Combined.Contains(TEXT("iris")) ||
+			Combined.Contains(TEXT("pupil")) ||
+			Combined.Contains(TEXT("sclera")) ||
+			Combined.Contains(TEXT("white")) ||
+			Combined.Contains(TEXT("highlight")) ||
+			Combined.Contains(TEXT("brow")) ||
+			Combined.Contains(TEXT("lash")) ||
+			Combined.Contains(TEXT("lid")) ||
+			Combined.Contains(TEXT("mouth")) ||
+			Combined.Contains(TEXT("nose")) ||
+			Combined.Contains(TEXT("lip")) ||
+			Combined.Contains(TEXT("teeth")) ||
+			Combined.Contains(TEXT("tongue")) ||
+			Combined.Contains(TEXT("line")) ||
+			Combined.Contains(TEXT("beard")) ||
+			Combined.Contains(TEXT("mustache")) ||
+			Combined.Contains(TEXT("moustache"));
+		if (bFaceDetail)
+		{
+			continue;
+		}
+
+		bool bMatches = false;
+		for (const FString& Token : SlotContains)
+		{
+			if (Combined.Contains(Token.ToLower()))
+			{
+				bMatches = true;
+				break;
+			}
+		}
+		if (!bMatches)
+		{
+			continue;
+		}
+
+		UMaterialInstanceDynamic* DynamicMaterial = Component->CreateDynamicMaterialInstance(Index);
+		if (DynamicMaterial)
+		{
+			DynamicMaterial->SetVectorParameterValue(TEXT("TintColor"), Color);
+		}
+	}
+}
+
+void AUEPlayerCharacter::ApplyPalworldEyeMaterial(
+	USkeletalMeshComponent* Component,
+	const FUEPalworldCustomizationOption& EyeOption,
+	const FLinearColor& EyeColor) const
+{
+	if (!Component || !EyeOption.Material)
+	{
+		return;
+	}
+
+	for (int32 Index = 0; Index < Component->GetNumMaterials(); ++Index)
+	{
+		if (IsPalworldEyeMaterialSlot(Component, Index))
+		{
+			UMaterialInstanceDynamic* DynamicMaterial = Component->CreateDynamicMaterialInstance(Index, EyeOption.Material);
+			if (!DynamicMaterial)
+			{
+				Component->SetMaterial(Index, EyeOption.Material);
+				continue;
+			}
+
+			if (UTexture* CompositeTexture = LoadPalworldEyeCompositeTexture(
+				EyeOption,
+				EyeColor,
+				PalworldCustomizationCatalog ? PalworldCustomizationCatalog->EyeColors : TArray<FLinearColor>()))
+			{
+				// 흰자까지 포함된 합성 텍스처를 써서 눈 색만 바꾸고 얼굴 머티리얼은 건드리지 않는다.
+				DynamicMaterial->SetTextureParameterValue(TEXT("Base Texture"), CompositeTexture);
+			}
+		}
+	}
+}
+
+bool AUEPlayerCharacter::IsPalworldEyeMaterialSlot(USkeletalMeshComponent* Component, int32 MaterialIndex) const
+{
+	if (!Component || MaterialIndex < 0 || MaterialIndex >= Component->GetNumMaterials())
+	{
+		return false;
+	}
+
+	const TArray<FName> SlotNames = Component->GetMaterialSlotNames();
+	const FString SlotName = SlotNames.IsValidIndex(MaterialIndex) ? SlotNames[MaterialIndex].ToString().ToLower() : FString();
+	const USkeletalMesh* SkeletalMeshAsset = Component->GetSkeletalMeshAsset();
+	const TArray<FSkeletalMaterial>* AssetMaterials = SkeletalMeshAsset ? &SkeletalMeshAsset->GetMaterials() : nullptr;
+	const FSkeletalMaterial* AssetMaterial =
+		AssetMaterials && AssetMaterials->IsValidIndex(MaterialIndex) ? &(*AssetMaterials)[MaterialIndex] : nullptr;
+	const FString AssetSlotName = AssetMaterial ? AssetMaterial->MaterialSlotName.ToString().ToLower() : FString();
+	const UMaterialInterface* DefaultMaterial = AssetMaterial ? AssetMaterial->MaterialInterface : nullptr;
+	const FString MaterialIdentity = DefaultMaterial ? DefaultMaterial->GetName().ToLower() : FString();
+	const FString SlotIdentity = SlotName + TEXT(" ") + AssetSlotName;
+	const FString Combined = SlotIdentity + TEXT(" ") + MaterialIdentity;
+
+	const bool bExcluded =
+		MaterialIdentity.Contains(TEXT("player_head")) ||
+		MaterialIdentity.Contains(TEXT("head")) ||
+		MaterialIdentity.Contains(TEXT("skin")) ||
+		MaterialIdentity.Contains(TEXT("brow")) ||
+		MaterialIdentity.Contains(TEXT("beard")) ||
+		MaterialIdentity.Contains(TEXT("mouth")) ||
+		MaterialIdentity.Contains(TEXT("lip")) ||
+		MaterialIdentity.Contains(TEXT("nose")) ||
+		(SlotIdentity.Contains(TEXT("skin")) && !Combined.Contains(TEXT("eye"))) ||
+		Combined.Contains(TEXT("brow")) ||
+		Combined.Contains(TEXT("beard")) ||
+		Combined.Contains(TEXT("mustache")) ||
+		Combined.Contains(TEXT("moustache")) ||
+		Combined.Contains(TEXT("lash")) ||
+		Combined.Contains(TEXT("eyelash")) ||
+		Combined.Contains(TEXT("lid")) ||
+		Combined.Contains(TEXT("eyelid")) ||
+		Combined.Contains(TEXT("mouth")) ||
+		Combined.Contains(TEXT("nose")) ||
+		Combined.Contains(TEXT("lip")) ||
+		Combined.Contains(TEXT("teeth")) ||
+		Combined.Contains(TEXT("tongue")) ||
+		Combined.Contains(TEXT("line")) ||
+		Combined.Contains(TEXT("white")) ||
+		Combined.Contains(TEXT("sclera")) ||
+		Combined.Contains(TEXT("highlight")) ||
+		Combined.Contains(TEXT("hi_light"));
+	if (bExcluded)
+	{
+		return false;
+	}
+
+	const bool bLooksLikeEyeSlot =
+		SlotIdentity.Contains(TEXT("mi_player_eye")) ||
+		SlotIdentity.Contains(TEXT("player_eye")) ||
+		SlotIdentity.Contains(TEXT("_eye")) ||
+		SlotIdentity.Contains(TEXT("iris")) ||
+		SlotIdentity.Contains(TEXT("pupil"));
+	const bool bHasPalworldEyeMaterial =
+		MaterialIdentity.Contains(TEXT("mi_player_eye")) || MaterialIdentity.Contains(TEXT("player_eye"));
+	return bLooksLikeEyeSlot && bHasPalworldEyeMaterial;
+}
+
+void AUEPlayerCharacter::HidePalworldFaceCoverSections(USkeletalMeshComponent* Component) const
+{
+	if (!Component || !Component->GetSkeletalMeshAsset())
+	{
+		return;
+	}
+
+	for (int32 LODIndex = 0; LODIndex < 8; ++LODIndex)
+	{
+		Component->ShowAllMaterialSections(LODIndex);
+	}
+
+	const TArray<FName> SlotNames = Component->GetMaterialSlotNames();
+	for (int32 MaterialIndex = 0; MaterialIndex < SlotNames.Num(); ++MaterialIndex)
+	{
+		const FString Slot = SlotNames[MaterialIndex].ToString().ToLower();
+		const FString MaterialPath = GetPathNameSafe(Component->GetMaterial(MaterialIndex)).ToLower();
+		const FString Identity = Slot + TEXT(" ") + MaterialPath;
+		const bool bIsFaceCover =
+			Identity.Contains(TEXT("mask")) ||
+			Identity.Contains(TEXT("facecover")) ||
+			Identity.Contains(TEXT("face_cover")) ||
+			Identity.Contains(TEXT("facemask")) ||
+			Identity.Contains(TEXT("face_mask")) ||
+			Identity.Contains(TEXT("mouthcover")) ||
+			Identity.Contains(TEXT("mouth_cover")) ||
+			Identity.Contains(TEXT("nosecover")) ||
+			Identity.Contains(TEXT("nose_cover")) ||
+			Identity.Contains(TEXT("headcover")) ||
+			Identity.Contains(TEXT("head_cover")) ||
+			Identity.Contains(TEXT("headequ")) ||
+			Identity.Contains(TEXT("head_equip")) ||
+			Identity.Contains(TEXT("equip_head"));
+
+		if (!bIsFaceCover)
+		{
+			continue;
+		}
+
+		SetPlayerPalworldMaterialShownOnAllLods(Component, MaterialIndex, false);
+	}
+}
+
+void AUEPlayerCharacter::HidePalworldBaseBodyOutfitSections(USkeletalMeshComponent* Component) const
+{
+	if (!Component || !Component->GetSkeletalMeshAsset())
+	{
+		return;
+	}
+
+	const TArray<FName> SlotNames = Component->GetMaterialSlotNames();
+	for (int32 MaterialIndex = 0; MaterialIndex < SlotNames.Num(); ++MaterialIndex)
+	{
+		const FString Slot = SlotNames[MaterialIndex].ToString().ToLower();
+		const FString MaterialPath = GetPathNameSafe(Component->GetMaterial(MaterialIndex)).ToLower();
+		const FString Identity = Slot + TEXT(" ") + MaterialPath;
+		const bool bIsSkinSection =
+			Identity.Contains(TEXT("body")) ||
+			Identity.Contains(TEXT("skin")) ||
+			Identity.Contains(TEXT("player_female_body")) ||
+			Identity.Contains(TEXT("player_male_body"));
+		const bool bIsOutfitSection =
+			Identity.Contains(TEXT("outfit")) ||
+			Identity.Contains(TEXT("oldcloth")) ||
+			Identity.Contains(TEXT("cloth")) ||
+			Identity.Contains(TEXT("armor")) ||
+			Identity.Contains(TEXT("shirt")) ||
+			Identity.Contains(TEXT("pants")) ||
+			Identity.Contains(TEXT("shoe")) ||
+			Identity.Contains(TEXT("boot"));
+
+		if (!bIsOutfitSection || bIsSkinSection)
+		{
+			continue;
+		}
+
+		// 실제 게임 레벨에서 기본 OldCloth가 선택 의상과 겹치지 않도록
+		// 베이스 바디의 옷 섹션만 끄고, 피부/팔/목 섹션은 유지한다.
+		SetPlayerPalworldMaterialShownOnAllLods(Component, MaterialIndex, false);
+	}
+}
+
+void AUEPlayerCharacter::HideUnsupportedPalworldAttachmentComponents() const
+{
+	TArray<USkeletalMeshComponent*> Components;
+	GetComponents(Components);
+
+	for (USkeletalMeshComponent* Component : Components)
+	{
+		if (!Component ||
+			Component == GetMesh() ||
+			Component == PalworldBodyEquipmentMesh ||
+			Component == PalworldHeadMesh ||
+			Component == PalworldHairMesh)
+		{
+			continue;
+		}
+
+		const FString Identity = FString::Printf(
+			TEXT("%s %s"),
+			*Component->GetName(),
+			*GetPathNameSafe(Component->GetSkeletalMeshAsset())).ToLower();
+		const bool bRemovedAttachment =
+			Identity.Contains(TEXT("accessory")) ||
+			Identity.Contains(TEXT("headgear")) ||
+			Identity.Contains(TEXT("head_gear")) ||
+			Identity.Contains(TEXT("headequ")) ||
+			Identity.Contains(TEXT("head_equip")) ||
+			Identity.Contains(TEXT("equip_head")) ||
+			Identity.Contains(TEXT("glasses")) ||
+			Identity.Contains(TEXT("mask")) ||
+			Identity.Contains(TEXT("facecover")) ||
+			Identity.Contains(TEXT("hat")) ||
+			Identity.Contains(TEXT("cap"));
+		if (!bRemovedAttachment)
+		{
+			continue;
+		}
+
+		// 현재 Palworld 커마는 부착물을 쓰지 않으므로, 이전 BP 컴포넌트가 남아 있으면 게임 레벨에서 숨긴다.
+		Component->SetLeaderPoseComponent(nullptr);
+		Component->SetSkeletalMesh(nullptr);
+		Component->SetVisibility(false, true);
+		Component->SetHiddenInGame(true, true);
+	}
+}
+
+void AUEPlayerCharacter::ApplyPalworldScale(const FUEPalworldAppearance& NewAppearance) const
+{
+	GetMesh()->SetRelativeScale3D(FVector::OneVector);
+	PalworldBodyEquipmentMesh->SetRelativeScale3D(FVector::OneVector);
+	PalworldHeadMesh->SetRelativeScale3D(FVector::OneVector);
+	PalworldHairMesh->SetRelativeScale3D(FVector::OneVector);
+
+	// Palworld 원본 체형 모프만 사용한다. 머리와 루트 스케일은 따로 건드리지 않는다.
+	ApplyPlayerPalworldSignedMorphTarget(GetMesh(), TEXT("BS_Torso_min"), TEXT("BS_Torso_max"), NewAppearance.TorsoVolume);
+	ApplyPlayerPalworldSignedMorphTarget(GetMesh(), TEXT("BS_Arm_min"), TEXT("BS_Arm_max"), NewAppearance.ArmVolume);
+	ApplyPlayerPalworldSignedMorphTarget(GetMesh(), TEXT("BS_Leg_min"), TEXT("BS_Leg_max"), NewAppearance.LegVolume);
+	ApplyPlayerPalworldSignedMorphTarget(PalworldBodyEquipmentMesh, TEXT("BS_Torso_min"), TEXT("BS_Torso_max"), NewAppearance.TorsoVolume);
+	ApplyPlayerPalworldSignedMorphTarget(PalworldBodyEquipmentMesh, TEXT("BS_Arm_min"), TEXT("BS_Arm_max"), NewAppearance.ArmVolume);
+	ApplyPlayerPalworldSignedMorphTarget(PalworldBodyEquipmentMesh, TEXT("BS_Leg_min"), TEXT("BS_Leg_max"), NewAppearance.LegVolume);
 }

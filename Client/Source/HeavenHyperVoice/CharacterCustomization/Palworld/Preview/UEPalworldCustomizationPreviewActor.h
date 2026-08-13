@@ -1,11 +1,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Camera/CameraTypes.h"
 #include "GameFramework/Actor.h"
 #include "../Data/UEPalworldCustomizationTypes.h"
 #include "UEPalworldCustomizationPreviewActor.generated.h"
 
 class UCameraComponent;
+class UDirectionalLightComponent;
 class UMaterialInterface;
 class UPointLightComponent;
 class USceneComponent;
@@ -24,6 +26,7 @@ public:
 
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
+	virtual void CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult) override;
 
 	UFUNCTION(BlueprintCallable, Category = "Palworld")
 	void ApplyAppearance(const FUEPalworldAppearance& NewAppearance);
@@ -52,6 +55,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Palworld")
 	void SetScaleValue(EUEPalworldScaleChannel Channel, float Value);
 
+	UFUNCTION(BlueprintCallable, Category = "Palworld|Preview")
+	void AddPreviewYaw(float DeltaYaw);
+
+	UFUNCTION(BlueprintCallable, Category = "Palworld|Preview")
+	void AddPreviewZoom(float DeltaZoom);
+
+	UFUNCTION(BlueprintCallable, Category = "Palworld|Preview")
+	void AddPreviewPan(FVector2D DeltaPixels);
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
 	TObjectPtr<USceneComponent> SceneRoot = nullptr;
@@ -60,6 +72,9 @@ protected:
 	TObjectPtr<USceneComponent> CharacterRoot = nullptr;
 
 	// Palworld 원본 의상 메시와 원본 머티리얼을 그대로 보여준다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
+	TObjectPtr<USkeletalMeshComponent> BaseBodyMesh = nullptr;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
 	TObjectPtr<USkeletalMeshComponent> BodyEquipmentMesh = nullptr;
 
@@ -78,16 +93,31 @@ protected:
 	TObjectPtr<USpotLightComponent> KeyLight = nullptr;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
+	TObjectPtr<UDirectionalLightComponent> PreviewDirectionalLight = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
 	TObjectPtr<USkyLightComponent> FillLight = nullptr;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
 	TObjectPtr<UPointLightComponent> FrontLight = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Components")
+	TObjectPtr<UPointLightComponent> BodyFillLight = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Palworld")
 	TObjectPtr<UUEPalworldCustomizationCatalog> Catalog = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Palworld")
 	FUEPalworldAppearance Appearance;
+
+	UPROPERTY(EditAnywhere, Category = "Palworld|Preview")
+	float PreviewYawDegrees = 0.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Palworld|Preview")
+	float PreviewZoom = 1.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Palworld|Preview")
+	FVector2D PreviewPanPixels = FVector2D::ZeroVector;
 
 private:
 	void ApplyQACommandLineAppearance();
@@ -97,6 +127,8 @@ private:
 	void CaptureQAHeadScreenshot();
 	void ExitAfterQAScreenshot();
 	void ConfigurePreviewLighting();
+	void FramePreviewCamera();
+	void PreparePreviewStage();
 	void NormalizeLegacyDefaultColors();
 	void RefreshMeshes();
 	void RefreshFollowerPose();
@@ -105,7 +137,10 @@ private:
 	bool IsEyeIrisMaterialSlot(USkeletalMeshComponent* Component, int32 MaterialIndex) const;
 	void ApplyColorToSlots(USkeletalMeshComponent* Component, const FLinearColor& Color, const TArray<FString>& SlotContains);
 	void ResetComponentMaterials(USkeletalMeshComponent* Component);
+	void ApplyMorphSafeMaterials(USkeletalMeshComponent* Component);
 	void HideFaceCoverSections(USkeletalMeshComponent* Component);
+	void HideBaseBodyOutfitSections(USkeletalMeshComponent* Component);
+	void HideUnsupportedAttachmentComponents();
 	void ApplyScale();
 	const FUEPalworldCustomizationOption& GetOption(EUEPalworldCustomizationCategory Category, int32 Index) const;
 	int32& MutableIndex(EUEPalworldCustomizationCategory Category);

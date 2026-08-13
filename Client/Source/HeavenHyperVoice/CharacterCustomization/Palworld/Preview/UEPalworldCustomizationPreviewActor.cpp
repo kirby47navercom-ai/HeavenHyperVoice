@@ -6,51 +6,36 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Camera/CameraComponent.h"
+#include "Components/DirectionalLightComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/PointLightComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/SkyLightComponent.h"
 #include "Components/SpotLightComponent.h"
-#include "Animation/Skeleton.h"
+#include "Engine/LocalPlayer.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/Scene.h"
+#include "Engine/Texture.h"
 #include "HAL/PlatformMisc.h"
 #include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetMathLibrary.h"
 #include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInstanceConstant.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Paths.h"
+#include "Rendering/SkeletalMeshRenderData.h"
 #include "TimerManager.h"
 #include "UnrealClient.h"
+#include "UObject/UObjectIterator.h"
 
 namespace
 {
 	const FUEPalworldCustomizationOption PreviewEmptyOption;
-
-	bool HasMatchingReferenceSkeleton(const USkeletalMesh* Left, const USkeletalMesh* Right)
-	{
-		if (!Left || !Right)
-		{
-			return false;
-		}
-
-		const FReferenceSkeleton& LeftSkeleton = Left->GetRefSkeleton();
-		const FReferenceSkeleton& RightSkeleton = Right->GetRefSkeleton();
-		const int32 BoneCount = LeftSkeleton.GetRawBoneNum();
-		if (BoneCount == 0 || BoneCount != RightSkeleton.GetRawBoneNum())
-		{
-			return false;
-		}
-
-		for (int32 BoneIndex = 0; BoneIndex < BoneCount; ++BoneIndex)
-		{
-			if (LeftSkeleton.GetBoneName(BoneIndex) != RightSkeleton.GetBoneName(BoneIndex))
-			{
-				return false;
-			}
-		}
-		return true;
-	}
+	constexpr int32 PreviewMaxVisibleOutfits = 14;
+	const TCHAR* MorphSafeMaterialFolder = TEXT("/Game/CharacterCustomization/Palworld/Generated/MorphSafeMaterials");
+	const TCHAR* EyeCompositeFolder = TEXT("/Game/CharacterCustomization/Palworld/Generated/EyeComposite");
 
 	USkeletalMeshComponent* CreateSkeletalPart(AActor* Owner, USceneComponent* Parent, const FName& Name)
 	{
@@ -62,6 +47,148 @@ namespace
 		Component->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
 		return Component;
 	}
+
+	void ApplyPreviewSignedMorphTarget(USkeletalMeshComponent* Component, const FName MinTarget, const FName MaxTarget, float Value)
+	{
+		if (!Component)
+		{
+			return;
+		}
+
+		const float ClampedValue = FMath::Clamp(Value, -1.0f, 1.0f);
+		Component->SetMorphTarget(MinTarget, ClampedValue < 0.0f ? -ClampedValue : 0.0f);
+		Component->SetMorphTarget(MaxTarget, ClampedValue > 0.0f ? ClampedValue : 0.0f);
+	}
+
+	void SetPreviewMaterialShownOnAllLods(USkeletalMeshComponent* Component, int32 MaterialIndex, bool bShow)
+	{
+		if (!Component || MaterialIndex < 0)
+		{
+			return;
+		}
+
+		USkeletalMesh* Mesh = Component->GetSkeletalMeshAsset();
+		const FSkeletalMeshRenderData* RenderData = Mesh ? Mesh->GetResourceForRendering() : nullptr;
+		if (!RenderData || RenderData->LODRenderData.IsEmpty())
+		{
+			Component->ShowMaterialSection(MaterialIndex, MaterialIndex, bShow, 0);
+			return;
+		}
+
+		for (int32 LODIndex = 0; LODIndex < RenderData->LODRenderData.Num(); ++LODIndex)
+		{
+			const FSkeletalMeshLODRenderData& LODData = RenderData->LODRenderData[LODIndex];
+			bool bTouched = false;
+			for (int32 SectionIndex = 0; SectionIndex < LODData.RenderSections.Num(); ++SectionIndex)
+			{
+				if (LODData.RenderSections[SectionIndex].MaterialIndex == MaterialIndex)
+				{
+					Component->ShowMaterialSection(MaterialIndex, SectionIndex, bShow, LODIndex);
+					bTouched = true;
+				}
+			}
+
+			if (!bTouched)
+			{
+				Component->ShowMaterialSection(MaterialIndex, MaterialIndex, bShow, LODIndex);
+			}
+		}
+	}
+
+	FString MakeMorphSafeMaterialName(const UMaterialInterface* Material)
+	{
+		FString AssetName = Material ? Material->GetName() : FString();
+		for (int32 Index = 0; Index < AssetName.Len(); ++Index)
+		{
+			TCHAR& Character = AssetName[Index];
+			if (!FChar::IsAlnum(Character) && Character != TEXT('_'))
+			{
+				Character = TCHAR('_');
+			}
+		}
+		return FString::Printf(TEXT("MI_MS_%s"), *AssetName);
+	}
+
+	int32 ExtractPreviewPalworldEyeNumber(const FUEPalworldCustomizationOption& Option)
+	{
+		const FString Identity = FString::Printf(
+			TEXT("%s %s %s"),
+			*Option.Id,
+			*Option.DisplayName,
+			*GetPathNameSafe(Option.Material));
+		const int32 EyeMarker = Identity.Find(TEXT("Eye"), ESearchCase::IgnoreCase);
+		const int32 TypeMarker = Identity.Find(TEXT("Type"), ESearchCase::IgnoreCase);
+		int32 Start = EyeMarker != INDEX_NONE ? EyeMarker + 3 : (TypeMarker != INDEX_NONE ? TypeMarker + 4 : 0);
+		while (Start < Identity.Len() && !FChar::IsDigit(Identity[Start]))
+		{
+			++Start;
+		}
+
+		FString Digits;
+		for (int32 Index = Start; Index < Identity.Len() && FChar::IsDigit(Identity[Index]); ++Index)
+		{
+			Digits.AppendChar(Identity[Index]);
+		}
+		return Digits.IsEmpty() ? 1 : FMath::Clamp(FCString::Atoi(*Digits), 1, 999);
+	}
+
+	int32 FindNearestPaletteIndex(const TArray<FLinearColor>& Palette, const FLinearColor& Color)
+	{
+		if (Palette.IsEmpty())
+		{
+			return 0;
+		}
+
+		int32 BestIndex = 0;
+		float BestDistance = TNumericLimits<float>::Max();
+		for (int32 Index = 0; Index < Palette.Num(); ++Index)
+		{
+			const FLinearColor Candidate = Palette[Index].GetClamped();
+			const float Distance =
+				FMath::Square(Candidate.R - Color.R) +
+				FMath::Square(Candidate.G - Color.G) +
+				FMath::Square(Candidate.B - Color.B);
+			if (Distance < BestDistance)
+			{
+				BestDistance = Distance;
+				BestIndex = Index;
+			}
+		}
+		return FMath::Clamp(BestIndex, 0, 9);
+	}
+
+	UTexture* LoadEyeCompositeTexture(
+		const FUEPalworldCustomizationOption& Option,
+		const FLinearColor& EyeColor,
+		const TArray<FLinearColor>& EyePalette)
+	{
+		const int32 EyeNumber = ExtractPreviewPalworldEyeNumber(Option);
+		const int32 ColorIndex = FindNearestPaletteIndex(EyePalette, EyeColor.GetClamped());
+		const FString TextureName = FString::Printf(
+			TEXT("T_Player_Eye%03d_Composite_C%02d"),
+			EyeNumber,
+			ColorIndex);
+		const FString TexturePath = FString::Printf(
+			TEXT("%s/Eye%03d/%s.%s"),
+			EyeCompositeFolder,
+			EyeNumber,
+			*TextureName,
+			*TextureName);
+		if (UTexture* Texture = LoadObject<UTexture>(nullptr, *TexturePath))
+		{
+			return Texture;
+		}
+
+		const FString FallbackName = FString::Printf(TEXT("T_Player_Eye%03d_Composite"), EyeNumber);
+		const FString FallbackPath = FString::Printf(
+			TEXT("%s/Eye%03d/%s.%s"),
+			EyeCompositeFolder,
+			EyeNumber,
+			*FallbackName,
+			*FallbackName);
+		return LoadObject<UTexture>(nullptr, *FallbackPath);
+	}
+
 }
 
 AUEPalworldCustomizationPreviewActor::AUEPalworldCustomizationPreviewActor()
@@ -73,41 +200,69 @@ AUEPalworldCustomizationPreviewActor::AUEPalworldCustomizationPreviewActor()
 
 	CharacterRoot = CreateDefaultSubobject<USceneComponent>(TEXT("CharacterRoot"));
 	CharacterRoot->SetupAttachment(SceneRoot);
+	CharacterRoot->SetMobility(EComponentMobility::Movable);
 
+	BaseBodyMesh = CreateSkeletalPart(this, CharacterRoot, TEXT("BaseBody"));
 	BodyEquipmentMesh = CreateSkeletalPart(this, CharacterRoot, TEXT("BodyEquipment"));
 	HeadMesh = CreateSkeletalPart(this, CharacterRoot, TEXT("Head"));
 	HairMesh = CreateSkeletalPart(this, CharacterRoot, TEXT("Hair"));
 
 	PreviewCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("PreviewCamera"));
 	PreviewCamera->SetupAttachment(SceneRoot);
-	PreviewCamera->SetRelativeLocation(FVector(0.0f, 230.0f, 125.0f));
-	PreviewCamera->SetRelativeRotation(FRotator(-2.0f, -90.0f, 0.0f));
+	PreviewCamera->SetMobility(EComponentMobility::Movable);
+	PreviewCamera->SetRelativeLocation(FVector(0.0f, 520.0f, 125.0f));
+	PreviewCamera->SetRelativeRotation(FRotator(-3.0f, -90.0f, 0.0f));
 	PreviewCamera->PostProcessSettings.bOverride_AutoExposureMethod = true;
 	PreviewCamera->PostProcessSettings.AutoExposureMethod = EAutoExposureMethod::AEM_Manual;
 	PreviewCamera->PostProcessSettings.bOverride_AutoExposureBias = true;
-	PreviewCamera->PostProcessSettings.AutoExposureBias = 3.2f;
+	PreviewCamera->PostProcessSettings.AutoExposureBias = 2.4f;
+	PreviewCamera->SetAutoActivate(true);
 
 	KeyLight = CreateDefaultSubobject<USpotLightComponent>(TEXT("KeyLight"));
 	KeyLight->SetupAttachment(SceneRoot);
-	KeyLight->SetRelativeLocation(FVector(80.0f, 210.0f, 230.0f));
-	KeyLight->SetRelativeRotation(FRotator(-42.0f, -115.0f, 0.0f));
-	KeyLight->SetIntensity(42000.0f);
-	KeyLight->SetAttenuationRadius(600.0f);
+	KeyLight->SetMobility(EComponentMobility::Movable);
+	KeyLight->SetRelativeLocation(FVector(-130.0f, 240.0f, 230.0f));
+	KeyLight->SetRelativeRotation(FRotator(-42.0f, -70.0f, 0.0f));
+	KeyLight->SetIntensity(160000.0f);
+	KeyLight->SetAttenuationRadius(1200.0f);
 	KeyLight->SetLightColor(FLinearColor::White);
 	KeyLight->SetCastShadows(false);
+	KeyLight->SetVolumetricScatteringIntensity(0.0f);
+
+	PreviewDirectionalLight = CreateDefaultSubobject<UDirectionalLightComponent>(TEXT("PreviewDirectionalLight"));
+	PreviewDirectionalLight->SetupAttachment(SceneRoot);
+	PreviewDirectionalLight->SetMobility(EComponentMobility::Movable);
+	PreviewDirectionalLight->SetRelativeRotation(FRotator(-18.0f, -90.0f, 0.0f));
+	PreviewDirectionalLight->SetIntensity(8.0f);
+	PreviewDirectionalLight->SetCastShadows(false);
+	PreviewDirectionalLight->SetLightColor(FLinearColor::White);
+	PreviewDirectionalLight->SetVolumetricScatteringIntensity(0.0f);
 
 	FillLight = CreateDefaultSubobject<USkyLightComponent>(TEXT("FillLight"));
 	FillLight->SetupAttachment(SceneRoot);
-	FillLight->SetIntensity(9.0f);
+	FillLight->SetMobility(EComponentMobility::Movable);
+	FillLight->SetIntensity(12.0f);
 	FillLight->SetLightColor(FLinearColor::White);
 
 	FrontLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("FrontLight"));
 	FrontLight->SetupAttachment(SceneRoot);
-	FrontLight->SetRelativeLocation(FVector(0.0f, 90.0f, 130.0f));
-	FrontLight->SetIntensity(30000.0f);
-	FrontLight->SetAttenuationRadius(650.0f);
+	FrontLight->SetMobility(EComponentMobility::Movable);
+	FrontLight->SetRelativeLocation(FVector(0.0f, 250.0f, 130.0f));
+	FrontLight->SetIntensity(280000.0f);
+	FrontLight->SetAttenuationRadius(1200.0f);
 	FrontLight->SetCastShadows(false);
 	FrontLight->SetLightColor(FLinearColor::White);
+	FrontLight->SetVolumetricScatteringIntensity(0.0f);
+
+	BodyFillLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("BodyFillLight"));
+	BodyFillLight->SetupAttachment(SceneRoot);
+	BodyFillLight->SetMobility(EComponentMobility::Movable);
+	BodyFillLight->SetRelativeLocation(FVector(0.0f, 290.0f, 82.0f));
+	BodyFillLight->SetIntensity(240000.0f);
+	BodyFillLight->SetAttenuationRadius(1200.0f);
+	BodyFillLight->SetCastShadows(false);
+	BodyFillLight->SetLightColor(FLinearColor::White);
+	BodyFillLight->SetVolumetricScatteringIntensity(0.0f);
 }
 
 void AUEPalworldCustomizationPreviewActor::OnConstruction(const FTransform& Transform)
@@ -119,9 +274,20 @@ void AUEPalworldCustomizationPreviewActor::OnConstruction(const FTransform& Tran
 void AUEPalworldCustomizationPreviewActor::BeginPlay()
 {
 	Super::BeginPlay();
+	SetActorLocation(FVector::ZeroVector);
+	SetActorRotation(FRotator::ZeroRotator);
+	SetActorScale3D(FVector::OneVector);
+	PreviewYawDegrees = 0.0f;
+	PreviewZoom = 1.0f;
+	PreviewPanPixels = FVector2D::ZeroVector;
+	if (CharacterRoot)
+	{
+		CharacterRoot->SetRelativeRotation(FRotator(0.0f, PreviewYawDegrees, 0.0f));
+	}
 	ConfigurePreviewLighting();
 	ApplyQACommandLineAppearance();
 	RefreshMeshes();
+	PreparePreviewStage();
 
 	if (FParse::Param(FCommandLine::Get(), TEXT("PalworldQAScreenshot")))
 	{
@@ -131,6 +297,39 @@ void AUEPalworldCustomizationPreviewActor::BeginPlay()
 	{
 		GetWorldTimerManager().SetTimer(QAWidgetScreenshotTimer, this, &ThisClass::CaptureQAWidgetScreenshot, 8.0f, false);
 	}
+}
+
+void AUEPalworldCustomizationPreviewActor::CalcCamera(float DeltaTime, FMinimalViewInfo& OutResult)
+{
+	if (PreviewCamera)
+	{
+		PreviewCamera->GetCameraView(DeltaTime, OutResult);
+		return;
+	}
+
+	Super::CalcCamera(DeltaTime, OutResult);
+}
+
+void AUEPalworldCustomizationPreviewActor::AddPreviewYaw(float DeltaYaw)
+{
+	PreviewYawDegrees = FMath::UnwindDegrees(PreviewYawDegrees + DeltaYaw);
+	if (CharacterRoot)
+	{
+		CharacterRoot->SetRelativeRotation(FRotator(0.0f, PreviewYawDegrees, 0.0f));
+	}
+}
+
+void AUEPalworldCustomizationPreviewActor::AddPreviewZoom(float DeltaZoom)
+{
+	PreviewZoom = FMath::Clamp(PreviewZoom + DeltaZoom, 0.55f, 1.85f);
+	FramePreviewCamera();
+}
+
+void AUEPalworldCustomizationPreviewActor::AddPreviewPan(FVector2D DeltaPixels)
+{
+	PreviewPanPixels.X = FMath::Clamp(PreviewPanPixels.X + DeltaPixels.X, -260.0f, 260.0f);
+	PreviewPanPixels.Y = FMath::Clamp(PreviewPanPixels.Y + DeltaPixels.Y, -180.0f, 180.0f);
+	FramePreviewCamera();
 }
 
 void AUEPalworldCustomizationPreviewActor::ApplyAppearance(const FUEPalworldAppearance& NewAppearance)
@@ -197,7 +396,7 @@ void AUEPalworldCustomizationPreviewActor::SetColor(EUEPalworldColorChannel Chan
 		Appearance.EyeColor = ClampedColor;
 		break;
 	default:
-		// 의상 색은 Palworld 원본 머티리얼과 텍스처를 그대로 사용한다.
+	// 의상 색은 원본 Palworld 머티리얼과 텍스처를 그대로 사용한다.
 		break;
 	}
 	RefreshMeshes();
@@ -206,8 +405,8 @@ void AUEPalworldCustomizationPreviewActor::SetColor(EUEPalworldColorChannel Chan
 void AUEPalworldCustomizationPreviewActor::SetScaleValue(EUEPalworldScaleChannel Channel, float Value)
 {
 	NormalizeLegacyDefaultColors();
-	const float ClampedValue = FMath::Clamp(Value, 0.75f, 1.25f);
-	const float VolumeValue = FMath::Clamp((ClampedValue - 1.0f) / 0.25f, -1.0f, 1.0f);
+	const float Percent = FMath::Clamp(Value, 0.0f, 100.0f);
+	const float VolumeValue = (Percent - 50.0f) / 50.0f;
 	switch (Channel)
 	{
 	case EUEPalworldScaleChannel::TorsoSize:
@@ -237,8 +436,20 @@ void AUEPalworldCustomizationPreviewActor::RefreshMeshes()
 	Appearance.HeadIndex = ClampIndex(Appearance.HeadIndex, GetOptionCount(EUEPalworldCustomizationCategory::Head));
 	Appearance.HairIndex = ClampIndex(Appearance.HairIndex, GetOptionCount(EUEPalworldCustomizationCategory::Hair));
 	Appearance.EyeIndex = ClampIndex(Appearance.EyeIndex, GetOptionCount(EUEPalworldCustomizationCategory::Eyes));
-	Appearance.BodyEquipmentIndex = ClampIndex(Appearance.BodyEquipmentIndex, GetOptionCount(EUEPalworldCustomizationCategory::BodyEquipment));
-	// 얼굴을 가리는 장비성 섹션은 숨기고, 머리장비 컴포넌트는 사용하지 않는다.
+	const int32 BodyEquipmentCount = GetOptionCount(EUEPalworldCustomizationCategory::BodyEquipment);
+	if (BodyEquipmentCount > 1)
+	{
+		const int32 VisibleOutfitMaxIndex = FMath::Min(BodyEquipmentCount - 1, PreviewMaxVisibleOutfits);
+		Appearance.BodyEquipmentIndex = FMath::Clamp(Appearance.BodyEquipmentIndex, 1, VisibleOutfitMaxIndex);
+	}
+	else
+	{
+		Appearance.BodyEquipmentIndex = ClampIndex(Appearance.BodyEquipmentIndex, BodyEquipmentCount);
+	}
+	// 얼굴을 가리는 장비 섹션은 숨기고 머리 장비 컴포넌트는 사용하지 않는다.
+	const FUEPalworldCustomizationOption& Body = GetOption(
+		EUEPalworldCustomizationCategory::Body,
+		Appearance.BodyIndex);
 	const FUEPalworldCustomizationOption& BodyEquipment = GetOption(
 		EUEPalworldCustomizationCategory::BodyEquipment,
 		Appearance.BodyEquipmentIndex);
@@ -251,8 +462,24 @@ void AUEPalworldCustomizationPreviewActor::RefreshMeshes()
 	const FUEPalworldCustomizationOption& Eyes = GetOption(
 		EUEPalworldCustomizationCategory::Eyes,
 		Appearance.EyeIndex);
-	BodyEquipmentMesh->SetSkeletalMesh(BodyEquipment.LoadMesh(Appearance.Gender));
+	USkeletalMesh* BaseMesh = Body.LoadMesh(Appearance.Gender);
+	USkeletalMesh* EquipmentMesh = BodyEquipment.LoadMesh(Appearance.Gender);
+	const bool bSameOutfitAsBase =
+		EquipmentMesh == BaseMesh || GetPathNameSafe(EquipmentMesh).Equals(GetPathNameSafe(BaseMesh));
+	const bool bUsesSeparateOutfit = EquipmentMesh && !bSameOutfitAsBase && Appearance.BodyEquipmentIndex > 0;
+	BaseBodyMesh->SetSkeletalMesh(BaseMesh);
+	ResetComponentMaterials(BaseBodyMesh);
+	ApplyMorphSafeMaterials(BaseBodyMesh);
+	HideFaceCoverSections(BaseBodyMesh);
+	if (bUsesSeparateOutfit)
+	{
+		HideBaseBodyOutfitSections(BaseBodyMesh);
+	}
+	BodyEquipmentMesh->SetSkeletalMesh(bUsesSeparateOutfit ? EquipmentMesh : nullptr);
+	BodyEquipmentMesh->SetVisibility(bUsesSeparateOutfit, true);
+	BodyEquipmentMesh->SetHiddenInGame(!bUsesSeparateOutfit, true);
 	ResetComponentMaterials(BodyEquipmentMesh);
+	ApplyMorphSafeMaterials(BodyEquipmentMesh);
 	HideFaceCoverSections(BodyEquipmentMesh);
 	HeadMesh->SetSkeletalMesh(Head.LoadMesh(Appearance.Gender));
 	ResetComponentMaterials(HeadMesh);
@@ -261,9 +488,11 @@ void AUEPalworldCustomizationPreviewActor::RefreshMeshes()
 	ResetComponentMaterials(HairMesh);
 
 	RefreshFollowerPose();
-	ApplyEyeMaterial(Eyes);
 	ApplyMaterialColors();
+	ApplyEyeMaterial(Eyes);
 	ApplyScale();
+	FramePreviewCamera();
+	HideUnsupportedAttachmentComponents();
 }
 
 void AUEPalworldCustomizationPreviewActor::ApplyQACommandLineAppearance()
@@ -296,11 +525,23 @@ void AUEPalworldCustomizationPreviewActor::ApplyQACommandLineAppearance()
 	{
 		Appearance.BodyEquipmentIndex = FCString::Atoi(*Value);
 	}
+	if (FParse::Value(FCommandLine::Get(), TEXT("PalworldQATorso="), Value))
+	{
+		Appearance.TorsoVolume = FMath::Clamp(FCString::Atof(*Value), -1.0f, 1.0f);
+	}
+	if (FParse::Value(FCommandLine::Get(), TEXT("PalworldQAArm="), Value))
+	{
+		Appearance.ArmVolume = FMath::Clamp(FCString::Atof(*Value), -1.0f, 1.0f);
+	}
+	if (FParse::Value(FCommandLine::Get(), TEXT("PalworldQALeg="), Value))
+	{
+		Appearance.LegVolume = FMath::Clamp(FCString::Atof(*Value), -1.0f, 1.0f);
+	}
 }
 
 void AUEPalworldCustomizationPreviewActor::CaptureQAWidgetScreenshot()
 {
-	// UI 구조 검증 때는 위젯을 지우지 않고 Slate/UMG까지 같이 캡처한다.
+	// UI 구조 검증 때는 실제 화면을 캡처해서 UMG와 함께 확인한다.
 	const FString ScreenshotPath = FPaths::ProjectSavedDir() /
 		TEXT("Screenshots/Customization/Palworld_Widget_UI.png");
 	FScreenshotRequest::RequestScreenshot(ScreenshotPath, true, false);
@@ -320,40 +561,69 @@ void AUEPalworldCustomizationPreviewActor::CaptureQAScreenshot()
 			Widget->RemoveFromParent();
 		}
 	}
+	for (TObjectIterator<UPrimitiveComponent> It; It; ++It)
+	{
+		UPrimitiveComponent* Component = *It;
+		if (!Component || Component->GetWorld() != GetWorld())
+		{
+			continue;
+		}
+		if (Component == BaseBodyMesh || Component == BodyEquipmentMesh || Component == HeadMesh || Component == HairMesh)
+		{
+			continue;
+		}
+
+		Component->SetHiddenInGame(true, true);
+		Component->SetVisibility(false, true);
+	}
 
 	auto LogPart = [](const TCHAR* Name, USkeletalMeshComponent* Component)
 	{
 		USkeletalMesh* Mesh = Component ? Component->GetSkeletalMeshAsset() : nullptr;
-		UE_LOG(LogTemp, Display, TEXT("Palworld QA part %s mesh=%s visible=%d materials=%d bounds=%s"),
+		UE_LOG(LogTemp, Display,
+			TEXT("Palworld QA part %s mesh=%s visible=%d materials=%d torsoMin=%.2f torsoMax=%.2f armMin=%.2f armMax=%.2f legMin=%.2f legMax=%.2f bounds=%s"),
 			Name,
 			*GetPathNameSafe(Mesh),
 			Component && Component->IsVisible(),
 			Component ? Component->GetNumMaterials() : 0,
+			Component ? Component->GetMorphTarget(TEXT("BS_Torso_min")) : 0.0f,
+			Component ? Component->GetMorphTarget(TEXT("BS_Torso_max")) : 0.0f,
+			Component ? Component->GetMorphTarget(TEXT("BS_Arm_min")) : 0.0f,
+			Component ? Component->GetMorphTarget(TEXT("BS_Arm_max")) : 0.0f,
+			Component ? Component->GetMorphTarget(TEXT("BS_Leg_min")) : 0.0f,
+			Component ? Component->GetMorphTarget(TEXT("BS_Leg_max")) : 0.0f,
 			Component ? *Component->Bounds.GetBox().ToString() : TEXT("none"));
 	};
 
+	LogPart(TEXT("BaseBody"), BaseBodyMesh);
 	LogPart(TEXT("BodyEquipment"), BodyEquipmentMesh);
 	LogPart(TEXT("Head"), HeadMesh);
 	LogPart(TEXT("Hair"), HairMesh);
 
 	UE_LOG(LogTemp, Display,
-		TEXT("Palworld QA selection gender=%s body=%d head=%d hair=%d eyes=%d outfit=%d"),
+		TEXT("Palworld QA selection gender=%s body=%d head=%d hair=%d eyes=%d outfit=%d torso=%.2f arm=%.2f leg=%.2f"),
 		Appearance.Gender == EUEPalworldGender::TypeA ? TEXT("TypeA") : TEXT("TypeB"),
 		Appearance.BodyIndex,
 		Appearance.HeadIndex,
 		Appearance.HairIndex,
 		Appearance.EyeIndex,
-		Appearance.BodyEquipmentIndex);
+		Appearance.BodyEquipmentIndex,
+		Appearance.TorsoVolume,
+		Appearance.ArmVolume,
+		Appearance.LegVolume);
 
 	const TCHAR* GenderName = Appearance.Gender == EUEPalworldGender::TypeA ? TEXT("TypeA") : TEXT("TypeB");
 	const FString ScreenshotPath = FPaths::ProjectSavedDir() /
 		FString::Printf(
-			TEXT("Screenshots/Customization/Palworld_%s_H%02d_Hair%02d_Eye%02d_Outfit%02d_Full.png"),
+			TEXT("Screenshots/Customization/Palworld_%s_H%02d_Hair%02d_Eye%02d_Outfit%02d_T%+.1f_A%+.1f_L%+.1f_Full.png"),
 			GenderName,
 			Appearance.HeadIndex,
 			Appearance.HairIndex,
 			Appearance.EyeIndex,
-			Appearance.BodyEquipmentIndex);
+			Appearance.BodyEquipmentIndex,
+			Appearance.TorsoVolume,
+			Appearance.ArmVolume,
+			Appearance.LegVolume);
 	FScreenshotRequest::RequestScreenshot(ScreenshotPath, true, false);
 	GetWorldTimerManager().SetTimer(QAPrepareHeadTimer, this, &ThisClass::PrepareQAHeadScreenshot, 1.0f, false);
 }
@@ -374,12 +644,15 @@ void AUEPalworldCustomizationPreviewActor::CaptureQAHeadScreenshot()
 	const TCHAR* GenderName = Appearance.Gender == EUEPalworldGender::TypeA ? TEXT("TypeA") : TEXT("TypeB");
 	const FString ScreenshotPath = FPaths::ProjectSavedDir() /
 		FString::Printf(
-			TEXT("Screenshots/Customization/Palworld_%s_H%02d_Hair%02d_Eye%02d_Outfit%02d_Head.png"),
+			TEXT("Screenshots/Customization/Palworld_%s_H%02d_Hair%02d_Eye%02d_Outfit%02d_T%+.1f_A%+.1f_L%+.1f_Head.png"),
 			GenderName,
 			Appearance.HeadIndex,
 			Appearance.HairIndex,
 			Appearance.EyeIndex,
-			Appearance.BodyEquipmentIndex);
+			Appearance.BodyEquipmentIndex,
+			Appearance.TorsoVolume,
+			Appearance.ArmVolume,
+			Appearance.LegVolume);
 	FScreenshotRequest::RequestScreenshot(ScreenshotPath, true, false);
 	GetWorldTimerManager().SetTimer(QAExitTimer, this, &ThisClass::ExitAfterQAScreenshot, 1.5f, false);
 }
@@ -398,68 +671,166 @@ void AUEPalworldCustomizationPreviewActor::ExitAfterQAScreenshot()
 
 void AUEPalworldCustomizationPreviewActor::ConfigurePreviewLighting()
 {
+	const FVector ActorLocation = GetActorLocation();
+	const FVector LookTarget = ActorLocation + FVector(0.0f, 0.0f, 98.0f);
+
 	if (PreviewCamera)
 	{
-		PreviewCamera->SetRelativeLocation(FVector(0.0f, 230.0f, 125.0f));
-		PreviewCamera->SetRelativeRotation(FRotator(-2.0f, -90.0f, 0.0f));
-		PreviewCamera->FieldOfView = 50.0f;
+		PreviewCamera->SetRelativeLocation(FVector(0.0f, 520.0f, 128.0f));
+		PreviewCamera->SetRelativeRotation(UKismetMathLibrary::FindLookAtRotation(
+			PreviewCamera->GetComponentLocation(),
+			LookTarget));
+		PreviewCamera->FieldOfView = 36.0f;
 		PreviewCamera->PostProcessSettings.bOverride_AutoExposureMethod = true;
 		PreviewCamera->PostProcessSettings.AutoExposureMethod = EAutoExposureMethod::AEM_Manual;
 		PreviewCamera->PostProcessSettings.bOverride_AutoExposureBias = true;
-		PreviewCamera->PostProcessSettings.AutoExposureBias = 3.2f;
+		PreviewCamera->PostProcessSettings.AutoExposureBias = 2.4f;
 	}
 
 	if (KeyLight)
 	{
-		KeyLight->SetRelativeLocation(FVector(0.0f, 140.0f, 155.0f));
-		KeyLight->SetRelativeRotation(FRotator(-5.0f, -90.0f, 0.0f));
-		KeyLight->SetIntensity(42000.0f);
+		KeyLight->SetRelativeLocation(FVector(-160.0f, 240.0f, 220.0f));
+		KeyLight->SetRelativeRotation(UKismetMathLibrary::FindLookAtRotation(
+			KeyLight->GetComponentLocation(),
+			LookTarget));
+		KeyLight->SetIntensity(160000.0f);
 		KeyLight->SetAttenuationRadius(1200.0f);
 		KeyLight->SetOuterConeAngle(90.0f);
 		KeyLight->SetInnerConeAngle(70.0f);
 		KeyLight->SetCastShadows(false);
 		KeyLight->SetLightColor(FLinearColor::White);
+		KeyLight->SetVolumetricScatteringIntensity(0.0f);
+	}
+
+	if (PreviewDirectionalLight)
+	{
+		// 몸과 옷의 원본 머티리얼을 유지하고, 프리뷰에서 어둡게 죽지 않도록 정면 조명을 보강한다.
+		PreviewDirectionalLight->SetRelativeRotation(FRotator(-28.0f, -90.0f, 0.0f));
+		PreviewDirectionalLight->SetIntensity(8.0f);
+		PreviewDirectionalLight->SetCastShadows(false);
+		PreviewDirectionalLight->SetLightColor(FLinearColor::White);
+		PreviewDirectionalLight->SetVolumetricScatteringIntensity(0.0f);
 	}
 
 	if (FillLight)
 	{
-		FillLight->SetIntensity(9.0f);
+		FillLight->SetIntensity(12.0f);
 		FillLight->SetLightColor(FLinearColor::White);
 	}
 
 	if (FrontLight)
 	{
-		FrontLight->SetRelativeLocation(FVector(0.0f, 90.0f, 130.0f));
-		FrontLight->SetIntensity(30000.0f);
-		FrontLight->SetAttenuationRadius(650.0f);
+		FrontLight->SetRelativeLocation(FVector(0.0f, 250.0f, 138.0f));
+		FrontLight->SetIntensity(280000.0f);
+		FrontLight->SetAttenuationRadius(1200.0f);
 		FrontLight->SetCastShadows(false);
 		FrontLight->SetLightColor(FLinearColor::White);
+		FrontLight->SetVolumetricScatteringIntensity(0.0f);
+	}
+
+	if (BodyFillLight)
+	{
+		// 몸통과 의상이 검게 죽지 않도록 낮은 정면 보조광을 둔다.
+		BodyFillLight->SetRelativeLocation(FVector(0.0f, 290.0f, 82.0f));
+		BodyFillLight->SetIntensity(240000.0f);
+		BodyFillLight->SetAttenuationRadius(1200.0f);
+		BodyFillLight->SetCastShadows(false);
+		BodyFillLight->SetLightColor(FLinearColor::White);
+		BodyFillLight->SetVolumetricScatteringIntensity(0.0f);
+	}
+}
+
+void AUEPalworldCustomizationPreviewActor::FramePreviewCamera()
+{
+	if (!PreviewCamera)
+	{
+		return;
+	}
+
+	FBox CombinedBounds(ForceInit);
+	for (USkeletalMeshComponent* Component : {BaseBodyMesh.Get(), BodyEquipmentMesh.Get(), HeadMesh.Get(), HairMesh.Get()})
+	{
+		if (!Component || !Component->GetSkeletalMeshAsset() || !Component->IsVisible())
+		{
+			continue;
+		}
+
+		Component->UpdateBounds();
+		CombinedBounds += Component->Bounds.GetBox();
+	}
+
+	if (!CombinedBounds.IsValid)
+	{
+		return;
+	}
+
+	const FVector Center = CombinedBounds.GetCenter();
+	const FVector Extent = CombinedBounds.GetExtent();
+	constexpr float FovDegrees = 36.0f;
+	constexpr float AspectRatio = 16.0f / 9.0f;
+	const float HalfFovRadians = FMath::DegreesToRadians(FovDegrees * 0.5f);
+	const float HalfHeight = FMath::Max(Extent.Z * 1.10f, 106.0f);
+	const float HalfWidth = FMath::Max(Extent.X, Extent.Y);
+	const float DistanceForHeight = HalfHeight / FMath::Tan(HalfFovRadians);
+	const float DistanceForWidth = HalfWidth / (FMath::Tan(HalfFovRadians) * AspectRatio);
+	const float BaseDistance = FMath::Clamp(FMath::Max(DistanceForHeight, DistanceForWidth) * 1.45f, 430.0f, 820.0f);
+	const float Distance = BaseDistance * PreviewZoom;
+	FVector Target(Center.X, Center.Y, FMath::Clamp(Center.Z + Extent.Z * 0.03f, 82.0f, 112.0f));
+	// 마우스 이동은 모델 스케일을 건드리지 않고 카메라 기준으로만 이동한다.
+	Target += FVector(PreviewPanPixels.X * 0.11f, 0.0f, -PreviewPanPixels.Y * 0.11f);
+	// Palworld 캐릭터 생성 화면처럼 시작 시 +Y 정면을 보여주고, 사용자가 드래그할 때만 CharacterRoot를 돌린다.
+	const FVector CameraLocation = Target + FVector(0.0f, Distance, Extent.Z * 0.08f);
+
+	// 프리뷰는 항상 캐릭터 전체 bounds 기준으로 잡고, 루트/머리 스케일로 임시 보정하지 않는다.
+	PreviewCamera->SetWorldLocation(CameraLocation);
+	PreviewCamera->SetWorldRotation(UKismetMathLibrary::FindLookAtRotation(CameraLocation, Target));
+	PreviewCamera->FieldOfView = FovDegrees;
+}
+
+void AUEPalworldCustomizationPreviewActor::PreparePreviewStage()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 커마 레벨의 배경과 조명은 레벨/WBP가 맡는다.
+	// 프리뷰 메시를 다시 켤 때 이전 자동 숨김 처리가 남아서 화면에 안 나오는 일을 막는다.
+	for (USkeletalMeshComponent* Component : {BaseBodyMesh.Get(), BodyEquipmentMesh.Get(), HeadMesh.Get(), HairMesh.Get()})
+	{
+		if (!Component || Component->GetWorld() != World)
+		{
+			continue;
+		}
+
+		Component->SetHiddenInGame(false, true);
+		Component->SetVisibility(true, true);
 	}
 }
 
 void AUEPalworldCustomizationPreviewActor::NormalizeLegacyDefaultColors()
 {
-	// 예전 프리뷰 BP가 저장한 검정 틴트는 원본 머티리얼을 덮어버린다.
-	// 아주 어두운 기본값은 흰색으로 되돌려 Palworld 원본 텍스처를 그대로 보이게 한다.
-	auto Normalize = [](FLinearColor& Color)
+	// 이전 프리뷰 BP가 저장한 검은/흰 MID override를 제거한다.
+	// 아주 어두운 기본값이 단색으로 돌아가지 않게 Palworld 원본 텍스처를 그대로 보이게 한다.
+	const FUEPalworldAppearance Defaults;
+	if (Appearance.SkinColor.R < 0.01f && Appearance.SkinColor.G < 0.01f && Appearance.SkinColor.B < 0.01f)
 	{
-		if (Color.R < 0.01f && Color.G < 0.01f && Color.B < 0.01f)
-		{
-			Color = FLinearColor::White;
-		}
-	};
-
-	Normalize(Appearance.SkinColor);
-	Normalize(Appearance.HairColor);
-	Normalize(Appearance.EyeColor);
+		Appearance.SkinColor = Defaults.SkinColor;
+	}
+	if (Appearance.HairColor.R < 0.01f && Appearance.HairColor.G < 0.01f && Appearance.HairColor.B < 0.01f)
+	{
+		Appearance.HairColor = Defaults.HairColor;
+	}
+	if (Appearance.EyeColor.R < 0.01f && Appearance.EyeColor.G < 0.01f && Appearance.EyeColor.B < 0.01f)
+	{
+		Appearance.EyeColor = Defaults.EyeColor;
+	}
 }
 
 void AUEPalworldCustomizationPreviewActor::RefreshFollowerPose()
 {
-	USkeletalMesh* LeaderMesh = BodyEquipmentMesh ? BodyEquipmentMesh->GetSkeletalMeshAsset() : nullptr;
-	const USkeleton* LeaderSkeleton = LeaderMesh ? LeaderMesh->GetSkeleton() : nullptr;
-
-	for (USkeletalMeshComponent* Follower : {HeadMesh.Get(), HairMesh.Get()})
+	for (USkeletalMeshComponent* Follower : {BodyEquipmentMesh.Get(), HeadMesh.Get(), HairMesh.Get()})
 	{
 		if (!Follower)
 		{
@@ -467,9 +838,15 @@ void AUEPalworldCustomizationPreviewActor::RefreshFollowerPose()
 		}
 
 		USkeletalMesh* FollowerMesh = Follower->GetSkeletalMeshAsset();
-		if (FollowerMesh && (FollowerMesh->GetSkeleton() == LeaderSkeleton || HasMatchingReferenceSkeleton(LeaderMesh, FollowerMesh)))
+		const USkeleton* LeaderSkeleton = BaseBodyMesh && BaseBodyMesh->GetSkeletalMeshAsset()
+			? BaseBodyMesh->GetSkeletalMeshAsset()->GetSkeleton()
+			: nullptr;
+		const USkeleton* FollowerSkeleton = FollowerMesh ? FollowerMesh->GetSkeleton() : nullptr;
+		if (FollowerMesh && LeaderSkeleton && FollowerSkeleton == LeaderSkeleton)
 		{
-			Follower->SetLeaderPoseComponent(BodyEquipmentMesh, true, false);
+			// 같은 스켈레톤을 쓰는 부위만 LeaderPose로 묶는다.
+			// 다른 스켈레톤 추출 파트를 억지로 묶으면 머리카락이 렌더링에서 사라질 수 있다.
+			Follower->SetLeaderPoseComponent(BaseBodyMesh, true, false);
 		}
 		else
 		{
@@ -480,41 +857,64 @@ void AUEPalworldCustomizationPreviewActor::RefreshFollowerPose()
 	}
 }
 
+void AUEPalworldCustomizationPreviewActor::HideUnsupportedAttachmentComponents()
+{
+	TArray<USkeletalMeshComponent*> Components;
+	GetComponents(Components);
+
+	for (USkeletalMeshComponent* Component : Components)
+	{
+		if (!Component ||
+			Component == BaseBodyMesh ||
+			Component == BodyEquipmentMesh ||
+			Component == HeadMesh ||
+			Component == HairMesh)
+		{
+			continue;
+		}
+
+		const FString Identity = FString::Printf(
+			TEXT("%s %s"),
+			*Component->GetName(),
+			*GetPathNameSafe(Component->GetSkeletalMeshAsset())).ToLower();
+		const bool bRemovedAttachment =
+			Identity.Contains(TEXT("accessory")) ||
+			Identity.Contains(TEXT("headgear")) ||
+			Identity.Contains(TEXT("head_gear")) ||
+			Identity.Contains(TEXT("headequ")) ||
+			Identity.Contains(TEXT("head_equip")) ||
+			Identity.Contains(TEXT("equip_head")) ||
+			Identity.Contains(TEXT("glasses")) ||
+			Identity.Contains(TEXT("mask")) ||
+			Identity.Contains(TEXT("facecover")) ||
+			Identity.Contains(TEXT("hat")) ||
+			Identity.Contains(TEXT("cap"));
+		if (!bRemovedAttachment)
+		{
+			continue;
+		}
+
+		// 이번 Palworld 커마에서는 부착물을 쓰지 않는다.
+		// BP에 남은 이전 헤드기어/마스크 컴포넌트가 화면에 나오지 않게 막는다.
+		Component->SetLeaderPoseComponent(nullptr);
+		Component->SetSkeletalMesh(nullptr);
+		Component->SetVisibility(false, true);
+		Component->SetHiddenInGame(true, true);
+	}
+}
+
 void AUEPalworldCustomizationPreviewActor::ApplyMaterialColors()
 {
 	// 원본 의상 색은 건드리지 않고, 캐릭터 색상 항목만 선택적으로 틴트한다.
 	if (!Appearance.SkinColor.Equals(FLinearColor::White, 0.003f))
 	{
 		ApplyColorToSlots(HeadMesh, Appearance.SkinColor, {TEXT("Head"), TEXT("Body"), TEXT("Skin")});
+		ApplyColorToSlots(BaseBodyMesh, Appearance.SkinColor, {TEXT("Body"), TEXT("Skin")});
 		ApplyColorToSlots(BodyEquipmentMesh, Appearance.SkinColor, {TEXT("Body"), TEXT("Skin")});
 	}
 	if (!Appearance.HairColor.Equals(FLinearColor::White, 0.003f))
 	{
 		ApplyColorToSlots(HairMesh, Appearance.HairColor, {TEXT("Hair")});
-	}
-	if (!Appearance.EyeColor.Equals(FLinearColor::White, 0.003f))
-	{
-		if (!HeadMesh)
-		{
-			return;
-		}
-
-		const int32 MaterialCount = HeadMesh->GetNumMaterials();
-		for (int32 Index = 0; Index < MaterialCount; ++Index)
-		{
-			if (!IsEyeIrisMaterialSlot(HeadMesh, Index))
-			{
-				continue;
-			}
-
-			UMaterialInstanceDynamic* DynamicMaterial = HeadMesh->CreateDynamicMaterialInstance(Index);
-			if (!DynamicMaterial)
-			{
-				continue;
-			}
-			DynamicMaterial->SetVectorParameterValue(TEXT("TintColor"), Appearance.EyeColor);
-			DynamicMaterial->SetVectorParameterValue(TEXT("BaseColor"), Appearance.EyeColor);
-		}
 	}
 }
 
@@ -525,12 +925,26 @@ void AUEPalworldCustomizationPreviewActor::ApplyEyeMaterial(const FUEPalworldCus
 		return;
 	}
 
+	UTexture* CompositeTexture = LoadEyeCompositeTexture(
+		Option,
+		Appearance.EyeColor,
+		Catalog ? Catalog->EyeColors : TArray<FLinearColor>());
 	const int32 MaterialCount = HeadMesh->GetNumMaterials();
 	for (int32 Index = 0; Index < MaterialCount; ++Index)
 	{
 		if (IsEyeIrisMaterialSlot(HeadMesh, Index))
 		{
-			HeadMesh->SetMaterial(Index, Option.Material);
+			UMaterialInstanceDynamic* EyeMaterial = HeadMesh->CreateDynamicMaterialInstance(Index, Option.Material);
+			if (!EyeMaterial)
+			{
+				HeadMesh->SetMaterial(Index, Option.Material);
+				continue;
+			}
+			if (CompositeTexture)
+			{
+				// 흰자, 홍채, 동공, 하이라이트가 합쳐진 Palworld 눈 텍스처만 갈아 끼운다.
+				EyeMaterial->SetTextureParameterValue(TEXT("Base Texture"), CompositeTexture);
+			}
 		}
 	}
 }
@@ -548,20 +962,42 @@ bool AUEPalworldCustomizationPreviewActor::IsEyeIrisMaterialSlot(
 	const FString SlotName = SlotNames.IsValidIndex(MaterialIndex)
 		? SlotNames[MaterialIndex].ToString().ToLower()
 		: FString();
-	const UMaterialInterface* Material = Component->GetMaterial(MaterialIndex);
-	const FString MaterialName = Material ? Material->GetName().ToLower() : FString();
-	const FString Combined = SlotName + TEXT(" ") + MaterialName;
+	const USkeletalMesh* Mesh = Component->GetSkeletalMeshAsset();
+	const TArray<FSkeletalMaterial>* AssetMaterials = Mesh ? &Mesh->GetMaterials() : nullptr;
+	const FSkeletalMaterial* AssetMaterial =
+		AssetMaterials && AssetMaterials->IsValidIndex(MaterialIndex) ? &(*AssetMaterials)[MaterialIndex] : nullptr;
+	const FString AssetSlotName = AssetMaterial ? AssetMaterial->MaterialSlotName.ToString().ToLower() : FString();
+	const UMaterialInterface* DefaultMaterial = AssetMaterial ? AssetMaterial->MaterialInterface : nullptr;
+	const FString DefaultMaterialName = DefaultMaterial ? DefaultMaterial->GetName().ToLower() : FString();
+	const FString SlotIdentity = SlotName + TEXT(" ") + AssetSlotName;
+	const FString MaterialIdentity = DefaultMaterialName;
+	const FString Combined = SlotIdentity + TEXT(" ") + MaterialIdentity;
 
-	// 눈 프리셋 머티리얼은 홍채/동공 슬롯에만 넣는다.
-	// 얼굴, 눈꺼풀, 속눈썹, 눈썹, 흰자, 하이라이트는 원본 머티리얼을 유지해야 한다.
+	// 눈 머티리얼은 Palworld 눈 머티리얼 슬롯만 교체한다.
+	// 얼굴, 눈썹, 흰자, 코, 입술, 수염, 하이라이트는 원본 머티리얼을 유지해야 한다.
 	const bool bExcluded =
-		Combined.Contains(TEXT("face")) ||
-		Combined.Contains(TEXT("skin")) ||
+		MaterialIdentity.Contains(TEXT("player_head")) ||
+		MaterialIdentity.Contains(TEXT("head")) ||
+		MaterialIdentity.Contains(TEXT("skin")) ||
+		MaterialIdentity.Contains(TEXT("brow")) ||
+		MaterialIdentity.Contains(TEXT("beard")) ||
+		MaterialIdentity.Contains(TEXT("mouth")) ||
+		MaterialIdentity.Contains(TEXT("lip")) ||
+		MaterialIdentity.Contains(TEXT("nose")) ||
+		(SlotIdentity.Contains(TEXT("skin")) && !Combined.Contains(TEXT("eye"))) ||
 		Combined.Contains(TEXT("brow")) ||
+		Combined.Contains(TEXT("beard")) ||
+		Combined.Contains(TEXT("mustache")) ||
+		Combined.Contains(TEXT("moustache")) ||
 		Combined.Contains(TEXT("lash")) ||
 		Combined.Contains(TEXT("eyelash")) ||
 		Combined.Contains(TEXT("lid")) ||
 		Combined.Contains(TEXT("eyelid")) ||
+		Combined.Contains(TEXT("mouth")) ||
+		Combined.Contains(TEXT("nose")) ||
+		Combined.Contains(TEXT("lip")) ||
+		Combined.Contains(TEXT("teeth")) ||
+		Combined.Contains(TEXT("tongue")) ||
 		Combined.Contains(TEXT("line")) ||
 		Combined.Contains(TEXT("white")) ||
 		Combined.Contains(TEXT("sclera")) ||
@@ -572,12 +1008,15 @@ bool AUEPalworldCustomizationPreviewActor::IsEyeIrisMaterialSlot(
 		return false;
 	}
 
-	return
-		Combined.Contains(TEXT("iris")) ||
-		Combined.Contains(TEXT("pupil")) ||
-		Combined.Contains(TEXT("eyeball")) ||
-		Combined.Contains(TEXT("eye_iris")) ||
-		Combined.Contains(TEXT("eyeiris"));
+	const bool bLooksLikeEyeSlot =
+		SlotIdentity.Contains(TEXT("mi_player_eye")) ||
+		SlotIdentity.Contains(TEXT("player_eye")) ||
+		SlotIdentity.Contains(TEXT("_eye")) ||
+		SlotIdentity.Contains(TEXT("iris")) ||
+		SlotIdentity.Contains(TEXT("pupil"));
+	const bool bHasPalworldEyeMaterial = MaterialIdentity.Contains(TEXT("mi_player_eye")) ||
+		MaterialIdentity.Contains(TEXT("player_eye"));
+	return bLooksLikeEyeSlot && bHasPalworldEyeMaterial;
 }
 
 void AUEPalworldCustomizationPreviewActor::ApplyColorToSlots(
@@ -590,16 +1029,44 @@ void AUEPalworldCustomizationPreviewActor::ApplyColorToSlots(
 		return;
 	}
 
+	const TArray<FName> SlotNames = Component->GetMaterialSlotNames();
 	const int32 MaterialCount = Component->GetNumMaterials();
 	for (int32 Index = 0; Index < MaterialCount; ++Index)
 	{
-		const FName SlotName = Component->GetMaterialSlotNames().IsValidIndex(Index)
-			? Component->GetMaterialSlotNames()[Index]
+		const FName SlotName = SlotNames.IsValidIndex(Index)
+			? SlotNames[Index]
 			: NAME_None;
+		const FString SlotIdentity = SlotName.ToString().ToLower();
+		const FString MaterialIdentity = GetPathNameSafe(Component->GetMaterial(Index)).ToLower();
+		const FString Combined = SlotIdentity + TEXT(" ") + MaterialIdentity;
+		const bool bFaceDetail =
+			Combined.Contains(TEXT("eye")) ||
+			Combined.Contains(TEXT("iris")) ||
+			Combined.Contains(TEXT("pupil")) ||
+			Combined.Contains(TEXT("sclera")) ||
+			Combined.Contains(TEXT("white")) ||
+			Combined.Contains(TEXT("highlight")) ||
+			Combined.Contains(TEXT("brow")) ||
+			Combined.Contains(TEXT("lash")) ||
+			Combined.Contains(TEXT("lid")) ||
+			Combined.Contains(TEXT("mouth")) ||
+			Combined.Contains(TEXT("nose")) ||
+			Combined.Contains(TEXT("lip")) ||
+			Combined.Contains(TEXT("teeth")) ||
+			Combined.Contains(TEXT("tongue")) ||
+			Combined.Contains(TEXT("line")) ||
+			Combined.Contains(TEXT("beard")) ||
+			Combined.Contains(TEXT("mustache")) ||
+			Combined.Contains(TEXT("moustache"));
+		if (bFaceDetail)
+		{
+			continue;
+		}
+
 		bool bMatches = SlotContains.Num() == 0;
 		for (const FString& Token : SlotContains)
 		{
-			if (SlotName.ToString().Contains(Token))
+			if (Combined.Contains(Token.ToLower()))
 			{
 				bMatches = true;
 				break;
@@ -611,12 +1078,10 @@ void AUEPalworldCustomizationPreviewActor::ApplyColorToSlots(
 		}
 
 		UMaterialInstanceDynamic* DynamicMaterial = Component->CreateDynamicMaterialInstance(Index);
-		if (!DynamicMaterial)
+		if (DynamicMaterial)
 		{
-			continue;
+			DynamicMaterial->SetVectorParameterValue(TEXT("TintColor"), Color);
 		}
-		DynamicMaterial->SetVectorParameterValue(TEXT("TintColor"), Color);
-		DynamicMaterial->SetVectorParameterValue(TEXT("BaseColor"), Color);
 	}
 }
 
@@ -627,11 +1092,37 @@ void AUEPalworldCustomizationPreviewActor::ResetComponentMaterials(USkeletalMesh
 		return;
 	}
 
-	// 저장된 MID override를 제거해서 선택한 메시의 원본 머티리얼 슬롯을 다시 쓰게 한다.
+	// 저장된 MID override를 제거해서 선택한 메시의 원본 머티리얼 슬롯을 다시 살린다.
 	const int32 MaterialCount = Component->GetNumMaterials();
 	for (int32 Index = 0; Index < MaterialCount; ++Index)
 	{
 		Component->SetMaterial(Index, nullptr);
+	}
+}
+
+void AUEPalworldCustomizationPreviewActor::ApplyMorphSafeMaterials(USkeletalMeshComponent* Component)
+{
+	if (!Component)
+	{
+		return;
+	}
+
+	for (int32 Index = 0; Index < Component->GetNumMaterials(); ++Index)
+	{
+		UMaterialInterface* OriginalMaterial = Component->GetMaterial(Index);
+		const FString SafeName = MakeMorphSafeMaterialName(OriginalMaterial);
+		if (SafeName.IsEmpty())
+		{
+			continue;
+		}
+
+		const FString SafePath = FString::Printf(TEXT("%s/%s.%s"), MorphSafeMaterialFolder, *SafeName, *SafeName);
+		UMaterialInterface* SafeMaterial = LoadObject<UMaterialInterface>(nullptr, *SafePath);
+		if (SafeMaterial)
+		{
+			// 원본 머티리얼을 부모로 둔 MorphSafe 인스턴스를 써서, 모프 적용 후 기본 회색 머티리얼로 떨어지는 일을 막는다.
+			Component->SetMaterial(Index, SafeMaterial);
+		}
 	}
 }
 
@@ -653,43 +1144,84 @@ void AUEPalworldCustomizationPreviewActor::HideFaceCoverSections(USkeletalMeshCo
 		const FString Slot = SlotNames[MaterialIndex].ToString().ToLower();
 		const UMaterialInterface* Material = Component->GetMaterial(MaterialIndex);
 		const FString MaterialPath = GetPathNameSafe(Material).ToLower();
+		const FString Identity = Slot + TEXT(" ") + MaterialPath;
 		const bool bIsFaceCover =
-			Slot.Contains(TEXT("mask")) ||
-			Slot.Contains(TEXT("mouthcover")) ||
-			Slot.Contains(TEXT("headcover")) ||
-			Slot.Contains(TEXT("headequ")) ||
-			Slot.Contains(TEXT("head_equip")) ||
-			MaterialPath.Contains(TEXT("mask")) ||
-			MaterialPath.Contains(TEXT("mouthcover")) ||
-			MaterialPath.Contains(TEXT("headcover"));
+			Identity.Contains(TEXT("mask")) ||
+			Identity.Contains(TEXT("facecover")) ||
+			Identity.Contains(TEXT("face_cover")) ||
+			Identity.Contains(TEXT("facemask")) ||
+			Identity.Contains(TEXT("face_mask")) ||
+			Identity.Contains(TEXT("mouthcover")) ||
+			Identity.Contains(TEXT("mouth_cover")) ||
+			Identity.Contains(TEXT("nosecover")) ||
+			Identity.Contains(TEXT("nose_cover")) ||
+			Identity.Contains(TEXT("headcover")) ||
+			Identity.Contains(TEXT("head_cover")) ||
+			Identity.Contains(TEXT("headequ")) ||
+			Identity.Contains(TEXT("head_equip")) ||
+			Identity.Contains(TEXT("equip_head"));
 
 		if (!bIsFaceCover)
 		{
 			continue;
 		}
 
-		// 얼굴을 가리는 장비 섹션은 커스터마이징 프리뷰에서 제외한다.
-		for (int32 LODIndex = 0; LODIndex < 8; ++LODIndex)
+		// 얼굴을 덮는 장비 섹션은 커스터마이징 프리뷰에서 제외한다.
+		SetPreviewMaterialShownOnAllLods(Component, MaterialIndex, false);
+	}
+}
+
+void AUEPalworldCustomizationPreviewActor::HideBaseBodyOutfitSections(USkeletalMeshComponent* Component)
+{
+	if (!Component || !Component->GetSkeletalMeshAsset())
+	{
+		return;
+	}
+
+	const TArray<FName> SlotNames = Component->GetMaterialSlotNames();
+	for (int32 MaterialIndex = 0; MaterialIndex < SlotNames.Num(); ++MaterialIndex)
+	{
+		const FString Slot = SlotNames[MaterialIndex].ToString().ToLower();
+		const FString MaterialPath = GetPathNameSafe(Component->GetMaterial(MaterialIndex)).ToLower();
+		const FString Identity = Slot + TEXT(" ") + MaterialPath;
+		const bool bIsSkinSection =
+			Identity.Contains(TEXT("body")) ||
+			Identity.Contains(TEXT("skin")) ||
+			Identity.Contains(TEXT("player_female_body")) ||
+			Identity.Contains(TEXT("player_male_body"));
+		const bool bIsOutfitSection =
+			Identity.Contains(TEXT("outfit")) ||
+			Identity.Contains(TEXT("oldcloth")) ||
+			Identity.Contains(TEXT("cloth")) ||
+			Identity.Contains(TEXT("armor")) ||
+			Identity.Contains(TEXT("shirt")) ||
+			Identity.Contains(TEXT("pants")) ||
+			Identity.Contains(TEXT("shoe")) ||
+			Identity.Contains(TEXT("boot"));
+
+		if (!bIsOutfitSection || bIsSkinSection)
 		{
-			Component->ShowMaterialSection(MaterialIndex, MaterialIndex, false, LODIndex);
+			continue;
 		}
+
+		// 베이스 바디가 OldCloth 메시라서 다른 의상을 입을 때 기본 옷 섹션이 겹칠 수 있다.
+		// 별도 의상이 켜져 있으면 베이스의 옷 섹션만 숨기고 피부 섹션은 유지한다.
+		SetPreviewMaterialShownOnAllLods(Component, MaterialIndex, false);
 	}
 }
 
 void AUEPalworldCustomizationPreviewActor::ApplyScale()
 {
-	Appearance.HeightScale = FMath::Clamp(Appearance.HeightScale, 0.75f, 1.25f);
 	Appearance.TorsoVolume = FMath::Clamp(Appearance.TorsoVolume, -1.0f, 1.0f);
 	Appearance.ArmVolume = FMath::Clamp(Appearance.ArmVolume, -1.0f, 1.0f);
 	Appearance.LegVolume = FMath::Clamp(Appearance.LegVolume, -1.0f, 1.0f);
 
-	// Palworld식 체형 값은 얼굴이나 머리만 따로 떼어 줄이지 않는다.
-	// 분리된 부품이 애니메이션과 같이 움직이도록 공통 루트만 조절한다.
-	const float WidthScale = 1.0f + Appearance.TorsoVolume * 0.08f;
-	const float HeightScale = 1.0f + Appearance.LegVolume * 0.05f;
-	CharacterRoot->SetRelativeScale3D(FVector(WidthScale, WidthScale, HeightScale));
+	// Palworld 체형 값은 얼굴이나 머리만 따로 줄이지 않는다.
+	// 루트와 부위 스케일은 항상 1로 두고, 원본 체형 모프만 적용한다.
+	// 슬라이더의 0~100 값은 -1~+1 모프 값으로 바꿔 몸통/팔/다리에만 반영한다.
+	CharacterRoot->SetRelativeScale3D(FVector::OneVector);
 
-	for (USkeletalMeshComponent* Component : {BodyEquipmentMesh.Get(), HeadMesh.Get(), HairMesh.Get()})
+	for (USkeletalMeshComponent* Component : {BaseBodyMesh.Get(), BodyEquipmentMesh.Get(), HeadMesh.Get(), HairMesh.Get()})
 	{
 		if (Component)
 		{
@@ -697,6 +1229,14 @@ void AUEPalworldCustomizationPreviewActor::ApplyScale()
 			Component->SetRelativeLocation(FVector::ZeroVector);
 		}
 	}
+
+	// Palworld 원본 체형 모프만 사용한다. 머리와 루트 스케일은 따로 건드리지 않는다.
+	ApplyPreviewSignedMorphTarget(BaseBodyMesh, TEXT("BS_Torso_min"), TEXT("BS_Torso_max"), Appearance.TorsoVolume);
+	ApplyPreviewSignedMorphTarget(BaseBodyMesh, TEXT("BS_Arm_min"), TEXT("BS_Arm_max"), Appearance.ArmVolume);
+	ApplyPreviewSignedMorphTarget(BaseBodyMesh, TEXT("BS_Leg_min"), TEXT("BS_Leg_max"), Appearance.LegVolume);
+	ApplyPreviewSignedMorphTarget(BodyEquipmentMesh, TEXT("BS_Torso_min"), TEXT("BS_Torso_max"), Appearance.TorsoVolume);
+	ApplyPreviewSignedMorphTarget(BodyEquipmentMesh, TEXT("BS_Arm_min"), TEXT("BS_Arm_max"), Appearance.ArmVolume);
+	ApplyPreviewSignedMorphTarget(BodyEquipmentMesh, TEXT("BS_Leg_min"), TEXT("BS_Leg_max"), Appearance.LegVolume);
 }
 
 const FUEPalworldCustomizationOption& AUEPalworldCustomizationPreviewActor::GetOption(
