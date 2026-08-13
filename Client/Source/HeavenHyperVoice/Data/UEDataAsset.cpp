@@ -52,6 +52,11 @@ const UInputAction* UUEDataAsset::FindInputActionByTag(const FGameplayTag& Input
 		return JumpAction;
 	}
 
+	if (InputTag == UEGameplayTags::Input_Action_SpawnPokemon)
+	{
+		return SpawnPokemonAction;
+	}
+
 	for (const FUEInputAction& Action : InputActions)
 	{
 		if (Action.InputAction && Action.InputTag == InputTag)

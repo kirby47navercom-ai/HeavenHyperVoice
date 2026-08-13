@@ -124,6 +124,7 @@ void AUEPlayerController::BindGameplayInput()
 
 	BindMoveInput(EnhancedInputComponent);
 	BindLookInput(EnhancedInputComponent);
+	BindActionInput(EnhancedInputComponent);
 }
 
 void AUEPlayerController::BindMoveInput(UEnhancedInputComponent* EnhancedInputComponent)
@@ -175,6 +176,20 @@ void AUEPlayerController::BindLookInput(UEnhancedInputComponent* EnhancedInputCo
 	if (LookPitchAction)
 	{
 		EnhancedInputComponent->BindAction(LookPitchAction, ETriggerEvent::Triggered, this, &ThisClass::HandleLookPitch);
+	}
+}
+
+void AUEPlayerController::BindActionInput(UEnhancedInputComponent* EnhancedInputComponent)
+{
+	const UInputAction* SpawnPokemonAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_SpawnPokemon);
+	if (!SpawnPokemonAction)
+	{
+		SpawnPokemonAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_SpawnPokemon.IA_SpawnPokemon"));
+	}
+
+	if (SpawnPokemonAction)
+	{
+		EnhancedInputComponent->BindAction(SpawnPokemonAction, ETriggerEvent::Started, this, &ThisClass::HandlePokemonToggle);
 	}
 }
 
@@ -259,4 +274,14 @@ void AUEPlayerController::HandleLookYaw(const FInputActionValue& Value)
 void AUEPlayerController::HandleLookPitch(const FInputActionValue& Value)
 {
 	AddPitchInput(-Value.Get<float>() * LookPitchRate);
+}
+
+void AUEPlayerController::HandlePokemonToggle(const FInputActionValue& Value)
+{
+	(void)Value;
+
+	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
+	{
+		PlayerCharacter->TogglePokemonCompanion();
+	}
 }

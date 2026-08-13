@@ -42,6 +42,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
 	void ApplyServerMoveTarget(const FVector& ServerLocation, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bTeleported);
 
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Test Server")
+	UUEPokemonTestServerComponent* GetTestServerComponent() const { return TestServerComponent; }
+
 protected:
 	virtual void BeginPlay() override;
 

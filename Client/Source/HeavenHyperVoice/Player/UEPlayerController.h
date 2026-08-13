@@ -66,6 +66,7 @@ private:
 	void BindGameplayInput();
 	void BindMoveInput(class UEnhancedInputComponent* EnhancedInputComponent);
 	void BindLookInput(class UEnhancedInputComponent* EnhancedInputComponent);
+	void BindActionInput(class UEnhancedInputComponent* EnhancedInputComponent);
 	AUEPlayerCharacter* GetControlledPlayerCharacter() const;
 	void PushMovementInputToCharacter();
 
@@ -79,6 +80,7 @@ private:
 	void HandleMoveLeftStopped(const FInputActionValue& Value);
 	void HandleLookYaw(const FInputActionValue& Value);
 	void HandleLookPitch(const FInputActionValue& Value);
+	void HandlePokemonToggle(const FInputActionValue& Value);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUELoginWidget> LoginWidgetInstance = nullptr;

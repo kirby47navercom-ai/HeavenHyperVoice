@@ -26,6 +26,8 @@ namespace HHV::PokemonAI
 		Command MakeStopCommand() const;
 
 		CompanionMode CurrentMode = CompanionMode::NonCombat;
+		std::unique_ptr<IPokemonAIAction> SpawnActionInstance;
+		std::unique_ptr<IPokemonAIAction> DespawnActionInstance;
 		std::unique_ptr<IPokemonAIAction> FollowOwnerActionInstance;
 	};
 }

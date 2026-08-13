@@ -67,6 +67,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
 	TObjectPtr<UInputAction> JumpAction = nullptr;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
+	TObjectPtr<UInputAction> SpawnPokemonAction = nullptr;
+
 	// Optional extension table for future actions that should also be found by GameplayTag.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TArray<FUEInputAction> InputActions;

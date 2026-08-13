@@ -2,12 +2,16 @@
 
 #include "PokemonFSM.h"
 
+#include "PokemonDespawnAction.h"
 #include "PokemonFollowOwnerAction.h"
+#include "PokemonSpawnAction.h"
 
 namespace HHV::PokemonAI
 {
 	PokemonFSM::PokemonFSM()
-		: FollowOwnerActionInstance(std::make_unique<FollowOwnerAction>())
+		: SpawnActionInstance(std::make_unique<SpawnAction>())
+		, DespawnActionInstance(std::make_unique<DespawnAction>())
+		, FollowOwnerActionInstance(std::make_unique<FollowOwnerAction>())
 	{
 	}
 
@@ -19,9 +23,11 @@ namespace HHV::PokemonAI
 		{
 		case CompanionMode::NonCombat:
 			return TickNonCombat(Context);
-		case CompanionMode::Combat:
 		case CompanionMode::Spawning:
+			return SpawnActionInstance ? SpawnActionInstance->Tick(Context) : MakeStopCommand();
 		case CompanionMode::Despawning:
+			return DespawnActionInstance ? DespawnActionInstance->Tick(Context) : MakeStopCommand();
+		case CompanionMode::Combat:
 		case CompanionMode::Attacking:
 		case CompanionMode::Downed:
 			return MakeStopCommand();
@@ -42,6 +48,16 @@ namespace HHV::PokemonAI
 
 	Command PokemonFSM::TickNonCombat(const CompanionContext& Context) const
 	{
+		if (Context.ActionRequest == RequestedAction::Spawn && SpawnActionInstance)
+		{
+			return SpawnActionInstance->Tick(Context);
+		}
+
+		if (Context.ActionRequest == RequestedAction::Despawn && DespawnActionInstance)
+		{
+			return DespawnActionInstance->Tick(Context);
+		}
+
 		if (Context.ActionRequest == RequestedAction::FollowOwner && FollowOwnerActionInstance)
 		{
 			return FollowOwnerActionInstance->Tick(Context);
