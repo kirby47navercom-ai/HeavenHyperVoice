@@ -494,7 +494,27 @@ void AUEPalworldCustomizationPreviewActor::ApplyMaterialColors()
 	}
 	if (!Appearance.EyeColor.Equals(FLinearColor::White, 0.003f))
 	{
-		ApplyColorToSlots(HeadMesh, Appearance.EyeColor, {TEXT("Eye")});
+		if (!HeadMesh)
+		{
+			return;
+		}
+
+		const int32 MaterialCount = HeadMesh->GetNumMaterials();
+		for (int32 Index = 0; Index < MaterialCount; ++Index)
+		{
+			if (!IsEyeIrisMaterialSlot(HeadMesh, Index))
+			{
+				continue;
+			}
+
+			UMaterialInstanceDynamic* DynamicMaterial = HeadMesh->CreateDynamicMaterialInstance(Index);
+			if (!DynamicMaterial)
+			{
+				continue;
+			}
+			DynamicMaterial->SetVectorParameterValue(TEXT("TintColor"), Appearance.EyeColor);
+			DynamicMaterial->SetVectorParameterValue(TEXT("BaseColor"), Appearance.EyeColor);
+		}
 	}
 }
 
@@ -505,14 +525,59 @@ void AUEPalworldCustomizationPreviewActor::ApplyEyeMaterial(const FUEPalworldCus
 		return;
 	}
 
-	const TArray<FName> SlotNames = HeadMesh->GetMaterialSlotNames();
-	for (int32 Index = 0; Index < SlotNames.Num(); ++Index)
+	const int32 MaterialCount = HeadMesh->GetNumMaterials();
+	for (int32 Index = 0; Index < MaterialCount; ++Index)
 	{
-		if (SlotNames[Index].ToString().Contains(TEXT("Eye")))
+		if (IsEyeIrisMaterialSlot(HeadMesh, Index))
 		{
 			HeadMesh->SetMaterial(Index, Option.Material);
 		}
 	}
+}
+
+bool AUEPalworldCustomizationPreviewActor::IsEyeIrisMaterialSlot(
+	USkeletalMeshComponent* Component,
+	int32 MaterialIndex) const
+{
+	if (!Component || MaterialIndex < 0 || MaterialIndex >= Component->GetNumMaterials())
+	{
+		return false;
+	}
+
+	const TArray<FName> SlotNames = Component->GetMaterialSlotNames();
+	const FString SlotName = SlotNames.IsValidIndex(MaterialIndex)
+		? SlotNames[MaterialIndex].ToString().ToLower()
+		: FString();
+	const UMaterialInterface* Material = Component->GetMaterial(MaterialIndex);
+	const FString MaterialName = Material ? Material->GetName().ToLower() : FString();
+	const FString Combined = SlotName + TEXT(" ") + MaterialName;
+
+	// 눈 프리셋 머티리얼은 홍채/동공 슬롯에만 넣는다.
+	// 얼굴, 눈꺼풀, 속눈썹, 눈썹, 흰자, 하이라이트는 원본 머티리얼을 유지해야 한다.
+	const bool bExcluded =
+		Combined.Contains(TEXT("face")) ||
+		Combined.Contains(TEXT("skin")) ||
+		Combined.Contains(TEXT("brow")) ||
+		Combined.Contains(TEXT("lash")) ||
+		Combined.Contains(TEXT("eyelash")) ||
+		Combined.Contains(TEXT("lid")) ||
+		Combined.Contains(TEXT("eyelid")) ||
+		Combined.Contains(TEXT("line")) ||
+		Combined.Contains(TEXT("white")) ||
+		Combined.Contains(TEXT("sclera")) ||
+		Combined.Contains(TEXT("highlight")) ||
+		Combined.Contains(TEXT("hi_light"));
+	if (bExcluded)
+	{
+		return false;
+	}
+
+	return
+		Combined.Contains(TEXT("iris")) ||
+		Combined.Contains(TEXT("pupil")) ||
+		Combined.Contains(TEXT("eyeball")) ||
+		Combined.Contains(TEXT("eye_iris")) ||
+		Combined.Contains(TEXT("eyeiris"));
 }
 
 void AUEPalworldCustomizationPreviewActor::ApplyColorToSlots(
