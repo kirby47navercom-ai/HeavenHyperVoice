@@ -264,6 +264,27 @@ namespace
 		const FString MaterialName = CurrentMaterial ? CurrentMaterial->GetName() : FString();
 		if (bIsAssetsFbxOutfitMesh)
 		{
+			const auto LoadAssetsFbxLocalMaterialByName =
+				[&MeshFolder](const FString& CandidateName) -> UMaterialInterface*
+			{
+				if (CandidateName.IsEmpty())
+				{
+					return nullptr;
+				}
+
+				const FString LocalMaterialPath = FString::Printf(
+					TEXT("%s/%s.%s"),
+					*MeshFolder,
+					*CandidateName,
+					*CandidateName);
+				return LoadObject<UMaterialInterface>(nullptr, *LocalMaterialPath);
+			};
+			if (UMaterialInterface* LocalMaterial = LoadAssetsFbxLocalMaterialByName(MaterialName))
+			{
+				// AssetsFBX 의상 슬롯이 다른 버전 MI를 가리킬 때가 있어, 같은 메쉬 폴더의 원본 MI를 우선 사용한다.
+				return LocalMaterial;
+			}
+
 			const FString MeshNameLower = Mesh->GetName().ToLower();
 			const FString MaterialPathLower = GetPathNameSafe(CurrentMaterial).ToLower();
 			const bool bMeshIsFemale = MeshNameLower.Contains(TEXT("female"));
