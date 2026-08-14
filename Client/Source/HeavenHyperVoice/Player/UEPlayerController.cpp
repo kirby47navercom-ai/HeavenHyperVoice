@@ -216,6 +216,19 @@ void AUEPlayerController::BindLookInput(UEnhancedInputComponent* EnhancedInputCo
 
 void AUEPlayerController::BindActionInput(UEnhancedInputComponent* EnhancedInputComponent)
 {
+	const UInputAction* RunAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_Run);
+	if (!RunAction)
+	{
+		RunAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_Run.IA_Run"));
+	}
+
+	if (RunAction)
+	{
+		EnhancedInputComponent->BindAction(RunAction, ETriggerEvent::Started, this, &ThisClass::HandleRunStarted);
+		EnhancedInputComponent->BindAction(RunAction, ETriggerEvent::Completed, this, &ThisClass::HandleRunStopped);
+		EnhancedInputComponent->BindAction(RunAction, ETriggerEvent::Canceled, this, &ThisClass::HandleRunStopped);
+	}
+
 	const UInputAction* SpawnPokemonAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_SpawnPokemon);
 	if (!SpawnPokemonAction)
 	{
@@ -309,6 +322,26 @@ void AUEPlayerController::HandleLookYaw(const FInputActionValue& Value)
 void AUEPlayerController::HandleLookPitch(const FInputActionValue& Value)
 {
 	AddPitchInput(-Value.Get<float>() * LookPitchRate);
+}
+
+void AUEPlayerController::HandleRunStarted(const FInputActionValue& Value)
+{
+	(void)Value;
+
+	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
+	{
+		PlayerCharacter->SetRunning(true);
+	}
+}
+
+void AUEPlayerController::HandleRunStopped(const FInputActionValue& Value)
+{
+	(void)Value;
+
+	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
+	{
+		PlayerCharacter->SetRunning(false);
+	}
 }
 
 void AUEPlayerController::HandlePokemonToggle(const FInputActionValue& Value)

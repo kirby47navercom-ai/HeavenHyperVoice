@@ -35,6 +35,7 @@ namespace HHV::PokemonAI
 		Stop,
 		MoveTo,
 		Teleport,
+		FaceTarget,
 		Spawn,
 		Despawn,
 		Attack

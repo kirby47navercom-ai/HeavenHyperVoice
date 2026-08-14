@@ -14,6 +14,8 @@ namespace HHV::PokemonAI
 		float TeleportDistance = 900.0f;
 		float StopDistance = 45.0f;
 		float MoveAcceptanceRadius = 35.0f;
+		float FaceOwnerDelay = 1.0f;
+		float IdleTargetChangeTolerance = 25.0f;
 		int FallbackCandidateCount = 16;
 	};
 
@@ -25,14 +27,20 @@ namespace HHV::PokemonAI
 
 	private:
 		Command MakeStopCommand() const;
-		Command MakeTeleportCommand(const HHV::Map::Vec3& TargetLocation) const;
-		Command MakeDirectMoveCommand(const HHV::Map::Vec3& TargetLocation) const;
-		bool TryMakeMoveCommandForTarget(const CompanionContext& Context, const HHV::Map::Vec3& CandidateLocation, Command& OutCommand) const;
-		bool TryMakeFallbackMoveCommand(const CompanionContext& Context, Command& OutCommand) const;
+		Command MakeFaceOwnerCommand(const CompanionContext& Context) const;
+		Command MakeArrivedCommand(const CompanionContext& Context, const HHV::Map::Vec3& StableTarget);
+		Command MakeTeleportCommand(const HHV::Map::Vec3& TargetLocation);
+		Command MakeDirectMoveCommand(const HHV::Map::Vec3& TargetLocation);
+		bool TryMakeMoveCommandForTarget(const CompanionContext& Context, const HHV::Map::Vec3& CandidateLocation, Command& OutCommand);
+		bool TryMakeFallbackMoveCommand(const CompanionContext& Context, Command& OutCommand);
 		HHV::Map::Vec3 CalculateOffsetTarget(const CompanionContext& Context, float SideSign) const;
 		HHV::Map::Vec3 CalculateOwnerTeleportTarget(const CompanionContext& Context) const;
 		float Distance2D(const HHV::Map::Vec3& A, const HHV::Map::Vec3& B) const;
+		void ResetArrivalTimer();
 
 		FollowOwnerSettings Settings;
+		HHV::Map::Vec3 LastIdleTarget;
+		float IdleAtTargetSeconds = 0.0f;
+		bool bHasIdleTarget = false;
 	};
 }

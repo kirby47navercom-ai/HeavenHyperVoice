@@ -11,7 +11,9 @@ namespace HHV::PokemonAI
 		float ForwardOffset = 150.0f;
 		float RightOffset = 150.0f;
 		float MinDistanceScale = 0.0f;
+		float FallbackRadius = 230.0f;
 		int CandidateCount = 8;
+		int FallbackCandidateCount = 16;
 	};
 
 	class SpawnAction final : public IPokemonAIAction
@@ -22,8 +24,11 @@ namespace HHV::PokemonAI
 
 	private:
 		void BuildCandidateLocations(const CompanionContext& Context, std::vector<HHV::Map::Vec3>& OutCandidates) const;
+		void AppendOffsetCandidate(const CompanionContext& Context, float SideSign, float DistanceScale, std::vector<HHV::Map::Vec3>& OutCandidates) const;
+		void AppendOffsetCandidates(const CompanionContext& Context, float SideSign, std::vector<HHV::Map::Vec3>& OutCandidates) const;
+		void AppendFallbackCandidates(const CompanionContext& Context, std::vector<HHV::Map::Vec3>& OutCandidates) const;
 		bool TryProjectCandidate(const CompanionContext& Context, const HHV::Map::Vec3& CandidateLocation, HHV::Map::Vec3& OutLocation) const;
-		HHV::Map::Vec3 CalculateTargetOffset(const CompanionContext& Context) const;
+		HHV::Map::Vec3 CalculateTargetOffset(const CompanionContext& Context, float SideSign) const;
 
 		SpawnSettings Settings;
 	};

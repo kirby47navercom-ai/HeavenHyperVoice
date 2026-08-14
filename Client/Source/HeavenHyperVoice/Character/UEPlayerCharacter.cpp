@@ -407,7 +407,7 @@ AUEPlayerCharacter::AUEPlayerCharacter()
 
 	GetCapsuleComponent()->InitCapsuleSize(34.0f, 88.0f);
 	GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
-	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -90.0f));
+	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()));
 
 	PalworldBodyEquipmentMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("PalworldBodyEquipmentMesh"));
 	PalworldBodyEquipmentMesh->SetupAttachment(GetMesh());
@@ -452,6 +452,7 @@ void AUEPlayerCharacter::BeginPlay()
 	Super::BeginPlay();
 
 	PlayerCharacterInit();
+	RefreshMovementSpeed();
 	ApplyPendingPalworldAppearance();
 }
 
@@ -487,6 +488,25 @@ FVector AUEPlayerCharacter::GetDesiredMovementDirection() const
 bool AUEPlayerCharacter::IsPokemonCompanionSpawned() const
 {
 	return IsValid(SpawnedPokemon) && !bPokemonDespawnInProgress;
+}
+
+void AUEPlayerCharacter::SetRunning(bool bNewIsRunning)
+{
+	if (bIsRunning == bNewIsRunning)
+	{
+		return;
+	}
+
+	bIsRunning = bNewIsRunning;
+	RefreshMovementSpeed();
+}
+
+void AUEPlayerCharacter::RefreshMovementSpeed()
+{
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->MaxWalkSpeed = WalkSpeed * (bIsRunning ? RunSpeedMultiplier : 1.0f);
+	}
 }
 
 void AUEPlayerCharacter::SetMovementInput(const FVector2D& NewMovementInput)

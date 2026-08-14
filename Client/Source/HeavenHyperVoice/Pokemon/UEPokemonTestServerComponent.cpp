@@ -123,6 +123,18 @@ void UUEPokemonTestServerComponent::ApplyServerCommand(AUEPokemonCharacter& Poke
 		ServerSimulatedVelocity = FVector::ZeroVector;
 		SendServerSnapshot(PokemonCharacter, ServerSimulatedLocation, ServerSimulatedVelocity, ServerSimulatedRotation, true);
 		break;
+	case CommandType::FaceTarget:
+	{
+		FVector ToTarget = ToUnrealVector(Command.TargetLocation) - ServerSimulatedLocation;
+		ToTarget.Z = 0.0f;
+		ServerSimulatedVelocity = FVector::ZeroVector;
+		if (!ToTarget.IsNearlyZero())
+		{
+			ServerSimulatedRotation = ToTarget.ToOrientationRotator();
+		}
+		SendServerSnapshot(PokemonCharacter, ServerSimulatedLocation, ServerSimulatedVelocity, ServerSimulatedRotation, false);
+		break;
+	}
 	case CommandType::Stop:
 	case CommandType::None:
 	default:

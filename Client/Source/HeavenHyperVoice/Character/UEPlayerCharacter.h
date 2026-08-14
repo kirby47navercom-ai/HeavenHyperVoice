@@ -28,6 +28,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Character|State")
 	bool IsRunning() const { return bIsRunning; }
 
+	UFUNCTION(BlueprintCallable, Category = "Character|Movement")
+	void SetRunning(bool bNewIsRunning);
+
 	UFUNCTION(BlueprintPure, Category = "Character|State")
 	bool IsRolling() const { return bIsRolling; }
 
@@ -108,6 +111,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Movement", meta = (ClampMin = "0.0"))
 	float WalkSpeed = 260.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Movement", meta = (ClampMin = "1.0"))
+	float RunSpeedMultiplier = 1.5f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Companion")
 	TSubclassOf<AUEPokemonCharacter> PokemonCompanionClass;
 
@@ -124,6 +130,7 @@ private:
 	bool TrySpawnPokemonCompanion();
 	void RequestDespawnPokemonCompanion();
 	void FinishPokemonDespawn();
+	void RefreshMovementSpeed();
 	HHV::PokemonAI::CompanionContext MakePokemonLifecycleContext(HHV::PokemonAI::RequestedAction ActionRequest) const;
 	HHV::Map::AgentSettings MakePokemonAgentSettings() const;
 	bool ResolvePokemonSpawnTransform(const HHV::PokemonAI::Command& SpawnCommand, FVector& OutLocation, FRotator& OutRotation) const;

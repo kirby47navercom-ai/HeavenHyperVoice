@@ -4,6 +4,7 @@
 
 #include "../Map/HHVPathfinder.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace
@@ -39,7 +40,7 @@ namespace HHV::PokemonAI
 		{
 			const HHV::Map::Vec3 RightFrontTarget = CalculateOffsetTarget(Context, 1.0f);
 			return Distance2D(Context.PokemonLocation, RightFrontTarget) <= Settings.StopDistance
-				? MakeStopCommand()
+				? MakeArrivedCommand(Context, RightFrontTarget)
 				: MakeDirectMoveCommand(RightFrontTarget);
 		}
 
@@ -70,16 +71,46 @@ namespace HHV::PokemonAI
 		return Result;
 	}
 
-	Command FollowOwnerAction::MakeTeleportCommand(const HHV::Map::Vec3& TargetLocation) const
+	Command FollowOwnerAction::MakeFaceOwnerCommand(const CompanionContext& Context) const
 	{
+		Command Result;
+		Result.Type = CommandType::FaceTarget;
+		Result.TargetLocation = Context.OwnerLocation;
+		return Result;
+	}
+
+	Command FollowOwnerAction::MakeArrivedCommand(const CompanionContext& Context, const HHV::Map::Vec3& StableTarget)
+	{
+		if (!bHasIdleTarget || Distance2D(LastIdleTarget, StableTarget) > Settings.IdleTargetChangeTolerance)
+		{
+			LastIdleTarget = StableTarget;
+			IdleAtTargetSeconds = 0.0f;
+			bHasIdleTarget = true;
+		}
+		else
+		{
+			IdleAtTargetSeconds += std::max(Context.DeltaSeconds, 0.0f);
+		}
+
+		return IdleAtTargetSeconds >= Settings.FaceOwnerDelay
+			? MakeFaceOwnerCommand(Context)
+			: MakeStopCommand();
+	}
+
+	Command FollowOwnerAction::MakeTeleportCommand(const HHV::Map::Vec3& TargetLocation)
+	{
+		ResetArrivalTimer();
+
 		Command Result;
 		Result.Type = CommandType::Teleport;
 		Result.TargetLocation = TargetLocation;
 		return Result;
 	}
 
-	Command FollowOwnerAction::MakeDirectMoveCommand(const HHV::Map::Vec3& TargetLocation) const
+	Command FollowOwnerAction::MakeDirectMoveCommand(const HHV::Map::Vec3& TargetLocation)
 	{
+		ResetArrivalTimer();
+
 		Command Result;
 		Result.Type = CommandType::MoveTo;
 		Result.TargetLocation = TargetLocation;
@@ -87,7 +118,7 @@ namespace HHV::PokemonAI
 		return Result;
 	}
 
-	bool FollowOwnerAction::TryMakeMoveCommandForTarget(const CompanionContext& Context, const HHV::Map::Vec3& CandidateLocation, Command& OutCommand) const
+	bool FollowOwnerAction::TryMakeMoveCommandForTarget(const CompanionContext& Context, const HHV::Map::Vec3& CandidateLocation, Command& OutCommand)
 	{
 		HHV::Map::Vec3 GroundedTarget;
 		if (!Context.ServerMap || !Context.ServerMap->IsWalkableLocation(CandidateLocation, Context.Agent, &GroundedTarget))
@@ -97,7 +128,7 @@ namespace HHV::PokemonAI
 
 		if (Distance2D(Context.PokemonLocation, GroundedTarget) <= Settings.StopDistance)
 		{
-			OutCommand = MakeStopCommand();
+			OutCommand = MakeArrivedCommand(Context, GroundedTarget);
 			return true;
 		}
 
@@ -113,6 +144,8 @@ namespace HHV::PokemonAI
 			return false;
 		}
 
+		ResetArrivalTimer();
+
 		OutCommand.Type = CommandType::MoveTo;
 		OutCommand.TargetLocation = PathResult.Points.size() > 1 ? PathResult.Points[1] : PathResult.Points.back();
 		OutCommand.AcceptanceRadius = Settings.MoveAcceptanceRadius;
@@ -120,7 +153,7 @@ namespace HHV::PokemonAI
 		return true;
 	}
 
-	bool FollowOwnerAction::TryMakeFallbackMoveCommand(const CompanionContext& Context, Command& OutCommand) const
+	bool FollowOwnerAction::TryMakeFallbackMoveCommand(const CompanionContext& Context, Command& OutCommand)
 	{
 		const int CandidateCount = Settings.FallbackCandidateCount > 0 ? Settings.FallbackCandidateCount : 1;
 		for (int Index = 0; Index < CandidateCount; ++Index)
@@ -172,5 +205,11 @@ namespace HHV::PokemonAI
 		const float DeltaX = A.X - B.X;
 		const float DeltaY = A.Y - B.Y;
 		return std::sqrt(DeltaX * DeltaX + DeltaY * DeltaY);
+	}
+
+	void FollowOwnerAction::ResetArrivalTimer()
+	{
+		IdleAtTargetSeconds = 0.0f;
+		bHasIdleTarget = false;
 	}
 }

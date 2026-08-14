@@ -82,6 +82,8 @@ private:
 	void HandleMoveLeftStopped(const FInputActionValue& Value);
 	void HandleLookYaw(const FInputActionValue& Value);
 	void HandleLookPitch(const FInputActionValue& Value);
+	void HandleRunStarted(const FInputActionValue& Value);
+	void HandleRunStopped(const FInputActionValue& Value);
 	void HandlePokemonToggle(const FInputActionValue& Value);
 
 	UPROPERTY(Transient)
