@@ -45,6 +45,9 @@ namespace
 		Component->SetGenerateOverlapEvents(false);
 		Component->bReceivesDecals = false;
 		Component->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+		// 커마 프리뷰에서는 선택할 때마다 idle 애니메이션이 위아래로 흔들리지 않게 정지 포즈로 둔다.
+		Component->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+		Component->bPauseAnims = true;
 		return Component;
 	}
 
@@ -496,7 +499,7 @@ void AUEPalworldCustomizationPreviewActor::RefreshMeshes()
 	const bool bUsesSeparateOutfit = EquipmentMesh && !bSameOutfitAsBase && Appearance.BodyEquipmentIndex > 0;
 	BaseBodyMesh->SetSkeletalMesh(BaseMesh);
 	ResetComponentMaterials(BaseBodyMesh);
-	ApplyMorphSafeMaterials(BaseBodyMesh);
+	// Palworld 원본 의상/피부 텍스처를 그대로 써야 하므로 커마 프리뷰에서는 대체 머티리얼을 덮지 않는다.
 	HideFaceCoverSections(BaseBodyMesh);
 	if (bUsesSeparateOutfit)
 	{
@@ -506,13 +509,24 @@ void AUEPalworldCustomizationPreviewActor::RefreshMeshes()
 	BodyEquipmentMesh->SetVisibility(bUsesSeparateOutfit, true);
 	BodyEquipmentMesh->SetHiddenInGame(!bUsesSeparateOutfit, true);
 	ResetComponentMaterials(BodyEquipmentMesh);
-	ApplyMorphSafeMaterials(BodyEquipmentMesh);
+	// 별도 의상도 원본 SkeletalMesh에 박힌 머티리얼 슬롯을 그대로 사용한다.
 	HideFaceCoverSections(BodyEquipmentMesh);
 	HeadMesh->SetSkeletalMesh(Head.LoadMesh(Appearance.Gender));
 	ResetComponentMaterials(HeadMesh);
 	HideFaceCoverSections(HeadMesh);
 	HairMesh->SetSkeletalMesh(Hair.LoadMesh(Appearance.Gender));
 	ResetComponentMaterials(HairMesh);
+
+	// 메시 교체 후에도 커마 프리뷰는 정지 포즈를 유지한다.
+	// 선택할 때마다 기본 idle 애니메이션이 재생되면 캐릭터가 위아래로 흔들려 보인다.
+	for (USkeletalMeshComponent* PreviewPart : {BaseBodyMesh.Get(), BodyEquipmentMesh.Get(), HeadMesh.Get(), HairMesh.Get()})
+	{
+		if (PreviewPart)
+		{
+			PreviewPart->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+			PreviewPart->bPauseAnims = true;
+		}
+	}
 
 	RefreshFollowerPose();
 	ApplyMaterialColors();
@@ -774,41 +788,16 @@ void AUEPalworldCustomizationPreviewActor::FramePreviewCamera()
 		return;
 	}
 
-	FBox CombinedBounds(ForceInit);
-	for (USkeletalMeshComponent* Component : {BaseBodyMesh.Get(), BodyEquipmentMesh.Get(), HeadMesh.Get(), HairMesh.Get()})
-	{
-		if (!Component || !Component->GetSkeletalMeshAsset() || !Component->IsVisible())
-		{
-			continue;
-		}
-
-		Component->UpdateBounds();
-		CombinedBounds += Component->Bounds.GetBox();
-	}
-
-	if (!CombinedBounds.IsValid)
-	{
-		return;
-	}
-
-	const FVector Center = CombinedBounds.GetCenter();
-	const FVector Extent = CombinedBounds.GetExtent();
 	constexpr float FovDegrees = 36.0f;
-	constexpr float AspectRatio = 16.0f / 9.0f;
-	const float HalfFovRadians = FMath::DegreesToRadians(FovDegrees * 0.5f);
-	const float HalfHeight = FMath::Max(Extent.Z * 1.10f, 106.0f);
-	const float HalfWidth = FMath::Max(Extent.X, Extent.Y);
-	const float DistanceForHeight = HalfHeight / FMath::Tan(HalfFovRadians);
-	const float DistanceForWidth = HalfWidth / (FMath::Tan(HalfFovRadians) * AspectRatio);
-	const float BaseDistance = FMath::Clamp(FMath::Max(DistanceForHeight, DistanceForWidth) * 1.45f, 430.0f, 820.0f);
+	constexpr float BaseDistance = 560.0f;
 	const float Distance = BaseDistance * PreviewZoom;
-	FVector Target(Center.X, Center.Y, FMath::Clamp(Center.Z + Extent.Z * 0.03f, 82.0f, 112.0f));
-	// 마우스 이동은 모델 스케일을 건드리지 않고 카메라 기준으로만 이동한다.
-	Target += FVector(PreviewPanPixels.X * 0.11f, 0.0f, -PreviewPanPixels.Y * 0.11f);
-	// Palworld 캐릭터 생성 화면처럼 시작 시 +Y 정면을 보여주고, 사용자가 드래그할 때만 CharacterRoot를 돌린다.
-	const FVector CameraLocation = Target + FVector(0.0f, Distance, Extent.Z * 0.08f);
 
-	// 프리뷰는 항상 캐릭터 전체 bounds 기준으로 잡고, 루트/머리 스케일로 임시 보정하지 않는다.
+	// 머리나 의상을 바꿔도 bounds 중심을 다시 잡지 않는다.
+	// 그래야 커마 선택 때 캐릭터가 위아래로 튀어 보이지 않는다.
+	FVector Target(0.0f, 0.0f, 98.0f);
+	Target += FVector(PreviewPanPixels.X * 0.11f, 0.0f, -PreviewPanPixels.Y * 0.11f);
+	const FVector CameraLocation = Target + FVector(0.0f, Distance, 18.0f);
+
 	PreviewCamera->SetWorldLocation(CameraLocation);
 	PreviewCamera->SetWorldRotation(UKismetMathLibrary::FindLookAtRotation(CameraLocation, Target));
 	PreviewCamera->FieldOfView = FovDegrees;

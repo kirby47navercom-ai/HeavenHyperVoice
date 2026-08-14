@@ -17,6 +17,8 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void SetupInputComponent() override;
+	virtual void Tick(float DeltaSeconds) override;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Palworld")
 	TSubclassOf<UUEPalworldCustomizationWidget> CustomizationWidgetClass;
@@ -30,4 +32,13 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<AUEPalworldCustomizationPreviewActor> PreviewActor = nullptr;
+
+	bool bDraggingPreview = false;
+	bool bPanningPreview = false;
+	FVector2D LastMousePosition = FVector2D::ZeroVector;
+
+	bool IsMouseOverPreviewArea(const FVector2D& MousePosition) const;
+	void HandlePreviewMouseDrag();
+	void HandlePreviewZoomIn();
+	void HandlePreviewZoomOut();
 };

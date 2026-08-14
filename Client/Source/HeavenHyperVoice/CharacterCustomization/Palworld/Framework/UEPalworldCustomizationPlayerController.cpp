@@ -4,12 +4,15 @@
 #include "../UI/UEPalworldCustomizationWidget.h"
 
 #include "EngineUtils.h"
+#include "InputCoreTypes.h"
 #include "UObject/ConstructorHelpers.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogUEPalworldCustomization, Log, All);
 
 AUEPalworldCustomizationPlayerController::AUEPalworldCustomizationPlayerController()
 {
+	PrimaryActorTick.bCanEverTick = true;
+
 	static ConstructorHelpers::FClassFinder<UUEPalworldCustomizationWidget> WidgetFinder(
 		TEXT("/Game/CharacterCustomization/Palworld/Blueprints/WBP_PalworldCustomization"));
 	CustomizationWidgetClass = UUEPalworldCustomizationWidget::StaticClass();
@@ -76,4 +79,114 @@ void AUEPalworldCustomizationPlayerController::BeginPlay()
 	}
 	SetInputMode(InputMode);
 	bShowMouseCursor = true;
+}
+
+void AUEPalworldCustomizationPlayerController::SetupInputComponent()
+{
+	Super::SetupInputComponent();
+
+	if (!InputComponent)
+	{
+		return;
+	}
+
+	// 마우스 휠은 Input Mapping Context 없이도 커마 화면에서 바로 확대/축소되게 묶는다.
+	InputComponent->BindKey(EKeys::MouseScrollUp, IE_Pressed, this, &ThisClass::HandlePreviewZoomIn);
+	InputComponent->BindKey(EKeys::MouseScrollDown, IE_Pressed, this, &ThisClass::HandlePreviewZoomOut);
+}
+
+void AUEPalworldCustomizationPlayerController::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	HandlePreviewMouseDrag();
+}
+
+bool AUEPalworldCustomizationPlayerController::IsMouseOverPreviewArea(const FVector2D& MousePosition) const
+{
+	int32 ViewportX = 0;
+	int32 ViewportY = 0;
+	GetViewportSize(ViewportX, ViewportY);
+	if (ViewportX <= 0 || ViewportY <= 0)
+	{
+		return false;
+	}
+
+	// 좌우 UI 패널 위에서는 버튼/스크롤을 우선하고, 가운데 캐릭터 영역에서만 드래그를 받는다.
+	return MousePosition.X > ViewportX * 0.16f &&
+		MousePosition.X < ViewportX * 0.86f &&
+		MousePosition.Y > ViewportY * 0.02f &&
+		MousePosition.Y < ViewportY * 0.98f;
+}
+
+void AUEPalworldCustomizationPlayerController::HandlePreviewMouseDrag()
+{
+	if (!PreviewActor)
+	{
+		bDraggingPreview = false;
+		bPanningPreview = false;
+		return;
+	}
+
+	float MouseX = 0.0f;
+	float MouseY = 0.0f;
+	if (!GetMousePosition(MouseX, MouseY))
+	{
+		bDraggingPreview = false;
+		bPanningPreview = false;
+		return;
+	}
+
+	const FVector2D CurrentMousePosition(MouseX, MouseY);
+	const bool bLeftDown = IsInputKeyDown(EKeys::LeftMouseButton);
+	const bool bPanDown = IsInputKeyDown(EKeys::RightMouseButton) || IsInputKeyDown(EKeys::MiddleMouseButton);
+
+	if (!bLeftDown && !bPanDown)
+	{
+		bDraggingPreview = false;
+		bPanningPreview = false;
+		LastMousePosition = CurrentMousePosition;
+		return;
+	}
+
+	if (!bDraggingPreview && !bPanningPreview)
+	{
+		if (!IsMouseOverPreviewArea(CurrentMousePosition))
+		{
+			LastMousePosition = CurrentMousePosition;
+			return;
+		}
+
+		bDraggingPreview = bLeftDown;
+		bPanningPreview = bPanDown;
+		LastMousePosition = CurrentMousePosition;
+		return;
+	}
+
+	const FVector2D Delta = CurrentMousePosition - LastMousePosition;
+	LastMousePosition = CurrentMousePosition;
+
+	if (bDraggingPreview)
+	{
+		PreviewActor->AddPreviewYaw(Delta.X * 0.28f);
+	}
+	else if (bPanningPreview)
+	{
+		PreviewActor->AddPreviewPan(Delta);
+	}
+}
+
+void AUEPalworldCustomizationPlayerController::HandlePreviewZoomIn()
+{
+	if (PreviewActor)
+	{
+		PreviewActor->AddPreviewZoom(-0.12f);
+	}
+}
+
+void AUEPalworldCustomizationPlayerController::HandlePreviewZoomOut()
+{
+	if (PreviewActor)
+	{
+		PreviewActor->AddPreviewZoom(0.12f);
+	}
 }

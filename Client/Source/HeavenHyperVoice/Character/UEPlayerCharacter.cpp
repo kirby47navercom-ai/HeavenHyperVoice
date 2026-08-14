@@ -229,6 +229,8 @@ AUEPlayerCharacter::AUEPlayerCharacter()
 	}
 
 	GetCapsuleComponent()->InitCapsuleSize(34.0f, 88.0f);
+	GetCapsuleComponent()->SetRelativeRotation({0.0f,0.0f,-90.0f});
+	GetCapsuleComponent()->SetRelativeLocation({0.0f,0.0f,-90.0f});
 	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()));
 
 	PalworldBodyEquipmentMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("PalworldBodyEquipmentMesh"));
@@ -630,9 +632,9 @@ void AUEPlayerCharacter::ApplyPalworldAppearance(const FUEPalworldAppearance& Ne
 	PalworldHairMesh->SetSkeletalMesh(Hair.LoadMesh(Appearance.Gender));
 
 	ResetPalworldMaterials(GetMesh());
-	ApplyPalworldMorphSafeMaterials(GetMesh());
+	// 원본 Palworld 바디/의상 텍스처를 그대로 써야 하므로 대체 머티리얼을 덮지 않는다.
 	ResetPalworldMaterials(PalworldBodyEquipmentMesh);
-	ApplyPalworldMorphSafeMaterials(PalworldBodyEquipmentMesh);
+	// 별도 의상도 SkeletalMesh에 저장된 원본 머티리얼 슬롯을 그대로 사용한다.
 	ResetPalworldMaterials(PalworldHeadMesh);
 	ResetPalworldMaterials(PalworldHairMesh);
 	HidePalworldFaceCoverSections(GetMesh());
