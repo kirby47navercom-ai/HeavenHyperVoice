@@ -170,6 +170,33 @@ namespace
 		return LoadObject<UTexture>(nullptr, *FallbackPath);
 	}
 
+	void ApplyPlayerPalworldEyeColorParameters(UMaterialInstanceDynamic* Material, const FLinearColor& EyeColor)
+	{
+		if (!Material)
+		{
+			return;
+		}
+
+		const FLinearColor Color = EyeColor.GetClamped();
+		for (const FName ParameterName : {TEXT("TintColor"), TEXT("Color"), TEXT("BaseColor"), TEXT("Base Color"), TEXT("IrisColor"), TEXT("Iris Color"), TEXT("EyeColor"), TEXT("Eye Color"), TEXT("MainColor")})
+		{
+			Material->SetVectorParameterValue(ParameterName, Color);
+		}
+	}
+
+	void ApplyPlayerPalworldEyeTextureParameters(UMaterialInstanceDynamic* Material, UTexture* Texture)
+	{
+		if (!Material || !Texture)
+		{
+			return;
+		}
+
+		for (const FName ParameterName : {TEXT("Base Texture"), TEXT("BaseTexture"), TEXT("BaseMap"), TEXT("MainTex"), TEXT("Texture"), TEXT("Diffuse"), TEXT("Albedo")})
+		{
+			Material->SetTextureParameterValue(ParameterName, Texture);
+		}
+	}
+
 }
 
 AUEPlayerCharacter::AUEPlayerCharacter()
@@ -796,8 +823,9 @@ void AUEPlayerCharacter::ApplyPalworldEyeMaterial(
 				PalworldCustomizationCatalog ? PalworldCustomizationCatalog->EyeColors : TArray<FLinearColor>()))
 			{
 				// 흰자까지 포함된 합성 텍스처를 써서 눈 색만 바꾸고 얼굴 머티리얼은 건드리지 않는다.
-				DynamicMaterial->SetTextureParameterValue(TEXT("Base Texture"), CompositeTexture);
+				ApplyPlayerPalworldEyeTextureParameters(DynamicMaterial, CompositeTexture);
 			}
+			ApplyPlayerPalworldEyeColorParameters(DynamicMaterial, EyeColor);
 		}
 	}
 }
@@ -861,7 +889,11 @@ bool AUEPlayerCharacter::IsPalworldEyeMaterialSlot(USkeletalMeshComponent* Compo
 		SlotIdentity.Contains(TEXT("iris")) ||
 		SlotIdentity.Contains(TEXT("pupil"));
 	const bool bHasPalworldEyeMaterial =
-		MaterialIdentity.Contains(TEXT("mi_player_eye")) || MaterialIdentity.Contains(TEXT("player_eye"));
+		MaterialIdentity.IsEmpty() ||
+		MaterialIdentity.Contains(TEXT("mi_player_eye")) ||
+		MaterialIdentity.Contains(TEXT("player_eye")) ||
+		MaterialIdentity.Contains(TEXT("iris")) ||
+		MaterialIdentity.Contains(TEXT("pupil"));
 	return bLooksLikeEyeSlot && bHasPalworldEyeMaterial;
 }
 

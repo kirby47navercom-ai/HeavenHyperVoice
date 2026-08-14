@@ -189,6 +189,33 @@ namespace
 		return LoadObject<UTexture>(nullptr, *FallbackPath);
 	}
 
+	void ApplyPreviewEyeColorParameters(UMaterialInstanceDynamic* Material, const FLinearColor& EyeColor)
+	{
+		if (!Material)
+		{
+			return;
+		}
+
+		const FLinearColor Color = EyeColor.GetClamped();
+		for (const FName ParameterName : {TEXT("TintColor"), TEXT("Color"), TEXT("BaseColor"), TEXT("Base Color"), TEXT("IrisColor"), TEXT("Iris Color"), TEXT("EyeColor"), TEXT("Eye Color"), TEXT("MainColor")})
+		{
+			Material->SetVectorParameterValue(ParameterName, Color);
+		}
+	}
+
+	void ApplyPreviewEyeTextureParameters(UMaterialInstanceDynamic* Material, UTexture* Texture)
+	{
+		if (!Material || !Texture)
+		{
+			return;
+		}
+
+		for (const FName ParameterName : {TEXT("Base Texture"), TEXT("BaseTexture"), TEXT("BaseMap"), TEXT("MainTex"), TEXT("Texture"), TEXT("Diffuse"), TEXT("Albedo")})
+		{
+			Material->SetTextureParameterValue(ParameterName, Texture);
+		}
+	}
+
 }
 
 AUEPalworldCustomizationPreviewActor::AUEPalworldCustomizationPreviewActor()
@@ -943,8 +970,9 @@ void AUEPalworldCustomizationPreviewActor::ApplyEyeMaterial(const FUEPalworldCus
 			if (CompositeTexture)
 			{
 				// 흰자, 홍채, 동공, 하이라이트가 합쳐진 Palworld 눈 텍스처만 갈아 끼운다.
-				EyeMaterial->SetTextureParameterValue(TEXT("Base Texture"), CompositeTexture);
+				ApplyPreviewEyeTextureParameters(EyeMaterial, CompositeTexture);
 			}
+			ApplyPreviewEyeColorParameters(EyeMaterial, Appearance.EyeColor);
 		}
 	}
 }
@@ -1014,8 +1042,12 @@ bool AUEPalworldCustomizationPreviewActor::IsEyeIrisMaterialSlot(
 		SlotIdentity.Contains(TEXT("_eye")) ||
 		SlotIdentity.Contains(TEXT("iris")) ||
 		SlotIdentity.Contains(TEXT("pupil"));
-	const bool bHasPalworldEyeMaterial = MaterialIdentity.Contains(TEXT("mi_player_eye")) ||
-		MaterialIdentity.Contains(TEXT("player_eye"));
+	const bool bHasPalworldEyeMaterial =
+		MaterialIdentity.IsEmpty() ||
+		MaterialIdentity.Contains(TEXT("mi_player_eye")) ||
+		MaterialIdentity.Contains(TEXT("player_eye")) ||
+		MaterialIdentity.Contains(TEXT("iris")) ||
+		MaterialIdentity.Contains(TEXT("pupil"));
 	return bLooksLikeEyeSlot && bHasPalworldEyeMaterial;
 }
 
