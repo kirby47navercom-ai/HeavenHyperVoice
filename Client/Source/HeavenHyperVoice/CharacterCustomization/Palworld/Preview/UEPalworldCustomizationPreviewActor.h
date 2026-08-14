@@ -133,6 +133,7 @@ private:
 	void RefreshMeshes();
 	void RefreshFollowerPose();
 	void ApplyMaterialColors();
+	void ApplyMeshLocalMaterials(USkeletalMeshComponent* Component);
 	void ApplyEyeMaterial(const FUEPalworldCustomizationOption& Option);
 	bool IsEyeIrisMaterialSlot(USkeletalMeshComponent* Component, int32 MaterialIndex) const;
 	void ApplyColorToSlots(USkeletalMeshComponent* Component, const FLinearColor& Color, const TArray<FString>& SlotContains);

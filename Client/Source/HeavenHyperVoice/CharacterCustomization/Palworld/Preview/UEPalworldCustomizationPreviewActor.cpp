@@ -34,6 +34,7 @@ namespace
 {
 	const FUEPalworldCustomizationOption PreviewEmptyOption;
 	constexpr int32 PreviewMaxVisibleOutfits = 14;
+	constexpr int32 PreviewFirstVisibleOutfitIndex = 1;
 	const TCHAR* MorphSafeMaterialFolder = TEXT("/Game/CharacterCustomization/Palworld/Generated/MorphSafeMaterials");
 	const TCHAR* EyeCompositeFolder = TEXT("/Game/CharacterCustomization/Palworld/Generated/EyeComposite");
 
@@ -219,6 +220,158 @@ namespace
 		}
 	}
 
+	void EnsurePreviewSkeletalMaterialUsage(UMaterialInterface* Material)
+	{
+		if (!Material)
+		{
+			return;
+		}
+
+		// 추출 머티리얼 중 SkeletalMesh/MorphTargets 사용 플래그가 빠진 것이 있어,
+		// 체형 모프 적용 뒤 회색 기본 머티리얼로 떨어지지 않게 적용 전에 확인한다.
+		Material->CheckMaterialUsage_Concurrent(MATUSAGE_SkeletalMesh);
+		Material->CheckMaterialUsage_Concurrent(MATUSAGE_MorphTargets);
+	}
+
+	UMaterialInterface* LoadMeshLocalMaterial(
+		const USkeletalMesh* Mesh,
+		const UMaterialInterface* CurrentMaterial,
+		int32 MaterialIndex,
+		int32 MaterialCount)
+	{
+		if (!Mesh)
+		{
+			return nullptr;
+		}
+
+		FString MeshObjectPath = Mesh->GetPathName();
+		int32 DotIndex = INDEX_NONE;
+		if (MeshObjectPath.FindChar(TEXT('.'), DotIndex))
+		{
+			MeshObjectPath.LeftInline(DotIndex);
+		}
+
+		const FString MeshFolder = FPaths::GetPath(MeshObjectPath);
+		const bool bIsAssetsFbxOutfitMesh =
+			MeshObjectPath.Contains(TEXT("/Palworld/AssetsFBX/")) &&
+			MeshObjectPath.Contains(TEXT("/Outfit/"));
+		if (!MeshFolder.EndsWith(TEXT("/SkeletalMeshes")) && !bIsAssetsFbxOutfitMesh)
+		{
+			return nullptr;
+		}
+
+		const FString MeshOwnerFolder = FPaths::GetPath(MeshFolder);
+		const FString MaterialName = CurrentMaterial ? CurrentMaterial->GetName() : FString();
+		if (bIsAssetsFbxOutfitMesh)
+		{
+			const FString MeshNameLower = Mesh->GetName().ToLower();
+			const FString MaterialPathLower = GetPathNameSafe(CurrentMaterial).ToLower();
+			const bool bMeshIsFemale = MeshNameLower.Contains(TEXT("female"));
+			const bool bMeshIsMale = !bMeshIsFemale && MeshNameLower.Contains(TEXT("male"));
+			const bool bMaterialIsFemale = MaterialPathLower.Contains(TEXT("_female_"));
+			const bool bMaterialIsMale = MaterialPathLower.Contains(TEXT("_male_"));
+			const bool bWrongGenderMaterial =
+				(bMeshIsFemale && bMaterialIsMale) ||
+				(bMeshIsMale && bMaterialIsFemale);
+			const int32 SuffixIndex = MaterialName.Find(TEXT("_M"), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+			if (bWrongGenderMaterial && SuffixIndex != INDEX_NONE && MaterialName.Len() >= SuffixIndex + 4)
+			{
+				const FString MaterialSuffix = MaterialName.Mid(SuffixIndex + 1, 3);
+				const FString LocalMaterialName = TEXT("MI___") + MaterialSuffix;
+				const FString LocalMaterialPath = FString::Printf(
+					TEXT("%s/%s.%s"),
+					*MeshFolder,
+					*LocalMaterialName,
+					*LocalMaterialName);
+				// AssetsFBX 의상 일부는 여성 메쉬 슬롯에 남성 M03 머티리얼이 꽂혀 있다.
+				// 같은 메쉬 폴더의 MI___M## 머티리얼이 있으면 그 추출 머티리얼로 교체한다.
+				return LoadObject<UMaterialInterface>(nullptr, *LocalMaterialPath);
+			}
+			return nullptr;
+		}
+		const auto LoadLocalMaterialByName = [&MeshOwnerFolder](const FString& CandidateName) -> UMaterialInterface*
+		{
+			if (CandidateName.IsEmpty())
+			{
+				return nullptr;
+			}
+			const FString LocalMaterialPath = FString::Printf(
+				TEXT("%s/Materials/%s.%s"),
+				*MeshOwnerFolder,
+				*CandidateName,
+				*CandidateName);
+			return LoadObject<UMaterialInterface>(nullptr, *LocalMaterialPath);
+		};
+		const auto LoadSourceOutfitMaterialByName =
+			[&MeshFolder](const FString& CandidateName, const FString& VersionFolder) -> UMaterialInterface*
+		{
+			if (CandidateName.IsEmpty() || VersionFolder.IsEmpty())
+			{
+				return nullptr;
+			}
+
+			const FString VariantFolder = FPaths::GetPath(MeshFolder);
+			const FString OutfitRootFolder = FPaths::GetPath(VariantFolder);
+			const FString SourceMaterialPath = FString::Printf(
+				TEXT("%s/%s/%s.%s"),
+				*OutfitRootFolder,
+				*VersionFolder,
+				*CandidateName,
+				*CandidateName);
+			return LoadObject<UMaterialInterface>(nullptr, *SourceMaterialPath);
+		};
+
+		FString MeshMaterialStem = Mesh->GetName();
+		MeshMaterialStem.RemoveFromStart(TEXT("SK_"));
+		if (MeshMaterialStem.EndsWith(TEXT("_2")))
+		{
+			MeshMaterialStem.LeftChopInline(2);
+		}
+
+		if (MeshMaterialStem.Contains(TEXT("Hair")))
+		{
+			// 헤어는 추출된 메쉬 슬롯의 원본 머티리얼을 그대로 사용한다.
+			// 다른 파트 보정 로직이 헤어 머티리얼을 덮으면 색과 윤곽이 틀어진다.
+			return nullptr;
+		}
+
+		const bool bSingleOutfitSlotUsesBodyMaterial =
+			MaterialIndex == 0 &&
+			MaterialCount == 1 &&
+			MaterialName.Contains(TEXT("Body")) &&
+			Mesh->GetName().Contains(TEXT("Outfit"));
+		if (bSingleOutfitSlotUsesBodyMaterial)
+		{
+			// 일부 추출 의상은 메쉬 슬롯이 하나인데 기본 머티리얼이 몸 피부로 들어와 있다.
+			// 이때만 Palworld 원본 /Outfit/.../v##/MI_*_M01 머티리얼을 찾아 입힌다.
+			FString OutfitMaterialStem = MeshMaterialStem;
+			if (!OutfitMaterialStem.Contains(TEXT("_v")))
+			{
+				OutfitMaterialStem += TEXT("_v01");
+			}
+			FString VersionFolder = TEXT("v01");
+			const int32 VersionIndex = OutfitMaterialStem.Find(TEXT("_v"), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+			if (VersionIndex != INDEX_NONE && OutfitMaterialStem.Len() >= VersionIndex + 4)
+			{
+				VersionFolder = OutfitMaterialStem.Mid(VersionIndex + 1, 3);
+			}
+			OutfitMaterialStem = TEXT("MI_") + OutfitMaterialStem;
+			if (UMaterialInterface* OutfitMaterial = LoadSourceOutfitMaterialByName(
+				OutfitMaterialStem + TEXT("_M01"),
+				VersionFolder))
+			{
+				return OutfitMaterial;
+			}
+			if (UMaterialInterface* OutfitMaterial = LoadLocalMaterialByName(OutfitMaterialStem + TEXT("_M01")))
+			{
+				return OutfitMaterial;
+			}
+		}
+
+		// 이미 메쉬 슬롯에 원본 Palworld 머티리얼이 있으면 그대로 둔다.
+		return nullptr;
+	}
+
 }
 
 AUEPalworldCustomizationPreviewActor::AUEPalworldCustomizationPreviewActor()
@@ -310,6 +463,8 @@ void AUEPalworldCustomizationPreviewActor::BeginPlay()
 	PreviewYawDegrees = 0.0f;
 	PreviewZoom = 1.0f;
 	PreviewPanPixels = FVector2D::ZeroVector;
+	// 맵/블루프린트에 예전 프리뷰 값이 저장돼 있어도 커마 화면의 기본 의상은 1번으로 시작한다.
+	Appearance.BodyEquipmentIndex = PreviewFirstVisibleOutfitIndex;
 	if (CharacterRoot)
 	{
 		CharacterRoot->SetRelativeRotation(FRotator(0.0f, PreviewYawDegrees, 0.0f));
@@ -463,18 +618,28 @@ void AUEPalworldCustomizationPreviewActor::RefreshMeshes()
 	NormalizeLegacyDefaultColors();
 
 	Appearance.BodyIndex = ClampIndex(Appearance.BodyIndex, GetOptionCount(EUEPalworldCustomizationCategory::Body));
+	if (Appearance.BodyIndex == 0 && GetOptionCount(EUEPalworldCustomizationCategory::Body) > 2)
+	{
+		// 0번 Body는 예전 추출 기본값이라 실제 커마에서는 쓰지 않는다.
+		// 화면에 보이는 Palworld 체형 타입은 TypeA=1, TypeB=2부터 시작한다.
+		Appearance.BodyIndex = Appearance.Gender == EUEPalworldGender::TypeB ? 2 : 1;
+	}
 	Appearance.HeadIndex = ClampIndex(Appearance.HeadIndex, GetOptionCount(EUEPalworldCustomizationCategory::Head));
 	Appearance.HairIndex = ClampIndex(Appearance.HairIndex, GetOptionCount(EUEPalworldCustomizationCategory::Hair));
 	Appearance.EyeIndex = ClampIndex(Appearance.EyeIndex, GetOptionCount(EUEPalworldCustomizationCategory::Eyes));
 	const int32 BodyEquipmentCount = GetOptionCount(EUEPalworldCustomizationCategory::BodyEquipment);
-	if (BodyEquipmentCount > 1)
+	if (BodyEquipmentCount > PreviewFirstVisibleOutfitIndex)
 	{
-		const int32 VisibleOutfitMaxIndex = FMath::Min(BodyEquipmentCount - 1, PreviewMaxVisibleOutfits);
-		Appearance.BodyEquipmentIndex = FMath::Clamp(Appearance.BodyEquipmentIndex, 1, VisibleOutfitMaxIndex);
+		// 의상 0번은 추출용 베이스라 제외하고, 실제 선택은 1~14번만 허용한다.
+		const int32 LastVisibleOutfitIndex = FMath::Min(BodyEquipmentCount - 1, PreviewMaxVisibleOutfits);
+		Appearance.BodyEquipmentIndex = FMath::Clamp(
+			Appearance.BodyEquipmentIndex,
+			PreviewFirstVisibleOutfitIndex,
+			LastVisibleOutfitIndex);
 	}
 	else
 	{
-		Appearance.BodyEquipmentIndex = ClampIndex(Appearance.BodyEquipmentIndex, BodyEquipmentCount);
+		Appearance.BodyEquipmentIndex = 0;
 	}
 	// 얼굴을 가리는 장비 섹션은 숨기고 머리 장비 컴포넌트는 사용하지 않는다.
 	const FUEPalworldCustomizationOption& Body = GetOption(
@@ -499,23 +664,28 @@ void AUEPalworldCustomizationPreviewActor::RefreshMeshes()
 	const bool bUsesSeparateOutfit = EquipmentMesh && !bSameOutfitAsBase && Appearance.BodyEquipmentIndex > 0;
 	BaseBodyMesh->SetSkeletalMesh(BaseMesh);
 	ResetComponentMaterials(BaseBodyMesh);
+	ApplyMeshLocalMaterials(BaseBodyMesh);
 	// Palworld 원본 의상/피부 텍스처를 그대로 써야 하므로 커마 프리뷰에서는 대체 머티리얼을 덮지 않는다.
 	HideFaceCoverSections(BaseBodyMesh);
 	if (bUsesSeparateOutfit)
 	{
+		// 기본 몸은 유지하고 기본 OldCloth 섹션만 숨긴 뒤, 선택 의상을 별도 메쉬로 얹는다.
 		HideBaseBodyOutfitSections(BaseBodyMesh);
 	}
 	BodyEquipmentMesh->SetSkeletalMesh(bUsesSeparateOutfit ? EquipmentMesh : nullptr);
 	BodyEquipmentMesh->SetVisibility(bUsesSeparateOutfit, true);
 	BodyEquipmentMesh->SetHiddenInGame(!bUsesSeparateOutfit, true);
 	ResetComponentMaterials(BodyEquipmentMesh);
+	ApplyMeshLocalMaterials(BodyEquipmentMesh);
 	// 별도 의상도 원본 SkeletalMesh에 박힌 머티리얼 슬롯을 그대로 사용한다.
 	HideFaceCoverSections(BodyEquipmentMesh);
 	HeadMesh->SetSkeletalMesh(Head.LoadMesh(Appearance.Gender));
 	ResetComponentMaterials(HeadMesh);
+	ApplyMeshLocalMaterials(HeadMesh);
 	HideFaceCoverSections(HeadMesh);
 	HairMesh->SetSkeletalMesh(Hair.LoadMesh(Appearance.Gender));
 	ResetComponentMaterials(HairMesh);
+	ApplyMeshLocalMaterials(HairMesh);
 
 	// 메시 교체 후에도 커마 프리뷰는 정지 포즈를 유지한다.
 	// 선택할 때마다 기본 idle 애니메이션이 재생되면 캐릭터가 위아래로 흔들려 보인다.
@@ -820,8 +990,10 @@ void AUEPalworldCustomizationPreviewActor::PreparePreviewStage()
 			continue;
 		}
 
-		Component->SetHiddenInGame(false, true);
-		Component->SetVisibility(true, true);
+		// 실제로 메쉬가 있는 파트만 다시 켠다. 비워 둔 의상 보조 컴포넌트가 화면에 끼어들면 안 된다.
+		const bool bHasMesh = Component->GetSkeletalMeshAsset() != nullptr;
+		Component->SetHiddenInGame(!bHasMesh, true);
+		Component->SetVisibility(bHasMesh, true);
 	}
 }
 
@@ -934,6 +1106,32 @@ void AUEPalworldCustomizationPreviewActor::ApplyMaterialColors()
 	}
 }
 
+void AUEPalworldCustomizationPreviewActor::ApplyMeshLocalMaterials(USkeletalMeshComponent* Component)
+{
+		if (!Component || !Component->GetSkeletalMeshAsset())
+		{
+			return;
+		}
+
+		USkeletalMesh* Mesh = Component->GetSkeletalMeshAsset();
+		for (int32 Index = 0; Index < Component->GetNumMaterials(); ++Index)
+		{
+			UMaterialInterface* CurrentMaterial = Component->GetMaterial(Index);
+			EnsurePreviewSkeletalMaterialUsage(CurrentMaterial);
+			if (UMaterialInterface* LocalMaterial = LoadMeshLocalMaterial(
+				Mesh,
+				CurrentMaterial,
+				Index,
+				Component->GetNumMaterials()))
+			{
+				// 일부 추출 메시가 다른 성별 폴더의 머티리얼을 물고 있어서,
+				// 같은 메시 폴더 안에 복사된 원본 머티리얼이 있으면 그쪽을 우선 사용한다.
+				EnsurePreviewSkeletalMaterialUsage(LocalMaterial);
+				Component->SetMaterial(Index, LocalMaterial);
+			}
+		}
+	}
+
 void AUEPalworldCustomizationPreviewActor::ApplyEyeMaterial(const FUEPalworldCustomizationOption& Option)
 {
 	if (!HeadMesh || !Option.Material)
@@ -950,6 +1148,7 @@ void AUEPalworldCustomizationPreviewActor::ApplyEyeMaterial(const FUEPalworldCus
 	{
 		if (IsEyeIrisMaterialSlot(HeadMesh, Index))
 		{
+			EnsurePreviewSkeletalMaterialUsage(Option.Material);
 			UMaterialInstanceDynamic* EyeMaterial = HeadMesh->CreateDynamicMaterialInstance(Index, Option.Material);
 			if (!EyeMaterial)
 			{
@@ -959,7 +1158,9 @@ void AUEPalworldCustomizationPreviewActor::ApplyEyeMaterial(const FUEPalworldCus
 			if (CompositeTexture)
 			{
 				// 흰자, 홍채, 동공, 하이라이트가 합쳐진 Palworld 눈 텍스처만 갈아 끼운다.
+				// 합성 텍스처가 있으면 흰자까지 보존된 원본 텍스처를 그대로 쓴다.
 				ApplyPreviewEyeTextureParameters(EyeMaterial, CompositeTexture);
+				continue;
 			}
 			ApplyPreviewEyeColorParameters(EyeMaterial, Appearance.EyeColor);
 		}
@@ -1032,7 +1233,6 @@ bool AUEPalworldCustomizationPreviewActor::IsEyeIrisMaterialSlot(
 		SlotIdentity.Contains(TEXT("iris")) ||
 		SlotIdentity.Contains(TEXT("pupil"));
 	const bool bHasPalworldEyeMaterial =
-		MaterialIdentity.IsEmpty() ||
 		MaterialIdentity.Contains(TEXT("mi_player_eye")) ||
 		MaterialIdentity.Contains(TEXT("player_eye")) ||
 		MaterialIdentity.Contains(TEXT("iris")) ||
@@ -1118,6 +1318,7 @@ void AUEPalworldCustomizationPreviewActor::ResetComponentMaterials(USkeletalMesh
 	for (int32 Index = 0; Index < MaterialCount; ++Index)
 	{
 		Component->SetMaterial(Index, nullptr);
+		EnsurePreviewSkeletalMaterialUsage(Component->GetMaterial(Index));
 	}
 }
 

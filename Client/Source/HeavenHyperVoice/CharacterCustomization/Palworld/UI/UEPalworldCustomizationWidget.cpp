@@ -35,8 +35,8 @@ namespace
 	const FLinearColor MutedTextColor(0.62f, 0.66f, 0.70f, 1.0f);
 	const FLinearColor AccentColor(0.13f, 0.72f, 0.66f, 1.0f);
 	const FLinearColor SelectedColor(0.92f, 0.55f, 0.16f, 1.0f);
-
-	constexpr int32 WidgetMaxVisibleOutfits = 14;
+	constexpr int32 MaxVisibleBodyEquipmentOptions = 14;
+	constexpr int32 FirstVisibleBodyEquipmentIndex = 1;
 
 	void AddUniqueColor(TArray<FLinearColor>& Colors, const FLinearColor& Color)
 	{
@@ -697,7 +697,10 @@ void UUEPalworldCustomizationWidget::SynchronizeControls()
 	}
 	else if (CurrentCategory == EUEPalworldCustomizationCategory::BodyEquipment && GetOptionCount(CurrentCategory) > 1)
 	{
-		SelectedVisibleIndex = FMath::Max(0, SelectedActualIndex - 1);
+		SelectedVisibleIndex = FMath::Clamp(
+			SelectedActualIndex - FirstVisibleBodyEquipmentIndex,
+			0,
+			FMath::Max(0, GetVisibleOptionCount(CurrentCategory) - 1));
 	}
 	else
 	{
@@ -740,7 +743,8 @@ int32 UUEPalworldCustomizationWidget::GetVisibleOptionCount(EUEPalworldCustomiza
 	}
 	if (Category == EUEPalworldCustomizationCategory::BodyEquipment && RawCount > 1)
 	{
-		return FMath::Min(WidgetMaxVisibleOutfits, RawCount - 1);
+		// Palworld 커마 화면에서 실제로 다룰 의상은 앞쪽 14개까지만 보여준다.
+		return FMath::Min(RawCount - FirstVisibleBodyEquipmentIndex, MaxVisibleBodyEquipmentOptions);
 	}
 	return RawCount;
 }
@@ -755,7 +759,11 @@ int32 UUEPalworldCustomizationWidget::GetActualOptionIndex(
 	}
 	if (Category == EUEPalworldCustomizationCategory::BodyEquipment && GetOptionCount(Category) > 1)
 	{
-		return FMath::Clamp(VisibleIndex + 1, 1, GetOptionCount(Category) - 1);
+		const int32 LastVisibleActualIndex = FMath::Min(GetOptionCount(Category) - 1, MaxVisibleBodyEquipmentOptions);
+		return FMath::Clamp(
+			VisibleIndex + FirstVisibleBodyEquipmentIndex,
+			FirstVisibleBodyEquipmentIndex,
+			LastVisibleActualIndex);
 	}
 	return VisibleIndex;
 }

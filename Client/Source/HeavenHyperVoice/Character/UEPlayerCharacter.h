@@ -12,6 +12,7 @@ class UCameraComponent;
 class USpringArmComponent;
 class USkeletalMeshComponent;
 class UUEPalworldCustomizationCatalog;
+class UUEPlayerAnimationDataAsset;
 class UUEPlayerMovementSyncComponent;
 
 UCLASS(Blueprintable)
@@ -38,6 +39,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Character|Movement Sync")
 	UUEPlayerMovementSyncComponent* GetMovementSyncComponent() const { return MovementSyncComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Animation")
+	UUEPlayerAnimationDataAsset* GetPlayerAnimationData() const { return PlayerAnimationData; }
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Companion")
 	bool IsPokemonCompanionSpawned() const;
@@ -97,6 +101,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Palworld|Customization")
 	TObjectPtr<UUEPalworldCustomizationCatalog> PalworldCustomizationCatalog = nullptr;
 
+	// 플레이어 애님 블루프린트나 몽타주 재생 코드가 참조할 기본 애니메이션 데이터 에셋이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UUEPlayerAnimationDataAsset> PlayerAnimationData = nullptr;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Movement", meta = (ClampMin = "0.0"))
 	float WalkSpeed = 260.0f;
 
@@ -124,8 +132,10 @@ private:
 	static HHV::Map::Vec3 ToServerVec3(const FVector& Vector);
 	static FVector ToUnrealVector(const HHV::Map::Vec3& Vector);
 
+	void PlayerCharacterInit();
 	void ApplyPendingPalworldAppearance();
 	void ResetPalworldMaterials(USkeletalMeshComponent* Component) const;
+	void ApplyPalworldMeshLocalMaterials(USkeletalMeshComponent* Component) const;
 	void ApplyPalworldMorphSafeMaterials(USkeletalMeshComponent* Component) const;
 	void ApplyPalworldColorToSlots(USkeletalMeshComponent* Component, const FLinearColor& Color, const TArray<FString>& SlotContains) const;
 	void ApplyPalworldEyeMaterial(USkeletalMeshComponent* Component, const FUEPalworldCustomizationOption& EyeOption, const FLinearColor& EyeColor) const;
