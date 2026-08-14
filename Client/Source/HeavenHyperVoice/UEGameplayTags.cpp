@@ -1,10 +1,7 @@
 #include "UEGameplayTags.h"
 namespace UEGameplayTags
 {
-	UE_DEFINE_GAMEPLAY_TAG(Input_Action_MoveForward, "Input.Action.MoveForward");
-	UE_DEFINE_GAMEPLAY_TAG(Input_Action_MoveBackward, "Input.Action.MoveBackward");
-	UE_DEFINE_GAMEPLAY_TAG(Input_Action_MoveRight, "Input.Action.MoveRight");
-	UE_DEFINE_GAMEPLAY_TAG(Input_Action_MoveLeft, "Input.Action.MoveLeft");
+	UE_DEFINE_GAMEPLAY_TAG(Input_Action_Move, "Input.Action.Move");
 	UE_DEFINE_GAMEPLAY_TAG(Input_Action_LookYaw, "Input.Action.LookYaw");
 	UE_DEFINE_GAMEPLAY_TAG(Input_Action_LookPitch, "Input.Action.LookPitch");
 	UE_DEFINE_GAMEPLAY_TAG(Input_Action_Run, "Input.Action.Run");

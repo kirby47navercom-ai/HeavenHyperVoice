@@ -7,24 +7,9 @@
 
 const UInputAction* UUEDataAsset::FindInputActionByTag(const FGameplayTag& InputTag) const
 {
-	if (InputTag == UEGameplayTags::Input_Action_MoveForward)
+	if (InputTag == UEGameplayTags::Input_Action_Move)
 	{
-		return MoveForwardAction;
-	}
-
-	if (InputTag == UEGameplayTags::Input_Action_MoveBackward)
-	{
-		return MoveBackwardAction;
-	}
-
-	if (InputTag == UEGameplayTags::Input_Action_MoveRight)
-	{
-		return MoveRightAction;
-	}
-
-	if (InputTag == UEGameplayTags::Input_Action_MoveLeft)
-	{
-		return MoveLeftAction;
+		return MoveAction;
 	}
 
 	if (InputTag == UEGameplayTags::Input_Action_LookYaw)

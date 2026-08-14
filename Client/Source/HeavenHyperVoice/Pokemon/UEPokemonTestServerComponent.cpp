@@ -11,6 +11,11 @@
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
 
+namespace
+{
+	int32 GNextPokemonTestServerId = 1;
+}
+
 UUEPokemonTestServerComponent::UUEPokemonTestServerComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
@@ -19,6 +24,11 @@ UUEPokemonTestServerComponent::UUEPokemonTestServerComponent()
 void UUEPokemonTestServerComponent::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (ServerPokemonId <= 0)
+	{
+		ServerPokemonId = GNextPokemonTestServerId++;
+	}
 
 	if (const AUEPokemonCharacter* PokemonCharacter = GetPokemonOwner())
 	{
@@ -53,6 +63,38 @@ void UUEPokemonTestServerComponent::TickComponent(float DeltaTime, ELevelTick Ti
 void UUEPokemonTestServerComponent::SetFollowTargetActor(AActor* NewFollowTargetActor)
 {
 	FollowTargetActor = NewFollowTargetActor;
+}
+
+void UUEPokemonTestServerComponent::SendServerAnimationEvent(EUEPokemonAnimationEvent AnimationEvent, EUEPokemonAnimationState AnimationState, float EventDurationSeconds)
+{
+	AUEPokemonCharacter* PokemonCharacter = GetPokemonOwner();
+	if (!PokemonCharacter)
+	{
+		return;
+	}
+
+	ServerSimulatedLocation = PokemonCharacter->GetActorLocation();
+	ServerSimulatedRotation = PokemonCharacter->GetActorRotation();
+	ServerSimulatedVelocity = FVector::ZeroVector;
+
+	const float CurrentServerTimeSeconds = GetServerTimeSeconds();
+	if (EventDurationSeconds > 0.0f)
+	{
+		bHasForcedAnimationState = true;
+		ForcedAnimationState = AnimationState;
+		ForcedAnimationStateEndServerTimeSeconds = CurrentServerTimeSeconds + EventDurationSeconds;
+	}
+
+	SendServerSnapshot(
+		*PokemonCharacter,
+		ServerSimulatedLocation,
+		ServerSimulatedVelocity,
+		ServerSimulatedRotation,
+		false,
+		AnimationState,
+		AnimationEvent,
+		EventDurationSeconds
+	);
 }
 
 void UUEPokemonTestServerComponent::TryLoadServerMap()
@@ -115,13 +157,16 @@ void UUEPokemonTestServerComponent::ApplyServerCommand(AUEPokemonCharacter& Poke
 		}
 
 		// The local test server sends the same movement snapshot the real server will send later.
-		SendServerSnapshot(PokemonCharacter, ServerSimulatedLocation, ServerSimulatedVelocity, ServerSimulatedRotation, false);
+		const EUEPokemonAnimationState AnimationState = ServerSimulatedVelocity.IsNearlyZero()
+			? EUEPokemonAnimationState::Idle
+			: EUEPokemonAnimationState::Moving;
+		SendServerSnapshot(PokemonCharacter, ServerSimulatedLocation, ServerSimulatedVelocity, ServerSimulatedRotation, false, ResolveAnimationState(AnimationState), EUEPokemonAnimationEvent::None, 0.0f);
 		break;
 	}
 	case CommandType::Teleport:
 		ServerSimulatedLocation = ToUnrealVector(Command.TargetLocation);
 		ServerSimulatedVelocity = FVector::ZeroVector;
-		SendServerSnapshot(PokemonCharacter, ServerSimulatedLocation, ServerSimulatedVelocity, ServerSimulatedRotation, true);
+		SendServerSnapshot(PokemonCharacter, ServerSimulatedLocation, ServerSimulatedVelocity, ServerSimulatedRotation, true, ResolveAnimationState(EUEPokemonAnimationState::Idle), EUEPokemonAnimationEvent::None, 0.0f);
 		break;
 	case CommandType::FaceTarget:
 	{
@@ -132,21 +177,56 @@ void UUEPokemonTestServerComponent::ApplyServerCommand(AUEPokemonCharacter& Poke
 		{
 			ServerSimulatedRotation = ToTarget.ToOrientationRotator();
 		}
-		SendServerSnapshot(PokemonCharacter, ServerSimulatedLocation, ServerSimulatedVelocity, ServerSimulatedRotation, false);
+		const EUEPokemonAnimationState AnimationState = ToTarget.IsNearlyZero()
+			? EUEPokemonAnimationState::Idle
+			: EUEPokemonAnimationState::Turning;
+		SendServerSnapshot(PokemonCharacter, ServerSimulatedLocation, ServerSimulatedVelocity, ServerSimulatedRotation, false, ResolveAnimationState(AnimationState), EUEPokemonAnimationEvent::None, 0.0f);
 		break;
 	}
 	case CommandType::Stop:
 	case CommandType::None:
 	default:
 		ServerSimulatedVelocity = FVector::ZeroVector;
-		SendServerSnapshot(PokemonCharacter, ServerSimulatedLocation, ServerSimulatedVelocity, ServerSimulatedRotation, false);
+		SendServerSnapshot(PokemonCharacter, ServerSimulatedLocation, ServerSimulatedVelocity, ServerSimulatedRotation, false, ResolveAnimationState(EUEPokemonAnimationState::Idle), EUEPokemonAnimationEvent::None, 0.0f);
 		break;
 	}
 }
 
-void UUEPokemonTestServerComponent::SendServerSnapshot(AUEPokemonCharacter& PokemonCharacter, const FVector& Location, const FVector& Velocity, const FRotator& Rotation, bool bTeleported) const
+void UUEPokemonTestServerComponent::SendServerSnapshot(AUEPokemonCharacter& PokemonCharacter, const FVector& Location, const FVector& Velocity, const FRotator& Rotation, bool bTeleported, EUEPokemonAnimationState AnimationState, EUEPokemonAnimationEvent AnimationEvent, float EventDurationSeconds) const
 {
-	PokemonCharacter.ApplyServerMoveTarget(Location, Velocity, Rotation, bTeleported);
+	FUEPokemonServerMoveSnapshot Snapshot;
+	Snapshot.PokemonId = ServerPokemonId;
+	Snapshot.Location = Location;
+	Snapshot.Velocity = Velocity;
+	Snapshot.Rotation = Rotation;
+	Snapshot.bTeleported = bTeleported;
+	Snapshot.AnimationState = AnimationState;
+	Snapshot.AnimationEvent = AnimationEvent;
+	Snapshot.ServerTimeSeconds = GetServerTimeSeconds();
+	Snapshot.EventDurationSeconds = EventDurationSeconds;
+	PokemonCharacter.ApplyServerMoveSnapshot(Snapshot);
+}
+
+EUEPokemonAnimationState UUEPokemonTestServerComponent::ResolveAnimationState(EUEPokemonAnimationState FallbackState)
+{
+	if (!bHasForcedAnimationState)
+	{
+		return FallbackState;
+	}
+
+	if (GetServerTimeSeconds() <= ForcedAnimationStateEndServerTimeSeconds)
+	{
+		return ForcedAnimationState;
+	}
+
+	bHasForcedAnimationState = false;
+	return FallbackState;
+}
+
+float UUEPokemonTestServerComponent::GetServerTimeSeconds() const
+{
+	const UWorld* World = GetWorld();
+	return World ? World->GetTimeSeconds() : 0.0f;
 }
 
 AUEPokemonCharacter* UUEPokemonTestServerComponent::GetPokemonOwner() const

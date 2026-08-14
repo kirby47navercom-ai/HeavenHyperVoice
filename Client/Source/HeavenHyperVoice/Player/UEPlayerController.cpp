@@ -164,37 +164,17 @@ void AUEPlayerController::BindGameplayInput()
 
 void AUEPlayerController::BindMoveInput(UEnhancedInputComponent* EnhancedInputComponent)
 {
-	const UInputAction* MoveForwardAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_MoveForward);
-	const UInputAction* MoveBackwardAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_MoveBackward);
-	const UInputAction* MoveRightAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_MoveRight);
-	const UInputAction* MoveLeftAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_MoveLeft);
-
-	if (MoveForwardAction)
+	const UInputAction* MoveAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_Move);
+	if (!MoveAction)
 	{
-		EnhancedInputComponent->BindAction(MoveForwardAction, ETriggerEvent::Triggered, this, &ThisClass::HandleMoveForward);
-		EnhancedInputComponent->BindAction(MoveForwardAction, ETriggerEvent::Completed, this, &ThisClass::HandleMoveForwardStopped);
-		EnhancedInputComponent->BindAction(MoveForwardAction, ETriggerEvent::Canceled, this, &ThisClass::HandleMoveForwardStopped);
+		MoveAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_Move.IA_Move"));
 	}
 
-	if (MoveBackwardAction)
+	if (MoveAction)
 	{
-		EnhancedInputComponent->BindAction(MoveBackwardAction, ETriggerEvent::Triggered, this, &ThisClass::HandleMoveBackward);
-		EnhancedInputComponent->BindAction(MoveBackwardAction, ETriggerEvent::Completed, this, &ThisClass::HandleMoveBackwardStopped);
-		EnhancedInputComponent->BindAction(MoveBackwardAction, ETriggerEvent::Canceled, this, &ThisClass::HandleMoveBackwardStopped);
-	}
-
-	if (MoveRightAction)
-	{
-		EnhancedInputComponent->BindAction(MoveRightAction, ETriggerEvent::Triggered, this, &ThisClass::HandleMoveRight);
-		EnhancedInputComponent->BindAction(MoveRightAction, ETriggerEvent::Completed, this, &ThisClass::HandleMoveRightStopped);
-		EnhancedInputComponent->BindAction(MoveRightAction, ETriggerEvent::Canceled, this, &ThisClass::HandleMoveRightStopped);
-	}
-
-	if (MoveLeftAction)
-	{
-		EnhancedInputComponent->BindAction(MoveLeftAction, ETriggerEvent::Triggered, this, &ThisClass::HandleMoveLeft);
-		EnhancedInputComponent->BindAction(MoveLeftAction, ETriggerEvent::Completed, this, &ThisClass::HandleMoveLeftStopped);
-		EnhancedInputComponent->BindAction(MoveLeftAction, ETriggerEvent::Canceled, this, &ThisClass::HandleMoveLeftStopped);
+		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ThisClass::HandleMove);
+		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Completed, this, &ThisClass::HandleMoveStopped);
+		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Canceled, this, &ThisClass::HandleMoveStopped);
 	}
 }
 
@@ -246,71 +226,21 @@ AUEPlayerCharacter* AUEPlayerController::GetControlledPlayerCharacter() const
 	return Cast<AUEPlayerCharacter>(GetPawn());
 }
 
-void AUEPlayerController::PushMovementInputToCharacter()
+void AUEPlayerController::HandleMove(const FInputActionValue& Value)
 {
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
-		PlayerCharacter->SetMovementInput(PendingMovementInput);
+		PlayerCharacter->SetMovementInput(Value.Get<FVector2D>());
 	}
 }
 
-void AUEPlayerController::HandleMoveForward(const FInputActionValue& Value)
+void AUEPlayerController::HandleMoveStopped(const FInputActionValue& Value)
 {
-	PendingMovementInput.X = Value.Get<float>();
-	PushMovementInputToCharacter();
-}
+	(void)Value;
 
-void AUEPlayerController::HandleMoveForwardStopped(const FInputActionValue& Value)
-{
-	if (PendingMovementInput.X > 0.0f)
+	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
-		PendingMovementInput.X = 0.0f;
-		PushMovementInputToCharacter();
-	}
-}
-
-void AUEPlayerController::HandleMoveBackward(const FInputActionValue& Value)
-{
-	PendingMovementInput.X = -Value.Get<float>();
-	PushMovementInputToCharacter();
-}
-
-void AUEPlayerController::HandleMoveBackwardStopped(const FInputActionValue& Value)
-{
-	if (PendingMovementInput.X < 0.0f)
-	{
-		PendingMovementInput.X = 0.0f;
-		PushMovementInputToCharacter();
-	}
-}
-
-void AUEPlayerController::HandleMoveRight(const FInputActionValue& Value)
-{
-	PendingMovementInput.Y = Value.Get<float>();
-	PushMovementInputToCharacter();
-}
-
-void AUEPlayerController::HandleMoveRightStopped(const FInputActionValue& Value)
-{
-	if (PendingMovementInput.Y > 0.0f)
-	{
-		PendingMovementInput.Y = 0.0f;
-		PushMovementInputToCharacter();
-	}
-}
-
-void AUEPlayerController::HandleMoveLeft(const FInputActionValue& Value)
-{
-	PendingMovementInput.Y = -Value.Get<float>();
-	PushMovementInputToCharacter();
-}
-
-void AUEPlayerController::HandleMoveLeftStopped(const FInputActionValue& Value)
-{
-	if (PendingMovementInput.Y < 0.0f)
-	{
-		PendingMovementInput.Y = 0.0f;
-		PushMovementInputToCharacter();
+		PlayerCharacter->SetMovementInput(FVector2D::ZeroVector);
 	}
 }
 

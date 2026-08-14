@@ -41,16 +41,7 @@ public:
 	// Core character actions are explicit slots so Blueprint/DataAsset editing stays simple.
 	// C++ still resolves them by GameplayTag, which keeps the character binding code scalable.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Move")
-	TObjectPtr<UInputAction> MoveForwardAction = nullptr;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Move")
-	TObjectPtr<UInputAction> MoveBackwardAction = nullptr;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Move")
-	TObjectPtr<UInputAction> MoveRightAction = nullptr;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Move")
-	TObjectPtr<UInputAction> MoveLeftAction = nullptr;
+	TObjectPtr<UInputAction> MoveAction = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Look")
 	TObjectPtr<UInputAction> LookYawAction = nullptr;

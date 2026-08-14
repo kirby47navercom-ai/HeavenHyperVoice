@@ -557,7 +557,7 @@ FVector AUEPlayerCharacter::GetCameraRightAxis(const FRotator& ViewRotation) con
 
 FVector AUEPlayerCharacter::GetMoveDirectionFromInput(const FVector2D& Input, const FRotator& ViewRotation) const
 {
-	const FVector Direction = GetCameraForwardAxis(ViewRotation) * Input.X + GetCameraRightAxis(ViewRotation) * Input.Y;
+	const FVector Direction = GetCameraForwardAxis(ViewRotation) * Input.Y + GetCameraRightAxis(ViewRotation) * Input.X;
 	return Direction.GetSafeNormal();
 }
 
@@ -623,6 +623,11 @@ bool AUEPlayerCharacter::TrySpawnPokemonCompanion()
 	if (UUEPokemonTestServerComponent* TestServerComponent = NewPokemon->GetTestServerComponent())
 	{
 		TestServerComponent->SetFollowTargetActor(this);
+		TestServerComponent->SendServerAnimationEvent(
+			EUEPokemonAnimationEvent::SpawnStarted,
+			EUEPokemonAnimationState::Spawning,
+			PokemonSpawnAnimationDuration
+		);
 	}
 
 	PokemonLifecycleBrain.SetMode(HHV::PokemonAI::CompanionMode::NonCombat);
@@ -649,6 +654,14 @@ void AUEPlayerCharacter::RequestDespawnPokemonCompanion()
 
 	PendingDespawnPokemon = SpawnedPokemon;
 	bPokemonDespawnInProgress = true;
+	if (UUEPokemonTestServerComponent* TestServerComponent = PendingDespawnPokemon->GetTestServerComponent())
+	{
+		TestServerComponent->SendServerAnimationEvent(
+			EUEPokemonAnimationEvent::DespawnStarted,
+			EUEPokemonAnimationState::Despawning,
+			PokemonDespawnDelay
+		);
+	}
 	BP_OnPokemonDespawnRequested(PendingDespawnPokemon.Get());
 
 	if (PokemonDespawnDelay > 0.0f)

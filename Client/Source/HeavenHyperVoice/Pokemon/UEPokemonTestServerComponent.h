@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 
+#include "UEPokemonCharacter.h"
 #include "PokemonFSM.h"
 #include "../Map/HHVServerMapRuntime.h"
 
@@ -26,11 +27,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Test Server")
 	void SetFollowTargetActor(AActor* NewFollowTargetActor);
 
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Test Server")
+	void SendServerAnimationEvent(EUEPokemonAnimationEvent AnimationEvent, EUEPokemonAnimationState AnimationState, float EventDurationSeconds = 0.0f);
+
 private:
 	void TryLoadServerMap();
 	void RunServerSimulationTick(float DeltaSeconds);
 	void ApplyServerCommand(AUEPokemonCharacter& PokemonCharacter, const HHV::PokemonAI::Command& Command, float DeltaSeconds);
-	void SendServerSnapshot(AUEPokemonCharacter& PokemonCharacter, const FVector& Location, const FVector& Velocity, const FRotator& Rotation, bool bTeleported) const;
+	void SendServerSnapshot(AUEPokemonCharacter& PokemonCharacter, const FVector& Location, const FVector& Velocity, const FRotator& Rotation, bool bTeleported, EUEPokemonAnimationState AnimationState, EUEPokemonAnimationEvent AnimationEvent, float EventDurationSeconds) const;
+	EUEPokemonAnimationState ResolveAnimationState(EUEPokemonAnimationState FallbackState);
+	float GetServerTimeSeconds() const;
 
 	AUEPokemonCharacter* GetPokemonOwner() const;
 	AActor* ResolveFollowTargetActor() const;
@@ -60,6 +66,9 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Test Server", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<AActor> FollowTargetActor = nullptr;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Test Server", meta = (AllowPrivateAccess = "true", ClampMin = "0"))
+	int32 ServerPokemonId = 0;
+
 	UPROPERTY(Transient)
 	FVector ServerSimulatedLocation = FVector::ZeroVector;
 
@@ -69,8 +78,13 @@ private:
 	UPROPERTY(Transient)
 	FRotator ServerSimulatedRotation = FRotator::ZeroRotator;
 
+	UPROPERTY(Transient)
+	EUEPokemonAnimationState ForcedAnimationState = EUEPokemonAnimationState::Idle;
+
 	HHV::PokemonAI::PokemonFSM TestServerBrain;
 	HHV::Map::ServerMapRuntime ServerMapRuntime;
 	bool bServerMapLoaded = false;
+	bool bHasForcedAnimationState = false;
 	float ServerTickAccumulator = 0.0f;
+	float ForcedAnimationStateEndServerTimeSeconds = 0.0f;
 };

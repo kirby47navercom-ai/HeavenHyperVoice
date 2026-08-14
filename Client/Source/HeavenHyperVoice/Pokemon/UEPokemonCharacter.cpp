@@ -41,6 +41,7 @@ void AUEPokemonCharacter::Tick(float DeltaSeconds)
 
 void AUEPokemonCharacter::ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot)
 {
+	ApplyServerAnimationSnapshot(Snapshot);
 	ApplyServerMoveTarget(Snapshot.Location, Snapshot.Velocity, Snapshot.Rotation, Snapshot.bTeleported);
 }
 
@@ -59,6 +60,21 @@ void AUEPokemonCharacter::ApplyServerMoveTarget(const FVector& ServerLocation, c
 		GetCharacterMovement()->Velocity = ServerVelocity;
 		bHasServerMoveTarget = false;
 	}
+}
+
+void AUEPokemonCharacter::ApplyServerAnimationSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot)
+{
+	ServerAnimationState = Snapshot.AnimationState;
+
+	if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::None)
+	{
+		return;
+	}
+
+	LastServerAnimationEvent = Snapshot.AnimationEvent;
+	LastServerAnimationEventTimeSeconds = Snapshot.ServerTimeSeconds;
+	LastServerAnimationEventDurationSeconds = Snapshot.EventDurationSeconds;
+	BP_OnServerAnimationEvent(Snapshot.AnimationEvent, Snapshot);
 }
 
 void AUEPokemonCharacter::UpdateServerDrivenMovement(float DeltaSeconds)

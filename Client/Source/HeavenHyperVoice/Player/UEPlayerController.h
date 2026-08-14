@@ -70,16 +70,9 @@ private:
 	void BindActionInput(class UEnhancedInputComponent* EnhancedInputComponent);
 	AUEPlayerCharacter* GetControlledPlayerCharacter() const;
 	bool HasPendingPalworldAppearance() const;
-	void PushMovementInputToCharacter();
 
-	void HandleMoveForward(const FInputActionValue& Value);
-	void HandleMoveForwardStopped(const FInputActionValue& Value);
-	void HandleMoveBackward(const FInputActionValue& Value);
-	void HandleMoveBackwardStopped(const FInputActionValue& Value);
-	void HandleMoveRight(const FInputActionValue& Value);
-	void HandleMoveRightStopped(const FInputActionValue& Value);
-	void HandleMoveLeft(const FInputActionValue& Value);
-	void HandleMoveLeftStopped(const FInputActionValue& Value);
+	void HandleMove(const FInputActionValue& Value);
+	void HandleMoveStopped(const FInputActionValue& Value);
 	void HandleLookYaw(const FInputActionValue& Value);
 	void HandleLookPitch(const FInputActionValue& Value);
 	void HandleRunStarted(const FInputActionValue& Value);
@@ -88,6 +81,4 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUELoginWidget> LoginWidgetInstance = nullptr;
-
-	FVector2D PendingMovementInput = FVector2D::ZeroVector;
 };

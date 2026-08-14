@@ -121,6 +121,9 @@ protected:
 	float PokemonDespawnDelay = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Companion", meta = (ClampMin = "0.0"))
+	float PokemonSpawnAnimationDuration = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Companion", meta = (ClampMin = "0.0"))
 	float PokemonSpawnGroundTraceDistance = 600.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Companion")
