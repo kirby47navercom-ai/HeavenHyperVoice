@@ -2,7 +2,7 @@
 
 #pragma once
 
-#include "PokemonAIAction.h"
+#include "../Common/PokemonAIAction.h"
 
 namespace HHV::PokemonAI
 {
@@ -10,6 +10,6 @@ namespace HHV::PokemonAI
 	{
 	public:
 		virtual RequestedAction GetRequestType() const override;
-		virtual Command Tick(const CompanionContext& Context) override;
+		virtual Command Tick(const OwnContext& Context) override;
 	};
 }

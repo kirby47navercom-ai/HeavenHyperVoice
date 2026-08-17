@@ -12,6 +12,6 @@ namespace HHV::PokemonAI
 		virtual ~IPokemonAIAction() = default;
 
 		virtual RequestedAction GetRequestType() const = 0;
-		virtual Command Tick(const CompanionContext& Context) = 0;
+		virtual Command Tick(const OwnContext& Context) = 0;
 	};
 }

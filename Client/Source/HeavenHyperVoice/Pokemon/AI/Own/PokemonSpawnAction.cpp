@@ -27,7 +27,7 @@ namespace HHV::PokemonAI
 		return RequestedAction::Spawn;
 	}
 
-	Command SpawnAction::Tick(const CompanionContext& Context)
+	Command SpawnAction::Tick(const OwnContext& Context)
 	{
 		Command Result;
 		Result.Type = CommandType::Spawn;
@@ -44,7 +44,7 @@ namespace HHV::PokemonAI
 		return Result;
 	}
 
-	void SpawnAction::BuildCandidateLocations(const CompanionContext& Context, std::vector<HHV::Map::Vec3>& OutCandidates) const
+	void SpawnAction::BuildCandidateLocations(const OwnContext& Context, std::vector<HHV::Map::Vec3>& OutCandidates) const
 	{
 		const int CandidateCount = Settings.CandidateCount > 0 ? Settings.CandidateCount : 1;
 		const int FallbackCandidateCount = Settings.FallbackCandidateCount > 0 ? Settings.FallbackCandidateCount : 1;
@@ -57,7 +57,7 @@ namespace HHV::PokemonAI
 		AppendFallbackCandidates(Context, OutCandidates);
 	}
 
-	void SpawnAction::AppendOffsetCandidate(const CompanionContext& Context, float SideSign, float DistanceScale, std::vector<HHV::Map::Vec3>& OutCandidates) const
+	void SpawnAction::AppendOffsetCandidate(const OwnContext& Context, float SideSign, float DistanceScale, std::vector<HHV::Map::Vec3>& OutCandidates) const
 	{
 		const HHV::Map::Vec3 TargetOffset = CalculateTargetOffset(Context, SideSign);
 		const HHV::Map::Vec3 Candidate{
@@ -73,7 +73,7 @@ namespace HHV::PokemonAI
 		}
 	}
 
-	void SpawnAction::AppendOffsetCandidates(const CompanionContext& Context, float SideSign, std::vector<HHV::Map::Vec3>& OutCandidates) const
+	void SpawnAction::AppendOffsetCandidates(const OwnContext& Context, float SideSign, std::vector<HHV::Map::Vec3>& OutCandidates) const
 	{
 		const int CandidateCount = Settings.CandidateCount > 0 ? Settings.CandidateCount : 1;
 		const float MinDistanceScale = std::clamp(Settings.MinDistanceScale, 0.0f, 1.0f);
@@ -88,7 +88,7 @@ namespace HHV::PokemonAI
 		}
 	}
 
-	void SpawnAction::AppendFallbackCandidates(const CompanionContext& Context, std::vector<HHV::Map::Vec3>& OutCandidates) const
+	void SpawnAction::AppendFallbackCandidates(const OwnContext& Context, std::vector<HHV::Map::Vec3>& OutCandidates) const
 	{
 		const int CandidateCount = Settings.FallbackCandidateCount > 0 ? Settings.FallbackCandidateCount : 1;
 		for (int Index = 0; Index < CandidateCount; ++Index)
@@ -110,7 +110,7 @@ namespace HHV::PokemonAI
 		}
 	}
 
-	bool SpawnAction::TryProjectCandidate(const CompanionContext& Context, const HHV::Map::Vec3& CandidateLocation, HHV::Map::Vec3& OutLocation) const
+	bool SpawnAction::TryProjectCandidate(const OwnContext& Context, const HHV::Map::Vec3& CandidateLocation, HHV::Map::Vec3& OutLocation) const
 	{
 		if (Context.ServerMap && Context.ServerMap->IsLoaded())
 		{
@@ -121,7 +121,7 @@ namespace HHV::PokemonAI
 		return true;
 	}
 
-	HHV::Map::Vec3 SpawnAction::CalculateTargetOffset(const CompanionContext& Context, float SideSign) const
+	HHV::Map::Vec3 SpawnAction::CalculateTargetOffset(const OwnContext& Context, float SideSign) const
 	{
 		const float YawRadians = SpawnDegreesToRadians(Context.OwnerYawDegrees);
 		const HHV::Map::Vec3 Forward{ std::cos(YawRadians), std::sin(YawRadians), 0.0f };

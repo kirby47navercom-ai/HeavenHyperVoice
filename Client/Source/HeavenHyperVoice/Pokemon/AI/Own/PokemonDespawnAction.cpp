@@ -9,7 +9,7 @@ namespace HHV::PokemonAI
 		return RequestedAction::Despawn;
 	}
 
-	Command DespawnAction::Tick(const CompanionContext& Context)
+	Command DespawnAction::Tick(const OwnContext& Context)
 	{
 		Command Result;
 		Result.Type = CommandType::Despawn;

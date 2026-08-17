@@ -2,21 +2,28 @@
 
 #pragma once
 
-#include "../Map/HHVMapTypes.h"
-#include "../Map/HHVServerMapRuntime.h"
+#include "../../../Map/HHVMapTypes.h"
+#include "../../../Map/HHVServerMapRuntime.h"
 
 #include <cstdint>
 #include <vector>
 
 namespace HHV::PokemonAI
 {
-	enum class CompanionMode : std::uint8_t
+	enum class OwnMode : std::uint8_t
 	{
 		NonCombat,
 		Combat,
 		Spawning,
 		Despawning,
 		Attacking,
+		Downed
+	};
+
+	enum class WildMode : std::uint8_t
+	{
+		Wander,
+		Combat,
 		Downed
 	};
 
@@ -41,7 +48,7 @@ namespace HHV::PokemonAI
 		Attack
 	};
 
-	struct CompanionContext
+	struct OwnContext
 	{
 		float DeltaSeconds = 0.0f;
 		HHV::Map::Vec3 PokemonLocation;
@@ -50,6 +57,17 @@ namespace HHV::PokemonAI
 		RequestedAction ActionRequest = RequestedAction::FollowOwner;
 		const HHV::Map::ServerMapRuntime* ServerMap = nullptr;
 		HHV::Map::AgentSettings Agent;
+	};
+
+	struct WildContext
+	{
+		float DeltaSeconds = 0.0f;
+		HHV::Map::Vec3 PokemonLocation;
+		const HHV::Map::ServerMapRuntime* ServerMap = nullptr;
+		HHV::Map::AgentSettings Agent;
+		float WanderWaitSeconds = 3.0f;
+		float WanderAcceptanceRadius = 60.0f;
+		int WanderSearchAttempts = 64;
 	};
 
 	struct Command

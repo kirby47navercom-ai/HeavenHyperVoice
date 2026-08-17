@@ -17,36 +17,36 @@ namespace HHV::PokemonAI
 
 	PokemonFSM::~PokemonFSM() = default;
 
-	Command PokemonFSM::Tick(const CompanionContext& Context)
+	Command PokemonFSM::Tick(const OwnContext& Context)
 	{
 		switch (CurrentMode)
 		{
-		case CompanionMode::NonCombat:
+		case OwnMode::NonCombat:
 			return TickNonCombat(Context);
-		case CompanionMode::Spawning:
+		case OwnMode::Spawning:
 			return SpawnActionInstance ? SpawnActionInstance->Tick(Context) : MakeStopCommand();
-		case CompanionMode::Despawning:
+		case OwnMode::Despawning:
 			return DespawnActionInstance ? DespawnActionInstance->Tick(Context) : MakeStopCommand();
-		case CompanionMode::Combat:
-		case CompanionMode::Attacking:
-		case CompanionMode::Downed:
+		case OwnMode::Combat:
+		case OwnMode::Attacking:
+		case OwnMode::Downed:
 			return MakeStopCommand();
 		default:
 			return MakeStopCommand();
 		}
 	}
 
-	void PokemonFSM::SetMode(CompanionMode NewMode)
+	void PokemonFSM::SetMode(OwnMode NewMode)
 	{
 		CurrentMode = NewMode;
 	}
 
-	CompanionMode PokemonFSM::GetMode() const
+	OwnMode PokemonFSM::GetMode() const
 	{
 		return CurrentMode;
 	}
 
-	Command PokemonFSM::TickNonCombat(const CompanionContext& Context) const
+	Command PokemonFSM::TickNonCombat(const OwnContext& Context) const
 	{
 		if (Context.ActionRequest == RequestedAction::Spawn && SpawnActionInstance)
 		{
