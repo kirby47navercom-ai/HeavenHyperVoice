@@ -4,6 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+
+#include "../../Map/HHVServerMapRuntime.h"
+
 #include "UEPlayerMovementSyncComponent.generated.h"
 
 class AUEPlayerCharacter;
@@ -44,9 +47,18 @@ protected:
 	FUEPlayerMovementPacket BuildMovementPacket(float DeltaSeconds);
 	void RecordMovementPacket(const FUEPlayerMovementPacket& MovementPacket);
 	void SendMovementPacketToServer(const FUEPlayerMovementPacket& MovementPacket);
+	void TryLoadServerMap();
+	void ValidateMovementPacketOnLocalServer(const FUEPlayerMovementPacket& MovementPacket);
+	bool BuildLocalServerMovementResult(const FUEPlayerMovementPacket& MovementPacket, FVector& OutServerPosition, FVector& OutServerVelocity, FRotator& OutServerRotation);
+	FString ResolveServerMapFilePath() const;
+	HHV::Map::AgentSettings MakeAgentSettings() const;
 	void PruneMoveHistory(int32 LastConfirmedIndex);
 	int32 FindMoveHistoryIndex(uint32 Sequence) const;
 	AUEPlayerCharacter* GetPlayerCharacter() const;
+	void SaveLastValidatedServerState(const FVector& ServerPosition, const FVector& ServerVelocity, const FRotator& ServerRotation);
+
+	static HHV::Map::Vec3 ToServerVec3(const FVector& Vector);
+	static FVector ToUnrealVector(const HHV::Map::Vec3& Vector);
 
 	UFUNCTION()
 	void HandleCharacterMovementUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity);
@@ -61,8 +73,24 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync", meta = (ClampMin = "1"))
 	int32 MaxMoveHistoryEntries = 180;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Local Server")
+	bool bEnableLocalServerValidation = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Local Server")
+	bool bTryLoadDefaultServerMap = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Local Server")
+	FString ServerMapFilePath;
+
 private:
 	TWeakObjectPtr<AUEPlayerCharacter> CachedPlayerCharacter;
 	uint32 NextMoveSequence = 1;
 	TArray<FUEPlayerMovementHistoryEntry> MoveHistory;
+
+	HHV::Map::ServerMapRuntime ServerMapRuntime;
+	bool bServerMapLoaded = false;
+	bool bLastValidatedServerStateValid = false;
+	FVector LastValidatedServerPosition = FVector::ZeroVector;
+	FVector LastValidatedServerVelocity = FVector::ZeroVector;
+	FRotator LastValidatedServerRotation = FRotator::ZeroRotator;
 };

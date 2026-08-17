@@ -1,7 +1,7 @@
 #include "UEPlayerCharacter.h"
 
 #include "../CharacterCustomization/Palworld/Data/UEPalworldCustomizationTypes.h"
-#include "../Component/UEPlayerMovementSyncComponent.h"
+#include "../Player/Server/UEPlayerMovementSyncComponent.h"
 #include "../Data/UEPlayerAnimationDataAsset.h"
 #include "../Pokemon/UEPokemonCharacter.h"
 #include "../Pokemon/UEPokemonSpeciesData.h"
