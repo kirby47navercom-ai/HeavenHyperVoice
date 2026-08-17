@@ -4,7 +4,10 @@
 #include "../Component/UEPlayerMovementSyncComponent.h"
 #include "../Data/UEPlayerAnimationDataAsset.h"
 #include "../Pokemon/UEPokemonCharacter.h"
-#include "../Pokemon/UEPokemonTestServerComponent.h"
+#include "../Pokemon/UEPokemonSpeciesData.h"
+#include "../Pokemon/Server/UEPokemonServerComponent.h"
+#include "../Pokemon/Server/UEPokemonServerSubsystem.h"
+#include "../Pokemon/UEPokemonWorldSubsystem.h"
 #include "../System/UEGameInstance.h"
 
 #include "Camera/CameraComponent.h"
@@ -454,6 +457,7 @@ void AUEPlayerCharacter::BeginPlay()
 	PlayerCharacterInit();
 	RefreshMovementSpeed();
 	ApplyPendingPalworldAppearance();
+	RegisterPokemonServerRoster();
 }
 
 void AUEPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -465,6 +469,8 @@ void AUEPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	if (IsValid(SpawnedPokemon))
 	{
+		NotifyPokemonServerDespawned(SpawnedPokemon.Get());
+		NotifyPokemonWorldDespawned(SpawnedPokemon.Get());
 		SpawnedPokemon->Destroy();
 		SpawnedPokemon = nullptr;
 	}
@@ -530,6 +536,28 @@ void AUEPlayerCharacter::TogglePokemonCompanion()
 	TrySpawnPokemonCompanion();
 }
 
+void AUEPlayerCharacter::SetPokemonCompanionSpeciesData(UUEPokemonSpeciesData* NewSpeciesData)
+{
+	PokemonCompanionSpeciesData = NewSpeciesData;
+	if (IsValid(SpawnedPokemon))
+	{
+		SpawnedPokemon->SetPokemonSpeciesData(PokemonCompanionSpeciesData);
+	}
+}
+
+void AUEPlayerCharacter::SetSelectedPokemonCompanionInstanceId(int32 NewPokemonInstanceId)
+{
+	SelectedCompanionPokemonInstanceId = FMath::Max(NewPokemonInstanceId, 0);
+
+	FUEPokemonServerOwnedPokemon OwnedPokemon;
+	if (!IsValid(SpawnedPokemon)
+		&& GetPokemonServerSubsystem()
+		&& GetPokemonServerSubsystem()->TryGetOwnedPokemon(ServerPlayerId, SelectedCompanionPokemonInstanceId, OwnedPokemon))
+	{
+		PokemonCompanionSpeciesData = OwnedPokemon.SpeciesData;
+	}
+}
+
 void AUEPlayerCharacter::ApplyLocalMovementInput()
 {
 	const FVector DesiredDirection = GetMoveDirectionFromInput(MovementInput, GetControlRotation());
@@ -582,18 +610,26 @@ bool AUEPlayerCharacter::TrySpawnPokemonCompanion()
 		return false;
 	}
 
+	const FUEPokemonServerSpawnResponse SpawnResponse = RequestPokemonServerSpawn();
+	if (!SpawnResponse.bAccepted)
+	{
+		return false;
+	}
+	PokemonCompanionSpeciesData = SpawnResponse.SpeciesData;
+
 	TSubclassOf<AUEPokemonCharacter> ClassToSpawn = PokemonCompanionClass;
 	if (!ClassToSpawn)
 	{
 		ClassToSpawn = AUEPokemonCharacter::StaticClass();
 	}
 
-	PokemonLifecycleBrain.SetMode(HHV::PokemonAI::CompanionMode::Spawning);
-	const HHV::PokemonAI::CompanionContext Context = MakePokemonLifecycleContext(HHV::PokemonAI::RequestedAction::Spawn);
+	PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::Spawning);
+	const HHV::PokemonAI::OwnContext Context = MakePokemonLifecycleContext(HHV::PokemonAI::RequestedAction::Spawn);
 	const HHV::PokemonAI::Command SpawnCommand = PokemonLifecycleBrain.Tick(Context);
 	if (SpawnCommand.Type != HHV::PokemonAI::CommandType::Spawn)
 	{
-		PokemonLifecycleBrain.SetMode(HHV::PokemonAI::CompanionMode::NonCombat);
+		PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::NonCombat);
+		ReleasePokemonServerSpawn(SpawnResponse);
 		return false;
 	}
 
@@ -601,7 +637,8 @@ bool AUEPlayerCharacter::TrySpawnPokemonCompanion()
 	FRotator SpawnRotation;
 	if (!ResolvePokemonSpawnTransform(SpawnCommand, SpawnLocation, SpawnRotation))
 	{
-		PokemonLifecycleBrain.SetMode(HHV::PokemonAI::CompanionMode::NonCombat);
+		PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::NonCombat);
+		ReleasePokemonServerSpawn(SpawnResponse);
 		return false;
 	}
 
@@ -615,22 +652,39 @@ bool AUEPlayerCharacter::TrySpawnPokemonCompanion()
 	AUEPokemonCharacter* NewPokemon = World->SpawnActor<AUEPokemonCharacter>(ClassToSpawn, SpawnLocation, SpawnRotation, SpawnParameters);
 	if (!NewPokemon)
 	{
-		PokemonLifecycleBrain.SetMode(HHV::PokemonAI::CompanionMode::NonCombat);
+		PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::NonCombat);
+		ReleasePokemonServerSpawn(SpawnResponse);
 		return false;
 	}
 
 	SpawnedPokemon = NewPokemon;
-	if (UUEPokemonTestServerComponent* TestServerComponent = NewPokemon->GetTestServerComponent())
+	NewPokemon->SetRenderType(EUEPokemonRenderType::Own);
+	if (SpawnResponse.SpeciesData)
 	{
-		TestServerComponent->SetFollowTargetActor(this);
-		TestServerComponent->SendServerAnimationEvent(
+		NewPokemon->SetPokemonSpeciesData(SpawnResponse.SpeciesData);
+		NewPokemon->ApplyServerStats(SpawnResponse.CurrentHP, SpawnResponse.MaxHP);
+	}
+	if (UUEPokemonServerComponent* ServerComponent = NewPokemon->GetServerComponent())
+	{
+		ServerComponent->InitializeServerRuntimePokemon(
+			SpawnResponse.RuntimePokemonId,
+			SpawnResponse.PokemonInstanceId,
+			SpawnResponse.CurrentHP,
+			SpawnResponse.MaxHP
+		);
+		ServerComponent->SetFollowTargetActor(this);
+		ServerComponent->SendServerAnimationEvent(
 			EUEPokemonAnimationEvent::SpawnStarted,
 			EUEPokemonAnimationState::Spawning,
 			PokemonSpawnAnimationDuration
 		);
 	}
+	if (UUEPokemonWorldSubsystem* PokemonWorldSubsystem = GetPokemonWorldSubsystem())
+	{
+		PokemonWorldSubsystem->RegisterExistingPokemon(NewPokemon, EUEPokemonRenderType::Own, ServerPlayerId);
+	}
 
-	PokemonLifecycleBrain.SetMode(HHV::PokemonAI::CompanionMode::NonCombat);
+	PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::NonCombat);
 	BP_OnPokemonSpawned(NewPokemon);
 	return true;
 }
@@ -643,20 +697,20 @@ void AUEPlayerCharacter::RequestDespawnPokemonCompanion()
 		return;
 	}
 
-	PokemonLifecycleBrain.SetMode(HHV::PokemonAI::CompanionMode::Despawning);
-	const HHV::PokemonAI::CompanionContext Context = MakePokemonLifecycleContext(HHV::PokemonAI::RequestedAction::Despawn);
+	PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::Despawning);
+	const HHV::PokemonAI::OwnContext Context = MakePokemonLifecycleContext(HHV::PokemonAI::RequestedAction::Despawn);
 	const HHV::PokemonAI::Command DespawnCommand = PokemonLifecycleBrain.Tick(Context);
 	if (DespawnCommand.Type != HHV::PokemonAI::CommandType::Despawn)
 	{
-		PokemonLifecycleBrain.SetMode(HHV::PokemonAI::CompanionMode::NonCombat);
+		PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::NonCombat);
 		return;
 	}
 
 	PendingDespawnPokemon = SpawnedPokemon;
 	bPokemonDespawnInProgress = true;
-	if (UUEPokemonTestServerComponent* TestServerComponent = PendingDespawnPokemon->GetTestServerComponent())
+	if (UUEPokemonServerComponent* ServerComponent = PendingDespawnPokemon->GetServerComponent())
 	{
-		TestServerComponent->SendServerAnimationEvent(
+		ServerComponent->SendServerAnimationEvent(
 			EUEPokemonAnimationEvent::DespawnStarted,
 			EUEPokemonAnimationState::Despawning,
 			PokemonDespawnDelay
@@ -683,6 +737,8 @@ void AUEPlayerCharacter::FinishPokemonDespawn()
 
 	if (IsValid(PokemonToDestroy))
 	{
+		NotifyPokemonServerDespawned(PokemonToDestroy);
+		NotifyPokemonWorldDespawned(PokemonToDestroy);
 		PokemonToDestroy->Destroy();
 	}
 
@@ -693,13 +749,143 @@ void AUEPlayerCharacter::FinishPokemonDespawn()
 
 	PendingDespawnPokemon = nullptr;
 	bPokemonDespawnInProgress = false;
-	PokemonLifecycleBrain.SetMode(HHV::PokemonAI::CompanionMode::NonCombat);
+	PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::NonCombat);
 	BP_OnPokemonDespawned();
 }
 
-HHV::PokemonAI::CompanionContext AUEPlayerCharacter::MakePokemonLifecycleContext(HHV::PokemonAI::RequestedAction ActionRequest) const
+void AUEPlayerCharacter::RegisterPokemonServerRoster()
 {
-	HHV::PokemonAI::CompanionContext Context;
+	UUEPokemonServerSubsystem* ServerSubsystem = GetPokemonServerSubsystem();
+	if (!ServerSubsystem)
+	{
+		return;
+	}
+
+	ServerPlayerId = FMath::Max(ServerPlayerId, 1);
+
+	TArray<FUEPokemonServerOwnedPokemon> OwnedPokemons = ServerOwnedPokemons;
+	if (OwnedPokemons.IsEmpty())
+	{
+		FUEPokemonServerOwnedPokemon DefaultOwnedPokemon;
+		DefaultOwnedPokemon.PokemonInstanceId = FMath::Max(SelectedCompanionPokemonInstanceId, 1);
+		if (PokemonCompanionSpeciesData)
+		{
+			DefaultOwnedPokemon.SpeciesData = PokemonCompanionSpeciesData;
+			DefaultOwnedPokemon.SpeciesId = PokemonCompanionSpeciesData->SpeciesId;
+			DefaultOwnedPokemon.CurrentHP = PokemonCompanionSpeciesData->MaxHP;
+		}
+		else
+		{
+			TSubclassOf<AUEPokemonCharacter> ClassToInspect = PokemonCompanionClass;
+			if (!ClassToInspect)
+			{
+				ClassToInspect = AUEPokemonCharacter::StaticClass();
+			}
+
+			const AUEPokemonCharacter* DefaultPokemon = ClassToInspect ? ClassToInspect->GetDefaultObject<AUEPokemonCharacter>() : nullptr;
+			DefaultOwnedPokemon.SpeciesId = TEXT("Pikachu");
+			DefaultOwnedPokemon.CurrentHP = DefaultPokemon ? DefaultPokemon->GetMaxHP() : 100.0f;
+		}
+		OwnedPokemons.Add(DefaultOwnedPokemon);
+	}
+
+	if (SelectedCompanionPokemonInstanceId <= 0 && !OwnedPokemons.IsEmpty())
+	{
+		SelectedCompanionPokemonInstanceId = OwnedPokemons[0].PokemonInstanceId > 0 ? OwnedPokemons[0].PokemonInstanceId : 1;
+	}
+
+	ServerSubsystem->RegisterOwnedPokemons(ServerPlayerId, OwnedPokemons);
+
+	FUEPokemonServerOwnedPokemon SelectedOwnedPokemon;
+	if (ServerSubsystem->TryGetOwnedPokemon(ServerPlayerId, SelectedCompanionPokemonInstanceId, SelectedOwnedPokemon))
+	{
+		PokemonCompanionSpeciesData = SelectedOwnedPokemon.SpeciesData;
+	}
+}
+
+FUEPokemonServerSpawnResponse AUEPlayerCharacter::RequestPokemonServerSpawn()
+{
+	RegisterPokemonServerRoster();
+
+	UUEPokemonServerSubsystem* ServerSubsystem = GetPokemonServerSubsystem();
+	if (!ServerSubsystem)
+	{
+		FUEPokemonServerSpawnResponse Response;
+		Response.Result = EUEPokemonServerSummonResult::InvalidPlayer;
+		return Response;
+	}
+
+	return ServerSubsystem->RequestSpawnPokemon(ServerPlayerId, SelectedCompanionPokemonInstanceId);
+}
+
+void AUEPlayerCharacter::ReleasePokemonServerSpawn(const FUEPokemonServerSpawnResponse& SpawnResponse)
+{
+	if (!SpawnResponse.bAccepted)
+	{
+		return;
+	}
+
+	if (UUEPokemonServerSubsystem* ServerSubsystem = GetPokemonServerSubsystem())
+	{
+		ServerSubsystem->RequestDespawnPokemon(ServerPlayerId, SpawnResponse.RuntimePokemonId);
+	}
+}
+
+void AUEPlayerCharacter::NotifyPokemonServerDespawned(AUEPokemonCharacter* PokemonToDestroy)
+{
+	if (!PokemonToDestroy)
+	{
+		return;
+	}
+
+	const UUEPokemonServerComponent* ServerComponent = PokemonToDestroy->GetServerComponent();
+	const int32 RuntimePokemonId = ServerComponent ? ServerComponent->GetServerPokemonId() : PokemonToDestroy->GetServerPokemonId();
+	if (RuntimePokemonId <= 0)
+	{
+		return;
+	}
+
+	if (UUEPokemonServerSubsystem* ServerSubsystem = GetPokemonServerSubsystem())
+	{
+		ServerSubsystem->RequestDespawnPokemon(ServerPlayerId, RuntimePokemonId);
+	}
+}
+
+void AUEPlayerCharacter::NotifyPokemonWorldDespawned(AUEPokemonCharacter* PokemonToDestroy)
+{
+	if (!PokemonToDestroy)
+	{
+		return;
+	}
+
+	const UUEPokemonServerComponent* ServerComponent = PokemonToDestroy->GetServerComponent();
+	const int32 RuntimePokemonId = ServerComponent ? ServerComponent->GetServerPokemonId() : PokemonToDestroy->GetServerPokemonId();
+	if (RuntimePokemonId <= 0)
+	{
+		return;
+	}
+
+	if (UUEPokemonWorldSubsystem* PokemonWorldSubsystem = GetPokemonWorldSubsystem())
+	{
+		PokemonWorldSubsystem->DespawnPokemon(RuntimePokemonId, false);
+	}
+}
+
+UUEPokemonServerSubsystem* AUEPlayerCharacter::GetPokemonServerSubsystem() const
+{
+	UGameInstance* GameInstance = GetGameInstance();
+	return GameInstance ? GameInstance->GetSubsystem<UUEPokemonServerSubsystem>() : nullptr;
+}
+
+UUEPokemonWorldSubsystem* AUEPlayerCharacter::GetPokemonWorldSubsystem() const
+{
+	UWorld* World = GetWorld();
+	return World ? World->GetSubsystem<UUEPokemonWorldSubsystem>() : nullptr;
+}
+
+HHV::PokemonAI::OwnContext AUEPlayerCharacter::MakePokemonLifecycleContext(HHV::PokemonAI::RequestedAction ActionRequest) const
+{
+	HHV::PokemonAI::OwnContext Context;
 	Context.OwnerLocation = ToServerVec3(GetActorLocation());
 	Context.OwnerYawDegrees = GetActorRotation().Yaw;
 	Context.ActionRequest = ActionRequest;
@@ -713,6 +899,16 @@ HHV::PokemonAI::CompanionContext AUEPlayerCharacter::MakePokemonLifecycleContext
 HHV::Map::AgentSettings AUEPlayerCharacter::MakePokemonAgentSettings() const
 {
 	HHV::Map::AgentSettings Agent;
+
+	if (PokemonCompanionSpeciesData)
+	{
+		Agent.CapsuleRadius = PokemonCompanionSpeciesData->CapsuleRadius;
+		Agent.CapsuleHalfHeight = PokemonCompanionSpeciesData->CapsuleHalfHeight;
+		Agent.MaxStepHeight = PokemonCompanionSpeciesData->MaxStepHeight;
+		Agent.WalkableFloorAngleDegrees = PokemonCompanionSpeciesData->WalkableFloorAngleDegrees;
+		return Agent;
+	}
+
 	TSubclassOf<AUEPokemonCharacter> ClassToInspect = PokemonCompanionClass;
 	if (!ClassToInspect)
 	{

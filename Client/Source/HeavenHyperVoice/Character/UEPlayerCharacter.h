@@ -2,7 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "../CharacterCustomization/Palworld/Data/UEPalworldCustomizationTypes.h"
-#include "../Pokemon/PokemonFSM.h"
+#include "../Pokemon/AI/Own/PokemonFSM.h"
+#include "../Pokemon/Server/UEPokemonServerSubsystem.h"
 #include "GameFramework/Character.h"
 #include "TimerManager.h"
 #include "UEPlayerCharacter.generated.h"
@@ -11,6 +12,8 @@ class AUEPokemonCharacter;
 class UCameraComponent;
 class USpringArmComponent;
 class USkeletalMeshComponent;
+class UUEPokemonSpeciesData;
+class UUEPokemonWorldSubsystem;
 class UUEPalworldCustomizationCatalog;
 class UUEPlayerAnimationDataAsset;
 class UUEPlayerMovementSyncComponent;
@@ -51,6 +54,18 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Companion")
 	AUEPokemonCharacter* GetSpawnedPokemonCompanion() const { return SpawnedPokemon.Get(); }
+
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Companion")
+	void SetPokemonCompanionSpeciesData(UUEPokemonSpeciesData* NewSpeciesData);
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Companion")
+	UUEPokemonSpeciesData* GetPokemonCompanionSpeciesData() const { return PokemonCompanionSpeciesData; }
+
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Companion")
+	void SetSelectedPokemonCompanionInstanceId(int32 NewPokemonInstanceId);
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Companion")
+	int32 GetSelectedPokemonCompanionInstanceId() const { return SelectedCompanionPokemonInstanceId; }
 
 	UFUNCTION(BlueprintCallable, Category = "Palworld|Customization")
 	void ApplyPalworldAppearance(const FUEPalworldAppearance& NewAppearance);
@@ -117,6 +132,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Companion")
 	TSubclassOf<AUEPokemonCharacter> PokemonCompanionClass;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Companion")
+	TObjectPtr<UUEPokemonSpeciesData> PokemonCompanionSpeciesData = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (ClampMin = "1"))
+	int32 ServerPlayerId = 1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server")
+	TArray<FUEPokemonServerOwnedPokemon> ServerOwnedPokemons;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (ClampMin = "0"))
+	int32 SelectedCompanionPokemonInstanceId = 1;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Companion", meta = (ClampMin = "0.0"))
 	float PokemonDespawnDelay = 0.0f;
 
@@ -134,7 +161,14 @@ private:
 	void RequestDespawnPokemonCompanion();
 	void FinishPokemonDespawn();
 	void RefreshMovementSpeed();
-	HHV::PokemonAI::CompanionContext MakePokemonLifecycleContext(HHV::PokemonAI::RequestedAction ActionRequest) const;
+	void RegisterPokemonServerRoster();
+	FUEPokemonServerSpawnResponse RequestPokemonServerSpawn();
+	void ReleasePokemonServerSpawn(const FUEPokemonServerSpawnResponse& SpawnResponse);
+	void NotifyPokemonServerDespawned(AUEPokemonCharacter* PokemonToDestroy);
+	void NotifyPokemonWorldDespawned(AUEPokemonCharacter* PokemonToDestroy);
+	UUEPokemonServerSubsystem* GetPokemonServerSubsystem() const;
+	UUEPokemonWorldSubsystem* GetPokemonWorldSubsystem() const;
+	HHV::PokemonAI::OwnContext MakePokemonLifecycleContext(HHV::PokemonAI::RequestedAction ActionRequest) const;
 	HHV::Map::AgentSettings MakePokemonAgentSettings() const;
 	bool ResolvePokemonSpawnTransform(const HHV::PokemonAI::Command& SpawnCommand, FVector& OutLocation, FRotator& OutRotation) const;
 	bool TryResolvePokemonSpawnCandidate(const FVector& CandidateLocation, const FRotator& SpawnRotation, FVector& OutLocation) const;
