@@ -3,7 +3,9 @@
 #include "UEPlayerController.h"
 
 #include "../Character/UEPlayerCharacter.h"
+#include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
 #include "../Data/UEDataAsset.h"
+#include "../System/UEGameInstance.h"
 #include "../UI/Login/UELoginWidget.h"
 #include "../UEGameplayTags.h"
 
@@ -32,10 +34,43 @@ void AUEPlayerController::BeginPlay()
 
 	AddDefaultMappingContext();
 
+	if (HasPendingHHVAppearance())
+	{
+		// 커마 완료 뒤 넘어온 게임 레벨은 로그인 화면을 다시 덮지 않고 곧바로 캐릭터를 보여준다.
+		HideLoginScreen();
+		return;
+	}
+
 	if (bShowLoginOnBeginPlay)
 	{
 		ShowLoginScreen();
 	}
+}
+
+void AUEPlayerController::OnPossess(APawn* InPawn)
+{
+	Super::OnPossess(InPawn);
+
+	AUEPlayerCharacter* PlayerCharacter = Cast<AUEPlayerCharacter>(InPawn);
+	UUEGameInstance* UEGameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	if (!PlayerCharacter || !UEGameInstance)
+	{
+		return;
+	}
+
+	FUEHHVAppearance PendingAppearance;
+	if (UEGameInstance->GetPendingHHVAppearance(PendingAppearance))
+	{
+		// 레벨 이동 직후 빙의 순서가 달라져도 저장한 커마를 다시 입힌다.
+		PlayerCharacter->ApplyHHVAppearance(PendingAppearance);
+	}
+}
+
+bool AUEPlayerController::HasPendingHHVAppearance() const
+{
+	FUEHHVAppearance PendingAppearance;
+	const UUEGameInstance* UEGameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	return UEGameInstance && UEGameInstance->GetPendingHHVAppearance(PendingAppearance);
 }
 
 void AUEPlayerController::SetupInputComponent()
@@ -124,6 +159,7 @@ void AUEPlayerController::BindGameplayInput()
 
 	BindMoveInput(EnhancedInputComponent);
 	BindLookInput(EnhancedInputComponent);
+	BindActionInput(EnhancedInputComponent);
 }
 
 void AUEPlayerController::BindMoveInput(UEnhancedInputComponent* EnhancedInputComponent)
@@ -133,32 +169,36 @@ void AUEPlayerController::BindMoveInput(UEnhancedInputComponent* EnhancedInputCo
 	const UInputAction* MoveRightAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_MoveRight);
 	const UInputAction* MoveLeftAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_MoveLeft);
 
-	if (MoveForwardAction)
+	// 기존 방향별 액션이 모두 있으면 로컬 커스터마이징 입력을 그대로 사용한다.
+	if (MoveForwardAction && MoveBackwardAction && MoveRightAction && MoveLeftAction)
 	{
 		EnhancedInputComponent->BindAction(MoveForwardAction, ETriggerEvent::Triggered, this, &ThisClass::HandleMoveForward);
 		EnhancedInputComponent->BindAction(MoveForwardAction, ETriggerEvent::Completed, this, &ThisClass::HandleMoveForwardStopped);
 		EnhancedInputComponent->BindAction(MoveForwardAction, ETriggerEvent::Canceled, this, &ThisClass::HandleMoveForwardStopped);
-	}
-
-	if (MoveBackwardAction)
-	{
 		EnhancedInputComponent->BindAction(MoveBackwardAction, ETriggerEvent::Triggered, this, &ThisClass::HandleMoveBackward);
 		EnhancedInputComponent->BindAction(MoveBackwardAction, ETriggerEvent::Completed, this, &ThisClass::HandleMoveBackwardStopped);
 		EnhancedInputComponent->BindAction(MoveBackwardAction, ETriggerEvent::Canceled, this, &ThisClass::HandleMoveBackwardStopped);
-	}
-
-	if (MoveRightAction)
-	{
 		EnhancedInputComponent->BindAction(MoveRightAction, ETriggerEvent::Triggered, this, &ThisClass::HandleMoveRight);
 		EnhancedInputComponent->BindAction(MoveRightAction, ETriggerEvent::Completed, this, &ThisClass::HandleMoveRightStopped);
 		EnhancedInputComponent->BindAction(MoveRightAction, ETriggerEvent::Canceled, this, &ThisClass::HandleMoveRightStopped);
-	}
-
-	if (MoveLeftAction)
-	{
 		EnhancedInputComponent->BindAction(MoveLeftAction, ETriggerEvent::Triggered, this, &ThisClass::HandleMoveLeft);
 		EnhancedInputComponent->BindAction(MoveLeftAction, ETriggerEvent::Completed, this, &ThisClass::HandleMoveLeftStopped);
 		EnhancedInputComponent->BindAction(MoveLeftAction, ETriggerEvent::Canceled, this, &ThisClass::HandleMoveLeftStopped);
+		return;
+	}
+
+	// 풀 받은 입력 데이터는 W/A/S/D를 하나의 2D IA_Move로 통합한다.
+	const UInputAction* MoveAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_Move);
+	if (!MoveAction)
+	{
+		MoveAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_Move.IA_Move"));
+	}
+
+	if (MoveAction)
+	{
+		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ThisClass::HandleMove);
+		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Completed, this, &ThisClass::HandleMoveStopped);
+		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Canceled, this, &ThisClass::HandleMoveStopped);
 	}
 }
 
@@ -178,9 +218,39 @@ void AUEPlayerController::BindLookInput(UEnhancedInputComponent* EnhancedInputCo
 	}
 }
 
+void AUEPlayerController::BindActionInput(UEnhancedInputComponent* EnhancedInputComponent)
+{
+	const UInputAction* SpawnPokemonAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_SpawnPokemon);
+	if (!SpawnPokemonAction)
+	{
+		SpawnPokemonAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_SpawnPokemon.IA_SpawnPokemon"));
+	}
+
+	if (SpawnPokemonAction)
+	{
+		EnhancedInputComponent->BindAction(SpawnPokemonAction, ETriggerEvent::Started, this, &ThisClass::HandlePokemonToggle);
+	}
+}
+
 AUEPlayerCharacter* AUEPlayerController::GetControlledPlayerCharacter() const
 {
 	return Cast<AUEPlayerCharacter>(GetPawn());
+}
+
+void AUEPlayerController::HandleMove(const FInputActionValue& Value)
+{
+	// 입력 에셋은 X=좌우, Y=앞뒤 순서로 값을 보낸다.
+	// 캐릭터 내부 기준은 X=앞뒤, Y=좌우이므로 여기서 한 번만 교환한다.
+	const FVector2D RawInput = Value.Get<FVector2D>();
+	PendingMovementInput = FVector2D(RawInput.Y, RawInput.X);
+	PushMovementInputToCharacter();
+}
+
+void AUEPlayerController::HandleMoveStopped(const FInputActionValue& Value)
+{
+	(void)Value;
+	PendingMovementInput = FVector2D::ZeroVector;
+	PushMovementInputToCharacter();
 }
 
 void AUEPlayerController::PushMovementInputToCharacter()
@@ -259,4 +329,14 @@ void AUEPlayerController::HandleLookYaw(const FInputActionValue& Value)
 void AUEPlayerController::HandleLookPitch(const FInputActionValue& Value)
 {
 	AddPitchInput(-Value.Get<float>() * LookPitchRate);
+}
+
+void AUEPlayerController::HandlePokemonToggle(const FInputActionValue& Value)
+{
+	(void)Value;
+
+	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
+	{
+		PlayerCharacter->TogglePokemonCompanion();
+	}
 }

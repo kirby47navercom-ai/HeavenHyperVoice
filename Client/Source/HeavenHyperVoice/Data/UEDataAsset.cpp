@@ -7,24 +7,9 @@
 
 const UInputAction* UUEDataAsset::FindInputActionByTag(const FGameplayTag& InputTag) const
 {
-	if (InputTag == UEGameplayTags::Input_Action_MoveForward)
+	if (InputTag == UEGameplayTags::Input_Action_Move)
 	{
-		return MoveForwardAction;
-	}
-
-	if (InputTag == UEGameplayTags::Input_Action_MoveBackward)
-	{
-		return MoveBackwardAction;
-	}
-
-	if (InputTag == UEGameplayTags::Input_Action_MoveRight)
-	{
-		return MoveRightAction;
-	}
-
-	if (InputTag == UEGameplayTags::Input_Action_MoveLeft)
-	{
-		return MoveLeftAction;
+		return MoveAction;
 	}
 
 	if (InputTag == UEGameplayTags::Input_Action_LookYaw)
@@ -50,6 +35,11 @@ const UInputAction* UUEDataAsset::FindInputActionByTag(const FGameplayTag& Input
 	if (InputTag == UEGameplayTags::Input_Action_Jump)
 	{
 		return JumpAction;
+	}
+
+	if (InputTag == UEGameplayTags::Input_Action_SpawnPokemon)
+	{
+		return SpawnPokemonAction;
 	}
 
 	for (const FUEInputAction& Action : InputActions)

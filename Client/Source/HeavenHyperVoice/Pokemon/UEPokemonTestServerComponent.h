@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 
-#include "PokemonFSM.h"
+#include "AI/Own/PokemonFSM.h"
 #include "../Map/HHVServerMapRuntime.h"
 
 #include "UEPokemonTestServerComponent.generated.h"

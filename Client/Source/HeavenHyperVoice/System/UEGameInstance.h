@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
 #include "Engine/GameInstance.h"
 #include "UEGameInstance.generated.h"
 
@@ -21,5 +22,22 @@ public:
 public:
 	virtual void Init() override;
 	virtual void Shutdown() override;
+
+	UFUNCTION(BlueprintCallable, Category = "HHV|Customization")
+	void SetPendingHHVAppearance(const FUEHHVAppearance& NewAppearance);
+
+	UFUNCTION(BlueprintPure, Category = "HHV|Customization")
+	bool GetPendingHHVAppearance(FUEHHVAppearance& OutAppearance) const;
+
+	UFUNCTION(BlueprintCallable, Category = "HHV|Customization")
+	void ClearPendingHHVAppearance();
+
+private:
+	// 커마 레벨에서 선택한 상태를 다음 레벨 로딩 뒤에도 읽을 수 있게 GameInstance에 잠깐 보관한다.
+	UPROPERTY(Transient)
+	FUEHHVAppearance PendingHHVAppearance;
+
+	UPROPERTY(Transient)
+	bool bHasPendingHHVAppearance = false;
 	
 };

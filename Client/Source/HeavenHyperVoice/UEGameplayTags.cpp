@@ -1,6 +1,7 @@
 #include "UEGameplayTags.h"
 namespace UEGameplayTags
 {
+	UE_DEFINE_GAMEPLAY_TAG(Input_Action_Move, "Input.Action.Move");
 	UE_DEFINE_GAMEPLAY_TAG(Input_Action_MoveForward, "Input.Action.MoveForward");
 	UE_DEFINE_GAMEPLAY_TAG(Input_Action_MoveBackward, "Input.Action.MoveBackward");
 	UE_DEFINE_GAMEPLAY_TAG(Input_Action_MoveRight, "Input.Action.MoveRight");
@@ -10,6 +11,7 @@ namespace UEGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(Input_Action_Run, "Input.Action.Run");
 	UE_DEFINE_GAMEPLAY_TAG(Input_Action_Roll, "Input.Action.Roll");
 	UE_DEFINE_GAMEPLAY_TAG(Input_Action_Jump, "Input.Action.Jump");
+	UE_DEFINE_GAMEPLAY_TAG(Input_Action_SpawnPokemon, "Input.Action.SpawnPokemon");
 
 	//UE_DEFINE_GAMEPLAY_TAG(Event_Montage_Begin, "Event.Montage.Begin");
 	//UE_DEFINE_GAMEPLAY_TAG(Event_Montage_End, "Event.Montage.End");

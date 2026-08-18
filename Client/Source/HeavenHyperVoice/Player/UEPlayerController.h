@@ -33,6 +33,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void OnPossess(APawn* InPawn) override;
 	virtual void SetupInputComponent() override;
 
 	// Blueprint can continue the client flow after C++ has accepted the credentials.
@@ -66,9 +67,13 @@ private:
 	void BindGameplayInput();
 	void BindMoveInput(class UEnhancedInputComponent* EnhancedInputComponent);
 	void BindLookInput(class UEnhancedInputComponent* EnhancedInputComponent);
+	void BindActionInput(class UEnhancedInputComponent* EnhancedInputComponent);
 	AUEPlayerCharacter* GetControlledPlayerCharacter() const;
+	bool HasPendingHHVAppearance() const;
 	void PushMovementInputToCharacter();
 
+	void HandleMove(const FInputActionValue& Value);
+	void HandleMoveStopped(const FInputActionValue& Value);
 	void HandleMoveForward(const FInputActionValue& Value);
 	void HandleMoveForwardStopped(const FInputActionValue& Value);
 	void HandleMoveBackward(const FInputActionValue& Value);
@@ -79,6 +84,9 @@ private:
 	void HandleMoveLeftStopped(const FInputActionValue& Value);
 	void HandleLookYaw(const FInputActionValue& Value);
 	void HandleLookPitch(const FInputActionValue& Value);
+	void HandleRunStarted(const FInputActionValue& Value);
+	void HandleRunStopped(const FInputActionValue& Value);
+	void HandlePokemonToggle(const FInputActionValue& Value);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUELoginWidget> LoginWidgetInstance = nullptr;

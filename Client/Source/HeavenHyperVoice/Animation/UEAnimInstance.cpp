@@ -32,6 +32,8 @@ void UUEAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		bIsRunning = false;
 		bIsRolling = false;
 		bIsFalling = false;
+		bIsFemale = false;
+		bIsMale = false;
 		return;
 	}
 
@@ -42,6 +44,8 @@ void UUEAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	bIsMoving = GroundSpeed > 3.0f;
 	bIsRunning = OwnerCharacter->IsRunning();
 	bIsRolling = OwnerCharacter->IsRolling();
+	bIsFemale = OwnerCharacter->GetCustomizationGender() == EUEHHVGender::TypeA;
+	bIsMale = OwnerCharacter->GetCustomizationGender() == EUEHHVGender::TypeB;
 
 	const UCharacterMovementComponent* MovementComponent = OwnerCharacter->GetCharacterMovement();
 	bIsFalling = MovementComponent ? MovementComponent->IsFalling() : false;

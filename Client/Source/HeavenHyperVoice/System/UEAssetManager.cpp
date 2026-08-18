@@ -231,6 +231,7 @@ void UUEAssetManager::LoadPreloadAssets()
 	}
 	else
 	{
-		UE_LOG(LogTemp, Fatal, TEXT("Failed to load AssetData asset type [%s]."), *PrimaryAssetType.ToString());
+		// 프로젝트에 PrimaryDataAsset이 없는 상태에서도 커마/테스트 레벨은 실행되어야 한다.
+		UE_LOG(LogTemp, Warning, TEXT("Failed to load AssetData asset type [%s]."), *PrimaryAssetType.ToString());
 	}
 }

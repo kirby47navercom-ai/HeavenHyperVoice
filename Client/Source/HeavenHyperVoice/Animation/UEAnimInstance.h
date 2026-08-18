@@ -9,9 +9,8 @@
 class AUEPlayerCharacter;
 
 /**
- * Animation data bridge for the player character.
- *
- * Animation Blueprints should read these values instead of reaching into movement code directly.
+ * 플레이어 애니메이션 블루프린트가 읽는 공통 부모 클래스다.
+ * 이동 코드에 직접 접근하지 말고 아래 값만 보고 상태를 판단하게 둔다.
  */
 UCLASS()
 class HEAVENHYPERVOICE_API UUEAnimInstance : public UAnimInstance
@@ -46,4 +45,11 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|State")
 	bool bIsFalling = false;
+
+	// 커마 체형 기준 성별 상태다. 현재 커마 코드에서 TypeA는 여성, TypeB는 남성이다.
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Character")
+	bool bIsFemale = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Animation|Character")
+	bool bIsMale = false;
 };
