@@ -774,7 +774,8 @@ void AUEPlayerCharacter::RegisterPokemonServerRoster()
 			}
 
 			const AUEPokemonCharacter* DefaultPokemon = ClassToInspect ? ClassToInspect->GetDefaultObject<AUEPokemonCharacter>() : nullptr;
-			DefaultOwnedPokemon.SpeciesId = TEXT("Pikachu");
+			// 종족 데이터가 없을 때 특정 포켓몬 이름을 임의로 넣지 않는다.
+			DefaultOwnedPokemon.SpeciesId = NAME_None;
 			DefaultOwnedPokemon.CurrentHP = DefaultPokemon ? DefaultPokemon->GetMaxHP() : 100.0f;
 		}
 		OwnedPokemons.Add(DefaultOwnedPokemon);
