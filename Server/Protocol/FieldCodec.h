@@ -68,6 +68,19 @@ inline Bytes encodeEnter(const Bytes& ticket) {
     return detail::wrapField(fbb, HeavenField::Payload::Enter, request.Union());
 }
 
+// --dev-no-auth 로 뜬 서버에만 통한다.
+inline Bytes encodeDevEnter(std::string_view name, std::uint64_t characterId,
+                            std::uint16_t partnerSpecies) {
+    flatbuffers::FlatBufferBuilder fbb;
+    auto devName = fbb.CreateString(name.data(), name.size());
+
+    HeavenField::EnterBuilder builder(fbb);
+    builder.add_dev_name(devName);
+    builder.add_dev_character_id(characterId);
+    builder.add_dev_partner_species(partnerSpecies);
+    return detail::wrapField(fbb, HeavenField::Payload::Enter, builder.Finish().Union());
+}
+
 inline Bytes encodeEnterAck(std::uint64_t entityId, float x, float y, float facing,
                             std::uint32_t mapId) {
     flatbuffers::FlatBufferBuilder fbb;

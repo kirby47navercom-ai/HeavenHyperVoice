@@ -104,7 +104,53 @@ bool FieldHandler::onFrame(TlsSession& session, const proto::Bytes& body) {
     }
 }
 
+// 로그인 서버 없이 필드만 붙여볼 때. 티켓도 DB 도 건너뛴다.
+bool FieldHandler::enterWithoutAuth(TlsSession& session, const HeavenField::Enter& request) {
+    const auto* name = request.dev_name();
+    if (name == nullptr || name->size() == 0 || name->size() > proto::kMaxNicknameBytes) {
+        session.send(proto::encodeFieldNotice("dev_name 이 필요합니다"));
+        return false;
+    }
+
+    // 클라가 준 번호를 그대로 쓴다. 개발 모드라 소유 개념이 없다.
+    const std::uint64_t characterId = request.dev_character_id();
+    if (characterId == 0) {
+        session.send(proto::encodeFieldNotice("dev_character_id 는 0 이 될 수 없습니다"));
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        characterId_ = characterId;
+        accountId_ = characterId;  // 계정 개념이 없으므로 같은 값으로 둔다
+        nickname_ = name->str();
+        stage_ = Stage::InField;
+    }
+    session.markAuthenticated();
+
+    const data::Position start{0, proto::kSpawnX, proto::kSpawnY, 0.f};
+    auto self = session.shared_from_this();
+
+    // EnterAck 이 Spawn 보다 먼저 나가야 한다.
+    self->send(proto::encodeEnterAck(characterId, start.x, start.y, start.facing, start.mapId));
+
+    const auto displaced = context_.world->enter(characterId, characterId, nickname_,
+                                                 request.dev_partner_species(), start, self);
+    if (displaced) {
+        displaced->send(proto::encodeFieldNotice("다른 곳에서 접속하여 연결을 종료합니다"));
+        displaced->closeAfterFlush();
+    }
+
+    spdlog::warn("entered WITHOUT AUTH: {} (id {}, {}) - {} in field", nickname_, characterId,
+                 session.peer(), context_.world->size());
+    return true;
+}
+
 bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& request) {
+    if (context_.devNoAuth) {
+        return enterWithoutAuth(session, request);
+    }
+
     const auto* blob = request.ticket();
     if (blob == nullptr || blob->size() == 0) {
         session.send(proto::encodeFieldNotice("입장권이 없습니다"));
@@ -224,6 +270,11 @@ void FieldHandler::onClosed(TlsSession& session) {
 
     spdlog::info("left: {} ({}) - {} in field", nickname_, session.peer(),
                  context_.world->size());
+
+    // 개발 모드에는 저장소가 없다. 위치는 프로세스와 함께 사라진다.
+    if (context_.devNoAuth) {
+        return;
+    }
 
     // DB 쓰기라 IOCP 워커에서 하지 않는다.
     const FieldContext* context = &context_;

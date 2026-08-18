@@ -28,6 +28,11 @@ struct FieldContext {
 
     // 없어도 된다. 못 붙으면 위치를 DB 에서만 읽고 쓴다.
     net::RedisClient* redis = nullptr;
+
+    // 개발용. 티켓 검증과 DB 를 모두 건너뛰고 Enter 의 dev_* 를 그대로 믿는다.
+    // 로그인 서버 없이 필드만 클라이언트와 붙여볼 때만 켠다.
+    // 이때 characters 와 redis 는 nullptr 이다.
+    bool devNoAuth = false;
 };
 
 // 세션 하나의 필드 처리.
@@ -50,6 +55,7 @@ private:
     enum class Stage { AwaitingEnter, Entering, InField, Done };
 
     bool handleEnter(TlsSession& session, const HeavenField::Enter& request);
+    bool enterWithoutAuth(TlsSession& session, const HeavenField::Enter& request);
     void handleMove(const HeavenField::Move& request);
 
     const FieldContext& context_;

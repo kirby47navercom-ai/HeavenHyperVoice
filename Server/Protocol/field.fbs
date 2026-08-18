@@ -11,8 +11,16 @@
 namespace HeavenField;
 
 // 클라 -> 서버. LoginServer 가 audience:"field" 로 서명한 티켓을 싣는다.
+//
+// dev_* 는 서버가 --dev-no-auth 로 떠 있을 때만 읽는다. 그 모드가 아니면
+// 존재 자체를 무시하므로, 평소에는 이 필드로 인증을 우회할 수 없다.
+// 로그인 서버 없이 필드만 클라이언트와 붙여볼 때 쓴다.
 table Enter {
   ticket:[ubyte];
+
+  dev_name:string;
+  dev_character_id:ulong;
+  dev_partner_species:ushort;
 }
 
 // 서버 -> 클라. 내 엔티티 번호와 시작 위치.

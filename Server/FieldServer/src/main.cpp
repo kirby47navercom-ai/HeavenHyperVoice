@@ -40,6 +40,10 @@ struct Options {
     // 지정되면 그 일만 하고 종료한다.
     bool saveRedisPassword = false;
     bool forgetRedisPassword = false;
+
+    // 로그인 서버 없이 필드만 클라이언트와 붙여볼 때. 티켓 검증과 DB/Redis 를
+    // 모두 건너뛴다. 되돌리려면 이 플래그만 빼면 된다.
+    bool devNoAuth = false;
 };
 
 void printUsage() {
@@ -64,6 +68,12 @@ void printUsage() {
                  "  --db-conn <str>     full ODBC connection string, overrides the above\n"
                  "  --verbose           enable debug logging\n"
                  "  --help              show this message\n"
+                 "\n"
+                 "Development only\n"
+                 "  --dev-no-auth       accept Enter without a ticket and run with no\n"
+                 "                      database or cache. The client sends its own name\n"
+                 "                      and id in the Enter frame; nothing is persisted.\n"
+                 "                      Brings the field up without the login server.\n"
                  "\n"
                  "Run once, then exit (no server is started)\n"
                  "  --save-redis-password    prompt for the Redis password and store it in the\n"
@@ -119,6 +129,8 @@ Options parseArgs(int argc, char** argv) {
             options.db.user = next("--db-user");
         } else if (arg == "--db-conn") {
             options.db.connectionString = next("--db-conn");
+        } else if (arg == "--dev-no-auth") {
+            options.devNoAuth = true;
         } else if (arg == "--verbose") {
             options.verbose = true;
         } else if (arg == "--help" || arg == "-h") {
@@ -158,21 +170,25 @@ int main(int argc, char** argv) {
         heaven::proto::PublicKeyRing keys;
         keys.add(options.keyId, authPub);
 
-        heaven::data::OdbcSettings db = options.db;
-        db.poolSize = options.dbThreads;
-        if (const auto password = heaven::net::databasePassword()) {
-            db.password = *password;
-        } else {
-            throw std::runtime_error(
-                "no database password available.\n"
-                "  Store it once: LoginServer.exe --save-db-password\n"
-                "  Or set HHV_DB_PASSWORD for this shell.");
+        // 개발 모드에서는 저장소를 아예 열지 않는다. MySQL 도 Memurai 도 없이 뜬다.
+        std::unique_ptr<heaven::data::OdbcStore> characters;
+        if (!options.devNoAuth) {
+            heaven::data::OdbcSettings db = options.db;
+            db.poolSize = options.dbThreads;
+            if (const auto password = heaven::net::databasePassword()) {
+                db.password = *password;
+            } else {
+                throw std::runtime_error(
+                    "no database password available.\n"
+                    "  Store it once: LoginServer.exe --save-db-password\n"
+                    "  Or set HHV_DB_PASSWORD for this shell.");
+            }
+            characters = std::make_unique<heaven::data::OdbcStore>(db);
         }
-        heaven::data::OdbcStore characters(db);
 
         // 위치 캐시. 없어도 DB 만으로 동작한다.
         std::unique_ptr<heaven::net::RedisClient> redis;
-        if (options.useRedis) {
+        if (options.useRedis && !options.devNoAuth) {
             heaven::net::RedisSettings redisSettings;
             redisSettings.host = options.redisHost;
             redisSettings.port = options.redisPort;
@@ -195,7 +211,8 @@ int main(int argc, char** argv) {
         heaven::field::FieldContext context;
         context.world = &world;
         context.keys = &keys;
-        context.characters = &characters;
+        context.characters = characters.get();
+        context.devNoAuth = options.devNoAuth;
         context.dbQueue = &dbQueue;
         context.redis = redis.get();
 
@@ -216,8 +233,14 @@ int main(int argc, char** argv) {
                      heaven::proto::kWorldSize, heaven::proto::kSectorCount,
                      heaven::proto::kSectorSize, heaven::proto::kEnterRadius,
                      heaven::proto::kExitRadius, heaven::proto::kTickHz);
-        spdlog::info("characters: {} ({} db threads)", characters.describe(), options.dbThreads);
+        spdlog::info("characters: {} ({} db threads)",
+                     characters ? characters->describe() : "disabled (--dev-no-auth)",
+                     options.dbThreads);
         spdlog::info("position cache: {}", redis ? redis->target() : "disabled");
+        if (options.devNoAuth) {
+            spdlog::warn("--dev-no-auth: ANY client may enter with a name of its choosing.");
+            spdlog::warn("Tickets are not verified and nothing is saved.");
+        }
 
         std::atomic<bool> running{true};
 
