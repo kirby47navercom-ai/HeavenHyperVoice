@@ -92,4 +92,5 @@ private:
 	TObjectPtr<UUELoginWidget> LoginWidgetInstance = nullptr;
 
 	FVector2D PendingMovementInput = FVector2D::ZeroVector;
+	bool Bplay = true;
 };
