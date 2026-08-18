@@ -10,7 +10,10 @@
 
 UUEPlayerMovementSyncComponent::UUEPlayerMovementSyncComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	// Only the field-server path needs a tick, to drain the network queue. It is
+	// switched on in BeginPlay so the local-validation path costs nothing.
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
 }
 
 void UUEPlayerMovementSyncComponent::BeginPlay()
@@ -26,7 +29,14 @@ void UUEPlayerMovementSyncComponent::BeginPlay()
 
 	PlayerCharacter->OnCharacterMovementUpdated.AddDynamic(this, &ThisClass::HandleCharacterMovementUpdated);
 	SaveLastValidatedServerState(PlayerCharacter->GetActorLocation(), PlayerCharacter->GetVelocity(), PlayerCharacter->GetActorRotation());
-	TryLoadServerMap();
+
+	if (bEnableLocalServerValidation)
+	{
+		TryLoadServerMap();
+		return;
+	}
+
+	StartFieldConnection();
 }
 
 void UUEPlayerMovementSyncComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -36,7 +46,108 @@ void UUEPlayerMovementSyncComponent::EndPlay(const EEndPlayReason::Type EndPlayR
 		PlayerCharacter->OnCharacterMovementUpdated.RemoveDynamic(this, &ThisClass::HandleCharacterMovementUpdated);
 	}
 
+	// Joins the worker thread. Do it before the callbacks below can dangle.
+	FieldConnection.reset();
+
 	Super::EndPlay(EndPlayReason);
+}
+
+void UUEPlayerMovementSyncComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (FieldConnection)
+	{
+		FieldConnection->Poll();
+	}
+}
+
+void UUEPlayerMovementSyncComponent::StartFieldConnection()
+{
+	FieldConnection = std::make_unique<FHHVFieldConnection>();
+
+	// The connection lives inside this component and is destroyed in EndPlay
+	// before anything else tears down, so capturing `this` is safe. Poll() only
+	// runs from TickComponent, so these all land on the game thread.
+	FieldConnection->OnEnterAck = [this](uint64 EntityId, float ServerX, float ServerY, float Facing)
+	{
+		HandleFieldEnterAck(EntityId, ServerX, ServerY, Facing);
+	};
+	FieldConnection->OnCorrection = [this](uint32 Sequence, float ServerX, float ServerY, float Facing)
+	{
+		HandleFieldCorrection(Sequence, ServerX, ServerY, Facing);
+	};
+	FieldConnection->OnSnapshot = [this](const FHHVFieldSnapshot& Snapshot)
+	{
+		if (OnFieldSnapshot)
+		{
+			OnFieldSnapshot(Snapshot);
+		}
+	};
+
+	FHHVFieldSettings Settings;
+	Settings.Host = FieldServerHost;
+	Settings.Port = FieldServerPort;
+	Settings.DevName = DevCharacterName;
+	Settings.DevCharacterId = static_cast<uint64>(DevCharacterId);
+	FieldConnection->Start(Settings);
+
+	SetComponentTickEnabled(true);
+}
+
+void UUEPlayerMovementSyncComponent::HandleFieldEnterAck(uint64 EntityId, float ServerX, float ServerY, float Facing)
+{
+	AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter();
+	if (!PlayerCharacter)
+	{
+		return;
+	}
+
+	// The server decides where entering puts you -- it restores the last saved
+	// position. Height is ours; the server has no Z yet.
+	FVector SpawnPosition = PlayerCharacter->GetActorLocation();
+	SpawnPosition.X = ToUnrealAxis(ServerX);
+	SpawnPosition.Y = ToUnrealAxis(ServerY);
+
+	FRotator SpawnRotation = PlayerCharacter->GetActorRotation();
+	SpawnRotation.Yaw = Facing;
+
+	PlayerCharacter->ApplyServerMovementCorrection(SpawnPosition, FVector::ZeroVector, SpawnRotation, true);
+	SaveLastValidatedServerState(SpawnPosition, FVector::ZeroVector, SpawnRotation);
+
+	UE_LOG(
+		LogTemp,
+		Display,
+		TEXT("PlayerMovementSync: entered field as entity %llu at (%.0f, %.0f)"),
+		EntityId,
+		SpawnPosition.X,
+		SpawnPosition.Y
+	);
+}
+
+void UUEPlayerMovementSyncComponent::HandleFieldCorrection(uint32 Sequence, float ServerX, float ServerY, float Facing)
+{
+	// Corrections only arrive when the server changed the coordinates, so there
+	// is no ack for an ordinary move. History is trimmed by MaxMoveHistoryEntries
+	// instead, and a correction older than that window is simply gone.
+	const int32 HistoryIndex = FindMoveHistoryIndex(Sequence);
+	if (HistoryIndex == INDEX_NONE)
+	{
+		return;
+	}
+
+	const FUEPlayerMovementHistoryEntry& HistoryEntry = MoveHistory[HistoryIndex];
+
+	FVector ServerPosition = HistoryEntry.ReportedPosition;
+	ServerPosition.X = ToUnrealAxis(ServerX);
+	ServerPosition.Y = ToUnrealAxis(ServerY);
+
+	FRotator ServerRotation = HistoryEntry.ReportedRotation;
+	ServerRotation.Yaw = Facing;
+
+	// A correction means the move was refused, so whatever velocity carried us
+	// there is wrong too. Zero it and let local input build it back up.
+	HandleServerMovementResult(Sequence, ServerPosition, FVector::ZeroVector, ServerRotation);
 }
 
 FUEPlayerMovementPacket UUEPlayerMovementSyncComponent::BuildMovementPacket(float DeltaSeconds)
@@ -84,8 +195,17 @@ void UUEPlayerMovementSyncComponent::SendMovementPacketToServer(const FUEPlayerM
 		return;
 	}
 
-	// TODO: Serialize and send this movement-state packet to the external C++ validation server.
-	(void)MovementPacket;
+	if (!FieldConnection || !FieldConnection->IsInField())
+	{
+		return;
+	}
+
+	FieldConnection->SendMove(
+		ToServerAxis(MovementPacket.ClientPosition.X),
+		ToServerAxis(MovementPacket.ClientPosition.Y),
+		static_cast<float>(MovementPacket.ActorRotation.Yaw),
+		MovementPacket.Sequence
+	);
 }
 
 void UUEPlayerMovementSyncComponent::TryLoadServerMap()
@@ -292,6 +412,19 @@ void UUEPlayerMovementSyncComponent::HandleCharacterMovementUpdated(float DeltaS
 	if (!PlayerCharacter || !PlayerCharacter->IsLocallyControlled())
 	{
 		return;
+	}
+
+	// Movement updates fire every frame. The server drops anything closer than
+	// 10ms apart and only broadcasts at 20Hz, so sending per frame just burns
+	// bandwidth and leaves history entries no correction will ever reference.
+	if (!bEnableLocalServerValidation)
+	{
+		TimeSinceLastSend += DeltaSeconds;
+		if (TimeSinceLastSend < SendIntervalSeconds)
+		{
+			return;
+		}
+		TimeSinceLastSend = 0.0f;
 	}
 
 	const FUEPlayerMovementPacket MovementPacket = BuildMovementPacket(DeltaSeconds);

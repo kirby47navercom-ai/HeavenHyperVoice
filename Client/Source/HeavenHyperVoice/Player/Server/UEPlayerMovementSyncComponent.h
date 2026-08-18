@@ -6,6 +6,9 @@
 #include "Components/ActorComponent.h"
 
 #include "../../Map/HHVServerMapRuntime.h"
+#include "../../Net/HHVFieldConnection.h"
+
+#include <memory>
 
 #include "UEPlayerMovementSyncComponent.generated.h"
 
@@ -40,9 +43,13 @@ public:
 
 	void HandleServerMovementResult(uint32 AckSequence, const FVector& ServerPosition, const FVector& ServerVelocity, const FRotator& ServerRotation);
 
+	/** Set by the field connection so remote-player actors can be driven from Snapshot. */
+	TFunction<void(const FHHVFieldSnapshot&)> OnFieldSnapshot;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	FUEPlayerMovementPacket BuildMovementPacket(float DeltaSeconds);
 	void RecordMovementPacket(const FUEPlayerMovementPacket& MovementPacket);
@@ -51,6 +58,19 @@ protected:
 	void ValidateMovementPacketOnLocalServer(const FUEPlayerMovementPacket& MovementPacket);
 	bool BuildLocalServerMovementResult(const FUEPlayerMovementPacket& MovementPacket, FVector& OutServerPosition, FVector& OutServerVelocity, FRotator& OutServerRotation);
 	FString ResolveServerMapFilePath() const;
+	void StartFieldConnection();
+	void HandleFieldEnterAck(uint64 EntityId, float ServerX, float ServerY, float Facing);
+	void HandleFieldCorrection(uint32 Sequence, float ServerX, float ServerY, float Facing);
+
+	/**
+	 * The server world is 51200uu with its origin at a corner, and it clamps
+	 * anything outside that box. Unreal levels are built around the origin, so
+	 * negative coordinates would be clamped to 0 and corrected forever. Placing
+	 * the Unreal origin at the centre of the server world gives +-25600uu of
+	 * room in every direction.
+	 */
+	float ToServerAxis(double UnrealAxis) const { return static_cast<float>(UnrealAxis) + WorldOriginOffset; }
+	double ToUnrealAxis(float ServerAxis) const { return static_cast<double>(ServerAxis - WorldOriginOffset); }
 	HHV::Map::AgentSettings MakeAgentSettings() const;
 	void PruneMoveHistory(int32 LastConfirmedIndex);
 	int32 FindMoveHistoryIndex(uint32 Sequence) const;
@@ -73,8 +93,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync", meta = (ClampMin = "1"))
 	int32 MaxMoveHistoryEntries = 180;
 
+	/**
+	 * Validate against the in-process map runtime instead of the field server.
+	 *
+	 * This runs inside the client, so it proves the rules but defends nothing --
+	 * anyone editing the client skips it. Off by default now that the field
+	 * server does the same checks over the wire.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Local Server")
-	bool bEnableLocalServerValidation = true;
+	bool bEnableLocalServerValidation = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Local Server")
 	bool bTryLoadDefaultServerMap = true;
@@ -82,10 +109,34 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Local Server")
 	FString ServerMapFilePath;
 
+	/** Ignored while bEnableLocalServerValidation is on. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
+	FString FieldServerHost = TEXT("127.0.0.1");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server", meta = (ClampMin = "1", ClampMax = "65535"))
+	int32 FieldServerPort = 9200;
+
+	/** Requires the server to run with --dev-no-auth. Replaced by a login ticket later. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
+	FString DevCharacterName = TEXT("UEClient");
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server", meta = (ClampMin = "1"))
+	int64 DevCharacterId = 9001;
+
+	/** The server drops moves closer together than 10ms and ticks at 20Hz. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server", meta = (ClampMin = "0.01"))
+	float SendIntervalSeconds = 0.05f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
+	float WorldOriginOffset = 25600.0f;
+
 private:
 	TWeakObjectPtr<AUEPlayerCharacter> CachedPlayerCharacter;
 	uint32 NextMoveSequence = 1;
 	TArray<FUEPlayerMovementHistoryEntry> MoveHistory;
+
+	std::unique_ptr<FHHVFieldConnection> FieldConnection;
+	float TimeSinceLastSend = 0.0f;
 
 	HHV::Map::ServerMapRuntime ServerMapRuntime;
 	bool bServerMapLoaded = false;
