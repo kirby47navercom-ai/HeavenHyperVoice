@@ -165,7 +165,8 @@ void World::updateVisibility(Entity& self) {
     });
 }
 
-void World::move(std::uint64_t characterId, float x, float y, float facing) {
+void World::move(std::uint64_t characterId, float x, float y, float facing,
+                 std::uint32_t sequence) {
     // NaN/Inf 를 먼저 막는다. clampToWorld 의 비교는 NaN 에 대해 모두 거짓이라
     // 그대로 통과하고, sectorIndex 의 float->int 변환이 정의되지 않은 값을 내며
     // sectors_ 를 배열 밖에서 건드리게 된다.
@@ -207,11 +208,37 @@ void World::move(std::uint64_t characterId, float x, float y, float facing) {
                       distance, elapsed * 1000.f, allowed);
     }
 
+    // 벽 검사. 도착점만 보면 한 틱에 캡슐 지름보다 멀리 움직일 때 얇은 벽을
+    // 그냥 지나간다. 출발점부터 훑는다.
+    bool corrected = distance > allowed && distance > 0.f;
+    if (collision_ != nullptr) {
+        // 바닥이 아직 없어서 캡슐 높이를 고정으로 둔다. 하이트맵이 들어오면
+        // 여기가 floor.z + halfHeight 가 된다.
+        const float z = agent_.capsuleHalfHeight;
+        const Vec3 from{self.position.x, self.position.y, z};
+        const Vec3 to{x, y, z};
+
+        if (collision_->blockedAlong(from, to, agent_)) {
+            // 통과시키지 않고 제자리에 둔다. 밀어내기(슬라이딩)는 클라이언트
+            // 물리가 이미 하므로, 서버는 "거기 못 간다" 만 말하면 된다.
+            x = self.position.x;
+            y = self.position.y;
+            corrected = true;
+            spdlog::debug("{} blocked by wall at ({:.0f}, {:.0f})", self.nickname, to.x, to.y);
+        }
+    }
+
     self.position.x = x;
     self.position.y = y;
     self.position.facing = facing;
     self.lastMoveAt = now;
     self.movedThisTick = true;
+
+    // 서버가 좌표를 고쳤을 때만 알린다. 정상 이동까지 응답하면 20Hz x 접속자
+    // 만큼 왕복이 생긴다. 클라는 이 sequence 부터 다시 예측한다.
+    if (corrected) {
+        sendTo(self, proto::encodeCorrection(sequence, x, y, facing));
+    }
 
     const int sector = proto::sectorIndex(x, y);
     if (sector != self.sector) {

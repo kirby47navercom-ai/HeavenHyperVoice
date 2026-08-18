@@ -2,6 +2,7 @@ add_executable(FieldServer
     src/main.cpp
     src/FieldHandler.cpp
     src/World.cpp
+    src/MapCollision.cpp
 )
 
 target_include_directories(FieldServer PRIVATE src)

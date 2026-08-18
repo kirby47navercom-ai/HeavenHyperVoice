@@ -12,6 +12,7 @@
 #include <thread>
 
 #include "FieldHandler.h"
+#include "MapCollision.h"
 #include "OdbcStore.h"
 #include "RedisClient.h"
 #include "ServerMain.h"
@@ -30,6 +31,9 @@ struct Options {
 
     // 입장/퇴장에서만 DB 를 쓴다. 로그인 서버만큼 필요하지 않다.
     unsigned dbThreads = 2;
+
+    // 벽 충돌 맵. 없으면 검사하지 않는다.
+    std::string mapFile;
 
     std::string redisHost = "127.0.0.1";
     std::uint16_t redisPort = 6379;
@@ -57,6 +61,8 @@ void printUsage() {
                  "  --threads <n>       IOCP worker threads (default: hardware concurrency)\n"
                  "  --db-threads <n>    threads for position load/save (default 2; entering\n"
                  "                      and leaving only, so fewer than the login server)\n"
+                 "  --map <path>        wall collision map. Without it the server does\n"
+                 "                      not check walls at all.\n"
                  "  --redis-host <h>    default 127.0.0.1\n"
                  "  --redis-port <n>    default 6379\n"
                  "  --no-redis          skip the position cache; load and save via the DB only\n"
@@ -107,6 +113,8 @@ Options parseArgs(int argc, char** argv) {
             options.threads = static_cast<unsigned>(std::stoi(next("--threads")));
         } else if (arg == "--db-threads") {
             options.dbThreads = static_cast<unsigned>(std::stoi(next("--db-threads")));
+        } else if (arg == "--map") {
+            options.mapFile = next("--map");
         } else if (arg == "--redis-host") {
             options.redisHost = next("--redis-host");
         } else if (arg == "--redis-port") {
@@ -208,6 +216,17 @@ int main(int argc, char** argv) {
         heaven::net::WorkQueue dbQueue(options.dbThreads);
         heaven::field::World world;
 
+        // 벽 충돌 맵. 경로를 줬는데 못 읽으면 기동을 멈춘다 — 검사가 켜진 줄
+        // 알고 운영하는 것이 제일 나쁘다. 아예 안 주면 검사 없이 뜬다.
+        heaven::field::MapCollision collision;
+        if (!options.mapFile.empty()) {
+            std::string mapError;
+            if (!collision.loadFromFile(options.mapFile, mapError)) {
+                throw std::runtime_error("map: " + mapError);
+            }
+            world.setCollision(&collision);
+        }
+
         heaven::field::FieldContext context;
         context.world = &world;
         context.keys = &keys;
@@ -237,6 +256,11 @@ int main(int argc, char** argv) {
                      characters ? characters->describe() : "disabled (--dev-no-auth)",
                      options.dbThreads);
         spdlog::info("position cache: {}", redis ? redis->target() : "disabled");
+        if (collision.loaded()) {
+            spdlog::info("wall collision: {} ({} walls)", options.mapFile, collision.wallCount());
+        } else {
+            spdlog::warn("wall collision: disabled (--map). Players can walk through anything.");
+        }
         if (options.devNoAuth) {
             spdlog::warn("--dev-no-auth: ANY client may enter with a name of its choosing.");
             spdlog::warn("Tickets are not verified and nothing is saved.");

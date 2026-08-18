@@ -40,6 +40,11 @@ table Move {
   x:float;
   y:float;
   facing:float;
+
+  // 뒤에 붙였다. 앞에 넣으면 x/y/facing 의 슬롯 번호가 밀려 기존 클라가 깨진다.
+  // 서버가 위치를 고쳐야 할 때 이 번호를 그대로 돌려주고, 클라는 그 시점부터
+  // 다시 예측한다.
+  sequence:uint;
 }
 
 // nickname 과 partner_species 는 spawned 에서만 채운다. moved 에 매번 실으면
@@ -64,12 +69,22 @@ table Notice {
   text:string;
 }
 
+// 서버 -> 클라. 보낸 좌표를 서버가 고쳤을 때만, 움직인 본인에게만 간다.
+// 정상 이동에 응답하지 않는 이유는 20Hz x 접속자만큼 왕복이 생기기 때문이다.
+table Correction {
+  sequence:uint;
+  x:float;
+  y:float;
+  facing:float;
+}
+
 union Payload {
   Enter,
   EnterAck,
   Move,
   Snapshot,
-  Notice
+  Notice,
+  Correction
 }
 
 table Envelope {

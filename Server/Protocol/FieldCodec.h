@@ -103,6 +103,12 @@ inline Bytes encodeSnapshot(const std::vector<EntityView>& spawned,
     return detail::wrapField(fbb, HeavenField::Payload::Snapshot, builder.Finish().Union());
 }
 
+inline Bytes encodeCorrection(std::uint32_t sequence, float x, float y, float facing) {
+    flatbuffers::FlatBufferBuilder fbb;
+    auto correction = HeavenField::CreateCorrection(fbb, sequence, x, y, facing);
+    return detail::wrapField(fbb, HeavenField::Payload::Correction, correction.Union());
+}
+
 inline Bytes encodeFieldNotice(std::string_view text) {
     flatbuffers::FlatBufferBuilder fbb;
     auto message = fbb.CreateString(text.data(), text.size());

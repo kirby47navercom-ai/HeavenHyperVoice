@@ -249,7 +249,8 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
 }
 
 void FieldHandler::handleMove(const HeavenField::Move& request) {
-    context_.world->move(characterId_, request.x(), request.y(), request.facing());
+    context_.world->move(characterId_, request.x(), request.y(), request.facing(),
+                         request.sequence());
 }
 
 void FieldHandler::onClosed(TlsSession& session) {
