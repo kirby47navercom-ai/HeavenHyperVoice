@@ -4,6 +4,10 @@
 namespace UEGameplayTags
 {
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_Move);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_MoveForward);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_MoveBackward);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_MoveRight);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_MoveLeft);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_LookYaw);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_LookPitch);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_Run);

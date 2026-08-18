@@ -47,6 +47,11 @@ const UAnimSequence* UUEPlayerAnimationDataAsset::FindSequenceByTag(const FGamep
 		return FallSequence;
 	}
 
+	if (SequenceTag == UEGameplayTags::State_Character_Roll)
+	{
+		return RollSequence;
+	}
+
 	for (const FUEPlayerSequenceEntry& Entry : SequenceEntries)
 	{
 		if (Entry.Sequence && Entry.SequenceTag == SequenceTag)
@@ -56,4 +61,55 @@ const UAnimSequence* UUEPlayerAnimationDataAsset::FindSequenceByTag(const FGamep
 	}
 
 	return nullptr;
+}
+
+const UAnimSequence* UUEPlayerAnimationDataAsset::FindSequenceByTagForGender(
+	const FGameplayTag& SequenceTag,
+	EUEHHVGender Gender) const
+{
+	const FUEPlayerGenderAnimationSet& GenderSet = GetAnimationSetForGender(Gender);
+
+	if (SequenceTag == UEGameplayTags::State_Character_Idle && GenderSet.IdleSequence)
+	{
+		return GenderSet.IdleSequence;
+	}
+
+	if (SequenceTag == UEGameplayTags::State_Character_Walk && GenderSet.WalkSequence)
+	{
+		return GenderSet.WalkSequence;
+	}
+
+	if (SequenceTag == UEGameplayTags::State_Character_Run && GenderSet.RunSequence)
+	{
+		return GenderSet.RunSequence;
+	}
+
+	if (SequenceTag == UEGameplayTags::State_Character_Jump && GenderSet.JumpSequence)
+	{
+		return GenderSet.JumpSequence;
+	}
+
+	if (SequenceTag == UEGameplayTags::State_Character_Fall && GenderSet.FallSequence)
+	{
+		return GenderSet.FallSequence;
+	}
+
+	if (SequenceTag == UEGameplayTags::State_Character_Roll && GenderSet.RollSequence)
+	{
+		return GenderSet.RollSequence;
+	}
+
+	return FindSequenceByTag(SequenceTag);
+}
+
+const FUEPlayerGenderAnimationSet& UUEPlayerAnimationDataAsset::GetAnimationSetForGender(
+	EUEHHVGender Gender) const
+{
+	return Gender == EUEHHVGender::TypeB ? TypeBAnimations : TypeAAnimations;
+}
+
+const UAnimSequence* UUEPlayerAnimationDataAsset::FindWalkSequenceForGender(EUEHHVGender Gender) const
+{
+	const FUEPlayerGenderAnimationSet& GenderSet = GetAnimationSetForGender(Gender);
+	return GenderSet.WalkSequence ? GenderSet.WalkSequence : WalkSequence;
 }

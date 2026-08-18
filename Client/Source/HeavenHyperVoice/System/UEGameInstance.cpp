@@ -22,25 +22,25 @@ void UUEGameInstance::Shutdown()
 
 }
 
-void UUEGameInstance::SetPendingPalworldAppearance(const FUEPalworldAppearance& NewAppearance)
+void UUEGameInstance::SetPendingHHVAppearance(const FUEHHVAppearance& NewAppearance)
 {
-	PendingPalworldAppearance = NewAppearance;
-	bHasPendingPalworldAppearance = true;
+	PendingHHVAppearance = NewAppearance;
+	bHasPendingHHVAppearance = true;
 }
 
-bool UUEGameInstance::GetPendingPalworldAppearance(FUEPalworldAppearance& OutAppearance) const
+bool UUEGameInstance::GetPendingHHVAppearance(FUEHHVAppearance& OutAppearance) const
 {
-	if (!bHasPendingPalworldAppearance)
+	if (!bHasPendingHHVAppearance)
 	{
 		return false;
 	}
 
-	OutAppearance = PendingPalworldAppearance;
+	OutAppearance = PendingHHVAppearance;
 	return true;
 }
 
-void UUEGameInstance::ClearPendingPalworldAppearance()
+void UUEGameInstance::ClearPendingHHVAppearance()
 {
-	bHasPendingPalworldAppearance = false;
-	PendingPalworldAppearance = FUEPalworldAppearance();
+	bHasPendingHHVAppearance = false;
+	PendingHHVAppearance = FUEHHVAppearance();
 }

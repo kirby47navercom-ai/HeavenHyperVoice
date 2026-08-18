@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "../CharacterCustomization/Palworld/Data/UEPalworldCustomizationTypes.h"
+#include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
 #include "../Pokemon/AI/Own/PokemonFSM.h"
 #include "../Pokemon/Server/UEPokemonServerSubsystem.h"
 #include "GameFramework/Character.h"
@@ -10,11 +10,12 @@
 
 class AUEPokemonCharacter;
 class UCameraComponent;
+class UAnimSequence;
 class USpringArmComponent;
 class USkeletalMeshComponent;
+class UUEHHVCustomizationCatalog;
 class UUEPokemonSpeciesData;
 class UUEPokemonWorldSubsystem;
-class UUEPalworldCustomizationCatalog;
 class UUEPlayerAnimationDataAsset;
 class UUEPlayerMovementSyncComponent;
 
@@ -49,12 +50,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Animation")
 	UUEPlayerAnimationDataAsset* GetPlayerAnimationData() const { return PlayerAnimationData; }
 
+	UFUNCTION(BlueprintPure, Category = "Customization")
+	EUEHHVGender GetCustomizationGender() const { return CurrentCustomizationGender; }
+
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Companion")
 	bool IsPokemonCompanionSpawned() const;
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Companion")
 	AUEPokemonCharacter* GetSpawnedPokemonCompanion() const { return SpawnedPokemon.Get(); }
 
+	UFUNCTION(BlueprintCallable, Category = "Customization")
+	void ApplyHHVAppearance(const FUEHHVAppearance& NewAppearance);
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Companion")
 	void SetPokemonCompanionSpeciesData(UUEPokemonSpeciesData* NewSpeciesData);
 
@@ -66,9 +72,6 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Companion")
 	int32 GetSelectedPokemonCompanionInstanceId() const { return SelectedCompanionPokemonInstanceId; }
-
-	UFUNCTION(BlueprintCallable, Category = "Palworld|Customization")
-	void ApplyPalworldAppearance(const FUEPalworldAppearance& NewAppearance);
 
 	void SetMovementInput(const FVector2D& NewMovementInput);
 	void ApplyServerMovementCorrection(const FVector& ServerPosition, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bUseHardCorrection);
@@ -107,17 +110,17 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Movement Sync")
 	TObjectPtr<UUEPlayerMovementSyncComponent> MovementSyncComponent = nullptr;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Customization")
-	TObjectPtr<USkeletalMeshComponent> PalworldBodyEquipmentMesh = nullptr;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Customization")
+	TObjectPtr<USkeletalMeshComponent> HHVBodyEquipmentMesh = nullptr;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Customization")
-	TObjectPtr<USkeletalMeshComponent> PalworldHeadMesh = nullptr;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Customization")
+	TObjectPtr<USkeletalMeshComponent> HHVHeadMesh = nullptr;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Palworld|Customization")
-	TObjectPtr<USkeletalMeshComponent> PalworldHairMesh = nullptr;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Customization")
+	TObjectPtr<USkeletalMeshComponent> HHVHairMesh = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Palworld|Customization")
-	TObjectPtr<UUEPalworldCustomizationCatalog> PalworldCustomizationCatalog = nullptr;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Customization")
+	TObjectPtr<UUEHHVCustomizationCatalog> HHVCustomizationCatalog = nullptr;
 
 	// 플레이어 애님 블루프린트나 몽타주 재생 코드가 참조할 기본 애니메이션 데이터 에셋이다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
@@ -177,17 +180,21 @@ private:
 	static FVector ToUnrealVector(const HHV::Map::Vec3& Vector);
 
 	void PlayerCharacterInit();
-	void ApplyPendingPalworldAppearance();
-	void ResetPalworldMaterials(USkeletalMeshComponent* Component) const;
-	void ApplyPalworldMeshLocalMaterials(USkeletalMeshComponent* Component) const;
-	void ApplyPalworldMorphSafeMaterials(USkeletalMeshComponent* Component) const;
-	void ApplyPalworldColorToSlots(USkeletalMeshComponent* Component, const FLinearColor& Color, const TArray<FString>& SlotContains) const;
-	void ApplyPalworldEyeMaterial(USkeletalMeshComponent* Component, const FUEPalworldCustomizationOption& EyeOption, const FLinearColor& EyeColor) const;
-	bool IsPalworldEyeMaterialSlot(USkeletalMeshComponent* Component, int32 MaterialIndex) const;
-	void HidePalworldFaceCoverSections(USkeletalMeshComponent* Component) const;
-	void HidePalworldBaseBodyOutfitSections(USkeletalMeshComponent* Component) const;
-	void HideUnsupportedPalworldAttachmentComponents() const;
-	void ApplyPalworldScale(const FUEPalworldAppearance& NewAppearance) const;
+	void ApplyPendingHHVAppearance();
+	void ResetHHVMaterials(USkeletalMeshComponent* Component) const;
+	void ApplyHHVMeshLocalMaterials(USkeletalMeshComponent* Component) const;
+	void ApplyHHVMorphSafeMaterials(USkeletalMeshComponent* Component) const;
+	void ApplyHHVColorToSlots(USkeletalMeshComponent* Component, const FLinearColor& Color, const TArray<FString>& SlotContains) const;
+	void ApplyHHVEyeMaterial(USkeletalMeshComponent* Component, const FUEHHVCustomizationOption& EyeOption, const FLinearColor& EyeColor) const;
+	bool IsHHVEyeMaterialSlot(USkeletalMeshComponent* Component, int32 MaterialIndex) const;
+	void HideHHVFaceCoverSections(USkeletalMeshComponent* Component) const;
+	void HideHHVBaseBodyOutfitSections(USkeletalMeshComponent* Component) const;
+	void HideHHVEquipmentSkinSections(USkeletalMeshComponent* Component) const;
+	void HideUnsupportedHHVAttachmentComponents() const;
+	void ApplyHHVScale(const FUEHHVAppearance& NewAppearance) const;
+	void UpdateHHVAnimation();
+	void PlayHHVAnimation(UAnimSequence* Sequence, bool bLoop);
+	void PlayHHVAnimationOnComponent(USkeletalMeshComponent* Component, UAnimSequence* Sequence, bool bLoop) const;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Character|State", meta = (AllowPrivateAccess = "true"))
 	FVector2D MovementInput = FVector2D::ZeroVector;
@@ -198,11 +205,17 @@ private:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Character|State", meta = (AllowPrivateAccess = "true"))
 	bool bIsRolling = false;
 
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Customization", meta = (AllowPrivateAccess = "true"))
+	EUEHHVGender CurrentCustomizationGender = EUEHHVGender::TypeA;
+
 	UPROPERTY(Transient)
 	TObjectPtr<AUEPokemonCharacter> SpawnedPokemon = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AUEPokemonCharacter> PendingDespawnPokemon = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimSequence> CurrentHHVAnimation = nullptr;
 
 	HHV::PokemonAI::PokemonFSM PokemonLifecycleBrain;
 	FTimerHandle PokemonDespawnTimerHandle;

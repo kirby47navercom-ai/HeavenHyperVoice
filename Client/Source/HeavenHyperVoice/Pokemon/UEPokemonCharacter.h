@@ -6,9 +6,13 @@
 #include "GameFramework/Character.h"
 #include "UEPokemonCharacter.generated.h"
 
+class UUEPokemonTestServerComponent;
 class UUEPokemonServerComponent;
 class UUEPokemonSpeciesData;
+class UUEPokemonAnimationDataAsset;
+class UAnimSequence;
 
+// 서버와 월드 서브시스템이 공유하는 포켓몬 상태 열거형이다.
 UENUM(BlueprintType)
 enum class EUEPokemonAnimationState : uint8
 {
@@ -163,6 +167,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Server")
 	UUEPokemonServerComponent* GetServerComponent() const { return ServerComponent; }
 
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Test Server")
+	UUEPokemonTestServerComponent* GetTestServerComponent() const { return TestServerComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Animation")
+	UUEPokemonAnimationDataAsset* GetPokemonAnimationData() const { return PokemonAnimationData; }
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -173,13 +183,23 @@ private:
 	void ApplyPokemonSpeciesData();
 	void ApplyServerAnimationSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot);
 	void UpdateServerDrivenMovement(float DeltaSeconds);
+	void UpdatePokemonAnimation();
+	void PlayPokemonAnimation(UAnimSequence* Sequence, bool bLoop);
 	void ConfigureServerDrivenMovement();
 
+	// 서버 동기화 컴포넌트는 풀 받은 서버 경로를 담당하고, 기존 테스트 컴포넌트는 그대로 유지한다.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UUEPokemonServerComponent> ServerComponent = nullptr;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|Test Server", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UUEPokemonTestServerComponent> TestServerComponent = nullptr;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Species", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UUEPokemonSpeciesData> PokemonSpeciesData = nullptr;
+
+	// 포켓몬 애님 BP가 종별 애니메이션을 꺼내 쓸 때 참조하는 데이터 에셋이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Animation", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UUEPokemonAnimationDataAsset> PokemonAnimationData = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float ServerLocationInterpSpeed = 12.0f;
@@ -198,6 +218,9 @@ private:
 
 	UPROPERTY(Transient)
 	FRotator TargetServerRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimSequence> CurrentPokemonAnimation = nullptr;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Stats", meta = (AllowPrivateAccess = "true"))
 	float CurrentHP = 100.0f;

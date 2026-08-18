@@ -3,7 +3,7 @@
 #include "UEPlayerController.h"
 
 #include "../Character/UEPlayerCharacter.h"
-#include "../CharacterCustomization/Palworld/Data/UEPalworldCustomizationTypes.h"
+#include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
 #include "../Data/UEDataAsset.h"
 #include "../System/UEGameInstance.h"
 #include "../UI/Login/UELoginWidget.h"
@@ -34,7 +34,7 @@ void AUEPlayerController::BeginPlay()
 
 	AddDefaultMappingContext();
 
-	if (HasPendingPalworldAppearance())
+	if (HasPendingHHVAppearance())
 	{
 		// 커마 완료 뒤 넘어온 게임 레벨은 로그인 화면을 다시 덮지 않고 곧바로 캐릭터를 보여준다.
 		HideLoginScreen();
@@ -58,19 +58,19 @@ void AUEPlayerController::OnPossess(APawn* InPawn)
 		return;
 	}
 
-	FUEPalworldAppearance PendingAppearance;
-	if (UEGameInstance->GetPendingPalworldAppearance(PendingAppearance))
+	FUEHHVAppearance PendingAppearance;
+	if (UEGameInstance->GetPendingHHVAppearance(PendingAppearance))
 	{
 		// 레벨 이동 직후 빙의 순서가 달라져도 저장한 커마를 다시 입힌다.
-		PlayerCharacter->ApplyPalworldAppearance(PendingAppearance);
+		PlayerCharacter->ApplyHHVAppearance(PendingAppearance);
 	}
 }
 
-bool AUEPlayerController::HasPendingPalworldAppearance() const
+bool AUEPlayerController::HasPendingHHVAppearance() const
 {
-	FUEPalworldAppearance PendingAppearance;
+	FUEHHVAppearance PendingAppearance;
 	const UUEGameInstance* UEGameInstance = Cast<UUEGameInstance>(GetGameInstance());
-	return UEGameInstance && UEGameInstance->GetPendingPalworldAppearance(PendingAppearance);
+	return UEGameInstance && UEGameInstance->GetPendingHHVAppearance(PendingAppearance);
 }
 
 void AUEPlayerController::SetupInputComponent()
@@ -164,6 +164,30 @@ void AUEPlayerController::BindGameplayInput()
 
 void AUEPlayerController::BindMoveInput(UEnhancedInputComponent* EnhancedInputComponent)
 {
+	const UInputAction* MoveForwardAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_MoveForward);
+	const UInputAction* MoveBackwardAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_MoveBackward);
+	const UInputAction* MoveRightAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_MoveRight);
+	const UInputAction* MoveLeftAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_MoveLeft);
+
+	// 기존 방향별 액션이 모두 있으면 로컬 커스터마이징 입력을 그대로 사용한다.
+	if (MoveForwardAction && MoveBackwardAction && MoveRightAction && MoveLeftAction)
+	{
+		EnhancedInputComponent->BindAction(MoveForwardAction, ETriggerEvent::Triggered, this, &ThisClass::HandleMoveForward);
+		EnhancedInputComponent->BindAction(MoveForwardAction, ETriggerEvent::Completed, this, &ThisClass::HandleMoveForwardStopped);
+		EnhancedInputComponent->BindAction(MoveForwardAction, ETriggerEvent::Canceled, this, &ThisClass::HandleMoveForwardStopped);
+		EnhancedInputComponent->BindAction(MoveBackwardAction, ETriggerEvent::Triggered, this, &ThisClass::HandleMoveBackward);
+		EnhancedInputComponent->BindAction(MoveBackwardAction, ETriggerEvent::Completed, this, &ThisClass::HandleMoveBackwardStopped);
+		EnhancedInputComponent->BindAction(MoveBackwardAction, ETriggerEvent::Canceled, this, &ThisClass::HandleMoveBackwardStopped);
+		EnhancedInputComponent->BindAction(MoveRightAction, ETriggerEvent::Triggered, this, &ThisClass::HandleMoveRight);
+		EnhancedInputComponent->BindAction(MoveRightAction, ETriggerEvent::Completed, this, &ThisClass::HandleMoveRightStopped);
+		EnhancedInputComponent->BindAction(MoveRightAction, ETriggerEvent::Canceled, this, &ThisClass::HandleMoveRightStopped);
+		EnhancedInputComponent->BindAction(MoveLeftAction, ETriggerEvent::Triggered, this, &ThisClass::HandleMoveLeft);
+		EnhancedInputComponent->BindAction(MoveLeftAction, ETriggerEvent::Completed, this, &ThisClass::HandleMoveLeftStopped);
+		EnhancedInputComponent->BindAction(MoveLeftAction, ETriggerEvent::Canceled, this, &ThisClass::HandleMoveLeftStopped);
+		return;
+	}
+
+	// 풀 받은 입력 데이터는 W/A/S/D를 하나의 2D IA_Move로 통합한다.
 	const UInputAction* MoveAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_Move);
 	if (!MoveAction)
 	{
@@ -196,19 +220,6 @@ void AUEPlayerController::BindLookInput(UEnhancedInputComponent* EnhancedInputCo
 
 void AUEPlayerController::BindActionInput(UEnhancedInputComponent* EnhancedInputComponent)
 {
-	const UInputAction* RunAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_Run);
-	if (!RunAction)
-	{
-		RunAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_Run.IA_Run"));
-	}
-
-	if (RunAction)
-	{
-		EnhancedInputComponent->BindAction(RunAction, ETriggerEvent::Started, this, &ThisClass::HandleRunStarted);
-		EnhancedInputComponent->BindAction(RunAction, ETriggerEvent::Completed, this, &ThisClass::HandleRunStopped);
-		EnhancedInputComponent->BindAction(RunAction, ETriggerEvent::Canceled, this, &ThisClass::HandleRunStopped);
-	}
-
 	const UInputAction* SpawnPokemonAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_SpawnPokemon);
 	if (!SpawnPokemonAction)
 	{
@@ -228,19 +239,85 @@ AUEPlayerCharacter* AUEPlayerController::GetControlledPlayerCharacter() const
 
 void AUEPlayerController::HandleMove(const FInputActionValue& Value)
 {
-	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
-	{
-		PlayerCharacter->SetMovementInput(Value.Get<FVector2D>());
-	}
+	// 입력 에셋은 X=좌우, Y=앞뒤 순서로 값을 보낸다.
+	// 캐릭터 내부 기준은 X=앞뒤, Y=좌우이므로 여기서 한 번만 교환한다.
+	const FVector2D RawInput = Value.Get<FVector2D>();
+	PendingMovementInput = FVector2D(RawInput.Y, RawInput.X);
+	PushMovementInputToCharacter();
 }
 
 void AUEPlayerController::HandleMoveStopped(const FInputActionValue& Value)
 {
 	(void)Value;
+	PendingMovementInput = FVector2D::ZeroVector;
+	PushMovementInputToCharacter();
+}
 
+void AUEPlayerController::PushMovementInputToCharacter()
+{
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
-		PlayerCharacter->SetMovementInput(FVector2D::ZeroVector);
+		PlayerCharacter->SetMovementInput(PendingMovementInput);
+	}
+}
+
+void AUEPlayerController::HandleMoveForward(const FInputActionValue& Value)
+{
+	PendingMovementInput.X = Value.Get<float>();
+	PushMovementInputToCharacter();
+}
+
+void AUEPlayerController::HandleMoveForwardStopped(const FInputActionValue& Value)
+{
+	if (PendingMovementInput.X > 0.0f)
+	{
+		PendingMovementInput.X = 0.0f;
+		PushMovementInputToCharacter();
+	}
+}
+
+void AUEPlayerController::HandleMoveBackward(const FInputActionValue& Value)
+{
+	PendingMovementInput.X = -Value.Get<float>();
+	PushMovementInputToCharacter();
+}
+
+void AUEPlayerController::HandleMoveBackwardStopped(const FInputActionValue& Value)
+{
+	if (PendingMovementInput.X < 0.0f)
+	{
+		PendingMovementInput.X = 0.0f;
+		PushMovementInputToCharacter();
+	}
+}
+
+void AUEPlayerController::HandleMoveRight(const FInputActionValue& Value)
+{
+	PendingMovementInput.Y = Value.Get<float>();
+	PushMovementInputToCharacter();
+}
+
+void AUEPlayerController::HandleMoveRightStopped(const FInputActionValue& Value)
+{
+	if (PendingMovementInput.Y > 0.0f)
+	{
+		PendingMovementInput.Y = 0.0f;
+		PushMovementInputToCharacter();
+	}
+}
+
+void AUEPlayerController::HandleMoveLeft(const FInputActionValue& Value)
+{
+	PendingMovementInput.Y = -Value.Get<float>();
+	PushMovementInputToCharacter();
+}
+
+void AUEPlayerController::HandleMoveLeftStopped(const FInputActionValue& Value)
+{
+	if (PendingMovementInput.Y < 0.0f)
+	{
+		PendingMovementInput.Y = 0.0f;
+		PushMovementInputToCharacter();
 	}
 }
 
@@ -252,26 +329,6 @@ void AUEPlayerController::HandleLookYaw(const FInputActionValue& Value)
 void AUEPlayerController::HandleLookPitch(const FInputActionValue& Value)
 {
 	AddPitchInput(-Value.Get<float>() * LookPitchRate);
-}
-
-void AUEPlayerController::HandleRunStarted(const FInputActionValue& Value)
-{
-	(void)Value;
-
-	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
-	{
-		PlayerCharacter->SetRunning(true);
-	}
-}
-
-void AUEPlayerController::HandleRunStopped(const FInputActionValue& Value)
-{
-	(void)Value;
-
-	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
-	{
-		PlayerCharacter->SetRunning(false);
-	}
 }
 
 void AUEPlayerController::HandlePokemonToggle(const FInputActionValue& Value)

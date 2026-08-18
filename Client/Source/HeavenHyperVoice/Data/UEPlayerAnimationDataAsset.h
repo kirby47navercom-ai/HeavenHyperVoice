@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
 #include "Engine/DataAsset.h"
 #include "GameplayTagContainer.h"
 #include "UEPlayerAnimationDataAsset.generated.h"
@@ -38,6 +39,37 @@ public:
 	TObjectPtr<UAnimSequence> Sequence = nullptr;
 };
 
+USTRUCT(BlueprintType)
+struct FUEPlayerGenderAnimationSet
+{
+	GENERATED_BODY()
+
+public:
+	// 성별별 기본 대기 애니메이션이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> IdleSequence = nullptr;
+
+	// 성별별 걷기 애니메이션이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> WalkSequence = nullptr;
+
+	// 성별별 달리기 애니메이션이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> RunSequence = nullptr;
+
+	// 성별별 점프 시작 애니메이션이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> JumpSequence = nullptr;
+
+	// 성별별 낙하 루프 애니메이션이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> FallSequence = nullptr;
+
+	// 성별별 구르기 애니메이션이다. 몽타주가 따로 없을 때 블루프린트에서 시퀀스로 쓸 수 있다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> RollSequence = nullptr;
+};
+
 UCLASS(BlueprintType)
 class HEAVENHYPERVOICE_API UUEPlayerAnimationDataAsset : public UDataAsset
 {
@@ -59,6 +91,17 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
 	TObjectPtr<UAnimSequence> FallSequence = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> RollSequence = nullptr;
+
+	// 체형 Type 1에서 사용할 플레이어 애니메이션 묶음이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Gender")
+	FUEPlayerGenderAnimationSet TypeAAnimations;
+
+	// 체형 Type 2에서 사용할 플레이어 애니메이션 묶음이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Gender")
+	FUEPlayerGenderAnimationSet TypeBAnimations;
 
 	// 액션 재생용 몽타주다. 필요한 액션만 채워도 된다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Montage")
@@ -86,4 +129,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Animation")
 	const UAnimSequence* FindSequenceByTag(const FGameplayTag& SequenceTag) const;
+
+	UFUNCTION(BlueprintPure, Category = "Animation")
+	const UAnimSequence* FindSequenceByTagForGender(const FGameplayTag& SequenceTag, EUEHHVGender Gender) const;
+
+	UFUNCTION(BlueprintPure, Category = "Animation")
+	const UAnimSequence* FindWalkSequenceForGender(EUEHHVGender Gender) const;
+
+	UFUNCTION(BlueprintPure, Category = "Animation")
+	const FUEPlayerGenderAnimationSet& GetAnimationSetForGender(EUEHHVGender Gender) const;
 };

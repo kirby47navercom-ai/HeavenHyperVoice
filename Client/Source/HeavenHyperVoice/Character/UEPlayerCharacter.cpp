@@ -1,6 +1,6 @@
 #include "UEPlayerCharacter.h"
 
-#include "../CharacterCustomization/Palworld/Data/UEPalworldCustomizationTypes.h"
+#include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
 #include "../Player/Server/UEPlayerMovementSyncComponent.h"
 #include "../Data/UEPlayerAnimationDataAsset.h"
 #include "../Pokemon/UEPokemonCharacter.h"
@@ -9,7 +9,10 @@
 #include "../Pokemon/Server/UEPokemonServerSubsystem.h"
 #include "../Pokemon/UEPokemonWorldSubsystem.h"
 #include "../System/UEGameInstance.h"
+#include "../UEGameplayTags.h"
 
+#include "Animation/AnimSequence.h"
+#include "Animation/AnimInstance.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -26,12 +29,12 @@
 
 namespace
 {
-	const TCHAR* PalworldMorphSafeMaterialFolder = TEXT("/Game/CharacterCustomization/Palworld/Generated/MorphSafeMaterials");
-	const TCHAR* PalworldEyeCompositeFolder = TEXT("/Game/CharacterCustomization/Palworld/Generated/EyeComposite");
-	constexpr int32 PalworldMaxVisibleOutfits = 14;
-	constexpr int32 PalworldFirstVisibleOutfitIndex = 1;
+	const TCHAR* HHVMorphSafeMaterialFolder = TEXT("/Game/CharacterCustomization/HHV/Generated/MorphSafeMaterials");
+	const TCHAR* HHVEyeCompositeFolder = TEXT("/Game/CharacterCustomization/HHV/Generated/EyeComposite");
+	constexpr int32 HHVMaxVisibleOutfits = 14;
+	constexpr int32 HHVFirstVisibleOutfitIndex = 1;
 
-	void ApplyPlayerPalworldSignedMorphTarget(USkeletalMeshComponent* Component, const FName MinTarget, const FName MaxTarget, float Value)
+	void ApplyPlayerHHVSignedMorphTarget(USkeletalMeshComponent* Component, const FName MinTarget, const FName MaxTarget, float Value)
 	{
 		if (!Component)
 		{
@@ -48,7 +51,7 @@ namespace
 		return Count > 0 ? FMath::Clamp(Index, 0, Count - 1) : 0;
 	}
 
-	void SetPlayerPalworldMaterialShownOnAllLods(USkeletalMeshComponent* Component, int32 MaterialIndex, bool bShow)
+	void SetPlayerHHVMaterialShownOnAllLods(USkeletalMeshComponent* Component, int32 MaterialIndex, bool bShow)
 	{
 		if (!Component || MaterialIndex < 0)
 		{
@@ -83,7 +86,7 @@ namespace
 		}
 	}
 
-	FString MakePalworldMorphSafeMaterialName(const UMaterialInterface* Material)
+	FString MakeHHVMorphSafeMaterialName(const UMaterialInterface* Material)
 	{
 		FString AssetName = Material ? Material->GetName() : FString();
 		for (int32 Index = 0; Index < AssetName.Len(); ++Index)
@@ -97,7 +100,7 @@ namespace
 		return FString::Printf(TEXT("MI_MS_%s"), *AssetName);
 	}
 
-	int32 ExtractPlayerPalworldEyeNumber(const FUEPalworldCustomizationOption& Option)
+	int32 ExtractPlayerHHVEyeNumber(const FUEHHVCustomizationOption& Option)
 	{
 		const FString Identity = FString::Printf(
 			TEXT("%s %s %s"),
@@ -120,7 +123,7 @@ namespace
 		return Digits.IsEmpty() ? 1 : FMath::Clamp(FCString::Atoi(*Digits), 1, 999);
 	}
 
-	int32 FindNearestPalworldEyePaletteIndex(const TArray<FLinearColor>& Palette, const FLinearColor& Color)
+	int32 FindNearestHHVEyePaletteIndex(const TArray<FLinearColor>& Palette, const FLinearColor& Color)
 	{
 		if (Palette.IsEmpty())
 		{
@@ -145,20 +148,20 @@ namespace
 		return FMath::Clamp(BestIndex, 0, 9);
 	}
 
-	UTexture* LoadPalworldEyeCompositeTexture(
-		const FUEPalworldCustomizationOption& Option,
+	UTexture* LoadHHVEyeCompositeTexture(
+		const FUEHHVCustomizationOption& Option,
 		const FLinearColor& EyeColor,
 		const TArray<FLinearColor>& EyePalette)
 	{
-		const int32 EyeNumber = ExtractPlayerPalworldEyeNumber(Option);
-		const int32 ColorIndex = FindNearestPalworldEyePaletteIndex(EyePalette, EyeColor.GetClamped());
+		const int32 EyeNumber = ExtractPlayerHHVEyeNumber(Option);
+		const int32 ColorIndex = FindNearestHHVEyePaletteIndex(EyePalette, EyeColor.GetClamped());
 		const FString TextureName = FString::Printf(
 			TEXT("T_Player_Eye%03d_Composite_C%02d"),
 			EyeNumber,
 			ColorIndex);
 		const FString TexturePath = FString::Printf(
 			TEXT("%s/Eye%03d/%s.%s"),
-			PalworldEyeCompositeFolder,
+			HHVEyeCompositeFolder,
 			EyeNumber,
 			*TextureName,
 			*TextureName);
@@ -170,14 +173,14 @@ namespace
 		const FString FallbackName = FString::Printf(TEXT("T_Player_Eye%03d_Composite"), EyeNumber);
 		const FString FallbackPath = FString::Printf(
 			TEXT("%s/Eye%03d/%s.%s"),
-			PalworldEyeCompositeFolder,
+			HHVEyeCompositeFolder,
 			EyeNumber,
 			*FallbackName,
 			*FallbackName);
 		return LoadObject<UTexture>(nullptr, *FallbackPath);
 	}
 
-	void ApplyPlayerPalworldEyeColorParameters(UMaterialInstanceDynamic* Material, const FLinearColor& EyeColor)
+	void ApplyPlayerHHVEyeColorParameters(UMaterialInstanceDynamic* Material, const FLinearColor& EyeColor)
 	{
 		if (!Material)
 		{
@@ -191,7 +194,7 @@ namespace
 		}
 	}
 
-	void ApplyPlayerPalworldEyeTextureParameters(UMaterialInstanceDynamic* Material, UTexture* Texture)
+	void ApplyPlayerHHVEyeTextureParameters(UMaterialInstanceDynamic* Material, UTexture* Texture)
 	{
 		if (!Material || !Texture)
 		{
@@ -204,7 +207,7 @@ namespace
 		}
 	}
 
-	void EnsurePlayerPalworldSkeletalMaterialUsage(UMaterialInterface* Material)
+	void EnsurePlayerHHVSkeletalMaterialUsage(UMaterialInterface* Material)
 	{
 		if (!Material)
 		{
@@ -217,7 +220,7 @@ namespace
 		Material->CheckMaterialUsage_Concurrent(MATUSAGE_MorphTargets);
 	}
 
-	UMaterialInterface* LoadPlayerPalworldMeshLocalMaterial(
+	UMaterialInterface* LoadPlayerHHVMeshLocalMaterial(
 		const USkeletalMesh* Mesh,
 		const UMaterialInterface* CurrentMaterial,
 		int32 MaterialIndex,
@@ -237,7 +240,7 @@ namespace
 
 		const FString MeshFolder = FPaths::GetPath(MeshObjectPath);
 		const bool bIsAssetsFbxOutfitMesh =
-			MeshObjectPath.Contains(TEXT("/Palworld/AssetsFBX/")) &&
+			MeshObjectPath.Contains(TEXT("/AssetsFBX/")) &&
 			MeshObjectPath.Contains(TEXT("/Outfit/"));
 		if (!MeshFolder.EndsWith(TEXT("/SkeletalMeshes")) && !bIsAssetsFbxOutfitMesh)
 		{
@@ -248,58 +251,18 @@ namespace
 		const FString MaterialName = CurrentMaterial ? CurrentMaterial->GetName() : FString();
 		if (bIsAssetsFbxOutfitMesh)
 		{
-			const auto LoadAssetsFbxLocalMaterialByName =
-				[&MeshFolder](const FString& CandidateName) -> UMaterialInterface*
-			{
-				if (CandidateName.IsEmpty())
-				{
-					return nullptr;
-				}
-
-				const FString LocalMaterialPath = FString::Printf(
-					TEXT("%s/%s.%s"),
-					*MeshFolder,
-					*CandidateName,
-					*CandidateName);
-				return LoadObject<UMaterialInterface>(nullptr, *LocalMaterialPath);
-			};
-			if (UMaterialInterface* LocalMaterial = LoadAssetsFbxLocalMaterialByName(MaterialName))
-			{
-				// AssetsFBX 의상 슬롯이 다른 버전 MI를 가리킬 때가 있어, 같은 메쉬 폴더의 원본 MI를 우선 사용한다.
-				return LocalMaterial;
-			}
-
-			const FString MeshNameLower = Mesh->GetName().ToLower();
-			const FString MaterialPathLower = GetPathNameSafe(CurrentMaterial).ToLower();
-			const bool bMeshIsFemale = MeshNameLower.Contains(TEXT("female"));
-			const bool bMeshIsMale = !bMeshIsFemale && MeshNameLower.Contains(TEXT("male"));
-			const bool bMaterialIsFemale = MaterialPathLower.Contains(TEXT("_female_"));
-			const bool bMaterialIsMale = MaterialPathLower.Contains(TEXT("_male_"));
-			const bool bWrongGenderMaterial =
-				(bMeshIsFemale && bMaterialIsMale) ||
-				(bMeshIsMale && bMaterialIsFemale);
-			const int32 SuffixIndex = MaterialName.Find(TEXT("_M"), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
-			if (bWrongGenderMaterial && SuffixIndex != INDEX_NONE && MaterialName.Len() >= SuffixIndex + 4)
-			{
-				const FString MaterialSuffix = MaterialName.Mid(SuffixIndex + 1, 3);
-				const FString LocalMaterialName = TEXT("MI___") + MaterialSuffix;
-				const FString LocalMaterialPath = FString::Printf(
-					TEXT("%s/%s.%s"),
-					*MeshFolder,
-					*LocalMaterialName,
-					*LocalMaterialName);
-				// AssetsFBX 의상 일부는 여성 메쉬 슬롯에 남성 M03 머티리얼이 꽂혀 있다.
-				// 같은 메쉬 폴더의 MI___M## 머티리얼이 있으면 그 추출 머티리얼로 교체한다.
-				return LoadObject<UMaterialInterface>(nullptr, *LocalMaterialPath);
-			}
+			// 의상 FBX 메쉬에는 이미 원본 /Assets/Pal 머티리얼 슬롯이 들어 있다.
+			// 같은 이름의 /AssetsFBX 로컬 머티리얼은 추출 중 깨진 경우가 있어 덮어쓰지 않는다.
 			return nullptr;
 		}
+
 		const auto LoadLocalMaterialByName = [&MeshOwnerFolder](const FString& CandidateName) -> UMaterialInterface*
 		{
 			if (CandidateName.IsEmpty())
 			{
 				return nullptr;
 			}
+
 			const FString LocalMaterialPath = FString::Printf(
 				TEXT("%s/Materials/%s.%s"),
 				*MeshOwnerFolder,
@@ -335,8 +298,7 @@ namespace
 
 		if (MeshMaterialStem.Contains(TEXT("Hair")))
 		{
-			// 헤어는 추출된 메쉬 슬롯의 원본 머티리얼을 그대로 사용한다.
-			// 다른 파트 보정 로직이 헤어 머티리얼을 덮으면 색과 윤곽이 틀어진다.
+			// 헤어는 메쉬 기본 슬롯이 원본이다. 옷 보정 로직으로 덮으면 색과 윤곽이 틀어진다.
 			return nullptr;
 		}
 
@@ -347,8 +309,7 @@ namespace
 			Mesh->GetName().Contains(TEXT("Outfit"));
 		if (bSingleOutfitSlotUsesBodyMaterial)
 		{
-			// 일부 추출 의상은 메쉬 슬롯이 하나인데 기본 머티리얼이 몸 피부로 들어와 있다.
-			// 이때만 Palworld 원본 /Outfit/.../v##/MI_*_M01 머티리얼을 찾아 입힌다.
+			// 단일 슬롯 의상이 몸 피부 머티리얼을 물고 있으면 같은 의상 폴더의 원본 M01을 찾아 쓴다.
 			FString OutfitMaterialStem = MeshMaterialStem;
 			if (!OutfitMaterialStem.Contains(TEXT("_v")))
 			{
@@ -373,8 +334,36 @@ namespace
 			}
 		}
 
-		// 이미 메쉬 슬롯에 원본 Palworld 머티리얼이 있으면 그대로 둔다.
 		return nullptr;
+	}
+
+	void ApplyPlayerHHVOptionMaterials(
+		USkeletalMeshComponent* Component,
+		const FUEHHVCustomizationOption& Option,
+		EUEHHVGender Gender)
+	{
+		if (!Component)
+		{
+			return;
+		}
+
+		return;
+		const int32 MaterialCount = 0;
+		/*
+		const int32 MaterialCount = FMath::Min(Component->GetNumMaterials(), Materials.Num());
+		for (int32 Index = 0; Index < MaterialCount; ++Index)
+		{
+			UMaterialInterface* Material = Materials[Index].Get();
+			if (!Material)
+			{
+				continue;
+			}
+
+			// 게임 캐릭터도 카탈로그가 가진 원본 머티리얼만 슬롯 순서대로 적용한다.
+			EnsurePlayerHHVSkeletalMaterialUsage(Material);
+			Component->SetMaterial(Index, Material);
+		}
+		*/
 	}
 
 }
@@ -412,26 +401,26 @@ AUEPlayerCharacter::AUEPlayerCharacter()
 	GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
 	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()));
 
-	PalworldBodyEquipmentMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("PalworldBodyEquipmentMesh"));
-	PalworldBodyEquipmentMesh->SetupAttachment(GetMesh());
-	PalworldBodyEquipmentMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	PalworldBodyEquipmentMesh->bReceivesDecals = false;
+	HHVBodyEquipmentMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("HHVBodyEquipmentMesh"));
+	HHVBodyEquipmentMesh->SetupAttachment(GetMesh());
+	HHVBodyEquipmentMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	HHVBodyEquipmentMesh->bReceivesDecals = false;
 
-	PalworldHeadMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("PalworldHeadMesh"));
-	PalworldHeadMesh->SetupAttachment(GetMesh());
-	PalworldHeadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	PalworldHeadMesh->bReceivesDecals = false;
+	HHVHeadMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("HHVHeadMesh"));
+	HHVHeadMesh->SetupAttachment(GetMesh());
+	HHVHeadMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	HHVHeadMesh->bReceivesDecals = false;
 
-	PalworldHairMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("PalworldHairMesh"));
-	PalworldHairMesh->SetupAttachment(GetMesh());
-	PalworldHairMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	PalworldHairMesh->bReceivesDecals = false;
+	HHVHairMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("HHVHairMesh"));
+	HHVHairMesh->SetupAttachment(GetMesh());
+	HHVHairMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	HHVHairMesh->bReceivesDecals = false;
 
-	static ConstructorHelpers::FObjectFinder<UUEPalworldCustomizationCatalog> CatalogFinder(
-		TEXT("/Game/CharacterCustomization/Palworld/Data/DA_PalworldCustomizationCatalog"));
+	static ConstructorHelpers::FObjectFinder<UUEHHVCustomizationCatalog> CatalogFinder(
+		TEXT("/Game/CharacterCustomization/HHV/Data/DA_HHVCustomizationCatalog"));
 	if (CatalogFinder.Succeeded())
 	{
-		PalworldCustomizationCatalog = CatalogFinder.Object;
+		HHVCustomizationCatalog = CatalogFinder.Object;
 	}
 
 	static ConstructorHelpers::FObjectFinder<UUEPlayerAnimationDataAsset> PlayerAnimationDataFinder(
@@ -455,8 +444,8 @@ void AUEPlayerCharacter::BeginPlay()
 	Super::BeginPlay();
 
 	PlayerCharacterInit();
+	ApplyPendingHHVAppearance();
 	RefreshMovementSpeed();
-	ApplyPendingPalworldAppearance();
 	RegisterPokemonServerRoster();
 }
 
@@ -484,6 +473,7 @@ void AUEPlayerCharacter::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	ApplyLocalMovementInput();
+	UpdateHHVAnimation();
 }
 
 FVector AUEPlayerCharacter::GetDesiredMovementDirection() const
@@ -585,7 +575,8 @@ FVector AUEPlayerCharacter::GetCameraRightAxis(const FRotator& ViewRotation) con
 
 FVector AUEPlayerCharacter::GetMoveDirectionFromInput(const FVector2D& Input, const FRotator& ViewRotation) const
 {
-	const FVector Direction = GetCameraForwardAxis(ViewRotation) * Input.Y + GetCameraRightAxis(ViewRotation) * Input.X;
+	// 입력 벡터는 X=앞/뒤, Y=좌/우로 통일한다.
+	const FVector Direction = GetCameraForwardAxis(ViewRotation) * Input.X + GetCameraRightAxis(ViewRotation) * Input.Y;
 	return Direction.GetSafeNormal();
 }
 
@@ -1005,40 +996,45 @@ FVector AUEPlayerCharacter::ToUnrealVector(const HHV::Map::Vec3& Vector)
 }
 
 
-void AUEPlayerCharacter::ApplyPalworldAppearance(const FUEPalworldAppearance& NewAppearance)
+void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearance)
 {
-	if (!PalworldCustomizationCatalog)
+	if (!HHVCustomizationCatalog)
 	{
-		PalworldCustomizationCatalog = LoadObject<UUEPalworldCustomizationCatalog>(
+		HHVCustomizationCatalog = LoadObject<UUEHHVCustomizationCatalog>(
 			nullptr,
-			TEXT("/Game/CharacterCustomization/Palworld/Data/DA_PalworldCustomizationCatalog.DA_PalworldCustomizationCatalog"));
-		if (!PalworldCustomizationCatalog)
+			TEXT("/Game/CharacterCustomization/HHV/Data/DA_HHVCustomizationCatalog.DA_HHVCustomizationCatalog"));
+		if (!HHVCustomizationCatalog)
 		{
 			return;
 		}
 	}
 
-	FUEPalworldAppearance Appearance = NewAppearance;
-	Appearance.BodyIndex = ClampOptionIndex(Appearance.BodyIndex, PalworldCustomizationCatalog->GetOptionCount(EUEPalworldCustomizationCategory::Body));
+	FUEHHVAppearance Appearance = NewAppearance;
+	Appearance.BodyIndex = ClampOptionIndex(Appearance.BodyIndex, HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::Body));
 	if (Appearance.BodyIndex == 0 &&
-		PalworldCustomizationCatalog->GetOptionCount(EUEPalworldCustomizationCategory::Body) > 2)
+		HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::Body) > 2)
 	{
 		// 0번 Body는 예전 추출 기본값이라 실제 커마에서는 쓰지 않는다.
-		// 게임 레벨로 넘어와도 Palworld 체형 타입은 TypeA=1, TypeB=2부터 시작한다.
-		Appearance.BodyIndex = Appearance.Gender == EUEPalworldGender::TypeB ? 2 : 1;
+		// 게임 레벨로 넘어와도 커마 체형 타입은 TypeA=1, TypeB=2부터 시작한다.
+		Appearance.BodyIndex = Appearance.Gender == EUEHHVGender::TypeB ? 2 : 1;
 	}
-	Appearance.HeadIndex = ClampOptionIndex(Appearance.HeadIndex, PalworldCustomizationCatalog->GetOptionCount(EUEPalworldCustomizationCategory::Head));
-	Appearance.HairIndex = ClampOptionIndex(Appearance.HairIndex, PalworldCustomizationCatalog->GetOptionCount(EUEPalworldCustomizationCategory::Hair));
-	Appearance.EyeIndex = ClampOptionIndex(Appearance.EyeIndex, PalworldCustomizationCatalog->GetOptionCount(EUEPalworldCustomizationCategory::Eyes));
+	Appearance.HeadIndex = ClampOptionIndex(Appearance.HeadIndex, HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::Head));
+	Appearance.HairIndex = ClampOptionIndex(Appearance.HairIndex, HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::Hair));
+	Appearance.EyeIndex = ClampOptionIndex(Appearance.EyeIndex, HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::Eyes));
+	if (Appearance.HairColor.Equals(FLinearColor::White, 0.003f) && !HHVCustomizationCatalog->HairColors.IsEmpty())
+	{
+		// 저장값이 없는 예전 커마는 흰색을 "머리색 미지정"으로 들고 있어서, 카탈로그 기본 머리색으로 보정한다.
+		Appearance.HairColor = HHVCustomizationCatalog->HairColors[0];
+	}
 	const int32 BodyEquipmentCount =
-		PalworldCustomizationCatalog->GetOptionCount(EUEPalworldCustomizationCategory::BodyEquipment);
-	if (BodyEquipmentCount > PalworldFirstVisibleOutfitIndex)
+		HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::BodyEquipment);
+	if (BodyEquipmentCount > HHVFirstVisibleOutfitIndex)
 	{
 		// 의상 0번은 추출용 베이스라 제외하고, 실제 선택은 1~14번만 허용한다.
-		const int32 LastVisibleOutfitIndex = FMath::Min(BodyEquipmentCount - 1, PalworldMaxVisibleOutfits);
+		const int32 LastVisibleOutfitIndex = FMath::Min(BodyEquipmentCount - 1, HHVMaxVisibleOutfits);
 		Appearance.BodyEquipmentIndex = FMath::Clamp(
 			Appearance.BodyEquipmentIndex,
-			PalworldFirstVisibleOutfitIndex,
+			HHVFirstVisibleOutfitIndex,
 			LastVisibleOutfitIndex);
 	}
 	else
@@ -1046,101 +1042,286 @@ void AUEPlayerCharacter::ApplyPalworldAppearance(const FUEPalworldAppearance& Ne
 		Appearance.BodyEquipmentIndex = 0;
 	}
 
-	const FUEPalworldCustomizationOption& Body =
-		PalworldCustomizationCatalog->GetOption(EUEPalworldCustomizationCategory::Body, Appearance.BodyIndex);
-	const FUEPalworldCustomizationOption& Outfit =
-		PalworldCustomizationCatalog->GetOption(EUEPalworldCustomizationCategory::BodyEquipment, Appearance.BodyEquipmentIndex);
-	const FUEPalworldCustomizationOption& Head =
-		PalworldCustomizationCatalog->GetOption(EUEPalworldCustomizationCategory::Head, Appearance.HeadIndex);
-	const FUEPalworldCustomizationOption& Hair =
-		PalworldCustomizationCatalog->GetOption(EUEPalworldCustomizationCategory::Hair, Appearance.HairIndex);
-	const FUEPalworldCustomizationOption& Eyes =
-		PalworldCustomizationCatalog->GetOption(EUEPalworldCustomizationCategory::Eyes, Appearance.EyeIndex);
+	CurrentCustomizationGender = Appearance.Gender;
+
+	const FUEHHVCustomizationOption& Body =
+		HHVCustomizationCatalog->GetOption(EUEHHVCustomizationCategory::Body, Appearance.BodyIndex);
+	const FUEHHVCustomizationOption& Outfit =
+		HHVCustomizationCatalog->GetOption(EUEHHVCustomizationCategory::BodyEquipment, Appearance.BodyEquipmentIndex);
+	const FUEHHVCustomizationOption& Head =
+		HHVCustomizationCatalog->GetOption(EUEHHVCustomizationCategory::Head, Appearance.HeadIndex);
+	const FUEHHVCustomizationOption& Hair =
+		HHVCustomizationCatalog->GetOption(EUEHHVCustomizationCategory::Hair, Appearance.HairIndex);
+	const FUEHHVCustomizationOption& Eyes =
+		HHVCustomizationCatalog->GetOption(EUEHHVCustomizationCategory::Eyes, Appearance.EyeIndex);
 
 	USkeletalMesh* BaseMesh = Body.LoadMesh(Appearance.Gender);
 	USkeletalMesh* OutfitMesh = Outfit.LoadMesh(Appearance.Gender);
 	const bool bSameOutfitAsBase =
 		OutfitMesh == BaseMesh || GetPathNameSafe(OutfitMesh).Equals(GetPathNameSafe(BaseMesh));
 	const bool bUsesSeparateOutfit = OutfitMesh && !bSameOutfitAsBase && Appearance.BodyEquipmentIndex > 0;
-	GetMesh()->SetSkeletalMesh(BaseMesh);
-	PalworldBodyEquipmentMesh->SetSkeletalMesh(bUsesSeparateOutfit ? OutfitMesh : nullptr);
-	PalworldBodyEquipmentMesh->SetVisibility(bUsesSeparateOutfit, true);
-	PalworldBodyEquipmentMesh->SetHiddenInGame(!bUsesSeparateOutfit, true);
-	PalworldHeadMesh->SetSkeletalMesh(Head.LoadMesh(Appearance.Gender));
-	PalworldHairMesh->SetSkeletalMesh(Hair.LoadMesh(Appearance.Gender));
-
-	ResetPalworldMaterials(GetMesh());
-	ApplyPalworldMeshLocalMaterials(GetMesh());
-	// 원본 Palworld 바디/의상 텍스처를 그대로 써야 하므로 대체 머티리얼을 덮지 않는다.
-	ResetPalworldMaterials(PalworldBodyEquipmentMesh);
-	ApplyPalworldMeshLocalMaterials(PalworldBodyEquipmentMesh);
-	// 별도 의상도 SkeletalMesh에 저장된 원본 머티리얼 슬롯을 그대로 사용한다.
-	ResetPalworldMaterials(PalworldHeadMesh);
-	ApplyPalworldMeshLocalMaterials(PalworldHeadMesh);
-	ResetPalworldMaterials(PalworldHairMesh);
-	ApplyPalworldMeshLocalMaterials(PalworldHairMesh);
-	HidePalworldFaceCoverSections(GetMesh());
-	if (bUsesSeparateOutfit)
+	// 팰월드 의상 메시는 피부/하의/신발을 포함한 완성형 플레이어 메쉬다.
+	// 게임 플레이에서는 선택 의상 하나를 전신 리더로 사용해야 애니메이션의
+	// 루트와 본 위치가 일치한다. 기본 바디를 리더로 두고 의상을 별도 포즈에
+	// 얹으면 시작 직후 머리, 팔, 발이 서로 다른 원점으로 분해될 수 있다.
+	USkeletalMesh* LeaderMesh = bUsesSeparateOutfit ? OutfitMesh : BaseMesh;
+	UClass* PlayerAnimationBlueprint = LoadClass<UAnimInstance>(
+		nullptr,
+		TEXT("/Game/Data/Animation/HeavenHyperVoice/Player/ABP_UEAnimInstance.ABP_UEAnimInstance_C"));
+	GetMesh()->SetSkeletalMesh(LeaderMesh);
+	// 게임 레벨에서 커마 메쉬를 교체해도 플레이어 애님 블루프린트를 유지한다.
+	// 메쉬 교체 뒤 SingleNode가 남으면 블렌드스페이스가 실행되지 않는다.
+	if (PlayerAnimationBlueprint)
 	{
-		// 기본 몸은 유지하고 기본 OldCloth 섹션만 숨긴 뒤, 선택 의상을 별도 메쉬로 얹는다.
-		HidePalworldBaseBodyOutfitSections(GetMesh());
+		// 메쉬를 갈아끼운 직후에도 전신 애님 인스턴스를 새 스켈레톤에 맞춰 다시 만든다.
+		// 이 초기화가 빠지면 이전 파츠의 애님 상태가 남아 머리만 움직일 수 있다.
+		GetMesh()->SetEnableAnimation(true);
+		GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint, true);
+		GetMesh()->SetAnimInstanceClass(nullptr);
+		GetMesh()->SetAnimInstanceClass(PlayerAnimationBlueprint);
+		GetMesh()->ReinitializeAnimNodes();
 	}
-	HidePalworldFaceCoverSections(PalworldBodyEquipmentMesh);
-	HidePalworldFaceCoverSections(PalworldHeadMesh);
-	HidePalworldFaceCoverSections(PalworldHairMesh);
+	GetMesh()->SetVisibility(true, false);
+	GetMesh()->SetHiddenInGame(false, false);
+	// 의상은 이미 전신 리더 메쉬로 들어갔으므로 별도 의상 컴포넌트는 비운다.
+	// 같은 의상을 두 컴포넌트에 동시에 그리면 피부가 뚫리거나 파츠가 중복된다.
+	HHVBodyEquipmentMesh->SetLeaderPoseComponent(nullptr);
+	HHVBodyEquipmentMesh->SetSkeletalMesh(nullptr);
+	HHVBodyEquipmentMesh->SetVisibility(false, true);
+	HHVBodyEquipmentMesh->SetHiddenInGame(true, true);
+	HHVHeadMesh->SetSkeletalMesh(Head.LoadMesh(Appearance.Gender));
+	HHVHairMesh->SetSkeletalMesh(Hair.LoadMesh(Appearance.Gender));
+	CurrentHHVAnimation = nullptr;
 
-	const USkeleton* LeaderSkeleton = GetMesh() && GetMesh()->GetSkeletalMeshAsset()
-		? GetMesh()->GetSkeletalMeshAsset()->GetSkeleton()
-		: nullptr;
-	for (USkeletalMeshComponent* Follower : {PalworldBodyEquipmentMesh.Get(), PalworldHeadMesh.Get(), PalworldHairMesh.Get()})
+	ResetHHVMaterials(GetMesh());
+	ResetHHVMaterials(HHVBodyEquipmentMesh);
+	ResetHHVMaterials(HHVHeadMesh);
+	ResetHHVMaterials(HHVHairMesh);
+	// SetMaterial(nullptr) 뒤에는 메쉬 폴더의 원본 머티리얼을 다시 복원한다.
+	// 이 단계가 빠지면 게임 레벨에서 의상/피부/머리카락이 흰색으로 나온다.
+	ApplyHHVMeshLocalMaterials(GetMesh());
+	ApplyHHVMeshLocalMaterials(HHVBodyEquipmentMesh);
+	ApplyHHVMeshLocalMaterials(HHVHeadMesh);
+	ApplyHHVMeshLocalMaterials(HHVHairMesh);
+
+	// 메쉬를 교체할 때 이전 의상에서 숨긴 섹션 상태가 남지 않도록 먼저 모두 켠다.
+	// 그 다음 아래의 의상/피부 규칙으로 필요한 섹션만 다시 숨긴다.
+	const auto ResetHHVSectionVisibility = [](USkeletalMeshComponent* Component)
 	{
-		USkeletalMesh* FollowerMesh = Follower ? Follower->GetSkeletalMeshAsset() : nullptr;
-		const USkeleton* FollowerSkeleton = FollowerMesh ? FollowerMesh->GetSkeleton() : nullptr;
-		if (FollowerMesh && LeaderSkeleton && FollowerSkeleton == LeaderSkeleton)
+		if (!Component)
 		{
-			// 같은 Palworld 스켈레톤을 쓰는 파트만 애니메이션 포즈를 공유한다.
-			Follower->SetLeaderPoseComponent(GetMesh(), true, false);
+			return;
+		}
+
+		for (int32 MaterialIndex = 0; MaterialIndex < Component->GetNumMaterials(); ++MaterialIndex)
+		{
+			SetPlayerHHVMaterialShownOnAllLods(Component, MaterialIndex, true);
+		}
+	};
+	ResetHHVSectionVisibility(GetMesh());
+	ResetHHVSectionVisibility(HHVBodyEquipmentMesh);
+	ResetHHVSectionVisibility(HHVHeadMesh);
+	ResetHHVSectionVisibility(HHVHairMesh);
+
+	HideHHVFaceCoverSections(GetMesh());
+	HideHHVFaceCoverSections(HHVBodyEquipmentMesh);
+	HideHHVFaceCoverSections(HHVHeadMesh);
+	HideHHVFaceCoverSections(HHVHairMesh);
+
+	for (USkeletalMeshComponent* Follower : {HHVBodyEquipmentMesh.Get(), HHVHeadMesh.Get(), HHVHairMesh.Get()})
+	{
+		const bool bCanShareLeaderPose =
+			Follower &&
+			Follower->GetSkeletalMeshAsset() &&
+			GetMesh() &&
+			GetMesh()->GetSkeletalMeshAsset() &&
+			Follower->GetSkeletalMeshAsset()->GetSkeleton() == GetMesh()->GetSkeletalMeshAsset()->GetSkeleton();
+		if (bCanShareLeaderPose)
+		{
+			// 동일 스켈레톤인 파츠만 리더 포즈를 공유한다.
+			// 다른 스켈레톤에 강제로 연결하면 파츠가 원점에서 튀어나온다.
+			Follower->SetEnableAnimation(false);
+			Follower->SetLeaderPoseComponent(GetMesh(), true, true);
+			Follower->SetComponentTickEnabled(true);
 		}
 		else if (Follower)
 		{
 			Follower->SetLeaderPoseComponent(nullptr);
+			Follower->SetEnableAnimation(false);
+			Follower->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+			Follower->bPauseAnims = true;
 		}
 	}
-	PalworldBodyEquipmentMesh->SetRelativeTransform(FTransform::Identity);
-	PalworldHeadMesh->SetRelativeTransform(FTransform::Identity);
-	PalworldHairMesh->SetRelativeTransform(FTransform::Identity);
+	HHVBodyEquipmentMesh->SetRelativeTransform(FTransform::Identity);
+	HHVHeadMesh->SetRelativeTransform(FTransform::Identity);
+	HHVHairMesh->SetRelativeTransform(FTransform::Identity);
 
 	if (!Appearance.SkinColor.Equals(FLinearColor::White, 0.003f))
 	{
-		ApplyPalworldColorToSlots(GetMesh(), Appearance.SkinColor, {TEXT("Body"), TEXT("Skin")});
-		ApplyPalworldColorToSlots(PalworldBodyEquipmentMesh, Appearance.SkinColor, {TEXT("Body"), TEXT("Skin")});
-		ApplyPalworldColorToSlots(PalworldHeadMesh, Appearance.SkinColor, {TEXT("Head"), TEXT("Skin")});
+		ApplyHHVColorToSlots(GetMesh(), Appearance.SkinColor, {TEXT("Body"), TEXT("Skin")});
+		ApplyHHVColorToSlots(HHVBodyEquipmentMesh, Appearance.SkinColor, {TEXT("Body"), TEXT("Skin")});
+		ApplyHHVColorToSlots(HHVHeadMesh, Appearance.SkinColor, {TEXT("Head"), TEXT("Skin")});
 	}
 	if (!Appearance.HairColor.Equals(FLinearColor::White, 0.003f))
 	{
-		ApplyPalworldColorToSlots(PalworldHairMesh, Appearance.HairColor, {TEXT("Hair")});
+		ApplyHHVColorToSlots(HHVHairMesh, Appearance.HairColor, {TEXT("Hair")});
 	}
 
-	ApplyPalworldEyeMaterial(PalworldHeadMesh, Eyes, Appearance.EyeColor);
-	ApplyPalworldScale(Appearance);
-	HideUnsupportedPalworldAttachmentComponents();
+	ApplyHHVEyeMaterial(HHVHeadMesh, Eyes, Appearance.EyeColor);
+	ApplyHHVScale(Appearance);
+	HideUnsupportedHHVAttachmentComponents();
 }
 
-void AUEPlayerCharacter::ApplyPendingPalworldAppearance()
+void AUEPlayerCharacter::UpdateHHVAnimation()
 {
-	FUEPalworldAppearance PendingAppearance;
-	UUEGameInstance* UEGameInstance = Cast<UUEGameInstance>(GetGameInstance());
-	if (!UEGameInstance || !UEGameInstance->GetPendingPalworldAppearance(PendingAppearance))
+	if (!GetMesh())
 	{
-		// 저장된 커마가 없으면 다른 레벨에서도 Palworld 기본 착장을 반드시 입힌다.
-		ApplyPalworldAppearance(FUEPalworldAppearance());
 		return;
 	}
 
-	ApplyPalworldAppearance(PendingAppearance);
+	if (!PlayerAnimationData)
+	{
+		PlayerAnimationData = LoadObject<UUEPlayerAnimationDataAsset>(
+			nullptr,
+			TEXT("/Game/Data/Animation/DA_PlayerAnimation.DA_PlayerAnimation"));
+	}
+
+	const UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
+	const float GroundSpeed = GetVelocity().Size2D();
+	FGameplayTag AnimationTag = UEGameplayTags::State_Character_Idle;
+
+	if (MovementComponent && MovementComponent->IsFalling())
+	{
+		AnimationTag = UEGameplayTags::State_Character_Fall;
+	}
+	else if (bIsRolling)
+	{
+		AnimationTag = UEGameplayTags::State_Character_Roll;
+	}
+	else if (GroundSpeed > 3.0f)
+	{
+		AnimationTag = bIsRunning
+			? UEGameplayTags::State_Character_Run
+			: UEGameplayTags::State_Character_Walk;
+	}
+
+	const UAnimSequence* SelectedAnimation =
+		PlayerAnimationData->FindSequenceByTagForGender(AnimationTag, CurrentCustomizationGender);
+	if (!SelectedAnimation)
+	{
+		SelectedAnimation = PlayerAnimationData->FindSequenceByTagForGender(
+			UEGameplayTags::State_Character_Idle,
+			CurrentCustomizationGender);
+	}
+
+	if (!SelectedAnimation)
+	{
+		// 데이터 에셋이 아직 예전 버전으로 저장돼 있어도 같은 원본 시퀀스를 찾는다.
+		const bool bMale = CurrentCustomizationGender == EUEHHVGender::TypeB;
+		const TCHAR* GenderFolder = bMale ? TEXT("Male") : TEXT("Female");
+		FString SequenceName;
+		if (AnimationTag == UEGameplayTags::State_Character_Walk)
+		{
+			SequenceName = bMale ? TEXT("AS_Player_Male_Walk") : TEXT("AS_Player_Female_Walk_None");
+		}
+		else if (AnimationTag == UEGameplayTags::State_Character_Run)
+		{
+			SequenceName = bMale ? TEXT("AS_Player_Male_Sprint") : TEXT("AS_Player_Female_Sprint");
+		}
+		else if (AnimationTag == UEGameplayTags::State_Character_Fall)
+		{
+			SequenceName = TEXT("AS_Player_Female_JumpDownLoop_None");
+		}
+		else if (AnimationTag == UEGameplayTags::State_Character_Roll)
+		{
+			SequenceName = TEXT("AS_Player_Female_RollFwd");
+		}
+		else
+		{
+			SequenceName = bMale ? TEXT("AS_Player_Male_Idle") : TEXT("AS_Player_Female_Idle_None");
+		}
+
+		const FString SequencePath = FString::Printf(
+			TEXT("/Game/Data/Animation/HeavenHyperVoice/Player/%s/%s.%s"),
+			GenderFolder,
+			*SequenceName,
+			*SequenceName);
+		SelectedAnimation = LoadObject<UAnimSequence>(nullptr, *SequencePath);
+	}
+
+	const USkeletalMesh* CurrentMesh = GetMesh()->GetSkeletalMeshAsset();
+	const auto MatchesCurrentSkeleton = [CurrentMesh](const UAnimSequence* Sequence)
+	{
+		return CurrentMesh &&
+			CurrentMesh->GetSkeleton() &&
+			Sequence &&
+			Sequence->GetSkeleton() == CurrentMesh->GetSkeleton();
+	};
+
+	if (SelectedAnimation && SelectedAnimation != CurrentHHVAnimation)
+	{
+		if (MatchesCurrentSkeleton(SelectedAnimation))
+		{
+			PlayHHVAnimation(const_cast<UAnimSequence*>(SelectedAnimation), true);
+		}
+		else
+		{
+			// 다른 스켈레톤의 애니메이션은 루트 스케일/본 변환을 망가뜨릴 수 있다.
+			// 호환되는 시퀀스를 연결하기 전에는 분해된 캐릭터를 만들지 않고
+			// 현재 메쉬의 기준 포즈를 유지한다.
+			GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+			GetMesh()->bPauseAnims = true;
+			CurrentHHVAnimation = nullptr;
+		}
+	}
 }
 
-void AUEPlayerCharacter::ResetPalworldMaterials(USkeletalMeshComponent* Component) const
+void AUEPlayerCharacter::PlayHHVAnimation(UAnimSequence* Sequence, bool bLoop)
+{
+	if (!GetMesh() || !Sequence)
+	{
+		return;
+	}
+
+	// 현재 추출 애니메이션은 본체 스켈레톤 기준으로 검증된 시퀀스다.
+	// 본체만 직접 재생하고, 의상/얼굴/머리는 아래의 리더 포즈를 공유한다.
+	GetMesh()->SetEnableAnimation(true);
+	GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode, true);
+	GetMesh()->PlayAnimation(Sequence, bLoop);
+	CurrentHHVAnimation = Sequence;
+}
+
+void AUEPlayerCharacter::PlayHHVAnimationOnComponent(
+	USkeletalMeshComponent* Component,
+	UAnimSequence* Sequence,
+	bool bLoop) const
+{
+	if (!Component || !Sequence || Component == GetMesh())
+	{
+		return;
+	}
+
+	// 리더 포즈를 쓸 수 없는 별도 파츠를 명시적으로 재생해야 할 때의 호환용 함수다.
+	Component->SetEnableAnimation(true);
+	Component->SetAnimationMode(EAnimationMode::AnimationSingleNode, true);
+	Component->PlayAnimation(Sequence, bLoop);
+}
+
+void AUEPlayerCharacter::ApplyPendingHHVAppearance()
+{
+	FUEHHVAppearance PendingAppearance;
+	UUEGameInstance* UEGameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	if (!UEGameInstance || !UEGameInstance->GetPendingHHVAppearance(PendingAppearance))
+	{
+		// 저장된 커마가 없으면 다른 레벨에서도 기본 착장을 반드시 입힌다.
+		ApplyHHVAppearance(FUEHHVAppearance());
+		return;
+	}
+
+	ApplyHHVAppearance(PendingAppearance);
+}
+
+void AUEPlayerCharacter::ResetHHVMaterials(USkeletalMeshComponent* Component) const
 {
 	if (!Component)
 	{
@@ -1150,11 +1331,11 @@ void AUEPlayerCharacter::ResetPalworldMaterials(USkeletalMeshComponent* Componen
 	for (int32 Index = 0; Index < Component->GetNumMaterials(); ++Index)
 	{
 		Component->SetMaterial(Index, nullptr);
-		EnsurePlayerPalworldSkeletalMaterialUsage(Component->GetMaterial(Index));
+		EnsurePlayerHHVSkeletalMaterialUsage(Component->GetMaterial(Index));
 	}
 }
 
-void AUEPlayerCharacter::ApplyPalworldMeshLocalMaterials(USkeletalMeshComponent* Component) const
+void AUEPlayerCharacter::ApplyHHVMeshLocalMaterials(USkeletalMeshComponent* Component) const
 {
 	if (!Component || !Component->GetSkeletalMeshAsset())
 	{
@@ -1165,22 +1346,21 @@ void AUEPlayerCharacter::ApplyPalworldMeshLocalMaterials(USkeletalMeshComponent*
 	for (int32 Index = 0; Index < Component->GetNumMaterials(); ++Index)
 	{
 		UMaterialInterface* CurrentMaterial = Component->GetMaterial(Index);
-		EnsurePlayerPalworldSkeletalMaterialUsage(CurrentMaterial);
-		if (UMaterialInterface* LocalMaterial = LoadPlayerPalworldMeshLocalMaterial(
+		EnsurePlayerHHVSkeletalMaterialUsage(CurrentMaterial);
+		if (UMaterialInterface* LocalMaterial = LoadPlayerHHVMeshLocalMaterial(
 			SkeletalMeshAsset,
 			CurrentMaterial,
 			Index,
 			Component->GetNumMaterials()))
 		{
-			// 일부 추출 메시가 다른 성별 폴더의 머티리얼을 물고 있어서,
-			// 같은 메시 폴더 안에 복사된 원본 머티리얼이 있으면 그쪽을 우선 사용한다.
-			EnsurePlayerPalworldSkeletalMaterialUsage(LocalMaterial);
+			// 같은 메쉬 폴더의 원본 머티리얼이 있으면 그쪽을 우선 사용한다.
+			EnsurePlayerHHVSkeletalMaterialUsage(LocalMaterial);
 			Component->SetMaterial(Index, LocalMaterial);
 		}
 	}
 }
 
-void AUEPlayerCharacter::ApplyPalworldMorphSafeMaterials(USkeletalMeshComponent* Component) const
+void AUEPlayerCharacter::ApplyHHVMorphSafeMaterials(USkeletalMeshComponent* Component) const
 {
 	if (!Component)
 	{
@@ -1190,10 +1370,10 @@ void AUEPlayerCharacter::ApplyPalworldMorphSafeMaterials(USkeletalMeshComponent*
 	for (int32 Index = 0; Index < Component->GetNumMaterials(); ++Index)
 	{
 		UMaterialInterface* OriginalMaterial = Component->GetMaterial(Index);
-		const FString SafeName = MakePalworldMorphSafeMaterialName(OriginalMaterial);
+		const FString SafeName = MakeHHVMorphSafeMaterialName(OriginalMaterial);
 		const FString SafePath = FString::Printf(
 			TEXT("%s/%s.%s"),
-			PalworldMorphSafeMaterialFolder,
+			HHVMorphSafeMaterialFolder,
 			*SafeName,
 			*SafeName);
 		UMaterialInterface* SafeMaterial = LoadObject<UMaterialInterface>(nullptr, *SafePath);
@@ -1205,7 +1385,7 @@ void AUEPlayerCharacter::ApplyPalworldMorphSafeMaterials(USkeletalMeshComponent*
 	}
 }
 
-void AUEPlayerCharacter::ApplyPalworldColorToSlots(
+void AUEPlayerCharacter::ApplyHHVColorToSlots(
 	USkeletalMeshComponent* Component,
 	const FLinearColor& Color,
 	const TArray<FString>& SlotContains) const
@@ -1263,14 +1443,17 @@ void AUEPlayerCharacter::ApplyPalworldColorToSlots(
 		UMaterialInstanceDynamic* DynamicMaterial = Component->CreateDynamicMaterialInstance(Index);
 		if (DynamicMaterial)
 		{
-			DynamicMaterial->SetVectorParameterValue(TEXT("TintColor"), Color);
+			for (const FName ParameterName : {TEXT("TintColor"), TEXT("Color"), TEXT("BaseColor"), TEXT("Base Color"), TEXT("MainColor"), TEXT("HairColor"), TEXT("Hair Color")})
+			{
+				DynamicMaterial->SetVectorParameterValue(ParameterName, Color);
+			}
 		}
 	}
 }
 
-void AUEPlayerCharacter::ApplyPalworldEyeMaterial(
+void AUEPlayerCharacter::ApplyHHVEyeMaterial(
 	USkeletalMeshComponent* Component,
-	const FUEPalworldCustomizationOption& EyeOption,
+	const FUEHHVCustomizationOption& EyeOption,
 	const FLinearColor& EyeColor) const
 {
 	if (!Component || !EyeOption.Material)
@@ -1280,9 +1463,9 @@ void AUEPlayerCharacter::ApplyPalworldEyeMaterial(
 
 	for (int32 Index = 0; Index < Component->GetNumMaterials(); ++Index)
 	{
-		if (IsPalworldEyeMaterialSlot(Component, Index))
+		if (IsHHVEyeMaterialSlot(Component, Index))
 		{
-			EnsurePlayerPalworldSkeletalMaterialUsage(EyeOption.Material);
+			EnsurePlayerHHVSkeletalMaterialUsage(EyeOption.Material);
 			UMaterialInstanceDynamic* DynamicMaterial = Component->CreateDynamicMaterialInstance(Index, EyeOption.Material);
 			if (!DynamicMaterial)
 			{
@@ -1290,22 +1473,22 @@ void AUEPlayerCharacter::ApplyPalworldEyeMaterial(
 				continue;
 			}
 
-			if (UTexture* CompositeTexture = LoadPalworldEyeCompositeTexture(
+			if (UTexture* CompositeTexture = LoadHHVEyeCompositeTexture(
 				EyeOption,
 				EyeColor,
-				PalworldCustomizationCatalog ? PalworldCustomizationCatalog->EyeColors : TArray<FLinearColor>()))
+				HHVCustomizationCatalog ? HHVCustomizationCatalog->EyeColors : TArray<FLinearColor>()))
 			{
 				// 흰자까지 포함된 합성 텍스처를 써서 눈 색만 바꾸고 얼굴 머티리얼은 건드리지 않는다.
 				// 합성 텍스처가 있으면 흰자까지 보존된 원본 텍스처를 그대로 쓴다.
-				ApplyPlayerPalworldEyeTextureParameters(DynamicMaterial, CompositeTexture);
+				ApplyPlayerHHVEyeTextureParameters(DynamicMaterial, CompositeTexture);
 				continue;
 			}
-			ApplyPlayerPalworldEyeColorParameters(DynamicMaterial, EyeColor);
+			ApplyPlayerHHVEyeColorParameters(DynamicMaterial, EyeColor);
 		}
 	}
 }
 
-bool AUEPlayerCharacter::IsPalworldEyeMaterialSlot(USkeletalMeshComponent* Component, int32 MaterialIndex) const
+bool AUEPlayerCharacter::IsHHVEyeMaterialSlot(USkeletalMeshComponent* Component, int32 MaterialIndex) const
 {
 	if (!Component || MaterialIndex < 0 || MaterialIndex >= Component->GetNumMaterials())
 	{
@@ -1363,15 +1546,15 @@ bool AUEPlayerCharacter::IsPalworldEyeMaterialSlot(USkeletalMeshComponent* Compo
 		SlotIdentity.Contains(TEXT("_eye")) ||
 		SlotIdentity.Contains(TEXT("iris")) ||
 		SlotIdentity.Contains(TEXT("pupil"));
-	const bool bHasPalworldEyeMaterial =
+	const bool bHasHHVEyeMaterial =
 		MaterialIdentity.Contains(TEXT("mi_player_eye")) ||
 		MaterialIdentity.Contains(TEXT("player_eye")) ||
 		MaterialIdentity.Contains(TEXT("iris")) ||
 		MaterialIdentity.Contains(TEXT("pupil"));
-	return bLooksLikeEyeSlot && bHasPalworldEyeMaterial;
+	return bLooksLikeEyeSlot && bHasHHVEyeMaterial;
 }
 
-void AUEPlayerCharacter::HidePalworldFaceCoverSections(USkeletalMeshComponent* Component) const
+void AUEPlayerCharacter::HideHHVFaceCoverSections(USkeletalMeshComponent* Component) const
 {
 	if (!Component || !Component->GetSkeletalMeshAsset())
 	{
@@ -1410,11 +1593,51 @@ void AUEPlayerCharacter::HidePalworldFaceCoverSections(USkeletalMeshComponent* C
 			continue;
 		}
 
-		SetPlayerPalworldMaterialShownOnAllLods(Component, MaterialIndex, false);
+		SetPlayerHHVMaterialShownOnAllLods(Component, MaterialIndex, false);
 	}
 }
 
-void AUEPlayerCharacter::HidePalworldBaseBodyOutfitSections(USkeletalMeshComponent* Component) const
+void AUEPlayerCharacter::HideHHVBaseBodyOutfitSections(USkeletalMeshComponent* Component) const
+{
+	if (!Component || !Component->GetSkeletalMeshAsset())
+	{
+		return;
+	}
+
+	const TArray<FName> SlotNames = Component->GetMaterialSlotNames();
+	for (int32 MaterialIndex = 0; MaterialIndex < SlotNames.Num(); ++MaterialIndex)
+	{
+		const FString Slot = SlotNames[MaterialIndex].ToString().ToLower();
+		const FString MaterialPath = GetPathNameSafe(Component->GetMaterial(MaterialIndex)).ToLower();
+		// 폴더 경로의 "Outfit" 문자열은 피부 머티리얼에도 포함될 수 있다.
+		// 실제 슬롯/머티리얼 이름만 보고 옷 섹션을 판별해야 베이스 피부를 숨기지 않는다.
+		const FString MaterialName = FPaths::GetBaseFilename(MaterialPath).ToLower();
+		const FString Identity = Slot + TEXT(" ") + MaterialName;
+		const bool bIsSkinSection =
+			Identity.Contains(TEXT("body")) ||
+			Identity.Contains(TEXT("skin")) ||
+			Identity.Contains(TEXT("player_female_body")) ||
+			Identity.Contains(TEXT("player_male_body"));
+		const bool bIsOutfitSection =
+			Identity.Contains(TEXT("oldcloth")) ||
+			Identity.Contains(TEXT("cloth")) ||
+			Identity.Contains(TEXT("armor")) ||
+			Identity.Contains(TEXT("shirt")) ||
+			Identity.Contains(TEXT("pants")) ||
+			Identity.Contains(TEXT("shoe")) ||
+			Identity.Contains(TEXT("boot"));
+
+		if (!bIsOutfitSection || bIsSkinSection)
+		{
+			continue;
+		}
+
+		// 실제 플레이 캐릭터도 기본 옷 슬롯만 끄고, 피부/팔/다리는 의상 빈 부분을 메우도록 남긴다.
+		SetPlayerHHVMaterialShownOnAllLods(Component, MaterialIndex, false);
+	}
+}
+
+void AUEPlayerCharacter::HideHHVEquipmentSkinSections(USkeletalMeshComponent* Component) const
 {
 	if (!Component || !Component->GetSkeletalMeshAsset())
 	{
@@ -1432,28 +1655,17 @@ void AUEPlayerCharacter::HidePalworldBaseBodyOutfitSections(USkeletalMeshCompone
 			Identity.Contains(TEXT("skin")) ||
 			Identity.Contains(TEXT("player_female_body")) ||
 			Identity.Contains(TEXT("player_male_body"));
-		const bool bIsOutfitSection =
-			Identity.Contains(TEXT("outfit")) ||
-			Identity.Contains(TEXT("oldcloth")) ||
-			Identity.Contains(TEXT("cloth")) ||
-			Identity.Contains(TEXT("armor")) ||
-			Identity.Contains(TEXT("shirt")) ||
-			Identity.Contains(TEXT("pants")) ||
-			Identity.Contains(TEXT("shoe")) ||
-			Identity.Contains(TEXT("boot"));
-
-		if (!bIsOutfitSection || bIsSkinSection)
+		if (!bIsSkinSection)
 		{
 			continue;
 		}
 
-		// 실제 게임 레벨에서 기본 OldCloth가 선택 의상과 겹치지 않도록
-		// 베이스 바디의 옷 섹션만 끄고, 피부/팔/목 섹션은 유지한다.
-		SetPlayerPalworldMaterialShownOnAllLods(Component, MaterialIndex, false);
+		// 피부는 베이스 몸에서만 렌더링하고, 선택 의상은 옷/장비 섹션만 렌더링한다.
+		SetPlayerHHVMaterialShownOnAllLods(Component, MaterialIndex, false);
 	}
 }
 
-void AUEPlayerCharacter::HideUnsupportedPalworldAttachmentComponents() const
+void AUEPlayerCharacter::HideUnsupportedHHVAttachmentComponents() const
 {
 	TArray<USkeletalMeshComponent*> Components;
 	GetComponents(Components);
@@ -1462,9 +1674,9 @@ void AUEPlayerCharacter::HideUnsupportedPalworldAttachmentComponents() const
 	{
 		if (!Component ||
 			Component == GetMesh() ||
-			Component == PalworldBodyEquipmentMesh ||
-			Component == PalworldHeadMesh ||
-			Component == PalworldHairMesh)
+			Component == HHVBodyEquipmentMesh ||
+			Component == HHVHeadMesh ||
+			Component == HHVHairMesh)
 		{
 			continue;
 		}
@@ -1490,7 +1702,7 @@ void AUEPlayerCharacter::HideUnsupportedPalworldAttachmentComponents() const
 			continue;
 		}
 
-		// 현재 Palworld 커마는 부착물을 쓰지 않으므로, 이전 BP 컴포넌트가 남아 있으면 게임 레벨에서 숨긴다.
+		// 현재 커마는 부착물을 쓰지 않으므로, 이전 BP 컴포넌트가 남아 있으면 게임 레벨에서 숨긴다.
 		Component->SetLeaderPoseComponent(nullptr);
 		Component->SetSkeletalMesh(nullptr);
 		Component->SetVisibility(false, true);
@@ -1498,18 +1710,18 @@ void AUEPlayerCharacter::HideUnsupportedPalworldAttachmentComponents() const
 	}
 }
 
-void AUEPlayerCharacter::ApplyPalworldScale(const FUEPalworldAppearance& NewAppearance) const
+void AUEPlayerCharacter::ApplyHHVScale(const FUEHHVAppearance& /*NewAppearance*/) const
 {
+	// 커마 체격 스케일 기능은 제거했다. 저장된 예전 값이 있어도 항상 기본 체형으로 되돌린다.
 	GetMesh()->SetRelativeScale3D(FVector::OneVector);
-	PalworldBodyEquipmentMesh->SetRelativeScale3D(FVector::OneVector);
-	PalworldHeadMesh->SetRelativeScale3D(FVector::OneVector);
-	PalworldHairMesh->SetRelativeScale3D(FVector::OneVector);
+	HHVBodyEquipmentMesh->SetRelativeScale3D(FVector::OneVector);
+	HHVHeadMesh->SetRelativeScale3D(FVector::OneVector);
+	HHVHairMesh->SetRelativeScale3D(FVector::OneVector);
 
-	// Palworld 원본 체형 모프만 사용한다. 머리와 루트 스케일은 따로 건드리지 않는다.
-	ApplyPlayerPalworldSignedMorphTarget(GetMesh(), TEXT("BS_Torso_min"), TEXT("BS_Torso_max"), NewAppearance.TorsoVolume);
-	ApplyPlayerPalworldSignedMorphTarget(GetMesh(), TEXT("BS_Arm_min"), TEXT("BS_Arm_max"), NewAppearance.ArmVolume);
-	ApplyPlayerPalworldSignedMorphTarget(GetMesh(), TEXT("BS_Leg_min"), TEXT("BS_Leg_max"), NewAppearance.LegVolume);
-	ApplyPlayerPalworldSignedMorphTarget(PalworldBodyEquipmentMesh, TEXT("BS_Torso_min"), TEXT("BS_Torso_max"), NewAppearance.TorsoVolume);
-	ApplyPlayerPalworldSignedMorphTarget(PalworldBodyEquipmentMesh, TEXT("BS_Arm_min"), TEXT("BS_Arm_max"), NewAppearance.ArmVolume);
-	ApplyPlayerPalworldSignedMorphTarget(PalworldBodyEquipmentMesh, TEXT("BS_Leg_min"), TEXT("BS_Leg_max"), NewAppearance.LegVolume);
+	ApplyPlayerHHVSignedMorphTarget(GetMesh(), TEXT("BS_Torso_min"), TEXT("BS_Torso_max"), 0.0f);
+	ApplyPlayerHHVSignedMorphTarget(GetMesh(), TEXT("BS_Arm_min"), TEXT("BS_Arm_max"), 0.0f);
+	ApplyPlayerHHVSignedMorphTarget(GetMesh(), TEXT("BS_Leg_min"), TEXT("BS_Leg_max"), 0.0f);
+	ApplyPlayerHHVSignedMorphTarget(HHVBodyEquipmentMesh, TEXT("BS_Torso_min"), TEXT("BS_Torso_max"), 0.0f);
+	ApplyPlayerHHVSignedMorphTarget(HHVBodyEquipmentMesh, TEXT("BS_Arm_min"), TEXT("BS_Arm_max"), 0.0f);
+	ApplyPlayerHHVSignedMorphTarget(HHVBodyEquipmentMesh, TEXT("BS_Leg_min"), TEXT("BS_Leg_max"), 0.0f);
 }
