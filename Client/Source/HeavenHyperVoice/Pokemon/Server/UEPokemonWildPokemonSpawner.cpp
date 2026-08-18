@@ -77,7 +77,8 @@ int32 AUEPokemonWildPokemonSpawner::SpawnWildPokemons()
 
 		FUEPokemonWorldSpawnData SpawnData;
 		SpawnData.RuntimePokemonId = NextRuntimePokemonId++;
-		SpawnData.SpeciesId = WildPokemonSpeciesData ? WildPokemonSpeciesData->SpeciesId : TEXT("Pikachu");
+		// 종족 데이터가 없을 때 임의 포켓몬 이름으로 고정하지 않는다.
+		SpawnData.SpeciesId = WildPokemonSpeciesData ? WildPokemonSpeciesData->SpeciesId : NAME_None;
 		SpawnData.RenderType = EUEPokemonRenderType::Wild;
 		SpawnData.SpeciesData = WildPokemonSpeciesData;
 		SpawnData.PokemonClass = ClassToSpawn;

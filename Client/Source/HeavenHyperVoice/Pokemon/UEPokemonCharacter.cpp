@@ -3,17 +3,13 @@
 #include "UEPokemonCharacter.h"
 
 #include "../AI/UEAIController.h"
-#include "../Data/UEPokemonAnimationDataAsset.h"
-#include "../UEGameplayTags.h"
-#include "Server/UEPokemonServerComponent.h"
 #include "UEPokemonSpeciesData.h"
-#include "UEPokemonTestServerComponent.h"
+#include "Server/UEPokemonServerComponent.h"
 
-#include "Animation/AnimSequence.h"
-#include "GameFramework/CharacterMovementComponent.h"
-#include "UObject/ConstructorHelpers.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 AUEPokemonCharacter::AUEPokemonCharacter()
 {
@@ -31,24 +27,14 @@ AUEPokemonCharacter::AUEPokemonCharacter()
 	ConfigureServerDrivenMovement();
 
 	ServerComponent = CreateDefaultSubobject<UUEPokemonServerComponent>(TEXT("ServerComponent"));
-	// 기본 배치 포켓몬은 기존 테스트 컴포넌트만 사용하고, 월드 스폰 데이터가 올 때만 서버 시뮬레이션을 켠다.
-	ServerComponent->SetServerSimulationEnabled(false);
-	TestServerComponent = CreateDefaultSubobject<UUEPokemonTestServerComponent>(TEXT("TestServerComponent"));
-
-	static ConstructorHelpers::FObjectFinder<UUEPokemonAnimationDataAsset> PokemonAnimationDataFinder(
-		TEXT("/Game/Data/Animation/DA_PokemonAnimation"));
-	if (PokemonAnimationDataFinder.Succeeded())
-	{
-		PokemonAnimationData = PokemonAnimationDataFinder.Object;
-	}
 }
 
 void AUEPokemonCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
 	ConfigureServerDrivenMovement();
 	ApplyPokemonSpeciesData();
-	GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
 	TargetServerLocation = GetActorLocation();
 	TargetServerRotation = GetActorRotation();
 }
@@ -58,7 +44,6 @@ void AUEPokemonCharacter::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	UpdateServerDrivenMovement(DeltaSeconds);
-	UpdatePokemonAnimation();
 }
 
 void AUEPokemonCharacter::ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot)
@@ -85,9 +70,7 @@ void AUEPokemonCharacter::SetPokemonSpeciesData(UUEPokemonSpeciesData* NewSpecie
 
 FName AUEPokemonCharacter::GetPokemonSpeciesId() const
 {
-	return PokemonSpeciesData && !PokemonSpeciesData->SpeciesId.IsNone()
-		? PokemonSpeciesData->SpeciesId
-		: ServerSpeciesId;
+	return PokemonSpeciesData && !PokemonSpeciesData->SpeciesId.IsNone() ? PokemonSpeciesData->SpeciesId : ServerSpeciesId;
 }
 
 void AUEPokemonCharacter::SetRenderType(EUEPokemonRenderType NewRenderType)
@@ -157,21 +140,6 @@ void AUEPokemonCharacter::ApplyServerStats(float ServerCurrentHP, float ServerMa
 	CurrentHP = FMath::Clamp(ServerCurrentHP, 0.0f, MaxHP);
 }
 
-void AUEPokemonCharacter::ApplyServerAnimationSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot)
-{
-	ServerAnimationState = Snapshot.AnimationState;
-
-	if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::None)
-	{
-		return;
-	}
-
-	LastServerAnimationEvent = Snapshot.AnimationEvent;
-	LastServerAnimationEventTimeSeconds = Snapshot.ServerTimeSeconds;
-	LastServerAnimationEventDurationSeconds = Snapshot.EventDurationSeconds;
-	BP_OnServerAnimationEvent(Snapshot.AnimationEvent, Snapshot);
-}
-
 void AUEPokemonCharacter::ApplyServerMoveTarget(const FVector& ServerLocation, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bTeleported)
 {
 	TargetServerLocation = ServerLocation;
@@ -187,6 +155,21 @@ void AUEPokemonCharacter::ApplyServerMoveTarget(const FVector& ServerLocation, c
 		GetCharacterMovement()->Velocity = ServerVelocity;
 		bHasServerMoveTarget = false;
 	}
+}
+
+void AUEPokemonCharacter::ApplyServerAnimationSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot)
+{
+	ServerAnimationState = Snapshot.AnimationState;
+
+	if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::None)
+	{
+		return;
+	}
+
+	LastServerAnimationEvent = Snapshot.AnimationEvent;
+	LastServerAnimationEventTimeSeconds = Snapshot.ServerTimeSeconds;
+	LastServerAnimationEventDurationSeconds = Snapshot.EventDurationSeconds;
+	BP_OnServerAnimationEvent(Snapshot.AnimationEvent, Snapshot);
 }
 
 void AUEPokemonCharacter::UpdateServerDrivenMovement(float DeltaSeconds)
@@ -208,51 +191,4 @@ void AUEPokemonCharacter::UpdateServerDrivenMovement(float DeltaSeconds)
 		SetActorLocation(TargetServerLocation, false);
 		bHasServerMoveTarget = false;
 	}
-}
-
-void AUEPokemonCharacter::UpdatePokemonAnimation()
-{
-	if (!PokemonAnimationData || !GetMesh() || !GetMesh()->GetSkeletalMeshAsset())
-	{
-		return;
-	}
-
-	const float GroundSpeed = GetVelocity().Size2D();
-	const UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
-	const bool bFalling = MovementComponent && MovementComponent->IsFalling();
-
-	const UAnimSequence* DesiredSequence = nullptr;
-	bool bLoop = true;
-	if (bFalling)
-	{
-		DesiredSequence = PokemonAnimationData->FindSequenceByTag(UEGameplayTags::State_Character_Fall);
-	}
-	else if (GroundSpeed >= 300.0f)
-	{
-		DesiredSequence = PokemonAnimationData->FindSequenceByTag(UEGameplayTags::State_Character_Run);
-	}
-	else if (GroundSpeed > 3.0f)
-	{
-		DesiredSequence = PokemonAnimationData->FindSequenceByTag(UEGameplayTags::State_Character_Walk);
-	}
-	else
-	{
-		DesiredSequence = PokemonAnimationData->FindSequenceByTag(UEGameplayTags::State_Character_Idle);
-	}
-
-	PlayPokemonAnimation(const_cast<UAnimSequence*>(DesiredSequence), bLoop);
-}
-
-void AUEPokemonCharacter::PlayPokemonAnimation(UAnimSequence* Sequence, bool bLoop)
-{
-	if (!Sequence || CurrentPokemonAnimation == Sequence)
-	{
-		return;
-	}
-
-	CurrentPokemonAnimation = Sequence;
-
-	// 포켓몬은 서버 위치 보정을 받더라도 화면에서는 현재 속도에 맞는 루프 애니메이션을 재생한다.
-	GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
-	GetMesh()->PlayAnimation(Sequence, bLoop);
 }

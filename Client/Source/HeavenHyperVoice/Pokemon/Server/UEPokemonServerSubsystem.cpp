@@ -176,10 +176,7 @@ FUEPokemonServerOwnedPokemon UUEPokemonServerSubsystem::NormalizeOwnedPokemon(co
 	{
 		NormalizedPokemon.SpeciesId = NormalizedPokemon.SpeciesData->SpeciesId;
 	}
-	if (NormalizedPokemon.SpeciesId.IsNone())
-	{
-		NormalizedPokemon.SpeciesId = TEXT("Pikachu");
-	}
+	// 종족 데이터가 비어 있으면 서버 기본값도 비워 둔다.
 
 	NormalizedPokemon.Level = FMath::Max(NormalizedPokemon.Level, 1);
 

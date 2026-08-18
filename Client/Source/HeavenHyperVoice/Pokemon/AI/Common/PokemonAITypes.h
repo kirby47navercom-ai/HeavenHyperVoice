@@ -59,10 +59,6 @@ namespace HHV::PokemonAI
 		HHV::Map::AgentSettings Agent;
 	};
 
-	// 기존 로컬 동반자 테스트 서버가 사용하던 이름을 새 Own API와 연결한다.
-	using CompanionMode = OwnMode;
-	using CompanionContext = OwnContext;
-
 	struct WildContext
 	{
 		float DeltaSeconds = 0.0f;
