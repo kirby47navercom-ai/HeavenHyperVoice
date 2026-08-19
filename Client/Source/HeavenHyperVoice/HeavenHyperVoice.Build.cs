@@ -20,7 +20,8 @@ public class HeavenHyperVoice : ModuleRules
 			"GameplayTags",
 			"UMG",
 			"GameplayAbilities",
-			"GameplayTasks"
+			"GameplayTasks","GeometryCore",
+			"GeometryFramework","ProceduralMeshComponent"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]
