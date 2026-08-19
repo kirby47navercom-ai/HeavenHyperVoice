@@ -5,12 +5,17 @@
 #include <cmath>
 #include <utility>
 
+#include "WildAi.h"
+
 namespace heaven::field {
 
 namespace {
 
 constexpr float kEnterRadiusSquared = proto::kEnterRadius * proto::kEnterRadius;
 constexpr float kExitRadiusSquared = proto::kExitRadius * proto::kExitRadius;
+
+// 야생 포켓몬 이동 속도. 플레이어 달리기(kMaxSpeed)보다 느린 걷기.
+constexpr float kWildSpeed = 200.f;
 
 }  // namespace
 
@@ -23,6 +28,7 @@ proto::EntityView World::viewOf(const Entity& entity, bool withIdentity) {
     if (withIdentity) {
         view.nickname = entity.nickname;
         view.partnerSpecies = entity.partnerSpecies;
+        view.species = entity.species;
     }
     return view;
 }
@@ -92,6 +98,83 @@ std::optional<Position> World::leave(std::uint64_t characterId) {
     }
     entities_.erase(it);
     return position;
+}
+
+void World::enterWild(std::uint64_t entityId, std::uint16_t species, const Position& position) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    Entity entity;
+    entity.characterId = entityId;
+    entity.isWild = true;
+    entity.species = species;
+    entity.partnerSpecies = species;  // 클라가 파트너처럼 같은 종을 그리게 해둔다
+    entity.position = position;
+    entity.position.x = proto::clampToWorld(entity.position.x);
+    entity.position.y = proto::clampToWorld(entity.position.y);
+    entity.sector = proto::sectorIndex(entity.position.x, entity.position.y);
+    entity.lastMoveAt = std::chrono::steady_clock::now();
+
+    sectors_[static_cast<std::size_t>(entity.sector)].insert(entityId);
+    auto [inserted, ok] = entities_.emplace(entityId, std::move(entity));
+    (void)ok;
+
+    updateVisibility(inserted->second);
+}
+
+void World::advanceWild(float dt, WildAi& ai) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    for (auto& [id, entity] : entities_) {
+        if (!entity.isWild) {
+            continue;
+        }
+
+        const WildIntent intent =
+            ai.decide(id, entity.species, entity.position.x, entity.position.y, dt);
+        if (!intent.moving) {
+            continue;
+        }
+
+        const float dx = intent.targetX - entity.position.x;
+        const float dy = intent.targetY - entity.position.y;
+        const float distance = std::sqrt(dx * dx + dy * dy);
+        if (distance < 1e-3f) {
+            continue;
+        }
+
+        const float step = kWildSpeed * dt;
+        const float ratio = step >= distance ? 1.f : step / distance;
+        float nx = proto::clampToWorld(entity.position.x + dx * ratio);
+        float ny = proto::clampToWorld(entity.position.y + dy * ratio);
+
+        // 벽에 막히면 이번 목표는 포기하고 제자리에 선다. 밀어내기(슬라이딩)는
+        // 하지 않는다 — 야생은 다음 틱에 AI 가 새 목표를 고른다.
+        // ponytail: 막힌 목표를 계속 고르면 벽 앞에서 잠깐 서성인다. 신경 쓰이면
+        //           blockedAlong 결과를 Lua 로 돌려주고 목표를 바꾸게 하면 된다.
+        if (collision_ != nullptr) {
+            const float z = agent_.capsuleHalfHeight;
+            const Vec3 from{entity.position.x, entity.position.y, z};
+            const Vec3 to{nx, ny, z};
+            if (collision_->blockedAlong(from, to, agent_)) {
+                continue;
+            }
+        }
+
+        entity.position.facing = std::atan2(dy, dx) * 180.f / 3.14159265f;
+        entity.position.x = nx;
+        entity.position.y = ny;
+        entity.lastMoveAt = std::chrono::steady_clock::now();
+        entity.movedThisTick = true;
+
+        const int sector = proto::sectorIndex(nx, ny);
+        if (sector != entity.sector) {
+            sectors_[static_cast<std::size_t>(entity.sector)].erase(id);
+            sectors_[static_cast<std::size_t>(sector)].insert(id);
+            entity.sector = sector;
+        }
+
+        updateVisibility(entity);
+    }
 }
 
 void World::removeFromVisibility(Entity& self) {

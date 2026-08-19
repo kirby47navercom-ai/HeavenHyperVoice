@@ -11,7 +11,9 @@
         "hwopt"
       ]
     },
-    "hiredis"
+    "hiredis",
+    "lua",
+    "sol2"
   ],
   "builtin-baseline": "86dc619bd8d9697405ae5c944b474117ea9457ce"
 }

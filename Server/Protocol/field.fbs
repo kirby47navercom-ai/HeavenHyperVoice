@@ -55,7 +55,11 @@ table EntityState {
   y:float;
   facing:float;
   nickname:string;
-  partner_species:ushort;  // 0 이면 파트너 없음
+  partner_species:ushort;  // 0 이면 파트너 없음 (플레이어 캐릭터)
+
+  // 야생 포켓몬의 종족. 0 이면 플레이어다. spawned 에서만 채운다.
+  // 뒤에 붙였다 — 앞에 넣으면 기존 슬롯 번호가 밀려 구버전 클라가 깨진다.
+  species:ushort;
 }
 
 table Snapshot {

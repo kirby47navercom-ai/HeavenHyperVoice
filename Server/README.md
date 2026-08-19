@@ -141,8 +141,8 @@ DB 없이 흐름만 보고 싶으면 `--account-store dev` 로 띄운다 (아래
 ### 스키마
 
 ```
-accounts            id, username, password_hash, token_version, status, ...
-  └─ characters     id, account_id, nickname, map_id, pos_x/y/z,
+accounts            id, username, password_hash, status, ...
+  └─ characters     id, account_id, nickname, map_id, pos_x/y, facing,
                     deleted_at, ...
        └─ character_pokemon   id, character_id, slot, species_id, level,
                               iv_*(6), ev_*(6)
@@ -293,6 +293,32 @@ inst:{instance_id}:{character_id}  hash{pet_hp, pet_x, pet_y}   (설계만, 미�
 
 `Move` 는 뷰어별로 프레임을 따로 만든다. 섹터 단위로 뭉치면 공유 버퍼를 쓸 수 있지만
 시야 밖 좌표가 클라에 흘러가서 시야 목록을 둔 이유가 없어진다.
+
+### 야생 포켓몬 — 행동 트리는 Lua
+
+필드에는 세션 없는 엔티티, **야생 포켓몬**도 산다. 서버가 스폰하고 서버가 20Hz
+틱마다 움직이며, 근처 플레이어에게는 다른 플레이어와 똑같이 `Spawn`/`Move`/`Despawn`
+으로 나타난다. 구분은 와이어의 `EntityState.species` 필드다 (0 이면 플레이어).
+
+행동은 C++ 이 아니라 **Lua 스크립트**(`FieldServer/scripts/wild_ai.lua`)가 정한다.
+서버는 매 틱 `wild_tick(id, species, x, y, dt)` 를 부르고, 스크립트는 "어디로 가고
+싶은가"만 목표점으로 돌려준다. 속도 상한과 벽 충돌은 서버가 마지막에 그대로 강제하므로
+스크립트가 순간이동이나 벽 통과를 시킬 수는 없다. 배회·대기 같은 규칙을 바꿀 때
+C++ 을 다시 빌드하지 않아도 된다.
+
+```powershell
+--wild-count <n>    스폰할 야생 수 (기본 12, 0 이면 끔)
+--wild-script <p>   Lua 행동 스크립트 (기본 scripts/wild_ai.lua)
+--wild-seed <n>     스폰 위치 난수 시드 (기본: 시간 기반)
+```
+
+`WildAi` 의 Lua VM 은 스레드 안전하지 않아 **틱 스레드에서만** 부른다. 스크립트 오류는
+던지지 않고 "제자리에 서 있어라" 로 처리한다 — 스크립트 하나가 서버를 멈추면 안 된다.
+스크립트를 아예 못 읽으면 그때는 기동을 멈춘다 (돌아다녀야 할 야생이 조용히 얼어붙는
+것보다 낫다).
+
+실동작은 `tools	est-wild-pokemon.py` 로 확인한다 — `--dev-no-auth` 로 띄운 서버에
+붙어 야생이 시야에 들어오고 실제로 움직이는지 본다.
 
 ### 이동은 클램프한다
 

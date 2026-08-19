@@ -6,6 +6,7 @@
 #include <exception>
 #include <iostream>
 #include <memory>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -14,8 +15,10 @@
 #include "FieldHandler.h"
 #include "MapCollision.h"
 #include "OdbcStore.h"
+#include "PokemonSpecies.h"
 #include "RedisClient.h"
 #include "ServerMain.h"
+#include "WildAi.h"
 #include "World.h"
 
 namespace {
@@ -34,6 +37,11 @@ struct Options {
 
     // 벽 충돌 맵. 없으면 검사하지 않는다.
     std::string mapFile;
+
+    // 야생 포켓몬. count 가 0 이면 스폰하지 않는다.
+    int wildCount = 12;
+    std::string wildScript = "scripts/wild_ai.lua";
+    unsigned wildSeed = 0;  // 0 이면 매 실행 다르게
 
     std::string redisHost = "127.0.0.1";
     std::uint16_t redisPort = 6379;
@@ -115,6 +123,12 @@ Options parseArgs(int argc, char** argv) {
             options.dbThreads = static_cast<unsigned>(std::stoi(next("--db-threads")));
         } else if (arg == "--map") {
             options.mapFile = next("--map");
+        } else if (arg == "--wild-count") {
+            options.wildCount = std::stoi(next("--wild-count"));
+        } else if (arg == "--wild-script") {
+            options.wildScript = next("--wild-script");
+        } else if (arg == "--wild-seed") {
+            options.wildSeed = static_cast<unsigned>(std::stoul(next("--wild-seed")));
         } else if (arg == "--redis-host") {
             options.redisHost = next("--redis-host");
         } else if (arg == "--redis-port") {
@@ -227,6 +241,29 @@ int main(int argc, char** argv) {
             world.setCollision(&collision);
         }
 
+        // 야생 포켓몬 AI. 스크립트를 못 읽으면 기동을 멈춘다 — 돌아다녀야 할
+        // 야생이 조용히 얼어붙는 것보다 낫다. count 가 0 이면 아예 만들지 않는다.
+        std::unique_ptr<heaven::field::WildAi> wildAi;
+        if (options.wildCount > 0) {
+            const std::string script =
+                heaven::net::resolveResourcePath(options.wildScript, "wild AI script");
+            wildAi = std::make_unique<heaven::field::WildAi>(script);
+
+            std::mt19937 rng(options.wildSeed != 0 ? options.wildSeed : std::random_device{}());
+            std::uniform_real_distribution<float> coord(0.f, heaven::proto::kWorldSize);
+            std::uniform_int_distribution<int> species(1, static_cast<int>(
+                                                              heaven::proto::kSpeciesCount));
+
+            // 야생 번호는 캐릭터 번호(작은 BIGINT)와 겹치지 않게 높은 범위를 쓴다.
+            constexpr std::uint64_t kWildIdBase = 1ull << 52;
+            for (int i = 0; i < options.wildCount; ++i) {
+                const heaven::data::Position start{0, coord(rng), coord(rng), 0.f};
+                world.enterWild(kWildIdBase + static_cast<std::uint64_t>(i),
+                                static_cast<std::uint16_t>(species(rng)), start);
+            }
+            spdlog::info("wild pokemon: {} spawned via {}", options.wildCount, script);
+        }
+
         heaven::field::FieldContext context;
         context.world = &world;
         context.keys = &keys;
@@ -271,8 +308,12 @@ int main(int argc, char** argv) {
         // 20Hz 틱. 이번 주기에 움직인 것만 뷰어별로 묶어 내보낸다.
         std::thread ticker([&] {
             const auto period = std::chrono::milliseconds(1000 / heaven::proto::kTickHz);
+            const float dt = 1.f / static_cast<float>(heaven::proto::kTickHz);
             while (running.load(std::memory_order_acquire)) {
                 const auto deadline = std::chrono::steady_clock::now() + period;
+                if (wildAi) {
+                    world.advanceWild(dt, *wildAi);
+                }
                 world.tick();
                 std::this_thread::sleep_until(deadline);
             }

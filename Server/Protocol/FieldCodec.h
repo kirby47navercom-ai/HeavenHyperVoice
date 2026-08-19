@@ -20,6 +20,7 @@ struct EntityView {
     float facing = 0.f;
     std::string nickname;
     std::uint16_t partnerSpecies = 0;
+    std::uint16_t species = 0;  // 야생 포켓몬 종족. 0 이면 플레이어.
 };
 
 namespace detail {
@@ -47,6 +48,9 @@ buildEntities(flatbuffers::FlatBufferBuilder& fbb, const std::vector<EntityView>
         }
         if (entity.partnerSpecies != 0) {
             builder.add_partner_species(entity.partnerSpecies);
+        }
+        if (entity.species != 0) {
+            builder.add_species(entity.species);
         }
         entries.push_back(builder.Finish());
     }

@@ -29,6 +29,8 @@
 
 namespace heaven::field {
 
+class WildAi;
+
 using net::TlsSession;
 
 // 저장소와 같은 모양을 쓴다. 입장할 때 읽고 퇴장할 때 그대로 넘긴다.
@@ -41,6 +43,10 @@ struct Entity {
 
     std::string nickname;
     std::uint16_t partnerSpecies = 0;
+
+    // 야생 포켓몬이면 true. 세션이 없고 AI 가 움직인다. species 는 자기 종족.
+    bool isWild = false;
+    std::uint16_t species = 0;
 
     Position position;
     int sector = 0;
@@ -66,6 +72,15 @@ public:
 
     // 퇴장. 마지막 위치를 돌려준다 (저장용). 없던 엔티티면 nullopt.
     std::optional<Position> leave(std::uint64_t characterId);
+
+    // 야생 포켓몬을 월드에 넣는다. 세션이 없어 아무에게도 전송하지 않지만,
+    // 근처 플레이어에게는 spawn 으로 나타난다. entityId 는 캐릭터 번호와
+    // 겹치지 않는 범위여야 한다 (main 의 kWildIdBase 참고).
+    void enterWild(std::uint64_t entityId, std::uint16_t species, const Position& position);
+
+    // 모든 야생 포켓몬을 한 틱 전진시킨다. AI 가 목표를 정하고 서버가 속도와
+    // 벽을 강제한다. 틱 스레드에서만 부를 것 (WildAi 는 스레드 안전하지 않다).
+    void advanceWild(float dt, WildAi& ai);
 
     // 클라이언트가 보낸 좌표. 속도 상한을 넘으면 클램프한다.
     void move(std::uint64_t characterId, float x, float y, float facing,
