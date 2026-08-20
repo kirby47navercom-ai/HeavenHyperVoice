@@ -25,6 +25,11 @@ namespace UEGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Character_Roll);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Character_Jump);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Character_Fall);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Character_Landing);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Character_Holding);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Character_Throw);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Character_Damage);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Character_Death);
 
 	//UE_DECLARE_GAMEPLAY_TAG_EXTERN(Ability_Attack);
 }

@@ -23,6 +23,11 @@ namespace UEGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(State_Character_Roll, "State.Character.Roll");
 	UE_DEFINE_GAMEPLAY_TAG(State_Character_Jump, "State.Character.Jump");
 	UE_DEFINE_GAMEPLAY_TAG(State_Character_Fall, "State.Character.Fall");
+	UE_DEFINE_GAMEPLAY_TAG(State_Character_Landing, "State.Character.Lading");
+	UE_DEFINE_GAMEPLAY_TAG(State_Character_Holding, "State.Character.Holding");
+	UE_DEFINE_GAMEPLAY_TAG(State_Character_Throw, "State.Character.Throw");
+	UE_DEFINE_GAMEPLAY_TAG(State_Character_Damage, "State.Character.Damage");
+	UE_DEFINE_GAMEPLAY_TAG(State_Character_Death, "State.Character.Death");
 
 	//UE_DEFINE_GAMEPLAY_TAG(Ability_Attack, "Ability.Attack");
 }
