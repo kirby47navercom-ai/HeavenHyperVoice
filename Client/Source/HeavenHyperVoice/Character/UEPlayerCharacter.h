@@ -195,6 +195,7 @@ private:
 	void UpdateHHVAnimation();
 	void PlayHHVAnimation(UAnimSequence* Sequence, bool bLoop);
 	void PlayHHVAnimationOnComponent(USkeletalMeshComponent* Component, UAnimSequence* Sequence, bool bLoop) const;
+	
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Character|State", meta = (AllowPrivateAccess = "true"))
 	FVector2D MovementInput = FVector2D::ZeroVector;
@@ -220,4 +221,7 @@ private:
 	HHV::PokemonAI::PokemonFSM PokemonLifecycleBrain;
 	FTimerHandle PokemonDespawnTimerHandle;
 	bool bPokemonDespawnInProgress = false;
+public:
+	//행동관련
+	void Roll();
 };

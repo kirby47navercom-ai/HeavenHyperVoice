@@ -14,6 +14,7 @@
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "InputAction.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "UObject/ConstructorHelpers.h"
 
 AUEPlayerController::AUEPlayerController()
@@ -44,6 +45,11 @@ void AUEPlayerController::BeginPlay()
 	if (bShowLoginOnBeginPlay)
 	{
 		ShowLoginScreen();
+	}
+	
+	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
+	{
+		MaxWalkSpeed = PlayerCharacter->GetCharacterMovement()->MaxWalkSpeed;
 	}
 }
 
@@ -160,6 +166,9 @@ void AUEPlayerController::BindGameplayInput()
 	BindMoveInput(EnhancedInputComponent);
 	BindLookInput(EnhancedInputComponent);
 	BindActionInput(EnhancedInputComponent);
+	BindRunInput(EnhancedInputComponent);
+	BindJumpInput(EnhancedInputComponent);
+	BindRollInput(EnhancedInputComponent);
 }
 
 void AUEPlayerController::BindMoveInput(UEnhancedInputComponent* EnhancedInputComponent)
@@ -207,6 +216,46 @@ void AUEPlayerController::BindActionInput(UEnhancedInputComponent* EnhancedInput
 	if (SpawnPokemonAction)
 	{
 		EnhancedInputComponent->BindAction(SpawnPokemonAction, ETriggerEvent::Started, this, &ThisClass::HandlePokemonToggle);
+	}
+}
+
+void AUEPlayerController::BindRunInput(class UEnhancedInputComponent* EnhancedInputComponent)
+{
+	const UInputAction* RunAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_Run);
+	if (!RunAction)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("달리는거 연결 안됐다 ㅇㅇ"));
+	}
+	if (RunAction)
+	{
+		EnhancedInputComponent -> BindAction(RunAction,ETriggerEvent::Started, this, &ThisClass::HandleRunStarted);
+		EnhancedInputComponent -> BindAction(RunAction,ETriggerEvent::Completed, this, &ThisClass::HandleRunStopped);
+	}
+}
+
+void AUEPlayerController::BindJumpInput(UEnhancedInputComponent* EnhancedInputComponent)
+{
+	const UInputAction* JumpAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_Jump);
+	if (!JumpAction)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("점프 연결 안됐다 ㅇㅇ"));
+	}
+	if (JumpAction)
+	{
+		EnhancedInputComponent -> BindAction(JumpAction,ETriggerEvent::Started, this, &ThisClass::HandleJump);
+	}
+}
+
+void AUEPlayerController::BindRollInput(UEnhancedInputComponent* EnhancedInputComponent)
+{
+	const UInputAction* RollAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_Roll);
+	if (!RollAction)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("구루구루 연결 안됐다 ㅇㅇ"));
+	}
+	if (RollAction)
+	{
+		EnhancedInputComponent -> BindAction(RollAction,ETriggerEvent::Started, this, &ThisClass::HandleRoll);
 	}
 }
 
@@ -309,9 +358,41 @@ void AUEPlayerController::HandleLookPitch(const FInputActionValue& Value)
 	AddPitchInput(-Value.Get<float>() * LookPitchRate);
 }
 
+void AUEPlayerController::HandleRunStarted(const FInputActionValue& Value)
+{
+	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
+	{
+		PlayerCharacter->GetCharacterMovement()->MaxWalkSpeed = MaxWalkSpeed*RunCross;
+	}
+}
+
+void AUEPlayerController::HandleRunStopped(const FInputActionValue& Value)
+{
+	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
+	{
+		PlayerCharacter->GetCharacterMovement()->MaxWalkSpeed = MaxWalkSpeed;
+	}
+}
+
+void AUEPlayerController::HandleJump(const FInputActionValue& Value)
+{
+	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
+	{
+		PlayerCharacter->Jump();
+	}
+}
+
+void AUEPlayerController::HandleRoll(const FInputActionValue& Value)
+{
+	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
+	{
+		PlayerCharacter->Roll();
+	}
+}
+
 void AUEPlayerController::HandlePokemonToggle(const FInputActionValue& Value)
 {
-	(void)Value;
+
 
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{

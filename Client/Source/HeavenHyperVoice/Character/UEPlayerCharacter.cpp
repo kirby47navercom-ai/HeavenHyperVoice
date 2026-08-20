@@ -1061,15 +1061,13 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 	const bool bSameOutfitAsBase =
 		OutfitMesh == BaseMesh || GetPathNameSafe(OutfitMesh).Equals(GetPathNameSafe(BaseMesh));
 	const bool bUsesSeparateOutfit = OutfitMesh && !bSameOutfitAsBase && Appearance.BodyEquipmentIndex > 0;
-	// 팰월드 의상 메시는 피부/하의/신발을 포함한 완성형 플레이어 메쉬다.
-	// 게임 플레이에서는 선택 의상 하나를 전신 리더로 사용해야 애니메이션의
-	// 루트와 본 위치가 일치한다. 기본 바디를 리더로 두고 의상을 별도 포즈에
-	// 얹으면 시작 직후 머리, 팔, 발이 서로 다른 원점으로 분해될 수 있다.
-	USkeletalMesh* LeaderMesh = bUsesSeparateOutfit ? OutfitMesh : BaseMesh;
+	// 애니메이션의 스켈레톤은 남/녀 기준 바디로 고정한다.
+	// 의상마다 메인 메쉬를 교체하면 애니메이션 스켈레톤도 함께 바뀌므로,
+	// 같은 애니메이션을 모든 의상에 재사용하거나 리타게팅할 수 없다.
 	UClass* PlayerAnimationBlueprint = LoadClass<UAnimInstance>(
 		nullptr,
 		TEXT("/Game/Data/Animation/HeavenHyperVoice/Player/ABP_UEAnimInstance.ABP_UEAnimInstance_C"));
-	GetMesh()->SetSkeletalMesh(LeaderMesh);
+	GetMesh()->SetSkeletalMesh(BaseMesh);
 	// 게임 레벨에서 커마 메쉬를 교체해도 플레이어 애님 블루프린트를 유지한다.
 	// 메쉬 교체 뒤 SingleNode가 남으면 블렌드스페이스가 실행되지 않는다.
 	if (PlayerAnimationBlueprint)
@@ -1082,14 +1080,16 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 		GetMesh()->SetAnimInstanceClass(PlayerAnimationBlueprint);
 		GetMesh()->ReinitializeAnimNodes();
 	}
-	GetMesh()->SetVisibility(true, false);
-	GetMesh()->SetHiddenInGame(false, false);
-	// 의상은 이미 전신 리더 메쉬로 들어갔으므로 별도 의상 컴포넌트는 비운다.
-	// 같은 의상을 두 컴포넌트에 동시에 그리면 피부가 뚫리거나 파츠가 중복된다.
+	// 기준 바디는 애니메이션 계산만 담당하고, 별도 의상이 선택되면 렌더링하지 않는다.
+	// 숨겨진 리더도 본을 계속 갱신해야 의상과 머리 파츠가 정상적으로 따라온다.
+	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	GetMesh()->SetVisibility(!bUsesSeparateOutfit, false);
+	GetMesh()->SetHiddenInGame(bUsesSeparateOutfit, false);
+
 	HHVBodyEquipmentMesh->SetLeaderPoseComponent(nullptr);
-	HHVBodyEquipmentMesh->SetSkeletalMesh(nullptr);
-	HHVBodyEquipmentMesh->SetVisibility(false, true);
-	HHVBodyEquipmentMesh->SetHiddenInGame(true, true);
+	HHVBodyEquipmentMesh->SetSkeletalMesh(bUsesSeparateOutfit ? OutfitMesh : nullptr);
+	HHVBodyEquipmentMesh->SetVisibility(bUsesSeparateOutfit, false);
+	HHVBodyEquipmentMesh->SetHiddenInGame(!bUsesSeparateOutfit, false);
 	HHVHeadMesh->SetSkeletalMesh(Head.LoadMesh(Appearance.Gender));
 	HHVHairMesh->SetSkeletalMesh(Hair.LoadMesh(Appearance.Gender));
 	CurrentHHVAnimation = nullptr;
@@ -1135,12 +1135,11 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 			Follower &&
 			Follower->GetSkeletalMeshAsset() &&
 			GetMesh() &&
-			GetMesh()->GetSkeletalMeshAsset() &&
-			Follower->GetSkeletalMeshAsset()->GetSkeleton() == GetMesh()->GetSkeletalMeshAsset()->GetSkeleton();
+			GetMesh()->GetSkeletalMeshAsset();
 		if (bCanShareLeaderPose)
 		{
-			// 동일 스켈레톤인 파츠만 리더 포즈를 공유한다.
-			// 다른 스켈레톤에 강제로 연결하면 파츠가 원점에서 튀어나온다.
+			// UE는 서로 다른 USkeleton 자산이어도 같은 이름의 본을 자동으로 매핑한다.
+			// 의상 고유 장식 본은 부모 코어 본을 따라가며 자신의 기준 포즈를 유지한다.
 			Follower->SetEnableAnimation(false);
 			Follower->SetLeaderPoseComponent(GetMesh(), true, true);
 			Follower->SetComponentTickEnabled(true);
@@ -1306,6 +1305,11 @@ void AUEPlayerCharacter::PlayHHVAnimationOnComponent(
 	Component->SetEnableAnimation(true);
 	Component->SetAnimationMode(EAnimationMode::AnimationSingleNode, true);
 	Component->PlayAnimation(Sequence, bLoop);
+}
+
+void AUEPlayerCharacter::Roll()
+{
+	
 }
 
 void AUEPlayerCharacter::ApplyPendingHHVAppearance()

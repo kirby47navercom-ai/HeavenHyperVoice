@@ -68,6 +68,9 @@ private:
 	void BindMoveInput(class UEnhancedInputComponent* EnhancedInputComponent);
 	void BindLookInput(class UEnhancedInputComponent* EnhancedInputComponent);
 	void BindActionInput(class UEnhancedInputComponent* EnhancedInputComponent);
+	void BindRunInput(class UEnhancedInputComponent* EnhancedInputComponent);
+	void BindJumpInput(UEnhancedInputComponent* EnhancedInputComponent);
+	void BindRollInput(UEnhancedInputComponent* EnhancedInputComponent);
 	AUEPlayerCharacter* GetControlledPlayerCharacter() const;
 	bool HasPendingHHVAppearance() const;
 	void PushMovementInputToCharacter();
@@ -86,11 +89,17 @@ private:
 	void HandleLookPitch(const FInputActionValue& Value);
 	void HandleRunStarted(const FInputActionValue& Value);
 	void HandleRunStopped(const FInputActionValue& Value);
+	void HandleJump(const FInputActionValue& Value);
+	void HandleRoll(const FInputActionValue& Value);
 	void HandlePokemonToggle(const FInputActionValue& Value);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUELoginWidget> LoginWidgetInstance = nullptr;
-
+	
+	
+	
 	FVector2D PendingMovementInput = FVector2D::ZeroVector;
 	bool Bplay = true;
+	float MaxWalkSpeed = 260.0f;
+	float RunCross = 1.5f;
 };
