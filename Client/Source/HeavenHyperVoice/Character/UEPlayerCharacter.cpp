@@ -446,6 +446,7 @@ void AUEPlayerCharacter::BeginPlay()
 	PlayerCharacterInit();
 	ApplyPendingHHVAppearance();
 	RefreshMovementSpeed();
+	RefreshCharacterState();
 	RegisterPokemonServerRoster();
 }
 
@@ -473,7 +474,34 @@ void AUEPlayerCharacter::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	ApplyLocalMovementInput();
+	RefreshCharacterState();
 	UpdateHHVAnimation();
+}
+
+void AUEPlayerCharacter::Jump()
+{
+	if (ActionStateTag.IsValid() || bIsRolling)
+	{
+		return;
+	}
+
+	Super::Jump();
+	CharacterStateTag = UEGameplayTags::State_Character_Jump;
+}
+
+void AUEPlayerCharacter::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+
+	bLandingStateActive = true;
+	CharacterStateTag = UEGameplayTags::State_Character_Landing;
+	GetWorldTimerManager().ClearTimer(LandingStateTimerHandle);
+	GetWorldTimerManager().SetTimer(
+		LandingStateTimerHandle,
+		this,
+		&ThisClass::FinishLanding,
+		FMath::Max(LandingStateDuration, 0.01f),
+		false);
 }
 
 FVector AUEPlayerCharacter::GetDesiredMovementDirection() const
@@ -495,6 +523,80 @@ void AUEPlayerCharacter::SetRunning(bool bNewIsRunning)
 
 	bIsRunning = bNewIsRunning;
 	RefreshMovementSpeed();
+}
+
+void AUEPlayerCharacter::SetCharacterActionState(const FGameplayTag& NewStateTag)
+{
+	const bool bSupportedAction =
+		NewStateTag == UEGameplayTags::State_Character_Holding ||
+		NewStateTag == UEGameplayTags::State_Character_Throw ||
+		NewStateTag == UEGameplayTags::State_Character_Damage ||
+		NewStateTag == UEGameplayTags::State_Character_Death;
+	if (!bSupportedAction)
+	{
+		return;
+	}
+
+	ActionStateTag = NewStateTag;
+	RefreshCharacterState();
+}
+
+void AUEPlayerCharacter::ClearCharacterActionState()
+{
+	ActionStateTag = FGameplayTag::EmptyTag;
+	RefreshCharacterState();
+}
+
+void AUEPlayerCharacter::RefreshCharacterState()
+{
+	if (ActionStateTag.IsValid())
+	{
+		CharacterStateTag = ActionStateTag;
+		return;
+	}
+
+	if (bIsRolling)
+	{
+		CharacterStateTag = UEGameplayTags::State_Character_Roll;
+		return;
+	}
+
+	if (bLandingStateActive)
+	{
+		CharacterStateTag = UEGameplayTags::State_Character_Landing;
+		return;
+	}
+
+	const UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
+	if (MovementComponent && MovementComponent->IsFalling())
+	{
+		CharacterStateTag = GetVelocity().Z > 0.0f
+			? UEGameplayTags::State_Character_Jump
+			: UEGameplayTags::State_Character_Fall;
+		return;
+	}
+
+	if (GetVelocity().SizeSquared2D() > 9.0f)
+	{
+		CharacterStateTag = bIsRunning
+			? UEGameplayTags::State_Character_Run
+			: UEGameplayTags::State_Character_Walk;
+		return;
+	}
+
+	CharacterStateTag = UEGameplayTags::State_Character_Idle;
+}
+
+void AUEPlayerCharacter::FinishRoll()
+{
+	bIsRolling = false;
+	RefreshCharacterState();
+}
+
+void AUEPlayerCharacter::FinishLanding()
+{
+	bLandingStateActive = false;
+	RefreshCharacterState();
 }
 
 void AUEPlayerCharacter::RefreshMovementSpeed()
@@ -1061,13 +1163,13 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 	const bool bSameOutfitAsBase =
 		OutfitMesh == BaseMesh || GetPathNameSafe(OutfitMesh).Equals(GetPathNameSafe(BaseMesh));
 	const bool bUsesSeparateOutfit = OutfitMesh && !bSameOutfitAsBase && Appearance.BodyEquipmentIndex > 0;
-	// 애니메이션의 스켈레톤은 남/녀 기준 바디로 고정한다.
-	// 의상마다 메인 메쉬를 교체하면 애니메이션 스켈레톤도 함께 바뀌므로,
-	// 같은 애니메이션을 모든 의상에 재사용하거나 리타게팅할 수 없다.
+	// 의상 메시는 피부와 하의를 포함한 완성형 메쉬이므로 선택된 의상을 본체로 사용한다.
+	// 기본 바디를 숨기고 다른 스켈레톤의 의상을 Leader Pose로 연결하면 몸이 원점에서 분해된다.
+	USkeletalMesh* LeaderMesh = bUsesSeparateOutfit ? OutfitMesh : BaseMesh;
 	UClass* PlayerAnimationBlueprint = LoadClass<UAnimInstance>(
 		nullptr,
 		TEXT("/Game/Data/Animation/HeavenHyperVoice/Player/ABP_UEAnimInstance.ABP_UEAnimInstance_C"));
-	GetMesh()->SetSkeletalMesh(BaseMesh);
+	GetMesh()->SetSkeletalMesh(LeaderMesh);
 	// 게임 레벨에서 커마 메쉬를 교체해도 플레이어 애님 블루프린트를 유지한다.
 	// 메쉬 교체 뒤 SingleNode가 남으면 블렌드스페이스가 실행되지 않는다.
 	if (PlayerAnimationBlueprint)
@@ -1080,16 +1182,15 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 		GetMesh()->SetAnimInstanceClass(PlayerAnimationBlueprint);
 		GetMesh()->ReinitializeAnimNodes();
 	}
-	// 기준 바디는 애니메이션 계산만 담당하고, 별도 의상이 선택되면 렌더링하지 않는다.
-	// 숨겨진 리더도 본을 계속 갱신해야 의상과 머리 파츠가 정상적으로 따라온다.
 	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
-	GetMesh()->SetVisibility(!bUsesSeparateOutfit, false);
-	GetMesh()->SetHiddenInGame(bUsesSeparateOutfit, false);
+	GetMesh()->SetVisibility(true, false);
+	GetMesh()->SetHiddenInGame(false, false);
 
+	// 선택 의상은 이미 본체 메쉬에 들어갔으므로 별도 의상 컴포넌트는 비운다.
 	HHVBodyEquipmentMesh->SetLeaderPoseComponent(nullptr);
-	HHVBodyEquipmentMesh->SetSkeletalMesh(bUsesSeparateOutfit ? OutfitMesh : nullptr);
-	HHVBodyEquipmentMesh->SetVisibility(bUsesSeparateOutfit, false);
-	HHVBodyEquipmentMesh->SetHiddenInGame(!bUsesSeparateOutfit, false);
+	HHVBodyEquipmentMesh->SetSkeletalMesh(nullptr);
+	HHVBodyEquipmentMesh->SetVisibility(false, true);
+	HHVBodyEquipmentMesh->SetHiddenInGame(true, true);
 	HHVHeadMesh->SetSkeletalMesh(Head.LoadMesh(Appearance.Gender));
 	HHVHairMesh->SetSkeletalMesh(Hair.LoadMesh(Appearance.Gender));
 	CurrentHHVAnimation = nullptr;
@@ -1135,11 +1236,11 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 			Follower &&
 			Follower->GetSkeletalMeshAsset() &&
 			GetMesh() &&
-			GetMesh()->GetSkeletalMeshAsset();
+			GetMesh()->GetSkeletalMeshAsset() &&
+			Follower->GetSkeletalMeshAsset()->GetSkeleton() == GetMesh()->GetSkeletalMeshAsset()->GetSkeleton();
 		if (bCanShareLeaderPose)
 		{
-			// UE는 서로 다른 USkeleton 자산이어도 같은 이름의 본을 자동으로 매핑한다.
-			// 의상 고유 장식 본은 부모 코어 본을 따라가며 자신의 기준 포즈를 유지한다.
+			// 동일한 스켈레톤을 사용하는 파츠만 리더 포즈를 공유한다.
 			Follower->SetEnableAnimation(false);
 			Follower->SetLeaderPoseComponent(GetMesh(), true, true);
 			Follower->SetComponentTickEnabled(true);
@@ -1186,24 +1287,9 @@ void AUEPlayerCharacter::UpdateHHVAnimation()
 			TEXT("/Game/Data/Animation/DA_PlayerAnimation.DA_PlayerAnimation"));
 	}
 
-	const UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
-	const float GroundSpeed = GetVelocity().Size2D();
-	FGameplayTag AnimationTag = UEGameplayTags::State_Character_Idle;
-
-	if (MovementComponent && MovementComponent->IsFalling())
-	{
-		AnimationTag = UEGameplayTags::State_Character_Fall;
-	}
-	else if (bIsRolling)
-	{
-		AnimationTag = UEGameplayTags::State_Character_Roll;
-	}
-	else if (GroundSpeed > 3.0f)
-	{
-		AnimationTag = bIsRunning
-			? UEGameplayTags::State_Character_Run
-			: UEGameplayTags::State_Character_Walk;
-	}
+	const FGameplayTag AnimationTag = CharacterStateTag.IsValid()
+		? CharacterStateTag
+		: UEGameplayTags::State_Character_Idle;
 
 	const UAnimSequence* SelectedAnimation =
 		PlayerAnimationData->FindSequenceByTagForGender(AnimationTag, CurrentCustomizationGender);
@@ -1262,7 +1348,13 @@ void AUEPlayerCharacter::UpdateHHVAnimation()
 	{
 		if (MatchesCurrentSkeleton(SelectedAnimation))
 		{
-			PlayHHVAnimation(const_cast<UAnimSequence*>(SelectedAnimation), true);
+			const bool bLoopAnimation =
+				AnimationTag == UEGameplayTags::State_Character_Idle ||
+				AnimationTag == UEGameplayTags::State_Character_Walk ||
+				AnimationTag == UEGameplayTags::State_Character_Run ||
+				AnimationTag == UEGameplayTags::State_Character_Fall ||
+				AnimationTag == UEGameplayTags::State_Character_Holding;
+			PlayHHVAnimation(const_cast<UAnimSequence*>(SelectedAnimation), bLoopAnimation);
 		}
 		else
 		{
@@ -1309,7 +1401,20 @@ void AUEPlayerCharacter::PlayHHVAnimationOnComponent(
 
 void AUEPlayerCharacter::Roll()
 {
-	
+	if (bIsRolling || ActionStateTag.IsValid())
+	{
+		return;
+	}
+
+	bIsRolling = true;
+	RefreshCharacterState();
+	GetWorldTimerManager().ClearTimer(RollStateTimerHandle);
+	GetWorldTimerManager().SetTimer(
+		RollStateTimerHandle,
+		this,
+		&ThisClass::FinishRoll,
+		FMath::Max(RollStateDuration, 0.01f),
+		false);
 }
 
 void AUEPlayerCharacter::ApplyPendingHHVAppearance()
