@@ -211,6 +211,9 @@ private:
 	void PlayHHVAnimation(UAnimSequence* Sequence, bool bLoop);
 	void PlayHHVAnimationOnComponent(USkeletalMeshComponent* Component, UAnimSequence* Sequence, bool bLoop) const;
 	void ApplyHHVScale(const FUEHHVAppearance& NewAppearance) const;
+	void StartGameplayQAIfRequested();
+	void AdvanceGameplayQA();
+	void CaptureGameplayQAFrame();
 	
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Character|State", meta = (AllowPrivateAccess = "true"))
@@ -250,6 +253,8 @@ private:
 	FTimerHandle PokemonDespawnTimerHandle;
 	FTimerHandle RollStateTimerHandle;
 	FTimerHandle LandingStateTimerHandle;
+	FTimerHandle GameplayQATimerHandle;
+	int32 GameplayQAPhase = 0;
 	bool bPokemonDespawnInProgress = false;
 	bool bLandingStateActive = false;
 public:

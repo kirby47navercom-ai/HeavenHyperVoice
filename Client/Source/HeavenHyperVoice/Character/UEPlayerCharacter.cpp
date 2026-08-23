@@ -1,6 +1,7 @@
 #include "UEPlayerCharacter.h"
 
 #include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
+#include "../Animation/UEFollowerAnimInstance.h"
 #include "../Player/Server/UEPlayerMovementSyncComponent.h"
 #include "../Data/UEPlayerAnimationDataAsset.h"
 #include "../Pokemon/UEPokemonCharacter.h"
@@ -448,6 +449,7 @@ void AUEPlayerCharacter::BeginPlay()
 	RefreshMovementSpeed();
 	RefreshCharacterState();
 	RegisterPokemonServerRoster();
+	StartGameplayQAIfRequested();
 }
 
 void AUEPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -475,7 +477,8 @@ void AUEPlayerCharacter::Tick(float DeltaSeconds)
 
 	ApplyLocalMovementInput();
 	RefreshCharacterState();
-	UpdateHHVAnimation();
+	// 전신 로코모션은 ABP_UEAnimInstance의 1D 블렌드스페이스가 GroundSpeed로 계산한다.
+	// 여기서 SingleNode 시퀀스를 재생하면 매 프레임 AnimBP가 해제되어 걷기/뛰기가 멈춘다.
 }
 
 void AUEPlayerCharacter::Jump()
@@ -1163,12 +1166,14 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 	const bool bSameOutfitAsBase =
 		OutfitMesh == BaseMesh || GetPathNameSafe(OutfitMesh).Equals(GetPathNameSafe(BaseMesh));
 	const bool bUsesSeparateOutfit = OutfitMesh && !bSameOutfitAsBase && Appearance.BodyEquipmentIndex > 0;
-	// 의상 메시는 피부와 하의를 포함한 완성형 메쉬이므로 선택된 의상을 본체로 사용한다.
-	// 기본 바디를 숨기고 다른 스켈레톤의 의상을 Leader Pose로 연결하면 몸이 원점에서 분해된다.
-	USkeletalMesh* LeaderMesh = bUsesSeparateOutfit ? OutfitMesh : BaseMesh;
-	UClass* PlayerAnimationBlueprint = LoadClass<UAnimInstance>(
-		nullptr,
-		TEXT("/Game/Data/Animation/HeavenHyperVoice/Player/ABP_UEAnimInstance.ABP_UEAnimInstance_C"));
+	// 애니메이션 기준 메시와 체형은 항상 Body 메시가 담당한다.
+	// 선택 의상으로 기준 메시를 교체하면 의상에 없는 다리와 발이 사라진다.
+	USkeletalMesh* LeaderMesh = BaseMesh;
+	const TCHAR* PlayerAnimationBlueprintPath =
+		Appearance.Gender == EUEHHVGender::TypeA
+			? TEXT("/Game/Data/Animation/HeavenHyperVoice/Player/ABP_UEAnimInstance.ABP_UEAnimInstance_C")
+			: TEXT("/Game/Data/Animation/HeavenHyperVoice/Player/ABP_UEAnimInstance_Male.ABP_UEAnimInstance_Male_C");
+	UClass* PlayerAnimationBlueprint = LoadClass<UAnimInstance>(nullptr, PlayerAnimationBlueprintPath);
 	GetMesh()->SetSkeletalMesh(LeaderMesh);
 	// 게임 레벨에서 커마 메쉬를 교체해도 플레이어 애님 블루프린트를 유지한다.
 	// 메쉬 교체 뒤 SingleNode가 남으면 블렌드스페이스가 실행되지 않는다.
@@ -1183,14 +1188,13 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 		GetMesh()->ReinitializeAnimNodes();
 	}
 	GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
-	GetMesh()->SetVisibility(true, false);
-	GetMesh()->SetHiddenInGame(false, false);
+	GetMesh()->SetVisibility(LeaderMesh != nullptr && !bUsesSeparateOutfit, false);
+	GetMesh()->SetHiddenInGame(LeaderMesh == nullptr || bUsesSeparateOutfit, false);
 
-	// 선택 의상은 이미 본체 메쉬에 들어갔으므로 별도 의상 컴포넌트는 비운다.
 	HHVBodyEquipmentMesh->SetLeaderPoseComponent(nullptr);
-	HHVBodyEquipmentMesh->SetSkeletalMesh(nullptr);
-	HHVBodyEquipmentMesh->SetVisibility(false, true);
-	HHVBodyEquipmentMesh->SetHiddenInGame(true, true);
+	HHVBodyEquipmentMesh->SetSkeletalMesh(bUsesSeparateOutfit ? OutfitMesh : nullptr);
+	HHVBodyEquipmentMesh->SetVisibility(bUsesSeparateOutfit, true);
+	HHVBodyEquipmentMesh->SetHiddenInGame(!bUsesSeparateOutfit, true);
 	HHVHeadMesh->SetSkeletalMesh(Head.LoadMesh(Appearance.Gender));
 	HHVHairMesh->SetSkeletalMesh(Hair.LoadMesh(Appearance.Gender));
 	CurrentHHVAnimation = nullptr;
@@ -1229,28 +1233,28 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 	HideHHVFaceCoverSections(HHVBodyEquipmentMesh);
 	HideHHVFaceCoverSections(HHVHeadMesh);
 	HideHHVFaceCoverSections(HHVHairMesh);
-
 	for (USkeletalMeshComponent* Follower : {HHVBodyEquipmentMesh.Get(), HHVHeadMesh.Get(), HHVHairMesh.Get()})
 	{
-		const bool bCanShareLeaderPose =
-			Follower &&
-			Follower->GetSkeletalMeshAsset() &&
-			GetMesh() &&
-			GetMesh()->GetSkeletalMeshAsset() &&
-			Follower->GetSkeletalMeshAsset()->GetSkeleton() == GetMesh()->GetSkeletalMeshAsset()->GetSkeleton();
-		if (bCanShareLeaderPose)
+		if (Follower && Follower->GetSkeletalMeshAsset() && GetMesh()->GetSkeletalMeshAsset())
 		{
-			// 동일한 스켈레톤을 사용하는 파츠만 리더 포즈를 공유한다.
-			Follower->SetEnableAnimation(false);
-			Follower->SetLeaderPoseComponent(GetMesh(), true, true);
+			// 원본 Player BP의 Head/Hair AnimBP처럼 부착 부모의 포즈를 본 이름으로 복사한다.
+			Follower->SetLeaderPoseComponent(nullptr);
+			Follower->SetEnableAnimation(true);
+			Follower->SetAnimationMode(EAnimationMode::AnimationBlueprint, true);
+			Follower->SetAnimInstanceClass(UUEFollowerAnimInstance::StaticClass());
+			Follower->ReinitializeAnimNodes();
+			if (UUEFollowerAnimInstance* FollowerInstance = Cast<UUEFollowerAnimInstance>(Follower->GetAnimInstance()))
+			{
+				FollowerInstance->SetCopyCurves(Follower == HHVHeadMesh);
+				FollowerInstance->SetUseTargetEyeReferencePose(Follower == HHVHeadMesh);
+			}
 			Follower->SetComponentTickEnabled(true);
 		}
 		else if (Follower)
 		{
 			Follower->SetLeaderPoseComponent(nullptr);
+			Follower->SetAnimInstanceClass(nullptr);
 			Follower->SetEnableAnimation(false);
-			Follower->SetAnimationMode(EAnimationMode::AnimationSingleNode);
-			Follower->bPauseAnims = true;
 		}
 	}
 	HHVBodyEquipmentMesh->SetRelativeTransform(FTransform::Identity);
@@ -1275,97 +1279,8 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 
 void AUEPlayerCharacter::UpdateHHVAnimation()
 {
-	if (!GetMesh())
-	{
-		return;
-	}
-
-	if (!PlayerAnimationData)
-	{
-		PlayerAnimationData = LoadObject<UUEPlayerAnimationDataAsset>(
-			nullptr,
-			TEXT("/Game/Data/Animation/DA_PlayerAnimation.DA_PlayerAnimation"));
-	}
-
-	const FGameplayTag AnimationTag = CharacterStateTag.IsValid()
-		? CharacterStateTag
-		: UEGameplayTags::State_Character_Idle;
-
-	const UAnimSequence* SelectedAnimation =
-		PlayerAnimationData->FindSequenceByTagForGender(AnimationTag, CurrentCustomizationGender);
-	if (!SelectedAnimation)
-	{
-		SelectedAnimation = PlayerAnimationData->FindSequenceByTagForGender(
-			UEGameplayTags::State_Character_Idle,
-			CurrentCustomizationGender);
-	}
-
-	if (!SelectedAnimation)
-	{
-		// 데이터 에셋이 아직 예전 버전으로 저장돼 있어도 같은 원본 시퀀스를 찾는다.
-		const bool bMale = CurrentCustomizationGender == EUEHHVGender::TypeB;
-		const TCHAR* GenderFolder = bMale ? TEXT("Male") : TEXT("Female");
-		FString SequenceName;
-		if (AnimationTag == UEGameplayTags::State_Character_Walk)
-		{
-			SequenceName = bMale ? TEXT("AS_Player_Male_Walk") : TEXT("AS_Player_Female_Walk_None");
-		}
-		else if (AnimationTag == UEGameplayTags::State_Character_Run)
-		{
-			SequenceName = bMale ? TEXT("AS_Player_Male_Sprint") : TEXT("AS_Player_Female_Sprint");
-		}
-		else if (AnimationTag == UEGameplayTags::State_Character_Fall)
-		{
-			SequenceName = TEXT("AS_Player_Female_JumpDownLoop_None");
-		}
-		else if (AnimationTag == UEGameplayTags::State_Character_Roll)
-		{
-			SequenceName = TEXT("AS_Player_Female_RollFwd");
-		}
-		else
-		{
-			SequenceName = bMale ? TEXT("AS_Player_Male_Idle") : TEXT("AS_Player_Female_Idle_None");
-		}
-
-		const FString SequencePath = FString::Printf(
-			TEXT("/Game/Data/Animation/HeavenHyperVoice/Player/%s/%s.%s"),
-			GenderFolder,
-			*SequenceName,
-			*SequenceName);
-		SelectedAnimation = LoadObject<UAnimSequence>(nullptr, *SequencePath);
-	}
-
-	const USkeletalMesh* CurrentMesh = GetMesh()->GetSkeletalMeshAsset();
-	const auto MatchesCurrentSkeleton = [CurrentMesh](const UAnimSequence* Sequence)
-	{
-		return CurrentMesh &&
-			CurrentMesh->GetSkeleton() &&
-			Sequence &&
-			Sequence->GetSkeleton() == CurrentMesh->GetSkeleton();
-	};
-
-	if (SelectedAnimation && SelectedAnimation != CurrentHHVAnimation)
-	{
-		if (MatchesCurrentSkeleton(SelectedAnimation))
-		{
-			const bool bLoopAnimation =
-				AnimationTag == UEGameplayTags::State_Character_Idle ||
-				AnimationTag == UEGameplayTags::State_Character_Walk ||
-				AnimationTag == UEGameplayTags::State_Character_Run ||
-				AnimationTag == UEGameplayTags::State_Character_Fall ||
-				AnimationTag == UEGameplayTags::State_Character_Holding;
-			PlayHHVAnimation(const_cast<UAnimSequence*>(SelectedAnimation), bLoopAnimation);
-		}
-		else
-		{
-			// 다른 스켈레톤의 애니메이션은 루트 스케일/본 변환을 망가뜨릴 수 있다.
-			// 호환되는 시퀀스를 연결하기 전에는 분해된 캐릭터를 만들지 않고
-			// 현재 메쉬의 기준 포즈를 유지한다.
-			GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
-			GetMesh()->bPauseAnims = true;
-			CurrentHHVAnimation = nullptr;
-		}
-	}
+	// 이동 애니메이션은 UEAnimInstance의 GroundSpeed와 1D Blend Space가 담당한다.
+	// 여기서 SingleNode로 바꾸면 AnimBP가 끊기므로 런타임에서 별도 시퀀스를 재생하지 않는다.
 }
 
 void AUEPlayerCharacter::PlayHHVAnimation(UAnimSequence* Sequence, bool bLoop)
@@ -1564,7 +1479,7 @@ void AUEPlayerCharacter::ApplyHHVColorToSlots(
 void AUEPlayerCharacter::ApplyHHVEyeMaterial(
 	USkeletalMeshComponent* Component,
 	const FUEHHVCustomizationOption& EyeOption,
-	const FLinearColor& EyeColor) const
+	const FLinearColor& /*EyeColor*/) const
 {
 	if (!Component || !EyeOption.Material)
 	{
@@ -1575,25 +1490,10 @@ void AUEPlayerCharacter::ApplyHHVEyeMaterial(
 	{
 		if (IsHHVEyeMaterialSlot(Component, Index))
 		{
+			// 커마 프리뷰와 동일하게 눈 프리셋의 원본 머티리얼을 그대로 사용한다.
+			// 합성 텍스처나 임의 색 파라미터를 덮으면 흰자와 홍채가 검게 변한다.
 			EnsurePlayerHHVSkeletalMaterialUsage(EyeOption.Material);
-			UMaterialInstanceDynamic* DynamicMaterial = Component->CreateDynamicMaterialInstance(Index, EyeOption.Material);
-			if (!DynamicMaterial)
-			{
-				Component->SetMaterial(Index, EyeOption.Material);
-				continue;
-			}
-
-			if (UTexture* CompositeTexture = LoadHHVEyeCompositeTexture(
-				EyeOption,
-				EyeColor,
-				HHVCustomizationCatalog ? HHVCustomizationCatalog->EyeColors : TArray<FLinearColor>()))
-			{
-				// 흰자까지 포함된 합성 텍스처를 써서 눈 색만 바꾸고 얼굴 머티리얼은 건드리지 않는다.
-				// 합성 텍스처가 있으면 흰자까지 보존된 원본 텍스처를 그대로 쓴다.
-				ApplyPlayerHHVEyeTextureParameters(DynamicMaterial, CompositeTexture);
-				continue;
-			}
-			ApplyPlayerHHVEyeColorParameters(DynamicMaterial, EyeColor);
+			Component->SetMaterial(Index, EyeOption.Material);
 		}
 	}
 }
