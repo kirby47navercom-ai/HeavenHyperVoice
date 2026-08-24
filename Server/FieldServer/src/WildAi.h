@@ -39,8 +39,9 @@ public:
     WildIntent decide(std::uint64_t entityId, std::uint16_t species, float x, float y,
                       float dt);
 
-    // 사라진 포켓몬의 상태를 스크립트에서 지운다. 없으면 조용히 무시.
-    void forget(std::uint64_t entityId);
+    // 배회 경로를 재현 가능하게 만든다. 0 이면 아무것도 하지 않는다 (Lua 기본
+    // 시딩을 그대로 둔다). 기동 시 한 번만 부를 것.
+    void seed(unsigned value);
 
 private:
     std::unique_ptr<sol::state> lua_;

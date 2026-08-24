@@ -136,18 +136,8 @@ Options parseArgs(int argc, char** argv) {
             if (options.accountStore != "dev" && options.accountStore != "odbc") {
                 throw std::runtime_error("--account-store must be 'dev' or 'odbc'");
             }
-        } else if (arg == "--db-driver") {
-            options.db.driver = next("--db-driver");
-        } else if (arg == "--db-host") {
-            options.db.server = next("--db-host");
-        } else if (arg == "--db-port") {
-            options.db.port = static_cast<std::uint16_t>(std::stoi(next("--db-port")));
-        } else if (arg == "--db-name") {
-            options.db.database = next("--db-name");
-        } else if (arg == "--db-user") {
-            options.db.user = next("--db-user");
-        } else if (arg == "--db-conn") {
-            options.db.connectionString = next("--db-conn");
+        } else if (heaven::data::parseOdbcOption(arg, next, options.db)) {
+            // --db-driver/host/port/name/user/conn. FieldServer 와 같은 표를 쓴다.
         } else if (arg == "--verbose") {
             options.verbose = true;
         } else if (arg == "--hash-password") {

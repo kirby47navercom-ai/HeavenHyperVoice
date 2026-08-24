@@ -24,13 +24,21 @@ inline constexpr int kSectorCount = kSectorCols * kSectorRows;
 //
 // 들어오는 반경과 나가는 반경을 다르게 둔다. 하나면 정확히 그 거리에서
 // 서성이는 플레이어가 매 틱 Spawn/Despawn 을 만들어 20Hz 로 깜빡인다.
-inline constexpr float kEnterRadius = 2800.f;  // 28 m
-inline constexpr float kExitRadius = 3200.f;   // 32 m
+inline constexpr float kEnterRadius = 3000.f;  // 30 m
+inline constexpr float kExitRadius = 5000.f;   // 50 m — 넉넉한 히스테리시스로
+                                               // 경계에서 서성이는 것이 매 틱
+                                               // 나타났다 사라지지 않게 한다.
 
 // 이동 검증. 클라가 보낸 좌표를 그대로 믿으면 순간이동이 통한다.
 // 거절이 아니라 클램프다 — 랙 스파이크로 정상 유저를 튕기지 않는다.
 inline constexpr float kMaxSpeed = 600.f;      // 6 m/s, 달리기
-inline constexpr float kSpeedSlack = 200.f;    // 지터 여유 2 m
+
+// 지터 여유. **메시지마다** 주면 안 된다 — 20Hz 로 밀어 넣는 것만으로
+// 초당 kSpeedSlack x 20 = 4000uu/s 의 공짜 속도가 생기고, 최소 간격인
+// 10ms 로 밀면 20600uu/s (상한의 34배) 가 된다.
+// 그래서 예산으로 들고 다닌다. 쓰면 줄고 kSlackRefill 만큼 다시 찬다.
+inline constexpr float kSpeedSlack = 200.f;    // 예산 상한 2 m
+inline constexpr float kSlackRefill = 200.f;   // 초당 회복량 -> 지속 상한은 800uu/s
 
 // 이동을 받아들이는 최소 간격. 거리는 클램프해도 **빈도**를 막지 않으면
 // 클라 하나가 회선 속도로 Move 를 밀어 넣어 월드 락을 독점할 수 있다.

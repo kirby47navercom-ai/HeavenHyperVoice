@@ -7,8 +7,7 @@
 // 나중에 은신·차단·진영 필터를 넣을 자리가 생긴다.
 //
 // 반경이 모두 같으므로 `B ∈ A.visible ⟺ A ∈ B.visible` 이 구조적으로 보장된다.
-// 그래서 집합 하나만 든다. "저격수는 더 멀리 본다" 같은 게 생기면 그때
-// visible(내가 보는 것)과 watchers(나를 보는 것)로 쪼개야 한다.
+// 그래서 집합 하나만 든다.
 
 #include <array>
 #include <chrono>
@@ -44,6 +43,10 @@ struct Entity {
     std::string nickname;
     std::uint16_t partnerSpecies = 0;
 
+    // 시야는 같은 맵끼리만 본다. 섹터 격자는 맵 구분 없이 공유하므로
+    // 후보를 추린 뒤 이 값으로 한 번 더 거른다.
+    std::uint32_t mapId = 0;
+
     // 야생 포켓몬이면 true. 세션이 없고 AI 가 움직인다. species 는 자기 종족.
     bool isWild = false;
     std::uint16_t species = 0;
@@ -57,8 +60,15 @@ struct Entity {
     // 속도 상한 검증용. 이동 사이 경과 시간으로 허용 거리를 낸다.
     std::chrono::steady_clock::time_point lastMoveAt;
 
+    // 남은 지터 예산. 메시지마다 kSpeedSlack 을 새로 주면 자주 보내는 것만으로
+    // 상한을 몇십 배 넘길 수 있다 (FieldGeometry.h 참고).
+    float slack = proto::kSpeedSlack;
+
     bool movedThisTick = false;
 };
+
+// 야생 번호는 캐릭터 번호(작은 BIGINT)와 겹치지 않게 높은 범위를 쓴다.
+inline constexpr std::uint64_t kWildIdBase = 1ull << 52;
 
 class World {
 public:
@@ -71,15 +81,21 @@ public:
                                       const std::shared_ptr<TlsSession>& session);
 
     // 퇴장. 마지막 위치를 돌려준다 (저장용). 없던 엔티티면 nullopt.
-    std::optional<Position> leave(std::uint64_t characterId);
+    //
+    // session 은 나가는 그 세션이다. 같은 캐릭터로 재접속하면 새 세션이 이미
+    // 이 자리를 차지한 뒤라, 번호만 보고 지우면 살아 있는 쪽을 끊어 버린다.
+    // 주인이 다르면 아무것도 하지 않고 nullopt 를 돌려준다.
+    std::optional<Position> leave(std::uint64_t characterId, const TlsSession* session);
 
     // 야생 포켓몬을 월드에 넣는다. 세션이 없어 아무에게도 전송하지 않지만,
-    // 근처 플레이어에게는 spawn 으로 나타난다. entityId 는 캐릭터 번호와
-    // 겹치지 않는 범위여야 한다 (main 의 kWildIdBase 참고).
+    // 근처 플레이어에게는 spawn 으로 나타난다. entityId 는 kWildIdBase 부터 쓴다.
     void enterWild(std::uint64_t entityId, std::uint16_t species, const Position& position);
 
     // 모든 야생 포켓몬을 한 틱 전진시킨다. AI 가 목표를 정하고 서버가 속도와
     // 벽을 강제한다. 틱 스레드에서만 부를 것 (WildAi 는 스레드 안전하지 않다).
+    //
+    // Lua 호출은 월드 락 **밖에서** 한다. 안에서 돌리면 야생 마릿수만큼
+    // 플레이어 이동이 뒤에 밀린다.
     void advanceWild(float dt, WildAi& ai);
 
     // 클라이언트가 보낸 좌표. 속도 상한을 넘으면 클램프한다.
@@ -93,7 +109,7 @@ public:
     // 20Hz. 이번 주기에 움직인 것들을 뷰어별로 묶어 보낸다.
     void tick();
 
-    // 주기적 저장용 스냅샷.
+    // 주기적 저장용 스냅샷. 야생은 저장할 것이 없어 빠진다.
     std::vector<std::pair<std::uint64_t, Position>> positions();
 
     std::size_t size();
@@ -115,7 +131,6 @@ private:
     std::unordered_map<std::uint64_t, std::uint64_t> byAccount_;
 
     const MapCollision* collision_ = nullptr;
-    AgentSettings agent_;
 
     // 후보 추출 전용 공간 인덱스. 시야 판정에는 쓰이지 않는다.
     std::array<std::unordered_set<std::uint64_t>, proto::kSectorCount> sectors_;

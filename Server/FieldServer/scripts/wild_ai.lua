@@ -17,7 +17,7 @@ local REST_MAX         = 4.0
 
 local RUNNING, SUCCESS = "running", "success"
 
--- 포켓몬별 상태(블랙보드). id 로 찾는다. C++ 이 wild_forget 으로 지운다.
+-- 포켓몬별 상태(블랙보드). id 로 찾는다.
 local boards = {}
 
 local function board_of(id, x, y)
@@ -43,7 +43,7 @@ end
 -- --- 노드 -----------------------------------------------------------------
 
 -- 쉬는 중이면 타이머를 깎고 제자리에 선다.
-local function node_rest(bb, x, y, dt)
+local function node_rest(bb, dt)
     if bb.rest <= 0.0 then
         return SUCCESS
     end
@@ -77,7 +77,7 @@ end
 
 -- selector: 쉬는 중이면 거기서 멈추고, 아니면 목표를 골라 걷는다.
 local function tick_tree(bb, x, y, dt, intent)
-    if node_rest(bb, x, y, dt) == RUNNING then
+    if node_rest(bb, dt) == RUNNING then
         return
     end
     node_pick_target(bb, x, y)
@@ -96,6 +96,3 @@ function wild_tick(id, species, x, y, dt)
     -- 반환 없음 = 제자리
 end
 
-function wild_forget(id)
-    boards[id] = nil
-end

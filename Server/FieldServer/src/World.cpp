@@ -2,6 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -16,6 +17,10 @@ constexpr float kExitRadiusSquared = proto::kExitRadius * proto::kExitRadius;
 
 // 야생 포켓몬 이동 속도. 플레이어 달리기(kMaxSpeed)보다 느린 걷기.
 constexpr float kWildSpeed = 200.f;
+
+// 캡슐 크기는 클라이언트 기본값과 같아야 예측이 어긋나지 않는다. 서버가
+// 뜬 뒤로 바뀌지 않으므로 상수로 둔다.
+constexpr AgentSettings kAgent{};
 
 }  // namespace
 
@@ -65,26 +70,39 @@ std::shared_ptr<TlsSession> World::enter(std::uint64_t characterId, std::uint64_
     entity.session = session;
     entity.nickname = std::move(nickname);
     entity.partnerSpecies = partnerSpecies;
+    entity.mapId = position.mapId;
     entity.position = position;
     entity.position.x = proto::clampToWorld(entity.position.x);
     entity.position.y = proto::clampToWorld(entity.position.y);
     entity.sector = proto::sectorIndex(entity.position.x, entity.position.y);
     entity.lastMoveAt = std::chrono::steady_clock::now();
 
-    sectors_[static_cast<std::size_t>(entity.sector)].insert(characterId);
-    byAccount_[accountId] = characterId;
+    // 번호가 이미 있으면 emplace 는 아무것도 넣지 않고 기존 것을 가리킨다.
+    // 그대로 진행하면 남의 엔티티를 자기 것인 양 만지게 된다.
     auto [inserted, ok] = entities_.emplace(characterId, std::move(entity));
-    (void)ok;
+    if (!ok) {
+        spdlog::error("entity {} already in world, refusing entry", characterId);
+        return displaced;
+    }
+
+    sectors_[static_cast<std::size_t>(inserted->second.sector)].insert(characterId);
+    byAccount_[accountId] = characterId;
 
     updateVisibility(inserted->second);
     return displaced;
 }
 
-std::optional<Position> World::leave(std::uint64_t characterId) {
+std::optional<Position> World::leave(std::uint64_t characterId, const TlsSession* session) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     const auto it = entities_.find(characterId);
     if (it == entities_.end()) {
+        return std::nullopt;
+    }
+
+    // 같은 캐릭터로 재접속하면 새 세션이 이 자리를 이미 차지한 뒤다. 번호만
+    // 보고 지우면 방금 들어온 살아 있는 쪽을 월드에서 떼어내 버린다.
+    if (it->second.session.lock().get() != session) {
         return std::nullopt;
     }
 
@@ -107,36 +125,66 @@ void World::enterWild(std::uint64_t entityId, std::uint16_t species, const Posit
     entity.characterId = entityId;
     entity.isWild = true;
     entity.species = species;
-    entity.partnerSpecies = species;  // 클라가 파트너처럼 같은 종을 그리게 해둔다
+    entity.mapId = position.mapId;
     entity.position = position;
     entity.position.x = proto::clampToWorld(entity.position.x);
     entity.position.y = proto::clampToWorld(entity.position.y);
     entity.sector = proto::sectorIndex(entity.position.x, entity.position.y);
     entity.lastMoveAt = std::chrono::steady_clock::now();
 
-    sectors_[static_cast<std::size_t>(entity.sector)].insert(entityId);
     auto [inserted, ok] = entities_.emplace(entityId, std::move(entity));
-    (void)ok;
+    if (!ok) {
+        spdlog::error("wild id {} collides with an existing entity, not spawned", entityId);
+        return;
+    }
+
+    sectors_[static_cast<std::size_t>(inserted->second.sector)].insert(entityId);
 
     updateVisibility(inserted->second);
 }
 
 void World::advanceWild(float dt, WildAi& ai) {
+    // 1) 락 안에서 좌표만 뜬다.
+    struct Pending {
+        std::uint64_t id;
+        std::uint16_t species;
+        float x;
+        float y;
+        WildIntent intent;
+    };
+    std::vector<Pending> pending;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const auto& [id, entity] : entities_) {
+            if (entity.isWild) {
+                pending.push_back({id, entity.species, entity.position.x, entity.position.y, {}});
+            }
+        }
+    }
+    if (pending.empty()) {
+        return;
+    }
+
+    // 2) Lua 는 락 밖에서 돌린다. 안에서 돌리면 야생 마릿수만큼 플레이어
+    //    이동이 월드 락 뒤에 줄을 선다.
+    for (Pending& p : pending) {
+        p.intent = ai.decide(p.id, p.species, p.x, p.y, dt);
+    }
+
+    // 3) 속도와 벽은 서버가 강제한다. Lua 는 목표만 정했다.
     std::lock_guard<std::mutex> lock(mutex_);
-
-    for (auto& [id, entity] : entities_) {
-        if (!entity.isWild) {
+    for (const Pending& p : pending) {
+        if (!p.intent.moving) {
             continue;
         }
-
-        const WildIntent intent =
-            ai.decide(id, entity.species, entity.position.x, entity.position.y, dt);
-        if (!intent.moving) {
+        const auto it = entities_.find(p.id);
+        if (it == entities_.end()) {
             continue;
         }
+        Entity& entity = it->second;
 
-        const float dx = intent.targetX - entity.position.x;
-        const float dy = intent.targetY - entity.position.y;
+        const float dx = p.intent.targetX - entity.position.x;
+        const float dy = p.intent.targetY - entity.position.y;
         const float distance = std::sqrt(dx * dx + dy * dy);
         if (distance < 1e-3f) {
             continue;
@@ -144,18 +192,17 @@ void World::advanceWild(float dt, WildAi& ai) {
 
         const float step = kWildSpeed * dt;
         const float ratio = step >= distance ? 1.f : step / distance;
-        float nx = proto::clampToWorld(entity.position.x + dx * ratio);
-        float ny = proto::clampToWorld(entity.position.y + dy * ratio);
+        const float nx = proto::clampToWorld(entity.position.x + dx * ratio);
+        const float ny = proto::clampToWorld(entity.position.y + dy * ratio);
 
         // 벽에 막히면 이번 목표는 포기하고 제자리에 선다. 밀어내기(슬라이딩)는
         // 하지 않는다 — 야생은 다음 틱에 AI 가 새 목표를 고른다.
         // ponytail: 막힌 목표를 계속 고르면 벽 앞에서 잠깐 서성인다. 신경 쓰이면
         //           blockedAlong 결과를 Lua 로 돌려주고 목표를 바꾸게 하면 된다.
         if (collision_ != nullptr) {
-            const float z = agent_.capsuleHalfHeight;
-            const Vec3 from{entity.position.x, entity.position.y, z};
-            const Vec3 to{nx, ny, z};
-            if (collision_->blockedAlong(from, to, agent_)) {
+            const Vec3 from{entity.position.x, entity.position.y, kAgent.capsuleHalfHeight};
+            const Vec3 to{nx, ny, kAgent.capsuleHalfHeight};
+            if (collision_->blockedAlong(from, to, kAgent)) {
                 continue;
             }
         }
@@ -168,8 +215,8 @@ void World::advanceWild(float dt, WildAi& ai) {
 
         const int sector = proto::sectorIndex(nx, ny);
         if (sector != entity.sector) {
-            sectors_[static_cast<std::size_t>(entity.sector)].erase(id);
-            sectors_[static_cast<std::size_t>(sector)].insert(id);
+            sectors_[static_cast<std::size_t>(entity.sector)].erase(p.id);
+            sectors_[static_cast<std::size_t>(sector)].insert(p.id);
             entity.sector = sector;
         }
 
@@ -207,7 +254,7 @@ void World::updateVisibility(Entity& self) {
         const float d2 = proto::distanceSquared(self.position.x, self.position.y,
                                                 other->second.position.x,
                                                 other->second.position.y);
-        if (d2 <= kExitRadiusSquared) {
+        if (d2 <= kExitRadiusSquared && other->second.mapId == self.mapId) {
             ++it;
             continue;
         }
@@ -227,6 +274,18 @@ void World::updateVisibility(Entity& self) {
             }
             const auto other = entities_.find(otherId);
             if (other == entities_.end()) {
+                continue;
+            }
+
+            // 섹터 격자는 맵을 구분하지 않는다. 같은 좌표의 다른 맵(동굴 등)이
+            // 서로 보이지 않게 여기서 거른다.
+            if (other->second.mapId != self.mapId) {
+                continue;
+            }
+
+            // 야생끼리는 서로 볼 이유가 없다. 세션이 없어 프레임은 버려지는데
+            // 직렬화 비용과 O(W^2) 집합 갱신은 그대로 든다.
+            if (self.isWild && other->second.isWild) {
                 continue;
             }
 
@@ -277,31 +336,41 @@ void World::move(std::uint64_t characterId, float x, float y, float facing,
     y = proto::clampToWorld(y);
 
     // 속도 상한. 거절이 아니라 클램프다 — 랙 스파이크로 정상 유저를 튕기지 않는다.
+    //
+    // 지터 여유는 메시지마다 새로 주지 않고 예산으로 들고 다닌다. 상수로 주면
+    // 자주 보내는 것만으로 상한을 몇십 배 넘길 수 있다 (FieldGeometry.h 참고).
     const float elapsed = std::chrono::duration<float>(now - self.lastMoveAt).count();
-    const float allowed = proto::kMaxSpeed * elapsed + proto::kSpeedSlack;
+    const float straight = proto::kMaxSpeed * elapsed;
+    self.slack = std::min(proto::kSpeedSlack, self.slack + proto::kSlackRefill * elapsed);
+
+    const float allowed = straight + self.slack;
     const float distance =
         std::sqrt(proto::distanceSquared(self.position.x, self.position.y, x, y));
 
-    if (distance > allowed && distance > 0.f) {
+    const bool tooFar = distance > allowed && distance > 0.f;
+    if (tooFar) {
         const float scale = allowed / distance;
         x = self.position.x + (x - self.position.x) * scale;
         y = self.position.y + (y - self.position.y) * scale;
+        self.slack = 0.f;  // 예산을 다 썼다
         // 치터는 이걸 초당 수십 번 만든다. warn 으로 올리면 로그가 잠긴다.
         spdlog::debug("{} moved {:.0f}uu in {:.0f}ms, clamped to {:.0f}uu", self.nickname,
                       distance, elapsed * 1000.f, allowed);
+    } else {
+        self.slack -= std::max(0.f, distance - straight);
     }
 
     // 벽 검사. 도착점만 보면 한 틱에 캡슐 지름보다 멀리 움직일 때 얇은 벽을
     // 그냥 지나간다. 출발점부터 훑는다.
-    bool corrected = distance > allowed && distance > 0.f;
+    bool corrected = tooFar;
     if (collision_ != nullptr) {
         // 바닥이 아직 없어서 캡슐 높이를 고정으로 둔다. 하이트맵이 들어오면
         // 여기가 floor.z + halfHeight 가 된다.
-        const float z = agent_.capsuleHalfHeight;
+        const float z = kAgent.capsuleHalfHeight;
         const Vec3 from{self.position.x, self.position.y, z};
         const Vec3 to{x, y, z};
 
-        if (collision_->blockedAlong(from, to, agent_)) {
+        if (collision_->blockedAlong(from, to, kAgent)) {
             // 통과시키지 않고 제자리에 둔다. 밀어내기(슬라이딩)는 클라이언트
             // 물리가 이미 하므로, 서버는 "거기 못 간다" 만 말하면 된다.
             x = self.position.x;
@@ -371,7 +440,10 @@ std::vector<std::pair<std::uint64_t, Position>> World::positions() {
     std::vector<std::pair<std::uint64_t, Position>> out;
     out.reserve(entities_.size());
     for (const auto& [characterId, entity] : entities_) {
-        out.emplace_back(characterId, entity.position);
+        // 야생은 저장할 것이 없다. 넣으면 pos:<야생번호> 키가 캐시에 쌓인다.
+        if (!entity.isWild) {
+            out.emplace_back(characterId, entity.position);
+        }
     }
     return out;
 }

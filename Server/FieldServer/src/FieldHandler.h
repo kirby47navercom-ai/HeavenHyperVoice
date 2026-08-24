@@ -69,12 +69,12 @@ private:
     std::string nickname_;
 };
 
-// Redis 키. 필드 서버가 죽어도 마지막 위치가 남아 있게 하는 안전망이다.
-// Memurai 가 save "" 라 Redis 자신이 재시작하면 같이 사라진다 — 서버만
-// 죽는 흔한 경우를 막는 수준이다.
-std::string positionKey(std::uint64_t characterId);
-std::optional<data::Position> readRedisPosition(net::RedisClient& redis,
-                                                std::uint64_t characterId);
+// Redis 에 위치를 남긴다. 필드 서버가 죽어도 마지막 위치가 남아 있게 하는
+// 안전망이다. Memurai 가 save "" 라 Redis 자신이 재시작하면 같이 사라진다 —
+// 서버만 죽는 흔한 경우를 막는 수준이다.
+//
+// 주기적 저장 스레드(main)가 부르므로 이것만 밖으로 낸다. 키 구성과 읽기는
+// FieldHandler.cpp 안에만 있다.
 void writeRedisPosition(net::RedisClient& redis, std::uint64_t characterId,
                         const data::Position& position);
 

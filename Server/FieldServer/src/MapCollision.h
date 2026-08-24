@@ -49,14 +49,15 @@ public:
     bool loaded() const { return !walls_.empty(); }
     std::size_t wallCount() const { return walls_.size(); }
 
-    // 캡슐 중심이 벽 안에 있는가.
-    bool blocked(const Vec3& capsuleCenter, const AgentSettings& agent) const;
-
     // from 에서 to 까지 캡슐 반지름 간격으로 훑는다. 한 틱에 캡슐 지름보다 멀리
     // 움직이면 도착점만 봐서는 얇은 벽을 그냥 통과한다.
     bool blockedAlong(const Vec3& from, const Vec3& to, const AgentSettings& agent) const;
 
 private:
+    // 캡슐 중심이 벽 안에 있는가. 점 하나만 보는 것은 얇은 벽을 놓치므로
+    // 밖에서는 blockedAlong 만 쓴다.
+    bool blocked(const Vec3& capsuleCenter, const AgentSettings& agent) const;
+
     std::vector<Obb> walls_;
 };
 

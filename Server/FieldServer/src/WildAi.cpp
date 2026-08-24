@@ -45,12 +45,13 @@ WildIntent WildAi::decide(std::uint64_t entityId, std::uint16_t species, float x
     return WildIntent{*tx, *ty, true};
 }
 
-void WildAi::forget(std::uint64_t entityId) {
-    sol::optional<sol::protected_function> forget = (*lua_)["wild_forget"];
-    if (forget) {
-        const sol::protected_function_result result = (*forget)(entityId);
-        (void)result;  // 정리용이라 실패해도 상관없다
+void WildAi::seed(unsigned value) {
+    if (value == 0) {
+        return;
     }
+    // math.randomseed 는 스크립트가 아니라 Lua 표준 라이브러리 것이다.
+    // 여기서 부르지 않으면 --wild-seed 가 스폰 좌표만 고정하고 배회는 매번 다르다.
+    (*lua_)["math"]["randomseed"](value);
 }
 
 }  // namespace heaven::field

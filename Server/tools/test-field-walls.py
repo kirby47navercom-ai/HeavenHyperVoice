@@ -39,8 +39,14 @@ WALL_FACE_X = WALL_CENTER_X - WALL_HALF_THICKNESS - CAPSULE_RADIUS
 CHARACTER_ID = 5002
 STEP = 100.0
 
-# 서버의 최소 이동 간격보다 넉넉히 잡는다. 더 빠르면 프레임이 그냥 버려진다.
-SEND_INTERVAL = 0.08
+# 서버의 최소 이동 간격(kMinMoveInterval 10ms)보다 넉넉히 잡는다. 더 빠르면
+# 프레임이 그냥 버려진다.
+#
+# 위쪽 상한도 있다. STEP / SEND_INTERVAL 이 kMaxSpeed(600uu/s) 를 넘으면 벽이
+# 아니라 속도 클램프가 보정을 내보내서 이 시험이 벽을 못 봐도 통과한다.
+# 100uu / 0.2s = 500uu/s 로 상한 아래에 둔다. 실제 클라이언트는 260 x 1.5 =
+# 390uu/s 라 이보다도 느리다.
+SEND_INTERVAL = 0.2
 
 
 def envelope(build, tag):
@@ -174,7 +180,7 @@ def main():
 
     # 한 틱에 벽을 통째로 건너뛰는 경우. 도착점만 보면 그냥 지나간다.
     #
-    # 거리는 속도 상한(kMaxSpeed * 경과 + kSpeedSlack) 안에 둬야 한다. 넘기면
+    # 거리는 속도 예산(kMaxSpeed * 경과 + 남은 slack) 안에 둬야 한다. 넘기면
     # 속도 클램프가 먼저 보정을 내보내서, 벽을 못 봐도 이 검사가 통과한다.
     tunnel = client.step(WALL_CENTER_X + 100.0, y + STEP * 10)
     time.sleep(0.4)

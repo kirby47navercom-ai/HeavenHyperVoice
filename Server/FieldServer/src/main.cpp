@@ -2,10 +2,12 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <random>
 #include <stdexcept>
 #include <string>
@@ -71,6 +73,10 @@ void printUsage() {
                  "                      and leaving only, so fewer than the login server)\n"
                  "  --map <path>        wall collision map. Without it the server does\n"
                  "                      not check walls at all.\n"
+                 "  --wild-count <n>    wild pokemon to spawn (default 12; 0 disables them\n"
+                 "                      and the Lua script is not loaded at all)\n"
+                 "  --wild-script <p>   Lua behaviour tree (default scripts/wild_ai.lua)\n"
+                 "  --wild-seed <n>     fix spawn points and wander paths (default: random)\n"
                  "  --redis-host <h>    default 127.0.0.1\n"
                  "  --redis-port <n>    default 6379\n"
                  "  --no-redis          skip the position cache; load and save via the DB only\n"
@@ -139,18 +145,8 @@ Options parseArgs(int argc, char** argv) {
             options.saveRedisPassword = true;
         } else if (arg == "--forget-redis-password") {
             options.forgetRedisPassword = true;
-        } else if (arg == "--db-driver") {
-            options.db.driver = next("--db-driver");
-        } else if (arg == "--db-host") {
-            options.db.server = next("--db-host");
-        } else if (arg == "--db-port") {
-            options.db.port = static_cast<std::uint16_t>(std::stoi(next("--db-port")));
-        } else if (arg == "--db-name") {
-            options.db.database = next("--db-name");
-        } else if (arg == "--db-user") {
-            options.db.user = next("--db-user");
-        } else if (arg == "--db-conn") {
-            options.db.connectionString = next("--db-conn");
+        } else if (heaven::data::parseOdbcOption(arg, next, options.db)) {
+            // --db-driver/host/port/name/user/conn. LoginServer 와 같은 표를 쓴다.
         } else if (arg == "--dev-no-auth") {
             options.devNoAuth = true;
         } else if (arg == "--verbose") {
@@ -249,16 +245,17 @@ int main(int argc, char** argv) {
                 heaven::net::resolveResourcePath(options.wildScript, "wild AI script");
             wildAi = std::make_unique<heaven::field::WildAi>(script);
 
+            // 스폰 좌표(C++)와 배회 경로(Lua)는 난수원이 따로다. 둘 다 심어야
+            // --wild-seed 가 같은 판을 실제로 재현한다.
+            wildAi->seed(options.wildSeed);
             std::mt19937 rng(options.wildSeed != 0 ? options.wildSeed : std::random_device{}());
             std::uniform_real_distribution<float> coord(0.f, heaven::proto::kWorldSize);
             std::uniform_int_distribution<int> species(1, static_cast<int>(
                                                               heaven::proto::kSpeciesCount));
 
-            // 야생 번호는 캐릭터 번호(작은 BIGINT)와 겹치지 않게 높은 범위를 쓴다.
-            constexpr std::uint64_t kWildIdBase = 1ull << 52;
             for (int i = 0; i < options.wildCount; ++i) {
                 const heaven::data::Position start{0, coord(rng), coord(rng), 0.f};
-                world.enterWild(kWildIdBase + static_cast<std::uint64_t>(i),
+                world.enterWild(heaven::field::kWildIdBase + static_cast<std::uint64_t>(i),
                                 static_cast<std::uint16_t>(species(rng)), start);
             }
             spdlog::info("wild pokemon: {} spawned via {}", options.wildCount, script);
@@ -319,26 +316,52 @@ int main(int argc, char** argv) {
             }
         });
 
-        // 60초마다 Redis 에 위치를 남긴다. 서버가 비정상 종료해도 이 시점까지는 남는다.
-        std::thread saver([&] {
-            while (running.load(std::memory_order_acquire)) {
-                for (int i = 0; i < 60 && running.load(std::memory_order_acquire); ++i) {
-                    std::this_thread::sleep_for(std::chrono::seconds(1));
+        // 60초마다 Redis 에 위치를 남긴다. 서버가 비정상 종료해도 이 시점까지는
+        // 남는다. 캐시가 없으면 남길 곳이 없으니 스레드를 아예 띄우지 않는다.
+        std::mutex wakeMutex;
+        std::condition_variable wake;
+        std::thread saver;
+        if (redis != nullptr) {
+            saver = std::thread([&] {
+                while (running.load(std::memory_order_acquire)) {
+                    {
+                        std::unique_lock<std::mutex> lock(wakeMutex);
+                        wake.wait_for(lock, std::chrono::seconds(60), [&] {
+                            return !running.load(std::memory_order_acquire);
+                        });
+                    }
+                    if (!running.load(std::memory_order_acquire)) {
+                        return;
+                    }
+                    for (const auto& [characterId, position] : world.positions()) {
+                        heaven::field::writeRedisPosition(*redis, characterId, position);
+                    }
                 }
-                if (!running.load(std::memory_order_acquire) || redis == nullptr) {
-                    continue;
-                }
-                for (const auto& [characterId, position] : world.positions()) {
-                    heaven::field::writeRedisPosition(*redis, characterId, position);
-                }
-            }
-        });
+            });
+        }
 
         server.run();
 
         running.store(false, std::memory_order_release);
+        wake.notify_all();
         ticker.join();
-        saver.join();
+        if (saver.joinable()) {
+            saver.join();
+        }
+
+        // TlsServer::run 은 워커를 먼저 정리한 뒤에 소켓을 닫는다. 그래서 종료
+        // 시점에는 완료 통지가 더 오지 않고 FieldHandler::onClosed 도 불리지
+        // 않는다 — 여기서 직접 저장하지 않으면 접속 중이던 전원의 위치가
+        // 통째로 사라진다.
+        if (characters != nullptr) {
+            const auto remaining = world.positions();
+            for (const auto& [characterId, position] : remaining) {
+                characters->savePosition(characterId, position);
+            }
+            if (!remaining.empty()) {
+                spdlog::info("saved {} position(s) on shutdown", remaining.size());
+            }
+        }
 
         // 큐를 먼저 비워야 대기 중인 위치 저장이 끝난다.
         dbQueue.stop();

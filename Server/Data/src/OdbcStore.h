@@ -23,6 +23,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "AccountStore.h"
@@ -51,6 +52,31 @@ struct OdbcSettings {
 
     unsigned poolSize = 4;
 };
+
+// --db-* 커맨드라인 옵션 하나를 해석한다. LoginServer 와 FieldServer 가 같은
+// 표를 쓰므로 여기 한 벌만 둔다. 처리했으면 true, 모르는 인자면 false 를
+// 돌려주니 호출자의 if/else 사슬에 그대로 끼우면 된다.
+//
+// next 는 "값을 하나 더 꺼내라" 다. 값이 없으면 호출자가 던진다.
+template <typename NextValue>
+inline bool parseOdbcOption(std::string_view arg, const NextValue& next, OdbcSettings& out) {
+    if (arg == "--db-driver") {
+        out.driver = next("--db-driver");
+    } else if (arg == "--db-host") {
+        out.server = next("--db-host");
+    } else if (arg == "--db-port") {
+        out.port = static_cast<std::uint16_t>(std::stoi(next("--db-port")));
+    } else if (arg == "--db-name") {
+        out.database = next("--db-name");
+    } else if (arg == "--db-user") {
+        out.user = next("--db-user");
+    } else if (arg == "--db-conn") {
+        out.connectionString = next("--db-conn");
+    } else {
+        return false;
+    }
+    return true;
+}
 
 class OdbcStore : public AccountStore, public CharacterStore {
 public:

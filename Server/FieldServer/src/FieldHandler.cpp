@@ -2,9 +2,10 @@
 
 #include <spdlog/spdlog.h>
 
-#include <charconv>
+#include <algorithm>
 #include <chrono>
 #include <memory>
+#include <sstream>
 
 namespace heaven::field {
 
@@ -16,13 +17,12 @@ std::int64_t nowUnix() {
         .count();
 }
 
-}  // namespace
-
 std::string positionKey(std::uint64_t characterId) {
     return "pos:" + std::to_string(characterId);
 }
 
 // "map|x|y|facing". 필드 서버끼리만 읽으므로 형식을 단순하게 둔다.
+// facing 은 없어도 받아준다 (0 으로 둔다).
 std::optional<data::Position> readRedisPosition(net::RedisClient& redis,
                                                 std::uint64_t characterId) {
     const auto raw = redis.commandForString({"GET", positionKey(characterId)});
@@ -30,32 +30,21 @@ std::optional<data::Position> readRedisPosition(net::RedisClient& redis,
         return std::nullopt;
     }
 
-    data::Position position;
-    const char* cursor = raw->data();
-    const char* end = raw->data() + raw->size();
-    int index = 0;
+    // 구분자만 공백으로 바꾸면 스트림 추출이 그대로 파서가 된다
+    // (MapCollision::loadFromFile 과 같은 방식).
+    std::string text = *raw;
+    std::replace(text.begin(), text.end(), '|', ' ');
 
-    while (cursor < end && index < 4) {
-        const char* separator = cursor;
-        while (separator < end && *separator != '|') {
-            ++separator;
-        }
-        if (index == 0) {
-            std::from_chars(cursor, separator, position.mapId);
-        } else {
-            float value = 0.f;
-            if (std::from_chars(cursor, separator, value).ec != std::errc{}) {
-                return std::nullopt;
-            }
-            if (index == 1) position.x = value;
-            if (index == 2) position.y = value;
-            if (index == 3) position.facing = value;
-        }
-        cursor = separator + 1;
-        ++index;
+    std::istringstream stream(text);
+    data::Position position;
+    if (!(stream >> position.mapId >> position.x >> position.y)) {
+        return std::nullopt;
     }
-    return index >= 3 ? std::optional<data::Position>(position) : std::nullopt;
+    stream >> position.facing;
+    return position;
 }
+
+}  // namespace
 
 void writeRedisPosition(net::RedisClient& redis, std::uint64_t characterId,
                         const data::Position& position) {
@@ -119,23 +108,30 @@ bool FieldHandler::enterWithoutAuth(TlsSession& session, const HeavenField::Ente
         return false;
     }
 
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        characterId_ = characterId;
-        accountId_ = characterId;  // 계정 개념이 없으므로 같은 값으로 둔다
-        nickname_ = name->str();
-        stage_ = Stage::InField;
-    }
     session.markAuthenticated();
 
     const data::Position start{0, proto::kSpawnX, proto::kSpawnY, 0.f};
     auto self = session.shared_from_this();
 
-    // EnterAck 이 Spawn 보다 먼저 나가야 한다.
-    self->send(proto::encodeEnterAck(characterId, start.x, start.y, start.facing, start.mapId));
+    std::shared_ptr<TlsSession> displaced;
+    {
+        // stage_ 를 InField 로 올린 순간부터 onClosed 가 leave() 를 부를 수 있다.
+        // 그 사이에 enter() 가 아직 안 끝났으면 leave 가 헛돌고, 뒤늦게 들어간
+        // 엔티티는 아무도 지우지 않는 유령이 된다. 둘을 한 락 안에서 한다.
+        // 락 순서는 handler -> world 로 일관되고 반대 방향 경로는 없다.
+        std::lock_guard<std::mutex> lock(mutex_);
+        characterId_ = characterId;
+        accountId_ = characterId;  // 계정 개념이 없으므로 같은 값으로 둔다
+        nickname_ = name->str();
+        stage_ = Stage::InField;
 
-    const auto displaced = context_.world->enter(characterId, characterId, nickname_,
-                                                 request.dev_partner_species(), start, self);
+        // EnterAck 이 Spawn 보다 먼저 나가야 한다.
+        self->send(
+            proto::encodeEnterAck(characterId, start.x, start.y, start.facing, start.mapId));
+
+        displaced = context_.world->enter(characterId, characterId, nickname_,
+                                          request.dev_partner_species(), start, self);
+    }
     if (displaced) {
         displaced->send(proto::encodeFieldNotice("다른 곳에서 접속하여 연결을 종료합니다"));
         displaced->closeAfterFlush();
@@ -212,24 +208,30 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
             start = *position;
         }
 
-        // 로드하는 동안 연결이 끊겼으면 월드에 넣지 않는다.
+        const std::uint16_t partner =
+            character->hasPartner ? character->partner.speciesId : std::uint16_t{0};
+
+        std::shared_ptr<TlsSession> displaced;
         {
+            // 로드하는 동안 연결이 끊겼으면 월드에 넣지 않는다.
+            //
+            // stage_ 를 올리고 락을 놓았다가 enter() 를 부르면, 그 틈에 onClosed
+            // 가 leave() 를 헛돌고 뒤늦게 들어간 엔티티가 영구히 남는다.
+            // 둘을 한 락 안에서 한다 (락 순서 handler -> world, 역방향 없음).
             std::lock_guard<std::mutex> lock(handler->mutex_);
             if (handler->stage_ != Stage::Entering) {
                 return;
             }
             handler->stage_ = Stage::InField;
+
+            // EnterAck 이 Spawn 보다 먼저 나가야 한다. 클라가 자기 번호를 알기 전에
+            // 남의 Spawn 을 받으면 어느 것이 자기인지 모른다.
+            self->send(proto::encodeEnterAck(characterId, start.x, start.y, start.facing,
+                                             start.mapId));
+
+            displaced = context->world->enter(characterId, accountId, character->nickname,
+                                              partner, start, self);
         }
-
-        // EnterAck 이 Spawn 보다 먼저 나가야 한다. 클라가 자기 번호를 알기 전에
-        // 남의 Spawn 을 받으면 어느 것이 자기인지 모른다.
-        self->send(proto::encodeEnterAck(characterId, start.x, start.y, start.facing,
-                                         start.mapId));
-
-        const std::uint16_t partner =
-            character->hasPartner ? character->partner.speciesId : std::uint16_t{0};
-        const auto displaced = context->world->enter(characterId, accountId,
-                                                     character->nickname, partner, start, self);
         if (displaced) {
             displaced->send(proto::encodeFieldNotice("다른 곳에서 접속하여 연결을 종료합니다"));
             displaced->closeAfterFlush();
@@ -264,7 +266,9 @@ void FieldHandler::onClosed(TlsSession& session) {
         return;
     }
 
-    const auto last = context_.world->leave(characterId_);
+    // 세션을 함께 넘긴다. 같은 캐릭터로 이미 재접속했다면 월드의 그 자리는
+    // 새 세션 것이고, 여기서 지우면 살아 있는 쪽을 떼어내게 된다.
+    const auto last = context_.world->leave(characterId_, &session);
     if (!last.has_value()) {
         return;
     }

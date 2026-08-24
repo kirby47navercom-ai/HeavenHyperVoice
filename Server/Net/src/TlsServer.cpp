@@ -2,6 +2,8 @@
 
 #include <spdlog/spdlog.h>
 #include <ws2tcpip.h>
+// mstcpip.h 는 ws2tcpip.h 뒤에 와야 한다 (tcp_keepalive, SIO_KEEPALIVE_VALS).
+#include <mstcpip.h>
 
 #include <stdexcept>
 #include <utility>
@@ -153,6 +155,18 @@ void TlsServer::onAcceptComplete(bool ok) {
     BOOL noDelay = TRUE;
     ::setsockopt(accepted, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&noDelay),
                  sizeof(noDelay));
+
+    // TCP 킵얼라이브. 첫 프레임까지만 보는 핸드셰이크 타임아웃은 입장한 뒤로는
+    // 감시하지 않는다. 노트북 덮개를 닫은 것처럼 예고 없이 사라진 연결은 FIN 이
+    // 오지 않아서, 서버가 먼저 찔러보지 않으면 세션도 월드 엔티티도 영원히 남는다.
+    // 기본값(2시간)은 너무 길어 간격을 직접 준다.
+    tcp_keepalive keepAlive{};
+    keepAlive.onoff = 1;
+    keepAlive.keepalivetime = 30000;      // 30초 조용하면 찔러본다
+    keepAlive.keepaliveinterval = 5000;   // 응답이 없으면 5초마다 재시도
+    DWORD keepAliveBytes = 0;
+    ::WSAIoctl(accepted, SIO_KEEPALIVE_VALS, &keepAlive, sizeof(keepAlive), nullptr, 0,
+               &keepAliveBytes, nullptr, nullptr);
 
     std::shared_ptr<TlsSession> session;
     try {
