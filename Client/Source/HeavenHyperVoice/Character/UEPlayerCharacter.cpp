@@ -447,6 +447,13 @@ void AUEPlayerCharacter::BeginPlay()
 	ApplyPendingHHVAppearance();
 	RefreshMovementSpeed();
 	RegisterPokemonServerRoster();
+
+	// 로스터가 등록됐으니 바로 동행 포켓몬을 부른다. 입력 키(TogglePokemonCompanion)
+	// 로도 껐다 켤 수 있다.
+	if (bAutoSpawnPokemonCompanion && !IsValid(SpawnedPokemon))
+	{
+		TrySpawnPokemonCompanion();
+	}
 }
 
 void AUEPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -601,18 +608,46 @@ bool AUEPlayerCharacter::TrySpawnPokemonCompanion()
 		return false;
 	}
 
+	// 절대 두 마리를 만들지 않는다. 이 함수가 어느 경로로 다시 불려도(자동 소환,
+	// 입력 키, 서버 재등록) 이미 동행 중이면 그대로 둔다. 이 가드가 없으면
+	// 호출될 때마다 SpawnedPokemon 을 덮어써 이전 액터가 유령으로 겹쳐 쌓인다.
+	if (IsValid(SpawnedPokemon))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("TrySpawnPokemonCompanion: 이미 동행 중, 중복 소환 무시"));
+		return true;
+	}
+	UE_LOG(LogTemp, Warning, TEXT("TrySpawnPokemonCompanion: 새 동행 소환"));
+
+	// 스폰할 클래스를 먼저 정한다. 서버 자리를 잡아둔 뒤에 실패하면 그걸 도로
+	// 반납해야 하는데, 여기서 끝내면 그럴 일이 없다.
+	TSubclassOf<AUEPokemonCharacter> ClassToSpawn = PokemonCompanionClass;
+	if (!ClassToSpawn)
+	{
+		// PokemonCompanionClass 는 EditDefaultsOnly 라 플레이어 BP 가 저장한 값이
+		// 생성자의 FClassFinder 를 덮어쓴다. BP 에서 비어 있으면 여기가 None 이다.
+		// 야생 쪽도 똑같은 함정을 밟아서 같은 방식으로 때웠다
+		// (UEPlayerMovementSyncComponent::StartFieldConnection 참고).
+		ClassToSpawn = LoadClass<AUEPokemonCharacter>(
+			nullptr, TEXT("/Game/Pokemon/BP_Pokemon.BP_Pokemon_C"));
+		UE_LOG(LogTemp, Warning, TEXT("TrySpawnPokemonCompanion: PokemonCompanionClass fallback load: %s"),
+			ClassToSpawn ? TEXT("ok") : TEXT("FAILED"));
+	}
+	if (!ClassToSpawn)
+	{
+		// 예전에는 여기서 AUEPokemonCharacter::StaticClass() 로 넘어갔다. 그건
+		// 메시도 큐브도 없는 맨 C++ 클래스라, **보이지 않는** 동행이 조용히
+		// 스폰되고 함수는 true 를 반환했다. 동행이 안 보이는데 로그 한 줄
+		// 남지 않던 원인이다. 못 만들면 못 만들었다고 말한다.
+		UE_LOG(LogTemp, Error, TEXT("TrySpawnPokemonCompanion: 스폰할 포켓몬 클래스가 없다"));
+		return false;
+	}
+
 	const FUEPokemonServerSpawnResponse SpawnResponse = RequestPokemonServerSpawn();
 	if (!SpawnResponse.bAccepted)
 	{
 		return false;
 	}
 	PokemonCompanionSpeciesData = SpawnResponse.SpeciesData;
-
-	TSubclassOf<AUEPokemonCharacter> ClassToSpawn = PokemonCompanionClass;
-	if (!ClassToSpawn)
-	{
-		ClassToSpawn = AUEPokemonCharacter::StaticClass();
-	}
 
 	PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::Spawning);
 	const HHV::PokemonAI::OwnContext Context = MakePokemonLifecycleContext(HHV::PokemonAI::RequestedAction::Spawn);

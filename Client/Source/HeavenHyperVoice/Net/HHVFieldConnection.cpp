@@ -68,6 +68,7 @@ namespace
 			Entity.Y = State->y();
 			Entity.Facing = State->facing();
 			Entity.PartnerSpecies = State->partner_species();
+			Entity.Species = State->species();
 			if (const flatbuffers::String* Nickname = State->nickname())
 			{
 				Entity.Nickname = FString(UTF8_TO_TCHAR(Nickname->c_str()));

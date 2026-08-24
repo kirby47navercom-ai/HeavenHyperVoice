@@ -369,7 +369,8 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_Y = 8,
     VT_FACING = 10,
     VT_NICKNAME = 12,
-    VT_PARTNER_SPECIES = 14
+    VT_PARTNER_SPECIES = 14,
+    VT_SPECIES = 16
   };
   uint64_t entity_id() const {
     return GetField<uint64_t>(VT_ENTITY_ID, 0);
@@ -389,6 +390,9 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   uint16_t partner_species() const {
     return GetField<uint16_t>(VT_PARTNER_SPECIES, 0);
   }
+  uint16_t species() const {
+    return GetField<uint16_t>(VT_SPECIES, 0);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -399,6 +403,7 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyOffset(verifier, VT_NICKNAME) &&
            verifier.VerifyString(nickname()) &&
            VerifyField<uint16_t>(verifier, VT_PARTNER_SPECIES, 2) &&
+           VerifyField<uint16_t>(verifier, VT_SPECIES, 2) &&
            verifier.EndTable();
   }
 };
@@ -425,6 +430,9 @@ struct EntityStateBuilder {
   void add_partner_species(uint16_t partner_species) {
     fbb_.AddElement<uint16_t>(EntityState::VT_PARTNER_SPECIES, partner_species, 0);
   }
+  void add_species(uint16_t species) {
+    fbb_.AddElement<uint16_t>(EntityState::VT_SPECIES, species, 0);
+  }
   explicit EntityStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -443,13 +451,15 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityState(
     float y = 0.0f,
     float facing = 0.0f,
     ::flatbuffers::Offset<::flatbuffers::String> nickname = 0,
-    uint16_t partner_species = 0) {
+    uint16_t partner_species = 0,
+    uint16_t species = 0) {
   EntityStateBuilder builder_(_fbb);
   builder_.add_entity_id(entity_id);
   builder_.add_nickname(nickname);
   builder_.add_facing(facing);
   builder_.add_y(y);
   builder_.add_x(x);
+  builder_.add_species(species);
   builder_.add_partner_species(partner_species);
   return builder_.Finish();
 }
@@ -461,7 +471,8 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityStateDirect(
     float y = 0.0f,
     float facing = 0.0f,
     const char *nickname = nullptr,
-    uint16_t partner_species = 0) {
+    uint16_t partner_species = 0,
+    uint16_t species = 0) {
   auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
   return HeavenField::CreateEntityState(
       _fbb,
@@ -470,7 +481,8 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityStateDirect(
       y,
       facing,
       nickname__,
-      partner_species);
+      partner_species,
+      species);
 }
 
 struct Snapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {

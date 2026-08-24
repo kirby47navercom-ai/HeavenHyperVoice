@@ -24,6 +24,9 @@ struct FHHVFieldEntity
 	float Facing = 0.0f;
 	FString Nickname;
 	uint16 PartnerSpecies = 0;
+
+	// 야생 포켓몬의 종족. 0 이면 플레이어 캐릭터다.
+	uint16 Species = 0;
 };
 
 struct FHHVFieldSnapshot

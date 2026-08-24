@@ -3,8 +3,13 @@
 #include "UEPlayerMovementSyncComponent.h"
 
 #include "../../Character/UEPlayerCharacter.h"
+#include "../../Pokemon/Server/UEPokemonServerComponent.h"
+#include "../../Pokemon/UEPokemonCharacter.h"
 
 #include "Components/CapsuleComponent.h"
+#include "Engine/World.h"
+#include "GameFramework/Controller.h"
+#include "UObject/ConstructorHelpers.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Misc/Paths.h"
 
@@ -14,6 +19,12 @@ UUEPlayerMovementSyncComponent::UUEPlayerMovementSyncComponent()
 	// switched on in BeginPlay so the local-validation path costs nothing.
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
+
+	static ConstructorHelpers::FClassFinder<AUEPokemonCharacter> WildClassFinder(TEXT("/Game/Pokemon/BP_Pokemon"));
+	if (WildClassFinder.Succeeded())
+	{
+		WildPokemonClass = WildClassFinder.Class;
+	}
 }
 
 void UUEPlayerMovementSyncComponent::BeginPlay()
@@ -48,6 +59,7 @@ void UUEPlayerMovementSyncComponent::EndPlay(const EEndPlayReason::Type EndPlayR
 
 	// Joins the worker thread. Do it before the callbacks below can dangle.
 	FieldConnection.reset();
+	DestroyWildActors();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -64,6 +76,17 @@ void UUEPlayerMovementSyncComponent::TickComponent(float DeltaTime, ELevelTick T
 
 void UUEPlayerMovementSyncComponent::StartFieldConnection()
 {
+	// 이 컴포넌트가 BP 에 배치돼 있으면 BP 저장값(None)이 생성자의 FClassFinder 를
+	// 덮어써 WildPokemonClass 가 비어버린다. 그러면 야생을 한 마리도 못 그린다.
+	// 런타임에 직접 로드해 확실히 채운다.
+	if (!WildPokemonClass)
+	{
+		WildPokemonClass = LoadClass<AUEPokemonCharacter>(
+			nullptr, TEXT("/Game/Pokemon/BP_Pokemon.BP_Pokemon_C"));
+		UE_LOG(LogTemp, Warning, TEXT("[WILD] WildPokemonClass fallback load: %s"),
+			WildPokemonClass ? TEXT("ok") : TEXT("FAILED"));
+	}
+
 	FieldConnection = std::make_unique<FHHVFieldConnection>();
 
 	// The connection lives inside this component and is destroyed in EndPlay
@@ -79,6 +102,7 @@ void UUEPlayerMovementSyncComponent::StartFieldConnection()
 	};
 	FieldConnection->OnSnapshot = [this](const FHHVFieldSnapshot& Snapshot)
 	{
+		HandleFieldSnapshot(Snapshot);
 		if (OnFieldSnapshot)
 		{
 			OnFieldSnapshot(Snapshot);
@@ -148,6 +172,129 @@ void UUEPlayerMovementSyncComponent::HandleFieldCorrection(uint32 Sequence, floa
 	// A correction means the move was refused, so whatever velocity carried us
 	// there is wrong too. Zero it and let local input build it back up.
 	HandleServerMovementResult(Sequence, ServerPosition, FVector::ZeroVector, ServerRotation);
+}
+
+void UUEPlayerMovementSyncComponent::HandleFieldSnapshot(const FHHVFieldSnapshot& Snapshot)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 서버는 2D 라 높이가 없다. 플레이어와 같은 바닥에 세운다.
+	const AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter();
+	const double GroundZ = PlayerCharacter ? PlayerCharacter->GetActorLocation().Z : 0.0;
+
+	const auto MakeLocation = [&](float ServerX, float ServerY)
+	{
+		return FVector(ToUnrealAxis(ServerX), ToUnrealAxis(ServerY), GroundZ);
+	};
+
+	// 새로 시야에 들어온 야생 포켓몬을 스폰한다. 다른 플레이어(Species==0)는
+	// 아직 다루지 않는다.
+	int32 Made = 0, SkippedSpecies = 0, SkippedExisting = 0, SkippedNoClass = 0, FailedSpawn = 0;
+	for (const FHHVFieldEntity& Entity : Snapshot.Spawned)
+	{
+		if (Entity.Species == 0) { ++SkippedSpecies; continue; }
+		if (WildActors.Contains(Entity.EntityId)) { ++SkippedExisting; continue; }
+		if (!WildPokemonClass) { ++SkippedNoClass; continue; }
+
+		// 지연 스폰으로 만든다. AutoPossessAI 는 스폰 직후 프레임에 컨트롤러를
+		// 빙의시키는데, 그 로컬 AI(FollowOwner 계열)가 야생을 플레이어 쪽으로
+		// 끌고 가 버린다. BeginPlay 전에 AI 를 꺼야 빙의 자체가 일어나지 않는다.
+		const FTransform SpawnTransform(FRotator(0.0f, Entity.Facing, 0.0f),
+			MakeLocation(Entity.X, Entity.Y));
+		AUEPokemonCharacter* WildActor = World->SpawnActorDeferred<AUEPokemonCharacter>(
+			WildPokemonClass, SpawnTransform, nullptr, nullptr,
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!WildActor)
+		{
+			++FailedSpawn;
+			continue;
+		}
+		WildActor->AutoPossessAI = EAutoPossessAI::Disabled;
+		WildActor->AIControllerClass = nullptr;
+
+		// 액터에 붙은 로컬 서버 시뮬레이션도 꺼야 한다. 기본값이
+		// bEnableServer=true / FollowOwner 라, 이걸 두면 AI 컨트롤러와는 **별개
+		// 경로**로 야생이 매 틱 플레이어 쪽으로 걸어온다. 시야에 들어오는 족족
+		// 플레이어에게 몰려와 겹쳐 쌓이는 원인이었다.
+		// 야생 좌표는 필드 서버가 전부 지시한다 (아래 ApplyServerMoveTarget).
+		if (UUEPokemonServerComponent* ServerComponent = WildActor->GetServerComponent())
+		{
+			ServerComponent->SetServerSimulationEnabled(false);
+		}
+
+		WildActor->FinishSpawning(SpawnTransform);
+		++Made;
+
+		const FVector SpawnLoc = SpawnTransform.GetLocation();
+		UE_LOG(LogTemp, Warning,
+			TEXT("[WILD] spawn id=%llu unreal=(%.0f, %.0f, %.0f) server=(%.0f, %.0f)"),
+			Entity.EntityId, SpawnLoc.X, SpawnLoc.Y, SpawnLoc.Z, Entity.X, Entity.Y);
+
+		// 서버가 위치를 완전히 지시하므로 로컬 충돌도 끈다. 겹쳐 스폰돼도 서로
+		// 밀치지 않는다.
+		WildActor->SetActorEnableCollision(false);
+
+		WildActor->SetWildSpecies(static_cast<int32>(Entity.Species));
+		WildActors.Add(Entity.EntityId, WildActor);
+	}
+
+	// 움직인 야생 포켓몬의 위치를 갱신한다. moved 에는 종족이 실리지 않으므로
+	// 이미 야생으로 스폰해 둔 것만 본다.
+	for (const FHHVFieldEntity& Entity : Snapshot.Moved)
+	{
+		const TWeakObjectPtr<AUEPokemonCharacter>* Found = WildActors.Find(Entity.EntityId);
+		if (!Found || !Found->IsValid())
+		{
+			continue;
+		}
+		// ponytail: 좌표를 즉시 박는다. 20Hz 라 조금 끊겨 보이면 목표를 두고
+		//           Tick 에서 보간하면 되지만, 지금은 눈에 띄는지부터 본다.
+		// 목표만 넘긴다. 액터의 Tick(UpdateServerDrivenMovement)이 VInterpTo 로
+		// 서서히 이동하므로, 20Hz 스냅샷 사이가 부드럽게 채워진다.
+		AUEPokemonCharacter* WildActor = Found->Get();
+		WildActor->ApplyServerMoveTarget(MakeLocation(Entity.X, Entity.Y), FVector::ZeroVector,
+			FRotator(0.0f, Entity.Facing, 0.0f), /*bTeleported=*/false);
+	}
+
+	// 시야에서 나갔거나 사라진 야생 포켓몬을 제거한다.
+	int32 Removed = 0;
+	for (const uint64 EntityId : Snapshot.Despawned)
+	{
+		TWeakObjectPtr<AUEPokemonCharacter> WildActor;
+		if (WildActors.RemoveAndCopyValue(EntityId, WildActor))
+		{
+			++Removed;
+			if (WildActor.IsValid())
+			{
+				WildActor->Destroy();
+			}
+		}
+	}
+
+	if (Snapshot.Spawned.Num() > 0 || Snapshot.Despawned.Num() > 0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[WILD] in.spawned=%d made=%d skip(sp=%d exist=%d noclass=%d fail=%d) | despawned=%d removed=%d | live=%d class=%s"),
+			Snapshot.Spawned.Num(), Made, SkippedSpecies, SkippedExisting, SkippedNoClass, FailedSpawn,
+			Snapshot.Despawned.Num(), Removed, WildActors.Num(),
+			WildPokemonClass ? TEXT("ok") : TEXT("NULL"));
+	}
+}
+
+void UUEPlayerMovementSyncComponent::DestroyWildActors()
+{
+	for (TPair<uint64, TWeakObjectPtr<AUEPokemonCharacter>>& Pair : WildActors)
+	{
+		if (Pair.Value.IsValid())
+		{
+			Pair.Value->Destroy();
+		}
+	}
+	WildActors.Empty();
 }
 
 FUEPlayerMovementPacket UUEPlayerMovementSyncComponent::BuildMovementPacket(float DeltaSeconds)

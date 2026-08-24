@@ -41,6 +41,11 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Visual")
 	TObjectPtr<USkeletalMesh> SkeletalMesh = nullptr;
 
+	// 스켈레탈 메시가 없을 때 큐브를 칠할 색. 알파가 0 이면 미설정으로 보고
+	// 종족 id 로 정한 기본 팔레트를 쓴다. 실제 모델이 들어오면 이 값은 무시된다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Visual")
+	FLinearColor DebugColor = FLinearColor(0.f, 0.f, 0.f, 0.f);
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Visual")
 	TSubclassOf<UAnimInstance> AnimInstanceClass;
 

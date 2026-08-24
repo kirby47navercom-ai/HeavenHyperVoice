@@ -6,7 +6,6 @@
 
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "GameFramework/PlayerController.h"
 #include "Misc/Paths.h"
 
 namespace
@@ -388,19 +387,12 @@ AUEPokemonCharacter* UUEPokemonServerComponent::GetPokemonOwner() const
 
 AActor* UUEPokemonServerComponent::ResolveFollowTargetActor() const
 {
-	if (FollowTargetActor)
-	{
-		return FollowTargetActor;
-	}
-
-	const UWorld* World = GetWorld();
-	if (!World)
-	{
-		return nullptr;
-	}
-
-	const APlayerController* PlayerController = World->GetFirstPlayerController();
-	return PlayerController ? PlayerController->GetPawn() : nullptr;
+	// 따라갈 대상은 반드시 명시돼야 한다. 예전에는 비어 있으면 첫 플레이어 폰으로
+	// 넘어갔는데, 그러면 이 컴포넌트를 단 액터가 **누구든** 조용히 플레이어를
+	// 따라온다. 기본값이 bEnableServer=true / FollowOwner 라, 서버가 좌표를
+	// 지시하는 야생 포켓몬까지 전부 플레이어에게 몰려와 겹쳐 쌓였다.
+	// 동행 포켓몬은 SetFollowTargetActor 로 주인을 직접 넣는다.
+	return FollowTargetActor;
 }
 
 HHV::PokemonAI::OwnContext UUEPokemonServerComponent::MakeOwnContext(const AUEPokemonCharacter& PokemonCharacter, const AActor& CurrentFollowTargetActor, float DeltaSeconds) const

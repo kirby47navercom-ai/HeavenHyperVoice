@@ -13,6 +13,7 @@
 #include "UEPlayerMovementSyncComponent.generated.h"
 
 class AUEPlayerCharacter;
+class AUEPokemonCharacter;
 
 struct FUEPlayerMovementPacket
 {
@@ -61,6 +62,11 @@ protected:
 	void StartFieldConnection();
 	void HandleFieldEnterAck(uint64 EntityId, float ServerX, float ServerY, float Facing);
 	void HandleFieldCorrection(uint32 Sequence, float ServerX, float ServerY, float Facing);
+
+	// 서버 Snapshot 의 원격 엔티티를 액터로 그린다. 지금은 야생 포켓몬(species!=0)
+	// 만 스폰하고, 다른 플레이어(species==0)는 아직 다루지 않는다.
+	void HandleFieldSnapshot(const FHHVFieldSnapshot& Snapshot);
+	void DestroyWildActors();
 
 	/**
 	 * The server world is 51200uu with its origin at a corner, and it clamps
@@ -130,6 +136,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
 	float WorldOriginOffset = 25600.0f;
 
+	/** 서버 야생 포켓몬을 그릴 액터 클래스. 기본은 BP_Pokemon. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
+	TSubclassOf<AUEPokemonCharacter> WildPokemonClass;
+
 private:
 	TWeakObjectPtr<AUEPlayerCharacter> CachedPlayerCharacter;
 	uint32 NextMoveSequence = 1;
@@ -137,6 +147,9 @@ private:
 
 	std::unique_ptr<FHHVFieldConnection> FieldConnection;
 	float TimeSinceLastSend = 0.0f;
+
+	// 서버 entity_id -> 그 야생 포켓몬 액터.
+	TMap<uint64, TWeakObjectPtr<AUEPokemonCharacter>> WildActors;
 
 	HHV::Map::ServerMapRuntime ServerMapRuntime;
 	bool bServerMapLoaded = false;

@@ -133,6 +133,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Species")
 	void SetPokemonSpeciesData(UUEPokemonSpeciesData* NewSpeciesData);
 
+	// 서버 야생 포켓몬용. 종족 번호만 주고 큐브를 그 종족 색으로 칠한다.
+	// 스켈레탈 메시 없이 뜨는 임시 표현이라 데이터 애셋이 필요 없다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Species")
+	void SetWildSpecies(int32 SpeciesNumber);
+
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Species")
 	UUEPokemonSpeciesData* GetPokemonSpeciesData() const { return PokemonSpeciesData; }
 
@@ -171,6 +176,9 @@ protected:
 
 private:
 	void ApplyPokemonSpeciesData();
+
+	// 실제 스켈레탈 메시가 없을 때 큐브를 종족 대표 색으로 칠한다.
+	void ApplyDebugAppearance();
 	void ApplyServerAnimationSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot);
 	void UpdateServerDrivenMovement(float DeltaSeconds);
 	void ConfigureServerDrivenMovement();
@@ -191,6 +199,8 @@ private:
 	float ServerHardSnapDistance = 300.0f;
 
 	UPROPERTY(Transient)
+	bool bDebugAppearanceApplied = false;
+
 	FVector TargetServerLocation = FVector::ZeroVector;
 
 	UPROPERTY(Transient)
