@@ -169,6 +169,7 @@ void AUEPlayerController::BindGameplayInput()
 	BindRunInput(EnhancedInputComponent);
 	BindJumpInput(EnhancedInputComponent);
 	BindRollInput(EnhancedInputComponent);
+	BindPokemonAttackInput(EnhancedInputComponent);
 }
 
 void AUEPlayerController::BindMoveInput(UEnhancedInputComponent* EnhancedInputComponent)
@@ -366,6 +367,32 @@ void AUEPlayerController::HandleRunStarted(const FInputActionValue& Value)
 	}
 }
 
+void AUEPlayerController::BindPokemonAttackInput(UEnhancedInputComponent* EnhancedInputComponent)
+{
+	// 숫자 1~4는 임시 기술 슬롯이다. IA와 GameplayTag를 사용해 나중에 키 설정 UI에서도 교체할 수 있게 한다.
+	const UInputAction* Attack1Action = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_PokemonAttack1);
+	const UInputAction* Attack2Action = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_PokemonAttack2);
+	const UInputAction* Attack3Action = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_PokemonAttack3);
+	const UInputAction* Attack4Action = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_PokemonAttack4);
+
+	if (Attack1Action)
+	{
+		EnhancedInputComponent->BindAction(Attack1Action, ETriggerEvent::Started, this, &ThisClass::HandlePokemonAttack1);
+	}
+	if (Attack2Action)
+	{
+		EnhancedInputComponent->BindAction(Attack2Action, ETriggerEvent::Started, this, &ThisClass::HandlePokemonAttack2);
+	}
+	if (Attack3Action)
+	{
+		EnhancedInputComponent->BindAction(Attack3Action, ETriggerEvent::Started, this, &ThisClass::HandlePokemonAttack3);
+	}
+	if (Attack4Action)
+	{
+		EnhancedInputComponent->BindAction(Attack4Action, ETriggerEvent::Started, this, &ThisClass::HandlePokemonAttack4);
+	}
+}
+
 void AUEPlayerController::HandleRunStopped(const FInputActionValue& Value)
 {
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
@@ -397,5 +424,38 @@ void AUEPlayerController::HandlePokemonToggle(const FInputActionValue& Value)
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
 		PlayerCharacter->TogglePokemonCompanion();
+	}
+}
+
+void AUEPlayerController::HandlePokemonAttack1(const FInputActionValue& Value)
+{
+	(void)Value;
+	HandlePokemonAttackSlot(1);
+}
+
+void AUEPlayerController::HandlePokemonAttack2(const FInputActionValue& Value)
+{
+	(void)Value;
+	HandlePokemonAttackSlot(2);
+}
+
+void AUEPlayerController::HandlePokemonAttack3(const FInputActionValue& Value)
+{
+	(void)Value;
+	HandlePokemonAttackSlot(3);
+}
+
+void AUEPlayerController::HandlePokemonAttack4(const FInputActionValue& Value)
+{
+	(void)Value;
+	HandlePokemonAttackSlot(4);
+}
+
+void AUEPlayerController::HandlePokemonAttackSlot(int32 AttackSlot)
+{
+	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
+	{
+		// 컨트롤러는 입력 번호만 전달하고 소유 여부와 공격 가능 여부는 캐릭터와 서버 컴포넌트가 판단한다.
+		PlayerCharacter->CommandPokemonAttack(AttackSlot);
 	}
 }

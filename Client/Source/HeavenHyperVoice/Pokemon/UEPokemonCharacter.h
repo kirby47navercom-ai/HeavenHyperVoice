@@ -32,7 +32,42 @@ enum class EUEPokemonAnimationEvent : uint8
 	DespawnCompleted,
 	AttackStarted,
 	HitReact,
-	Fainted
+	Fainted,
+	FieldAnimationStarted
+};
+
+// 야생 포켓몬이 필드에서 쉬는 동안 사용할 수 있는 비전투 행동 목록이다.
+// Start / Loop / End로 나뉜 행동은 AnimInstance가 이 값 하나를 받아 순서대로 재생한다.
+UENUM(BlueprintType)
+enum class EUEPokemonFieldAnimation : uint8
+{
+	None,
+	Idle01,
+	Idle02,
+	TurnLeft90,
+	TurnRight90,
+	Eat01,
+	Eat02,
+	Sleep,
+	Rest,
+	Notice,
+	Roar,
+	Glad,
+	Hate,
+	Refresh,
+	StepOut
+};
+
+// 플레이어의 기술 슬롯 명령을 종별 DataAsset의 실제 공격 시퀀스로 바꾸기 위한 종류다.
+// 숫자키 슬롯과 애니메이션을 분리해 두면 나중에 STT 기술 명령도 같은 값을 사용할 수 있다.
+UENUM(BlueprintType)
+enum class EUEPokemonAttackAnimation : uint8
+{
+	None,
+	Attack01,
+	Attack02,
+	RangeAttack01,
+	RangeAttack02
 };
 
 UENUM(BlueprintType)
@@ -91,6 +126,22 @@ struct FUEPokemonServerMoveSnapshot
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
 	EUEPokemonAnimationEvent AnimationEvent = EUEPokemonAnimationEvent::None;
+
+	// FieldAnimationStarted 이벤트일 때 재생할 종별 필드 행동이다.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	EUEPokemonFieldAnimation FieldAnimation = EUEPokemonFieldAnimation::None;
+
+	// 먹기, 잠자기, 휴식처럼 Loop 구간이 있는 행동의 반복 횟수다.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server", meta = (ClampMin = "1"))
+	int32 FieldAnimationLoopCount = 1;
+
+	// AttackStarted 이벤트일 때 재생할 종별 공격 애니메이션이다.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	EUEPokemonAttackAnimation AttackAnimation = EUEPokemonAttackAnimation::None;
+
+	// Start / Loop / End 구조인 원거리 공격의 Loop 반복 횟수다.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server", meta = (ClampMin = "1"))
+	int32 AttackAnimationLoopCount = 1;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
 	float ServerTimeSeconds = 0.0f;

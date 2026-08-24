@@ -12,6 +12,10 @@ namespace UEGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(Input_Action_Roll, "Input.Action.Roll");
 	UE_DEFINE_GAMEPLAY_TAG(Input_Action_Jump, "Input.Action.Jump");
 	UE_DEFINE_GAMEPLAY_TAG(Input_Action_SpawnPokemon, "Input.Action.SpawnPokemon");
+	UE_DEFINE_GAMEPLAY_TAG(Input_Action_PokemonAttack1, "Input.Action.PokemonAttack.1");
+	UE_DEFINE_GAMEPLAY_TAG(Input_Action_PokemonAttack2, "Input.Action.PokemonAttack.2");
+	UE_DEFINE_GAMEPLAY_TAG(Input_Action_PokemonAttack3, "Input.Action.PokemonAttack.3");
+	UE_DEFINE_GAMEPLAY_TAG(Input_Action_PokemonAttack4, "Input.Action.PokemonAttack.4");
 
 	//UE_DEFINE_GAMEPLAY_TAG(Event_Montage_Begin, "Event.Montage.Begin");
 	//UE_DEFINE_GAMEPLAY_TAG(Event_Montage_End, "Event.Montage.End");

@@ -2,32 +2,46 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "GameplayTagContainer.h"
 #include "UEPokemonSpeciesData.generated.h"
 
+class USkeletalMesh;
 class UAnimInstance;
 class UAnimMontage;
-class USkeletalMesh;
+class UAnimSequence;
+
+
+// ============================================================================
+// Pokemon Skill Data
+// ============================================================================
 
 USTRUCT(BlueprintType)
 struct FUEPokemonSkillData
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Skill")
+public:
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill")
 	FName SkillId = NAME_None;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Skill")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill")
 	FText DisplayName;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Skill", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill")
 	float Power = 0.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Skill", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill")
 	float Range = 0.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Skill", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill")
 	float CooldownSeconds = 0.0f;
 };
+
+
+// ============================================================================
+// Pokemon Species Data
+// ============================================================================
 
 UCLASS(BlueprintType)
 class HEAVENHYPERVOICE_API UUEPokemonSpeciesData : public UDataAsset
@@ -35,47 +49,372 @@ class HEAVENHYPERVOICE_API UUEPokemonSpeciesData : public UDataAsset
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Identity")
+
+	// ========================================================================
+	// Identity
+	// ========================================================================
+
+	/**
+	 * ∆˜ƒœ∏Û ¡æ∑˘ Ωƒ∫∞¿⁄.
+	 *
+	 * øπ:
+	 * Bulbasaur
+	 * Charmander
+	 * Eevee
+	 *
+	 * º≠πˆøÕ Species∏¶ ±∏∫–«“ ∂ßµµ ªÁøÎ«“ ºˆ ¿÷Ω¿¥œ¥Ÿ.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Identity")
 	FName SpeciesId = NAME_None;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Visual")
+
+	// ========================================================================
+	// Visual
+	// ========================================================================
+
+	/** ¿Ã ∆˜ƒœ∏Û¿Ã ªÁøÎ«“ Skeletal Mesh */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Visual")
 	TObjectPtr<USkeletalMesh> SkeletalMesh = nullptr;
 
-	// Ïä§ÏºàÎ†àÌÉà Î©îÏãúÍ∞Ä ÏóÜÏùÑ Îïå ÌÅêÎ∏åÎ•º Ïπ†Ìï† ÏÉâ. ÏïåÌååÍ∞Ä 0 Ïù¥Î©¥ ÎØ∏ÏÑ§Ï†ïÏúºÎ°ú Î≥¥Í≥†
-	// Ï¢ÖÏ°± id Î°ú Ï†ïÌïú Í∏∞Î≥∏ ÌåîÎ†àÌä∏Î•º Ïì¥Îã§. Ïã§Ï†ú Î™®Îç∏Ïù¥ Îì§Ïñ¥Ïò§Î©¥ Ïù¥ Í∞íÏùÄ Î¨¥ÏãúÎêúÎã§.
+	// Ω∫ƒÃ∑π≈ª ∏ﬁΩ√∞° æ¯¿ª ∂ß ≈•∫Í∏¶ ƒ•«“ ªˆ. æÀ∆ƒ∞° 0¿Ã∏È ¡æ¡∑ ±‚∫ªªˆ¿ª ªÁøÎ«—¥Ÿ.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Visual")
 	FLinearColor DebugColor = FLinearColor(0.f, 0.f, 0.f, 0.f);
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Visual")
+	/** ¿Ã ∆˜ƒœ∏Û¿Ã ªÁøÎ«“ Animation Blueprint */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Visual")
 	TSubclassOf<UAnimInstance> AnimInstanceClass;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Visual")
+	/** ƒ≥∏Ø≈Õ Capsule¿ª ±‚¡ÿ¿∏∑Œ Mesh ¿ßƒ°/»∏¿¸/≈©±‚ ∫∏¡§ */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Visual")
 	FTransform MeshRelativeTransform = FTransform::Identity;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Animation")
+
+	// ========================================================================
+	// Spawn / Despawn
+	// ========================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Spawn")
 	TObjectPtr<UAnimMontage> SpawnMontage = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Animation")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Spawn")
 	TObjectPtr<UAnimMontage> DespawnMontage = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Collision", meta = (ClampMin = "0.0"))
+
+	// ========================================================================
+	// Animation - Idle
+	// ========================================================================
+
+	/** defaultwait01_loop */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Idle")
+	TObjectPtr<UAnimSequence> Idle = nullptr;
+
+	/** defaultidle01 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Idle")
+	TObjectPtr<UAnimSequence> Idle01 = nullptr;
+
+	/** defaultidle02 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Idle")
+	TObjectPtr<UAnimSequence> Idle02 = nullptr;
+
+	/** battlewait01_loop */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Idle")
+	TObjectPtr<UAnimSequence> BattleIdle = nullptr;
+
+
+	// ========================================================================
+	// Animation - Locomotion
+	// ========================================================================
+
+	/** walk01_loop */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Locomotion")
+	TObjectPtr<UAnimSequence> Walk = nullptr;
+
+	/** run01_loop */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Locomotion")
+	TObjectPtr<UAnimSequence> Run = nullptr;
+
+	/** turn_l090 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Locomotion")
+	TObjectPtr<UAnimSequence> TurnLeft90 = nullptr;
+
+	/** turn_r090 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Locomotion")
+	TObjectPtr<UAnimSequence> TurnRight90 = nullptr;
+
+
+	// ========================================================================
+	// Animation - Jump / Fall
+	// ========================================================================
+
+	/** jumpup01_start */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Jump")
+	TObjectPtr<UAnimSequence> JumpStart = nullptr;
+
+	/** jumpup01_loop */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Jump")
+	TObjectPtr<UAnimSequence> JumpLoop = nullptr;
+
+	/** jumpdown01_start */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Jump")
+	TObjectPtr<UAnimSequence> FallStart = nullptr;
+
+	/** jumpdown01_loop */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Jump")
+	TObjectPtr<UAnimSequence> FallLoop = nullptr;
+
+	/** land02 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Jump")
+	TObjectPtr<UAnimSequence> Land = nullptr;
+
+
+	// ========================================================================
+	// Animation - Combat
+	// ========================================================================
+
+	/** attack01 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Combat")
+	TObjectPtr<UAnimSequence> Attack01 = nullptr;
+
+	/** attack02 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Combat")
+	TObjectPtr<UAnimSequence> Attack02 = nullptr;
+
+	/** rangeattack01 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Combat")
+	TObjectPtr<UAnimSequence> RangeAttack01 = nullptr;
+
+	/** rangeattack02_start */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Combat")
+	TObjectPtr<UAnimSequence> RangeAttack02Start = nullptr;
+
+	/** rangeattack02_loop */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Combat")
+	TObjectPtr<UAnimSequence> RangeAttack02Loop = nullptr;
+
+	/** rangeattack02_end */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Combat")
+	TObjectPtr<UAnimSequence> RangeAttack02End = nullptr;
+
+
+	// ========================================================================
+	// Animation - Damage
+	// ========================================================================
+
+	/** damage01 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Damage")
+	TObjectPtr<UAnimSequence> Damage01 = nullptr;
+
+	/** damage02 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Damage")
+	TObjectPtr<UAnimSequence> Damage02 = nullptr;
+
+
+	// ========================================================================
+	// Animation - Stun
+	// ========================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Status|Stun")
+	TObjectPtr<UAnimSequence> StunStart = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Status|Stun")
+	TObjectPtr<UAnimSequence> StunLoop = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Status|Stun")
+	TObjectPtr<UAnimSequence> StunEnd = nullptr;
+
+
+	// ========================================================================
+	// Animation - Down
+	// ========================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Status|Down")
+	TObjectPtr<UAnimSequence> DownStart = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Status|Down")
+	TObjectPtr<UAnimSequence> DownLoop = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Status|Down")
+	TObjectPtr<UAnimSequence> DownEnd = nullptr;
+
+
+	// ========================================================================
+	// Animation - Eat 01
+	// ========================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Life|Eat01")
+	TObjectPtr<UAnimSequence> Eat01Start = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Life|Eat01")
+	TObjectPtr<UAnimSequence> Eat01Loop = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Life|Eat01")
+	TObjectPtr<UAnimSequence> Eat01End = nullptr;
+
+
+	// ========================================================================
+	// Animation - Eat 02
+	// ========================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Life|Eat02")
+	TObjectPtr<UAnimSequence> Eat02Start = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Life|Eat02")
+	TObjectPtr<UAnimSequence> Eat02Loop = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Life|Eat02")
+	TObjectPtr<UAnimSequence> Eat02End = nullptr;
+
+
+	// ========================================================================
+	// Animation - Sleep
+	// ========================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Life|Sleep")
+	TObjectPtr<UAnimSequence> SleepStart = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Life|Sleep")
+	TObjectPtr<UAnimSequence> SleepLoop = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Life|Sleep")
+	TObjectPtr<UAnimSequence> SleepEnd = nullptr;
+
+
+	// ========================================================================
+	// Animation - Rest
+	// ========================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Life|Rest")
+	TObjectPtr<UAnimSequence> RestStart = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Life|Rest")
+	TObjectPtr<UAnimSequence> RestLoop = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Life|Rest")
+	TObjectPtr<UAnimSequence> RestEnd = nullptr;
+
+
+	// ========================================================================
+	// Animation - Reaction / AI
+	// ========================================================================
+
+	/** notice01 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Reaction")
+	TObjectPtr<UAnimSequence> Notice = nullptr;
+
+	/** roar01 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Reaction")
+	TObjectPtr<UAnimSequence> Roar = nullptr;
+
+	/** glad01 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Reaction")
+	TObjectPtr<UAnimSequence> Glad = nullptr;
+
+	/** hate01 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Reaction")
+	TObjectPtr<UAnimSequence> Hate = nullptr;
+
+	/** refresh01 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Reaction")
+	TObjectPtr<UAnimSequence> Refresh = nullptr;
+
+
+	// ========================================================================
+	// Animation - Step Out
+	// ========================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Action|StepOut")
+	TObjectPtr<UAnimSequence> StepOutStart = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Action|StepOut")
+	TObjectPtr<UAnimSequence> StepOut = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Action|StepOut")
+	TObjectPtr<UAnimSequence> StepOutEnd = nullptr;
+
+
+	// ========================================================================
+	// Animation - Face
+	// ========================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Face")
+	TObjectPtr<UAnimSequence> Eye = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Face")
+	TObjectPtr<UAnimSequence> Mouth = nullptr;
+
+
+	// ========================================================================
+	// Animation - Extra
+	// ========================================================================
+
+	/**
+	 * ∆Ø¡§ ∆˜ƒœ∏Û∏∏ ∞°¡ˆ∞Ì ¿÷¥¬ ∆Øºˆ æ÷¥œ∏ﬁ¿Ãº«.
+	 *
+	 * ¿œπ› ∞¯≈Î æ÷¥œ∏ﬁ¿Ãº«¿∫ ¿ß ΩΩ∑‘ø° ≥÷∞Ì
+	 * øπø‹¿˚¿Œ æ÷¥œ∏ﬁ¿Ãº«∏∏ ø©±‚ø° ≥÷Ω¿¥œ¥Ÿ.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Extra")
+	TMap<FGameplayTag, TObjectPtr<UAnimSequence>> ExtraAnimations;
+
+
+	// ========================================================================
+	// Collision
+	// ========================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Collision")
 	float CapsuleRadius = 34.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Collision", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Collision")
 	float CapsuleHalfHeight = 88.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Movement", meta = (ClampMin = "0.0"))
+
+	// ========================================================================
+	// Movement
+	// ========================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Movement")
 	float MoveSpeed = 280.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Movement", meta = (ClampMin = "0.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Movement")
 	float MaxStepHeight = 45.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Movement", meta = (ClampMin = "0.0", ClampMax = "90.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Movement")
 	float WalkableFloorAngleDegrees = 44.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Stats", meta = (ClampMin = "1.0"))
+
+	// ========================================================================
+	// Stats
+	// ========================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Stats")
 	float MaxHP = 100.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Skill")
+
+	// ========================================================================
+	// Skills
+	// ========================================================================
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Skill")
 	TArray<FUEPokemonSkillData> Skills;
+
+
+	// ========================================================================
+	// Functions
+	// ========================================================================
+
+	/**
+	 * GameplayTag∑Œ ¿Ã ∆˜ƒœ∏Û¿« æ÷¥œ∏ﬁ¿Ãº«¿ª √£Ω¿¥œ¥Ÿ.
+	 *
+	 * øπ:
+	 * Pokemon_Animation_Walk
+	 *      -> «ˆ¿Á ∆˜ƒœ∏Û¿« Walk π›»Ø
+	 */
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Animation")
+	UAnimSequence* FindAnimationByTag(const FGameplayTag& AnimationTag) const;
+
+	/**
+	 * «ÿ¥Á æ÷¥œ∏ﬁ¿Ãº«¿Ã µÓ∑œµ«æÓ ¿÷¥¬¡ˆ »Æ¿Œ«’¥œ¥Ÿ.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Animation")
+	bool HasAnimation(const FGameplayTag& AnimationTag) const;
 };

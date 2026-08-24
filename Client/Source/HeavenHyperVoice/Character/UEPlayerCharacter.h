@@ -109,6 +109,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Companion")
 	void TogglePokemonCompanion();
 
+	// 숫자키 기술 슬롯을 현재 필드에 꺼낸 소유 포켓몬의 공격 명령으로 전달한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Combat")
+	bool CommandPokemonAttack(int32 AttackSlot);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -308,6 +312,7 @@ private:
 	FTimerHandle RollMovementTimerHandle;
 	FTimerHandle LandingStateTimerHandle;
 	FTimerHandle GameplayQATimerHandle;
+	FVector GameplayQAStartLocation = FVector::ZeroVector;
 	int32 GameplayQAPhase = 0;
 	bool bPokemonDespawnInProgress = false;
 	bool bLandingStateActive = false;

@@ -4,6 +4,7 @@ Content/CharacterCustomization/Palworld/** filter=lfs diff=lfs merge=lfs -text
 Content/CharacterCustomization/Palworld/AssetsFBX/Pal/Model/Character/Player/Outfit/SK_Player_Female_Outfit_OldCloth001/SK_Player_Female_Outfit_OldCloth001/SK_Player_Female_Outfit_OldCloth001.uasset -filter -diff -merge -text
 Content/CharacterCustomization/Palworld/AssetsFBX/Pal/Model/Character/Player/Outfit/SK_Player_Female_Outfit_OldCloth001/SK_Player_Female_Outfit_OldCloth001/SK_Player_Female_Outfit_OldCloth001_Skeleton.uasset -filter -diff -merge -text
 Content/CharacterCustomization/Palworld/AssetsFBX/Pal/Model/Character/Player/Outfit/SK_Player_Male_Outfit_OldCloth001/SK_Player_Male_Outfit_OldCloth001/SK_P_leton.uasset -filter -diff -merge -text
+Content/CharacterCustomization/Palworld/Assets/Pal/Model/Character/Player/Outfit/SK_Player_Female_Outfit_Cloth001/SK_Player_Female_Outfit_Cloth001/SkeletalMeshes/SK_Player_Female_Outfit_Cloth001_Skeleton.uasset -filter -diff -merge -text
 # 커마 레벨은 용량이 작아서 LFS 제한 없이 함께 배포한다.
 Content/CharacterCustomization/Palworld/Maps/L_PalworldCustomization.umap -filter -diff -merge -text
 Content/CharacterCustomization/Blueprints/BP_CustomizationGameMode.uasset filter=lfs diff=lfs merge=lfs -text

@@ -14,6 +14,10 @@ namespace UEGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_Roll);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_Jump);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_SpawnPokemon);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_PokemonAttack1);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_PokemonAttack2);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_PokemonAttack3);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_PokemonAttack4);
 
 	//UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Montage_Begin);
 	//UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Montage_End);

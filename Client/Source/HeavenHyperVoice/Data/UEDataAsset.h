@@ -61,6 +61,20 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Action")
 	TObjectPtr<UInputAction> SpawnPokemonAction = nullptr;
 
+	// 보유 포켓몬의 기술 슬롯 1~4에 대응하는 숫자키 공격 입력이다.
+	// STT가 기술을 판정하는 단계가 추가돼도 같은 슬롯 체계를 재사용한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Pokemon")
+	TObjectPtr<UInputAction> PokemonAttack1Action = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Pokemon")
+	TObjectPtr<UInputAction> PokemonAttack2Action = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Pokemon")
+	TObjectPtr<UInputAction> PokemonAttack3Action = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input|Pokemon")
+	TObjectPtr<UInputAction> PokemonAttack4Action = nullptr;
+
 	// Optional extension table for future actions that should also be found by GameplayTag.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TArray<FUEInputAction> InputActions;

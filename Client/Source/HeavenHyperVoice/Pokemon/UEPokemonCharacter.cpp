@@ -3,6 +3,7 @@
 #include "UEPokemonCharacter.h"
 
 #include "../AI/UEAIController.h"
+#include "../Animation/UEPokemonAnimInstance.h"
 #include "UEPokemonSpeciesData.h"
 #include "Server/UEPokemonServerComponent.h"
 #include "UEPokemonSpeciesCatalog.h"
@@ -206,6 +207,8 @@ void AUEPokemonCharacter::ApplyPokemonSpeciesData()
 		ConfigureServerDrivenMovement();
 	}
 
+	GetMesh()->SetRelativeLocation({0.0f,0.0f,-90.0f});
+
 	MaxHP = FMath::Max(PokemonSpeciesData->MaxHP, 1.0f);
 	CurrentHP = MaxHP;
 	ServerSpeciesId = PokemonSpeciesData->SpeciesId;
@@ -304,6 +307,25 @@ void AUEPokemonCharacter::ApplyServerAnimationSnapshot(const FUEPokemonServerMov
 	LastServerAnimationEvent = Snapshot.AnimationEvent;
 	LastServerAnimationEventTimeSeconds = Snapshot.ServerTimeSeconds;
 	LastServerAnimationEventDurationSeconds = Snapshot.EventDurationSeconds;
+
+	// 서버가 선택한 필드 행동은 현재 종의 AnimInstance가 실제 시퀀스로 변환해 재생한다.
+	// DataAsset에 없는 시퀀스는 AnimInstance에서 자동으로 건너뛴다.
+	if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::FieldAnimationStarted)
+	{
+		if (UUEPokemonAnimInstance* PokemonAnimInstance = Cast<UUEPokemonAnimInstance>(GetMesh()->GetAnimInstance()))
+		{
+			PokemonAnimInstance->PlayFieldAnimation(Snapshot.FieldAnimation, Snapshot.FieldAnimationLoopCount);
+		}
+	}
+	else if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::AttackStarted)
+	{
+		// 서버가 승인한 공격 종류만 재생해 클라이언트 입력과 실제 포켓몬 상태가 어긋나지 않게 한다.
+		if (UUEPokemonAnimInstance* PokemonAnimInstance = Cast<UUEPokemonAnimInstance>(GetMesh()->GetAnimInstance()))
+		{
+			PokemonAnimInstance->PlayAttackAnimation(Snapshot.AttackAnimation, Snapshot.AttackAnimationLoopCount);
+		}
+	}
+
 	BP_OnServerAnimationEvent(Snapshot.AnimationEvent, Snapshot);
 }
 

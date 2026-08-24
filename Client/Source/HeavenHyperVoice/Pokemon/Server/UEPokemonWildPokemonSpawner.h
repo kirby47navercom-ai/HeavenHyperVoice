@@ -30,6 +30,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Wild")
 	TObjectPtr<UUEPokemonSpeciesData> WildPokemonSpeciesData = nullptr;
 
+	/** 야생 포켓몬을 한 마리 소환할 때마다 이 목록에서 종을 무작위로 선택합니다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Wild")
+	TArray<TObjectPtr<UUEPokemonSpeciesData>> WildPokemonSpeciesPool;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Wild")
 	TSubclassOf<AUEPokemonCharacter> WildPokemonClass;
 
@@ -57,7 +61,7 @@ protected:
 private:
 	bool TryLoadServerMap();
 	bool TryFindRandomWildSpawnLocation(const HHV::Map::AgentSettings& Agent, FVector& OutLocation);
-	HHV::Map::AgentSettings MakeWildSpawnAgentSettings() const;
+	HHV::Map::AgentSettings MakeWildSpawnAgentSettings(const UUEPokemonSpeciesData* SpeciesData) const;
 	FString ResolveServerMapFilePath() const;
 
 	HHV::Map::ServerMapRuntime ServerMapRuntime;

@@ -71,6 +71,7 @@ private:
 	void BindRunInput(class UEnhancedInputComponent* EnhancedInputComponent);
 	void BindJumpInput(UEnhancedInputComponent* EnhancedInputComponent);
 	void BindRollInput(UEnhancedInputComponent* EnhancedInputComponent);
+	void BindPokemonAttackInput(UEnhancedInputComponent* EnhancedInputComponent);
 	AUEPlayerCharacter* GetControlledPlayerCharacter() const;
 	bool HasPendingHHVAppearance() const;
 	void PushMovementInputToCharacter();
@@ -92,6 +93,11 @@ private:
 	void HandleJump(const FInputActionValue& Value);
 	void HandleRoll(const FInputActionValue& Value);
 	void HandlePokemonToggle(const FInputActionValue& Value);
+	void HandlePokemonAttack1(const FInputActionValue& Value);
+	void HandlePokemonAttack2(const FInputActionValue& Value);
+	void HandlePokemonAttack3(const FInputActionValue& Value);
+	void HandlePokemonAttack4(const FInputActionValue& Value);
+	void HandlePokemonAttackSlot(int32 AttackSlot);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUELoginWidget> LoginWidgetInstance = nullptr;

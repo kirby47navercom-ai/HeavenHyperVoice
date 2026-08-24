@@ -36,6 +36,12 @@ void AUEPokemonWildPokemonSpawner::BeginPlay()
 
 int32 AUEPokemonWildPokemonSpawner::SpawnWildPokemons()
 {
+	// 월드의 야생 포켓몬은 서버에서만 생성해야 모든 클라이언트가 같은 결과를 봅니다.
+	if (!HasAuthority())
+	{
+		return 0;
+	}
+
 	if (bHasSpawnedWildPokemons)
 	{
 		return 0;
@@ -64,23 +70,43 @@ int32 AUEPokemonWildPokemonSpawner::SpawnWildPokemons()
 		ClassToSpawn = AUEPokemonCharacter::StaticClass();
 	}
 
-	const HHV::Map::AgentSettings Agent = MakeWildSpawnAgentSettings();
-	const float MaxHP = WildPokemonSpeciesData ? FMath::Max(WildPokemonSpeciesData->MaxHP, 1.0f) : 0.0f;
+	// 배열의 null 항목은 제외합니다. 배열이 비어 있으면 기존 단일 설정을 사용합니다.
+	TArray<UUEPokemonSpeciesData*> ValidSpeciesPool;
+	ValidSpeciesPool.Reserve(WildPokemonSpeciesPool.Num());
+	for (UUEPokemonSpeciesData* SpeciesData : WildPokemonSpeciesPool)
+	{
+		if (IsValid(SpeciesData))
+		{
+			ValidSpeciesPool.Add(SpeciesData);
+		}
+	}
+	if (ValidSpeciesPool.IsEmpty() && IsValid(WildPokemonSpeciesData))
+	{
+		ValidSpeciesPool.Add(WildPokemonSpeciesData);
+	}
+
 	int32 SpawnedCount = 0;
 	for (int32 SpawnIndex = 0; SpawnIndex < WildPokemonCount; ++SpawnIndex)
 	{
+		UUEPokemonSpeciesData* SelectedSpeciesData = ValidSpeciesPool.IsEmpty()
+			? nullptr
+			: ValidSpeciesPool[SpawnRandomStream.RandRange(0, ValidSpeciesPool.Num() - 1)];
+		const HHV::Map::AgentSettings Agent = MakeWildSpawnAgentSettings(SelectedSpeciesData);
+
 		FVector SpawnLocation;
 		if (!TryFindRandomWildSpawnLocation(Agent, SpawnLocation))
 		{
 			continue;
 		}
 
+		const float MaxHP = SelectedSpeciesData ? FMath::Max(SelectedSpeciesData->MaxHP, 1.0f) : 0.0f;
+
 		FUEPokemonWorldSpawnData SpawnData;
 		SpawnData.RuntimePokemonId = NextRuntimePokemonId++;
 		// 종족 데이터가 없을 때 임의 포켓몬 이름으로 고정하지 않는다.
-		SpawnData.SpeciesId = WildPokemonSpeciesData ? WildPokemonSpeciesData->SpeciesId : NAME_None;
+		SpawnData.SpeciesId = SelectedSpeciesData ? SelectedSpeciesData->SpeciesId : NAME_None;
 		SpawnData.RenderType = EUEPokemonRenderType::Wild;
-		SpawnData.SpeciesData = WildPokemonSpeciesData;
+		SpawnData.SpeciesData = SelectedSpeciesData;
 		SpawnData.PokemonClass = ClassToSpawn;
 		SpawnData.Location = SpawnLocation;
 		SpawnData.Rotation = FRotator(0.0f, SpawnRandomStream.FRandRange(0.0f, 360.0f), 0.0f);
@@ -162,15 +188,16 @@ bool AUEPokemonWildPokemonSpawner::TryFindRandomWildSpawnLocation(const HHV::Map
 	return false;
 }
 
-HHV::Map::AgentSettings AUEPokemonWildPokemonSpawner::MakeWildSpawnAgentSettings() const
+HHV::Map::AgentSettings AUEPokemonWildPokemonSpawner::MakeWildSpawnAgentSettings(
+	const UUEPokemonSpeciesData* SpeciesData) const
 {
 	HHV::Map::AgentSettings Agent;
-	if (WildPokemonSpeciesData)
+	if (SpeciesData)
 	{
-		Agent.CapsuleRadius = WildPokemonSpeciesData->CapsuleRadius;
-		Agent.CapsuleHalfHeight = WildPokemonSpeciesData->CapsuleHalfHeight;
-		Agent.MaxStepHeight = WildPokemonSpeciesData->MaxStepHeight;
-		Agent.WalkableFloorAngleDegrees = WildPokemonSpeciesData->WalkableFloorAngleDegrees;
+		Agent.CapsuleRadius = SpeciesData->CapsuleRadius;
+		Agent.CapsuleHalfHeight = SpeciesData->CapsuleHalfHeight;
+		Agent.MaxStepHeight = SpeciesData->MaxStepHeight;
+		Agent.WalkableFloorAngleDegrees = SpeciesData->WalkableFloorAngleDegrees;
 		return Agent;
 	}
 

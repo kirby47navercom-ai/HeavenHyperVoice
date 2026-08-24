@@ -75,6 +75,13 @@ FUEPokemonServerSpawnResponse UUEPokemonServerSubsystem::RequestSpawnPokemon(int
 		return Response;
 	}
 
+	// 종족 데이터가 없으면 메시와 애니메이션을 구성할 수 없으므로 빈 포켓몬이 생성되지 않게 거절한다.
+	if (!IsValid(OwnedPokemon->SpeciesData))
+	{
+		Response.Result = EUEPokemonServerSummonResult::MissingSpeciesData;
+		return Response;
+	}
+
 	const float MaxHP = ResolveMaxHP(*OwnedPokemon);
 	const float CurrentHP = FMath::Clamp(OwnedPokemon->CurrentHP, 0.0f, MaxHP);
 	if (!OwnedPokemon->bCanSummon || CurrentHP <= 0.0f)

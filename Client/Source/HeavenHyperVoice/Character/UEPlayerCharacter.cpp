@@ -784,6 +784,43 @@ void AUEPlayerCharacter::TogglePokemonCompanion()
 	TrySpawnPokemonCompanion();
 }
 
+bool AUEPlayerCharacter::CommandPokemonAttack(int32 AttackSlot)
+{
+	if (!IsPokemonCompanionSpawned())
+	{
+		// 보유 포켓몬이 필드에 나오기 전에는 공격 입력을 서버로 보내지 않는다.
+		return false;
+	}
+
+	EUEPokemonAttackAnimation AttackAnimation = EUEPokemonAttackAnimation::None;
+	switch (AttackSlot)
+	{
+	case 1:
+		AttackAnimation = EUEPokemonAttackAnimation::Attack01;
+		break;
+	case 2:
+		AttackAnimation = EUEPokemonAttackAnimation::Attack02;
+		break;
+	case 3:
+		AttackAnimation = EUEPokemonAttackAnimation::RangeAttack01;
+		break;
+	case 4:
+		AttackAnimation = EUEPokemonAttackAnimation::RangeAttack02;
+		break;
+	default:
+		return false;
+	}
+
+	UUEPokemonServerComponent* ServerComponent = SpawnedPokemon->GetServerComponent();
+	if (!ServerComponent)
+	{
+		return false;
+	}
+
+	// 지금은 숫자키 예시지만 이후 STT가 기술 슬롯을 찾으면 이 함수부터 같은 경로를 재사용한다.
+	return ServerComponent->SendServerAttackCommand(AttackAnimation);
+}
+
 void AUEPlayerCharacter::SetPokemonCompanionSpeciesData(UUEPokemonSpeciesData* NewSpeciesData)
 {
 	PokemonCompanionSpeciesData = NewSpeciesData;
