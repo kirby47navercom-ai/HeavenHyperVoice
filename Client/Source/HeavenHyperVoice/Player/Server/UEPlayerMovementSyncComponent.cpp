@@ -11,6 +11,10 @@
 #include "GameFramework/Controller.h"
 #include "UObject/ConstructorHelpers.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "HAL/PlatformMisc.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Crc.h"
+#include "Misc/Parse.h"
 #include "Misc/Paths.h"
 
 UUEPlayerMovementSyncComponent::UUEPlayerMovementSyncComponent()
@@ -118,12 +122,47 @@ void UUEPlayerMovementSyncComponent::StartFieldConnection()
 		}
 	};
 
+	// 여러 대에서 같은 필드에 붙는 테스트를 하려면 클라마다 번호가 달라야 한다
+	// (DefaultDevCharacterId 주석 참고). 명령줄로 정하거나, 안 주면 머신마다
+	// 다른 값을 만들어 쓴다.
+	//
+	//   HeavenHyperVoice.exe -DevCharId=9002 -DevName=노트북
+	uint64 ResolvedCharacterId = static_cast<uint64>(DevCharacterId);
+	int32 CharIdOverride = 0;
+	if (FParse::Value(FCommandLine::Get(), TEXT("DevCharId="), CharIdOverride) && CharIdOverride > 0)
+	{
+		ResolvedCharacterId = static_cast<uint64>(CharIdOverride);
+	}
+	else if (DevCharacterId == DefaultDevCharacterId)
+	{
+		// 기본값 그대로다. 머신/사용자마다 고유한 문자열에서 뽑아 두 대가 저절로
+		// 갈리게 한다. 같은 머신에서는 실행할 때마다 같은 번호가 나온다.
+		// 야생 엔티티 번호(kWildIdBase = 1<<52)와 겹치지 않게 작게 유지한다.
+		const uint32 MachineHash = FCrc::StrCrc32(*FPlatformMisc::GetLoginId());
+		ResolvedCharacterId = 9000 + static_cast<uint64>(MachineHash % 100000);
+	}
+
+	FString ResolvedName = DevCharacterName;
+	FString NameOverride;
+	if (FParse::Value(FCommandLine::Get(), TEXT("DevName="), NameOverride) && !NameOverride.IsEmpty())
+	{
+		ResolvedName = NameOverride;
+	}
+	else if (ResolvedName == TEXT("UEClient"))
+	{
+		// 로그와 화면에서 누가 누군지 구분되게 번호를 붙인다.
+		ResolvedName = FString::Printf(TEXT("UEClient-%llu"), ResolvedCharacterId);
+	}
+
 	FHHVFieldSettings Settings;
 	Settings.Host = FieldServerHost;
 	Settings.Port = FieldServerPort;
-	Settings.DevName = DevCharacterName;
-	Settings.DevCharacterId = static_cast<uint64>(DevCharacterId);
+	Settings.DevName = ResolvedName;
+	Settings.DevCharacterId = ResolvedCharacterId;
 	FieldConnection->Start(Settings);
+
+	UE_LOG(LogTemp, Display, TEXT("PlayerMovementSync: connecting to %s:%d as %s (id %llu)"),
+		*Settings.Host, Settings.Port, *Settings.DevName, Settings.DevCharacterId);
 
 	SetComponentTickEnabled(true);
 }

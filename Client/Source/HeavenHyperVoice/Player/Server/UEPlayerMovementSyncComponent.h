@@ -119,7 +119,7 @@ protected:
 
 	/** Ignored while bEnableLocalServerValidation is on. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
-	FString FieldServerHost = TEXT("127.0.0.1");
+	FString FieldServerHost = TEXT("14.51.64.96");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server", meta = (ClampMin = "1", ClampMax = "65535"))
 	int32 FieldServerPort = 9200;
@@ -128,8 +128,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
 	FString DevCharacterName = TEXT("UEClient");
 
+	// 이 값을 그대로 두면 StartFieldConnection 이 머신마다 다른 번호를 만들어 쓴다.
+	// --dev-no-auth 서버는 account_id 를 dev_character_id 와 같은 값으로 두고,
+	// World::enter 가 계정 단위로 기존 접속을 끊는다. 두 대가 같은 번호로 붙으면
+	// 나중에 붙은 쪽이 먼저 붙은 쪽을 튕겨내 서로 보이는 것을 확인할 수 없다.
+	static constexpr int64 DefaultDevCharacterId = 9001;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server", meta = (ClampMin = "1"))
-	int64 DevCharacterId = 9001;
+	int64 DevCharacterId = DefaultDevCharacterId;
 
 	/** The server drops moves closer together than 10ms and ticks at 20Hz. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server", meta = (ClampMin = "0.01"))
