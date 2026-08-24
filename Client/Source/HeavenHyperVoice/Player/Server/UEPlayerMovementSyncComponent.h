@@ -67,6 +67,8 @@ protected:
 	// 만 스폰하고, 다른 플레이어(species==0)는 아직 다루지 않는다.
 	void HandleFieldSnapshot(const FHHVFieldSnapshot& Snapshot);
 	void DestroyWildActors();
+	void SpawnRemotePlayer(const struct FHHVFieldEntity& Entity, const FVector& SpawnLocation);
+	void DestroyRemotePlayers();
 
 	/**
 	 * The server world is 51200uu with its origin at a corner, and it clamps
@@ -150,6 +152,10 @@ private:
 
 	// 서버 entity_id -> 그 야생 포켓몬 액터.
 	TMap<uint64, TWeakObjectPtr<AUEPokemonCharacter>> WildActors;
+
+	// 서버 entity_id -> 그 플레이어의 복제본. 클래스는 로컬 플레이어와 같은 것을
+	// 그대로 쓰므로 따로 지정할 값이 없다.
+	TMap<uint64, TWeakObjectPtr<AUEPlayerCharacter>> RemotePlayers;
 
 	HHV::Map::ServerMapRuntime ServerMapRuntime;
 	bool bServerMapLoaded = false;

@@ -32,6 +32,23 @@ public:
 	virtual void Jump() override;
 	virtual void Landed(const FHitResult& Hit) override;
 
+	// --- 다른 플레이어를 그리는 복제본 ---
+	//
+	// 필드 스냅샷에 남의 캐릭터가 실려 오면 이 클래스를 그대로 한 벌 더 띄운다.
+	// 로컬 플레이어와 같은 클래스를 쓰므로 메시·커마 설정을 따로 맞출 필요가 없다.
+	// 다만 입력도 카메라도 없어야 하고, 무엇보다 자기 몫의 필드 연결을 열거나
+	// 동행 포켓몬을 부르면 안 된다 — 인당 TLS 연결이 하나씩 더 생긴다.
+	//
+	// SpawnActorDeferred 로 만든 뒤 FinishSpawning **전에** 부를 것. BeginPlay 가
+	// 지나면 이미 연결과 동행이 만들어진 뒤라 늦다.
+	void MakeRemoteProxy();
+	bool IsRemoteProxy() const { return bIsRemoteProxy; }
+
+	// 스냅샷이 알려준 목표 지점. Tick 이 보간으로 따라간다. 20Hz 라 그대로 박으면
+	// 끊겨 보인다.
+	void ApplyRemoteMoveTarget(const FVector& TargetLocation, const FRotator& TargetRotation,
+		bool bTeleported);
+
 	UFUNCTION(BlueprintPure, Category = "Character|State")
 	bool IsRunning() const { return bIsRunning; }
 
@@ -177,6 +194,9 @@ protected:
 	TEnumAsByte<ECollisionChannel> PokemonSpawnCollisionChannel = ECC_Pawn;
 
 private:
+	void ConfigureRemoteProxyMovement();
+	void UpdateRemoteProxyMovement(float DeltaSeconds);
+
 	bool TrySpawnPokemonCompanion();
 	void RequestDespawnPokemonCompanion();
 	void FinishPokemonDespawn();
@@ -198,6 +218,24 @@ private:
 
 	static HHV::Map::Vec3 ToServerVec3(const FVector& Vector);
 	static FVector ToUnrealVector(const HHV::Map::Vec3& Vector);
+
+	// 다른 플레이어의 복제본인가. MakeRemoteProxy 로만 켜진다.
+	bool bIsRemoteProxy = false;
+
+	// 서버가 지시한 목표. 도착하면 bHasRemoteTarget 이 꺼진다.
+	FVector RemoteTargetLocation = FVector::ZeroVector;
+	FRotator RemoteTargetRotation = FRotator::ZeroRotator;
+	bool bHasRemoteTarget = false;
+
+	// 로코모션 블렌드스페이스가 속도를 읽는다. 서버는 속도를 보내지 않으므로
+	// 목표가 갱신될 때 좌표 차이로 만들어 넣는다.
+	FVector RemoteVelocity = FVector::ZeroVector;
+
+	// 야생 포켓몬(UEPokemonCharacter)과 같은 값으로 맞춘다. 같은 스냅샷을 보고
+	// 움직이는데 둘이 다르게 미끄러지면 눈에 띈다.
+	float RemoteInterpSpeed = 12.0f;
+	float RemoteRotationInterpSpeed = 12.0f;
+	float RemoteHardSnapDistance = 500.0f;
 
 	void PlayerCharacterInit();
 	void ApplyPendingHHVAppearance();

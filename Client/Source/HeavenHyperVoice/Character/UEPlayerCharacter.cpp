@@ -448,6 +448,15 @@ void AUEPlayerCharacter::BeginPlay()
 	ApplyPendingHHVAppearance();
 	RefreshMovementSpeed();
 	RefreshCharacterState();
+
+	if (bIsRemoteProxy)
+	{
+		// 남의 캐릭터다. 겉모습만 맞추고 끝낸다 — 로컬 포켓몬 서버 로스터에
+		// 남을 끼워 넣거나, 남 몫의 동행을 부르거나, QA 를 또 돌리면 안 된다.
+		ConfigureRemoteProxyMovement();
+		return;
+	}
+
 	RegisterPokemonServerRoster();
 
 	// 로스터가 등록됐으니 바로 동행 포켓몬을 부른다. 입력 키(TogglePokemonCompanion)
@@ -484,10 +493,111 @@ void AUEPlayerCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
+	if (bIsRemoteProxy)
+	{
+		// 입력이 없다. 좌표는 스냅샷이 지시하고 여기서는 따라가기만 한다.
+		UpdateRemoteProxyMovement(DeltaSeconds);
+		RefreshCharacterState();
+		return;
+	}
+
 	ApplyLocalMovementInput();
 	RefreshCharacterState();
 	// 전신 로코모션은 ABP_UEAnimInstance의 1D 블렌드스페이스가 GroundSpeed로 계산한다.
 	// 여기서 SingleNode 시퀀스를 재생하면 매 프레임 AnimBP가 해제되어 걷기/뛰기가 멈춘다.
+}
+
+void AUEPlayerCharacter::MakeRemoteProxy()
+{
+	bIsRemoteProxy = true;
+
+	// 컨트롤러가 붙으면 남의 캐릭터가 내 입력을 먹는다.
+	AutoPossessPlayer = EAutoReceiveInput::Disabled;
+	AutoPossessAI = EAutoPossessAI::Disabled;
+	AIControllerClass = nullptr;
+
+	// 동행은 그 플레이어의 클라가 부른다. 여기서 부르면 남의 파트너가 내
+	// 로컬 시뮬레이션으로 하나 더 생긴다.
+	bAutoSpawnPokemonCompanion = false;
+
+	// 카메라는 하나면 된다. 스프링암은 매 프레임 충돌을 훑으므로 꺼둔다.
+	if (CameraBoom)
+	{
+		CameraBoom->SetComponentTickEnabled(false);
+	}
+	if (FollowCamera)
+	{
+		FollowCamera->SetActive(false);
+	}
+
+	// 필드 연결은 내 것 하나뿐이어야 한다. 이 복제본의 싱크 컴포넌트는
+	// BeginPlay 에서 IsRemoteProxy() 를 보고 스스로 물러난다.
+}
+
+void AUEPlayerCharacter::ConfigureRemoteProxyMovement()
+{
+	// 좌표를 서버가 전부 지시하므로 로컬 이동 시뮬레이션은 끈다. 켜 두면
+	// 중력과 보간이 서로 밀며 캐릭터가 떨린다. 야생 포켓몬과 같은 설정이다.
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->GravityScale = 0.0f;
+		MovementComponent->SetMovementMode(MOVE_None);
+		MovementComponent->SetComponentTickEnabled(false);
+	}
+
+	// 밀어내기는 서버가 판정한다. 복제본끼리 부딪혀 밀리면 좌표만 어긋난다.
+	SetActorEnableCollision(false);
+}
+
+void AUEPlayerCharacter::ApplyRemoteMoveTarget(const FVector& TargetLocation,
+	const FRotator& TargetRotation, bool bTeleported)
+{
+	// 로코모션 애니메이션이 속도를 읽는다. 서버는 속도를 안 보내니 목표가
+	// 갱신된 간격으로 만들어 넣는다. 스냅샷이 20Hz 고정이라 그 값으로 나눈다.
+	constexpr float kSnapshotInterval = 1.0f / 20.0f;
+	RemoteVelocity = (TargetLocation - GetActorLocation()) / kSnapshotInterval;
+
+	RemoteTargetLocation = TargetLocation;
+	RemoteTargetRotation = TargetRotation;
+	bHasRemoteTarget = true;
+
+	// 순간이동이거나 너무 벌어졌으면 보간을 포기하고 붙인다. 시야에 막 들어온
+	// 경우가 여기다 — 안 그러면 맵 반대편에서 걸어오는 것처럼 보인다.
+	if (bTeleported || FVector::Dist(GetActorLocation(), TargetLocation) >= RemoteHardSnapDistance)
+	{
+		SetActorLocation(TargetLocation, false, nullptr, ETeleportType::TeleportPhysics);
+		SetActorRotation(TargetRotation, ETeleportType::TeleportPhysics);
+		RemoteVelocity = FVector::ZeroVector;
+		bHasRemoteTarget = false;
+	}
+}
+
+void AUEPlayerCharacter::UpdateRemoteProxyMovement(float DeltaSeconds)
+{
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->Velocity = RemoteVelocity;
+	}
+
+	if (!bHasRemoteTarget)
+	{
+		RemoteVelocity = FVector::ZeroVector;
+		return;
+	}
+
+	const FVector NewLocation =
+		FMath::VInterpTo(GetActorLocation(), RemoteTargetLocation, DeltaSeconds, RemoteInterpSpeed);
+	const FRotator NewRotation =
+		FMath::RInterpTo(GetActorRotation(), RemoteTargetRotation, DeltaSeconds, RemoteRotationInterpSpeed);
+
+	SetActorLocation(NewLocation, false);
+	SetActorRotation(NewRotation);
+
+	if (FVector::DistSquared(NewLocation, RemoteTargetLocation) <= 1.0f)
+	{
+		SetActorLocation(RemoteTargetLocation, false);
+		bHasRemoteTarget = false;
+	}
 }
 
 void AUEPlayerCharacter::Jump()

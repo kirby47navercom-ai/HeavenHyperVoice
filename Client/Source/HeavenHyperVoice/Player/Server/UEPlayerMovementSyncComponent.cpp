@@ -38,6 +38,14 @@ void UUEPlayerMovementSyncComponent::BeginPlay()
 		return;
 	}
 
+	// 다른 플레이어를 그리는 복제본에도 이 컴포넌트가 딸려 온다. 여기서
+	// 물러나지 않으면 시야에 들어온 사람 수만큼 필드 서버에 TLS 연결이 열린다.
+	if (PlayerCharacter->IsRemoteProxy())
+	{
+		SetComponentTickEnabled(false);
+		return;
+	}
+
 	PlayerCharacter->OnCharacterMovementUpdated.AddDynamic(this, &ThisClass::HandleCharacterMovementUpdated);
 	SaveLastValidatedServerState(PlayerCharacter->GetActorLocation(), PlayerCharacter->GetVelocity(), PlayerCharacter->GetActorRotation());
 
@@ -60,6 +68,7 @@ void UUEPlayerMovementSyncComponent::EndPlay(const EEndPlayReason::Type EndPlayR
 	// Joins the worker thread. Do it before the callbacks below can dangle.
 	FieldConnection.reset();
 	DestroyWildActors();
+	DestroyRemotePlayers();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -193,10 +202,18 @@ void UUEPlayerMovementSyncComponent::HandleFieldSnapshot(const FHHVFieldSnapshot
 
 	// 새로 시야에 들어온 야생 포켓몬을 스폰한다. 다른 플레이어(Species==0)는
 	// 아직 다루지 않는다.
-	int32 Made = 0, SkippedSpecies = 0, SkippedExisting = 0, SkippedNoClass = 0, FailedSpawn = 0;
+	int32 Made = 0, SkippedExisting = 0, SkippedNoClass = 0, FailedSpawn = 0;
+	int32 SpawnedPlayers = 0;
 	for (const FHHVFieldEntity& Entity : Snapshot.Spawned)
 	{
-		if (Entity.Species == 0) { ++SkippedSpecies; continue; }
+		if (Entity.Species == 0)
+		{
+			// 다른 플레이어다. 서버는 자기 자신을 빼고 보내므로 여기 내가 섞일
+			// 일은 없다 (World::updateVisibility 가 self 를 건너뛴다).
+			++SpawnedPlayers;
+			SpawnRemotePlayer(Entity, MakeLocation(Entity.X, Entity.Y));
+			continue;
+		}
 		if (WildActors.Contains(Entity.EntityId)) { ++SkippedExisting; continue; }
 		if (!WildPokemonClass) { ++SkippedNoClass; continue; }
 
@@ -249,6 +266,16 @@ void UUEPlayerMovementSyncComponent::HandleFieldSnapshot(const FHHVFieldSnapshot
 		const TWeakObjectPtr<AUEPokemonCharacter>* Found = WildActors.Find(Entity.EntityId);
 		if (!Found || !Found->IsValid())
 		{
+			// 야생이 아니면 다른 플레이어다. moved 에는 종족이 실리지 않으므로
+			// 어느 쪽 표에 있는지로만 구분한다.
+			if (const TWeakObjectPtr<AUEPlayerCharacter>* Remote = RemotePlayers.Find(Entity.EntityId))
+			{
+				if (Remote->IsValid())
+				{
+					Remote->Get()->ApplyRemoteMoveTarget(MakeLocation(Entity.X, Entity.Y),
+						FRotator(0.0f, Entity.Facing, 0.0f), /*bTeleported=*/false);
+				}
+			}
 			continue;
 		}
 		// ponytail: 좌표를 즉시 박는다. 20Hz 라 조금 끊겨 보이면 목표를 두고
@@ -272,17 +299,78 @@ void UUEPlayerMovementSyncComponent::HandleFieldSnapshot(const FHHVFieldSnapshot
 			{
 				WildActor->Destroy();
 			}
+			continue;
+		}
+
+		TWeakObjectPtr<AUEPlayerCharacter> RemotePlayer;
+		if (RemotePlayers.RemoveAndCopyValue(EntityId, RemotePlayer))
+		{
+			++Removed;
+			if (RemotePlayer.IsValid())
+			{
+				RemotePlayer->Destroy();
+			}
 		}
 	}
 
 	if (Snapshot.Spawned.Num() > 0 || Snapshot.Despawned.Num() > 0)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("[WILD] in.spawned=%d made=%d skip(sp=%d exist=%d noclass=%d fail=%d) | despawned=%d removed=%d | live=%d class=%s"),
-			Snapshot.Spawned.Num(), Made, SkippedSpecies, SkippedExisting, SkippedNoClass, FailedSpawn,
-			Snapshot.Despawned.Num(), Removed, WildActors.Num(),
+			TEXT("[FIELD] in.spawned=%d wild.made=%d player.made=%d skip(exist=%d noclass=%d fail=%d)")
+			TEXT(" | despawned=%d removed=%d | live wild=%d player=%d class=%s"),
+			Snapshot.Spawned.Num(), Made, SpawnedPlayers, SkippedExisting, SkippedNoClass, FailedSpawn,
+			Snapshot.Despawned.Num(), Removed, WildActors.Num(), RemotePlayers.Num(),
 			WildPokemonClass ? TEXT("ok") : TEXT("NULL"));
 	}
+}
+
+void UUEPlayerMovementSyncComponent::SpawnRemotePlayer(const FHHVFieldEntity& Entity,
+	const FVector& SpawnLocation)
+{
+	if (RemotePlayers.Contains(Entity.EntityId))
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter();
+	if (!World || !PlayerCharacter)
+	{
+		return;
+	}
+
+	// 로컬 플레이어와 **같은 클래스**를 그대로 쓴다. 메시도 커마도 이미 맞춰져
+	// 있으니 원격 전용 BP 를 따로 만들고 동기화할 이유가 없다.
+	const FTransform SpawnTransform(FRotator(0.0f, Entity.Facing, 0.0f), SpawnLocation);
+	AUEPlayerCharacter* Proxy = World->SpawnActorDeferred<AUEPlayerCharacter>(
+		PlayerCharacter->GetClass(), SpawnTransform, nullptr, nullptr,
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!Proxy)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[FIELD] remote player %llu spawn failed"), Entity.EntityId);
+		return;
+	}
+
+	// FinishSpawning 전에 표시해야 한다. BeginPlay 가 지나면 이 복제본이
+	// 자기 필드 연결을 열고 동행 포켓몬까지 부른 뒤다.
+	Proxy->MakeRemoteProxy();
+	Proxy->FinishSpawning(SpawnTransform);
+
+	RemotePlayers.Add(Entity.EntityId, Proxy);
+	UE_LOG(LogTemp, Warning, TEXT("[FIELD] remote player spawn id=%llu name=%s at (%.0f, %.0f)"),
+		Entity.EntityId, *Entity.Nickname, SpawnLocation.X, SpawnLocation.Y);
+}
+
+void UUEPlayerMovementSyncComponent::DestroyRemotePlayers()
+{
+	for (TPair<uint64, TWeakObjectPtr<AUEPlayerCharacter>>& Pair : RemotePlayers)
+	{
+		if (Pair.Value.IsValid())
+		{
+			Pair.Value->Destroy();
+		}
+	}
+	RemotePlayers.Empty();
 }
 
 void UUEPlayerMovementSyncComponent::DestroyWildActors()
