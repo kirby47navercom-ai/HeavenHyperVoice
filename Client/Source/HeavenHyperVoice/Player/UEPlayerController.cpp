@@ -362,7 +362,7 @@ void AUEPlayerController::HandleRunStarted(const FInputActionValue& Value)
 {
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
-		PlayerCharacter->GetCharacterMovement()->MaxWalkSpeed = MaxWalkSpeed*RunCross;
+		PlayerCharacter->SetRunning(true);
 	}
 }
 
@@ -370,7 +370,7 @@ void AUEPlayerController::HandleRunStopped(const FInputActionValue& Value)
 {
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
-		PlayerCharacter->GetCharacterMovement()->MaxWalkSpeed = MaxWalkSpeed;
+		PlayerCharacter->SetRunning(false);
 	}
 }
 

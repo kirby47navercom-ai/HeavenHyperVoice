@@ -66,30 +66,15 @@ void AUEHHVCustomizationPreviewActor::ApplyEyeMaterial(const FUEHHVCustomization
 		return;
 	}
 
-	UTexture* CompositeTexture = LoadEyeCompositeTexture(
-		Option,
-		Appearance.EyeColor,
-		Catalog ? Catalog->EyeColors : TArray<FLinearColor>());
 	const int32 MaterialCount = HeadMesh->GetNumMaterials();
 	for (int32 Index = 0; Index < MaterialCount; ++Index)
 	{
 		if (IsEyeIrisMaterialSlot(HeadMesh, Index))
 		{
+			// 각 눈 프리셋의 원본 머티리얼에는 흰자, 홍채, 동공 정보가 이미 들어 있다.
+			// 별도 합성 텍스처를 덮으면 서로 다른 프리셋이 같은 검은 눈으로 보이므로 원본을 그대로 쓴다.
 			EnsurePreviewSkeletalMaterialUsage(Option.Material);
-			UMaterialInstanceDynamic* EyeMaterial = HeadMesh->CreateDynamicMaterialInstance(Index, Option.Material);
-			if (!EyeMaterial)
-			{
-				HeadMesh->SetMaterial(Index, Option.Material);
-				continue;
-			}
-			if (CompositeTexture)
-			{
-				// 흰자, 홍채, 동공, 하이라이트가 합쳐진 눈 텍스처만 갈아 끼운다.
-				// 합성 텍스처가 있으면 흰자까지 보존된 원본 텍스처를 그대로 쓴다.
-				ApplyPreviewEyeTextureParameters(EyeMaterial, CompositeTexture);
-				continue;
-			}
-			ApplyPreviewEyeColorParameters(EyeMaterial, Appearance.EyeColor);
+			HeadMesh->SetMaterial(Index, Option.Material);
 		}
 	}
 }

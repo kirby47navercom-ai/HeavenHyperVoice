@@ -1,6 +1,7 @@
 #include "UEHHVCustomizationPreviewActor.h"
 
 #include "../Data/UEHHVCustomizationTypes.h"
+#include "../../../Animation/UEFollowerAnimInstance.h"
 
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
@@ -180,18 +181,25 @@ void AUEHHVCustomizationPreviewActor::RefreshFollowerPose()
 		}
 
 		USkeletalMesh* FollowerMesh = Follower->GetSkeletalMeshAsset();
-		const USkeleton* LeaderSkeleton = BaseBodyMesh && BaseBodyMesh->GetSkeletalMeshAsset()
-			? BaseBodyMesh->GetSkeletalMeshAsset()->GetSkeleton()
-			: nullptr;
-		const USkeleton* FollowerSkeleton = FollowerMesh ? FollowerMesh->GetSkeleton() : nullptr;
-		if (FollowerMesh && LeaderSkeleton && FollowerSkeleton == LeaderSkeleton)
+		Follower->SetLeaderPoseComponent(nullptr);
+		if (FollowerMesh && BaseBodyMesh && BaseBodyMesh->GetSkeletalMeshAsset())
 		{
-			// 프리뷰에서는 실제로 호환되는 스켈레톤만 리더 포즈를 공유한다.
-			Follower->SetLeaderPoseComponent(BaseBodyMesh, true, true);
+			// 원본 Head/Hair AnimBP와 같은 방식으로 본 이름을 기준으로 몸 포즈를 복사한다.
+			// 서로 다른 USkeleton 자산인 파츠에도 안전하게 적용된다.
+			Follower->SetEnableAnimation(true);
+			Follower->SetAnimationMode(EAnimationMode::AnimationBlueprint, true);
+			Follower->SetAnimInstanceClass(UUEFollowerAnimInstance::StaticClass());
+			Follower->ReinitializeAnimNodes();
+			if (UUEFollowerAnimInstance* FollowerInstance = Cast<UUEFollowerAnimInstance>(Follower->GetAnimInstance()))
+			{
+				FollowerInstance->SetCopyCurves(Follower == HeadMesh);
+				FollowerInstance->SetUseTargetEyeReferencePose(Follower == HeadMesh);
+			}
 		}
 		else
 		{
-			Follower->SetLeaderPoseComponent(nullptr);
+			Follower->SetAnimInstanceClass(nullptr);
+			Follower->SetEnableAnimation(false);
 		}
 		Follower->SetRelativeTransform(FTransform::Identity);
 		Follower->SetVisibility(FollowerMesh != nullptr, true);

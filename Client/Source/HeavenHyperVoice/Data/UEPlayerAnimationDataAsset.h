@@ -68,6 +68,26 @@ public:
 	// 성별별 구르기 애니메이션이다. 몽타주가 따로 없을 때 블루프린트에서 시퀀스로 쓸 수 있다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
 	TObjectPtr<UAnimSequence> RollSequence = nullptr;
+
+	// 성별별 착지 애니메이션이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> LandingSequence = nullptr;
+
+	// 성별별 들기 상태 애니메이션이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> HoldingSequence = nullptr;
+
+	// 성별별 던지기 애니메이션이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> ThrowSequence = nullptr;
+
+	// 성별별 피격 애니메이션이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> DamageSequence = nullptr;
+
+	// 성별별 사망 애니메이션이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> DeathSequence = nullptr;
 };
 
 UCLASS(BlueprintType)
@@ -95,6 +115,21 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
 	TObjectPtr<UAnimSequence> RollSequence = nullptr;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> LandingSequence = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> HoldingSequence = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> ThrowSequence = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> DamageSequence = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Sequence")
+	TObjectPtr<UAnimSequence> DeathSequence = nullptr;
+
 	// 체형 Type 1에서 사용할 플레이어 애니메이션 묶음이다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Gender")
 	FUEPlayerGenderAnimationSet TypeAAnimations;
@@ -115,6 +150,9 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Montage")
 	TObjectPtr<UAnimMontage> DeathMontage = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Montage")
+	TObjectPtr<UAnimMontage> ThrowMontage = nullptr;
 
 	// 위 명시 슬롯으로 부족한 몽타주는 태그 배열에 추가한다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Montage")

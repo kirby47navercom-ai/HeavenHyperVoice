@@ -123,6 +123,9 @@ private:
 	void PrepareQAHeadScreenshot();
 	void CaptureQAHeadScreenshot();
 	void ExitAfterQAScreenshot();
+	void BeginQABatch();
+	void PrepareNextQABatchCase();
+	void CaptureCurrentQABatchCase();
 	void ConfigurePreviewLighting();
 	void FramePreviewCamera();
 	void PreparePreviewStage();
@@ -151,4 +154,8 @@ private:
 	FTimerHandle QAPrepareHeadTimer;
 	FTimerHandle QAHeadScreenshotTimer;
 	FTimerHandle QAExitTimer;
+	FTimerHandle QABatchTimer;
+	int32 QABatchGenderIndex = 0;
+	int32 QABatchPhase = 0;
+	int32 QABatchCaseIndex = 0;
 };

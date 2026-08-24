@@ -5,6 +5,7 @@
 #include "../Pokemon/AI/Own/PokemonFSM.h"
 #include "../Pokemon/Server/UEPokemonServerSubsystem.h"
 #include "GameFramework/Character.h"
+#include "GameplayTagContainer.h"
 #include "TimerManager.h"
 #include "UEPlayerCharacter.generated.h"
 
@@ -28,6 +29,8 @@ public:
 	AUEPlayerCharacter();
 
 	virtual void Tick(float DeltaSeconds) override;
+	virtual void Jump() override;
+	virtual void Landed(const FHitResult& Hit) override;
 
 	UFUNCTION(BlueprintPure, Category = "Character|State")
 	bool IsRunning() const { return bIsRunning; }
@@ -37,6 +40,16 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Character|State")
 	bool IsRolling() const { return bIsRolling; }
+
+	UFUNCTION(BlueprintPure, Category = "Character|State")
+	FGameplayTag GetCharacterStateTag() const { return CharacterStateTag; }
+
+	// 들기, 던지기, 피격, 사망처럼 이동만으로 판단할 수 없는 상태를 외부 시스템에서 지정한다.
+	UFUNCTION(BlueprintCallable, Category = "Character|State")
+	void SetCharacterActionState(const FGameplayTag& NewStateTag);
+
+	UFUNCTION(BlueprintCallable, Category = "Character|State")
+	void ClearCharacterActionState();
 
 	UFUNCTION(BlueprintPure, Category = "Character|State")
 	FVector2D GetMovementInput() const { return MovementInput; }
@@ -168,6 +181,9 @@ private:
 	void RequestDespawnPokemonCompanion();
 	void FinishPokemonDespawn();
 	void RefreshMovementSpeed();
+	void RefreshCharacterState();
+	void FinishRoll();
+	void FinishLanding();
 	void RegisterPokemonServerRoster();
 	FUEPokemonServerSpawnResponse RequestPokemonServerSpawn();
 	void ReleasePokemonServerSpawn(const FUEPokemonServerSpawnResponse& SpawnResponse);
@@ -195,10 +211,13 @@ private:
 	void HideHHVBaseBodyOutfitSections(USkeletalMeshComponent* Component) const;
 	void HideHHVEquipmentSkinSections(USkeletalMeshComponent* Component) const;
 	void HideUnsupportedHHVAttachmentComponents() const;
-	void ApplyHHVScale(const FUEHHVAppearance& NewAppearance) const;
 	void UpdateHHVAnimation();
 	void PlayHHVAnimation(UAnimSequence* Sequence, bool bLoop);
 	void PlayHHVAnimationOnComponent(USkeletalMeshComponent* Component, UAnimSequence* Sequence, bool bLoop) const;
+	void ApplyHHVScale(const FUEHHVAppearance& NewAppearance) const;
+	void StartGameplayQAIfRequested();
+	void AdvanceGameplayQA();
+	void CaptureGameplayQAFrame();
 	
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Character|State", meta = (AllowPrivateAccess = "true"))
@@ -209,6 +228,18 @@ private:
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Character|State", meta = (AllowPrivateAccess = "true"))
 	bool bIsRolling = false;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Character|State", meta = (AllowPrivateAccess = "true"))
+	FGameplayTag CharacterStateTag;
+
+	UPROPERTY(Transient)
+	FGameplayTag ActionStateTag;
+
+	UPROPERTY(EditAnywhere, Category = "Character|State", meta = (ClampMin = "0.0"))
+	float RollStateDuration = 0.6f;
+
+	UPROPERTY(EditAnywhere, Category = "Character|State", meta = (ClampMin = "0.0"))
+	float LandingStateDuration = 0.15f;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Customization", meta = (AllowPrivateAccess = "true"))
 	EUEHHVGender CurrentCustomizationGender = EUEHHVGender::TypeA;
@@ -224,7 +255,12 @@ private:
 
 	HHV::PokemonAI::PokemonFSM PokemonLifecycleBrain;
 	FTimerHandle PokemonDespawnTimerHandle;
+	FTimerHandle RollStateTimerHandle;
+	FTimerHandle LandingStateTimerHandle;
+	FTimerHandle GameplayQATimerHandle;
+	int32 GameplayQAPhase = 0;
 	bool bPokemonDespawnInProgress = false;
+	bool bLandingStateActive = false;
 public:
 	//행동관련
 	void Roll();

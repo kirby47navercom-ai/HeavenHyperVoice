@@ -1,6 +1,7 @@
 #include "UEHHVCustomizationPreviewActor.h"
 
 #include "../Data/UEHHVCustomizationTypes.h"
+#include "../../../Animation/UEFollowerAnimInstance.h"
 
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
@@ -45,9 +46,11 @@ AUEHHVCustomizationPreviewActor::AUEHHVCustomizationPreviewActor()
 	CharacterRoot->SetMobility(EComponentMobility::Movable);
 
 	BaseBodyMesh = CreateSkeletalPart(this, CharacterRoot, TEXT("BaseBody"));
-	BodyEquipmentMesh = CreateSkeletalPart(this, CharacterRoot, TEXT("BodyEquipment"));
-	HeadMesh = CreateSkeletalPart(this, CharacterRoot, TEXT("Head"));
-	HairMesh = CreateSkeletalPart(this, CharacterRoot, TEXT("Hair"));
+	// 원본 Player BP처럼 의상, 머리, 머리카락은 몸 메시의 자식으로 둔다.
+	// 그래야 CopyPoseFromMesh가 부착 부모를 정확히 찾는다.
+	BodyEquipmentMesh = CreateSkeletalPart(this, BaseBodyMesh, TEXT("BodyEquipment"));
+	HeadMesh = CreateSkeletalPart(this, BaseBodyMesh, TEXT("Head"));
+	HairMesh = CreateSkeletalPart(this, BaseBodyMesh, TEXT("Hair"));
 
 	PreviewCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("PreviewCamera"));
 	PreviewCamera->SetupAttachment(SceneRoot);
@@ -136,7 +139,11 @@ void AUEHHVCustomizationPreviewActor::BeginPlay()
 	RefreshMeshes();
 	PreparePreviewStage();
 
-	if (FParse::Param(FCommandLine::Get(), TEXT("HHVQAScreenshot")))
+	if (FParse::Param(FCommandLine::Get(), TEXT("HHVQABatch")))
+	{
+		GetWorldTimerManager().SetTimer(QAScreenshotTimer, this, &ThisClass::BeginQABatch, 8.0f, false);
+	}
+	else if (FParse::Param(FCommandLine::Get(), TEXT("HHVQAScreenshot")))
 	{
 		GetWorldTimerManager().SetTimer(QAScreenshotTimer, this, &ThisClass::CaptureQAScreenshot, 8.0f, false);
 	}
@@ -302,19 +309,23 @@ void AUEHHVCustomizationPreviewActor::RefreshMeshes()
 	const bool bSameOutfitAsBase =
 		EquipmentMesh == BaseMesh || GetPathNameSafe(EquipmentMesh).Equals(GetPathNameSafe(BaseMesh));
 	const bool bUsesSeparateOutfit = EquipmentMesh && !bSameOutfitAsBase && Appearance.BodyEquipmentIndex > 0;
-	// 의상 추출 메시는 피부와 하의까지 포함한 완성 바디이므로 하나의 주 메시에 넣는다.
-	// 파츠별 스켈레톤으로 나누면 미리보기에서도 몸과 옷 포즈가 어긋난다.
-	BaseBodyMesh->SetSkeletalMesh(bUsesSeparateOutfit ? EquipmentMesh : BaseMesh);
-	BaseBodyMesh->SetVisibility(true, false);
-	BaseBodyMesh->SetHiddenInGame(false, false);
+	// 선택 의상은 피부와 하의를 포함한 원본 전신 메시다.
+	// 베이스 몸은 포즈 기준으로만 유지하고 화면에는 둘 중 하나만 표시한다.
+	BaseBodyMesh->SetSkeletalMesh(BaseMesh);
+	BaseBodyMesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	BaseBodyMesh->SetVisibility(!bUsesSeparateOutfit, false);
+	BaseBodyMesh->SetHiddenInGame(bUsesSeparateOutfit, false);
 	ResetComponentMaterials(BaseBodyMesh);
 	ApplyMeshLocalMaterials(BaseBodyMesh);
-	// 원본 의상/피부 텍스처를 그대로 써야 하므로 커마 프리뷰에서는 대체 머티리얼을 덮지 않는다.
 	HideFaceCoverSections(BaseBodyMesh);
+
 	BodyEquipmentMesh->SetLeaderPoseComponent(nullptr);
-	BodyEquipmentMesh->SetSkeletalMesh(nullptr);
-	BodyEquipmentMesh->SetVisibility(false, true);
-	BodyEquipmentMesh->SetHiddenInGame(true, true);
+	BodyEquipmentMesh->SetSkeletalMesh(bUsesSeparateOutfit ? EquipmentMesh : nullptr);
+	BodyEquipmentMesh->SetVisibility(bUsesSeparateOutfit, true);
+	BodyEquipmentMesh->SetHiddenInGame(!bUsesSeparateOutfit, true);
+	ResetComponentMaterials(BodyEquipmentMesh);
+	ApplyMeshLocalMaterials(BodyEquipmentMesh);
+	HideFaceCoverSections(BodyEquipmentMesh);
 	HeadMesh->SetSkeletalMesh(Head.LoadMesh(Appearance.Gender));
 	ResetComponentMaterials(HeadMesh);
 	ApplyMeshLocalMaterials(HeadMesh);
@@ -325,7 +336,7 @@ void AUEHHVCustomizationPreviewActor::RefreshMeshes()
 
 	// 메시 교체 후에도 커마 프리뷰는 정지 포즈를 유지한다.
 	// 선택할 때마다 기본 idle 애니메이션이 재생되면 캐릭터가 위아래로 흔들려 보인다.
-	for (USkeletalMeshComponent* PreviewPart : {BaseBodyMesh.Get(), BodyEquipmentMesh.Get(), HeadMesh.Get(), HairMesh.Get()})
+	for (USkeletalMeshComponent* PreviewPart : {BaseBodyMesh.Get()})
 	{
 		if (PreviewPart)
 		{

@@ -14,6 +14,7 @@ public class HeavenHyperVoice : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"AnimGraphRuntime",
 			"InputCore",
 			"EnhancedInput",
 			"AssetRegistry",

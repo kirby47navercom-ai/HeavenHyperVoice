@@ -199,4 +199,130 @@ void AUEHHVCustomizationPreviewActor::ExitAfterQAScreenshot()
 	FPlatformMisc::RequestExit(false);
 }
 
+void AUEHHVCustomizationPreviewActor::BeginQABatch()
+{
+	// 에디터 화면을 건드리지 않는 숨김 실행에서 모든 선택지를 연속 검수한다.
+	UWidgetLayoutLibrary::RemoveAllWidgets(GetWorld());
+	for (TObjectIterator<UPrimitiveComponent> It; It; ++It)
+	{
+		UPrimitiveComponent* Component = *It;
+		if (!Component || Component->GetWorld() != GetWorld())
+		{
+			continue;
+		}
+		if (Component == BaseBodyMesh || Component == BodyEquipmentMesh || Component == HeadMesh || Component == HairMesh)
+		{
+			continue;
+		}
+		Component->SetHiddenInGame(true, true);
+		Component->SetVisibility(false, true);
+	}
+
+	QABatchGenderIndex = 0;
+	QABatchPhase = 0;
+	QABatchCaseIndex = PreviewFirstVisibleOutfitIndex;
+	PrepareNextQABatchCase();
+}
+
+void AUEHHVCustomizationPreviewActor::PrepareNextQABatchCase()
+{
+	if (QABatchGenderIndex >= 2)
+	{
+		GetWorldTimerManager().SetTimer(QAExitTimer, this, &ThisClass::ExitAfterQAScreenshot, 1.5f, false);
+		return;
+	}
+
+	Appearance.Gender = QABatchGenderIndex == 0 ? EUEHHVGender::TypeA : EUEHHVGender::TypeB;
+	Appearance.BodyIndex = Appearance.Gender == EUEHHVGender::TypeA ? 1 : 2;
+	Appearance.HeadIndex = 0;
+
+	if (QABatchPhase == 0)
+	{
+		const int32 LastOutfitIndex = FMath::Min(
+			GetOptionCount(EUEHHVCustomizationCategory::BodyEquipment) - 1,
+			PreviewMaxVisibleOutfits);
+		if (QABatchCaseIndex > LastOutfitIndex)
+		{
+			QABatchPhase = 1;
+			QABatchCaseIndex = 0;
+			PrepareNextQABatchCase();
+			return;
+		}
+		Appearance.BodyEquipmentIndex = QABatchCaseIndex;
+		Appearance.EyeIndex = 0;
+		Appearance.HairIndex = 0;
+	}
+	else if (QABatchPhase == 1)
+	{
+		if (QABatchCaseIndex >= GetOptionCount(EUEHHVCustomizationCategory::Eyes))
+		{
+			QABatchPhase = 2;
+			QABatchCaseIndex = 0;
+			PrepareNextQABatchCase();
+			return;
+		}
+		Appearance.BodyEquipmentIndex = PreviewFirstVisibleOutfitIndex;
+		Appearance.EyeIndex = QABatchCaseIndex;
+		Appearance.HairIndex = 0;
+	}
+	else
+	{
+		if (QABatchCaseIndex >= GetOptionCount(EUEHHVCustomizationCategory::Hair))
+		{
+			++QABatchGenderIndex;
+			QABatchPhase = 0;
+			QABatchCaseIndex = PreviewFirstVisibleOutfitIndex;
+			PrepareNextQABatchCase();
+			return;
+		}
+		Appearance.BodyEquipmentIndex = PreviewFirstVisibleOutfitIndex;
+		Appearance.EyeIndex = 0;
+		Appearance.HairIndex = QABatchCaseIndex;
+	}
+
+	RefreshMeshes();
+	if (QABatchPhase == 0)
+	{
+		PreviewYawDegrees = 0.0f;
+		PreviewZoom = 1.0f;
+		PreviewPanPixels = FVector2D::ZeroVector;
+		CharacterRoot->SetRelativeRotation(FRotator::ZeroRotator);
+		FramePreviewCamera();
+	}
+	else
+	{
+		const FVector HeadCenter = HeadMesh
+			? SceneRoot->GetComponentTransform().InverseTransformPosition(HeadMesh->Bounds.Origin)
+			: FVector(0.0f, 0.0f, 150.0f);
+		PreviewCamera->SetRelativeLocation(FVector(0.0f, 95.0f, HeadCenter.Z + 1.0f));
+		PreviewCamera->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
+		PreviewCamera->FieldOfView = 32.0f;
+	}
+
+	GetWorldTimerManager().SetTimer(QABatchTimer, this, &ThisClass::CaptureCurrentQABatchCase, 0.45f, false);
+}
+
+void AUEHHVCustomizationPreviewActor::CaptureCurrentQABatchCase()
+{
+	const TCHAR* GenderName = Appearance.Gender == EUEHHVGender::TypeA ? TEXT("TypeA") : TEXT("TypeB");
+	FString FileName;
+	if (QABatchPhase == 0)
+	{
+		FileName = FString::Printf(TEXT("HHV_%s_Outfit%02d.png"), GenderName, Appearance.BodyEquipmentIndex);
+	}
+	else if (QABatchPhase == 1)
+	{
+		FileName = FString::Printf(TEXT("HHV_%s_Eye%02d.png"), GenderName, Appearance.EyeIndex);
+	}
+	else
+	{
+		FileName = FString::Printf(TEXT("HHV_%s_Hair%02d.png"), GenderName, Appearance.HairIndex);
+	}
+
+	const FString ScreenshotPath = FPaths::ProjectSavedDir() / TEXT("Screenshots/Customization/Batch") / FileName;
+	FScreenshotRequest::RequestScreenshot(ScreenshotPath, true, false);
+	++QABatchCaseIndex;
+	GetWorldTimerManager().SetTimer(QABatchTimer, this, &ThisClass::PrepareNextQABatchCase, 0.45f, false);
+}
+
 
