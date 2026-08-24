@@ -6,6 +6,7 @@
 #include "../UEGameplayTags.h"
 
 #include "Animation/AnimMontage.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 void UUEAnimInstance::NativeInitializeAnimation()
 {
@@ -14,27 +15,21 @@ void UUEAnimInstance::NativeInitializeAnimation()
 	SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
 }
 
-float UUEAnimInstance::PlayRollMontage()
+float UUEAnimInstance::PlayRollMontage(UAnimSequenceBase* RollAnimation)
 {
-	if (!OwnerCharacter)
-	{
-		OwnerCharacter = Cast<AUEPlayerCharacter>(TryGetPawnOwner());
-	}
-	if (!OwnerCharacter)
+	if (!RollAnimation)
 	{
 		return 0.0f;
 	}
 
-	const TCHAR* MontagePath = OwnerCharacter->GetCustomizationGender() == EUEHHVGender::TypeB
-		? TEXT("/Game/Character/Animation/Male/AM_Player_Male_Roll.AM_Player_Male_Roll")
-		: TEXT("/Game/Character/Animation/Female/AM_Player_Female_Roll.AM_Player_Female_Roll");
-	UAnimMontage* RollMontage = LoadObject<UAnimMontage>(nullptr, MontagePath);
-	if (!RollMontage)
-	{
-		return 0.0f;
-	}
-
-	return Montage_Play(RollMontage, 1.0f);
+	UAnimMontage* RollMontage = PlaySlotAnimationAsDynamicMontage(
+		RollAnimation,
+		TEXT("FullBodySlot"),
+		0.1f,
+		0.1f,
+		1.0f,
+		1);
+	return RollMontage ? RollMontage->GetPlayLength() : 0.0f;
 }
 
 void UUEAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
@@ -71,6 +66,9 @@ void UUEAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 	const FVector Velocity = OwnerCharacter->GetVelocity();
 	const FVector HorizontalVelocity(Velocity.X, Velocity.Y, 0.0f);
+	const UCharacterMovementComponent* MovementComponent = OwnerCharacter->GetCharacterMovement();
+	const bool bMovementIsFalling = MovementComponent && MovementComponent->IsFalling();
+	const bool bWasMovementFalling = bIsJumping || bIsFalling;
 	GroundSpeed = HorizontalVelocity.Size();
 	MovementInput = OwnerCharacter->GetMovementInput();
 	CharacterStateTag = OwnerCharacter->GetCharacterStateTag();
@@ -79,9 +77,11 @@ void UUEAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	bIsWalking = CharacterStateTag == UEGameplayTags::State_Character_Walk;
 	bIsRunning = CharacterStateTag == UEGameplayTags::State_Character_Run;
 	bIsRolling = CharacterStateTag == UEGameplayTags::State_Character_Roll;
-	bIsJumping = CharacterStateTag == UEGameplayTags::State_Character_Jump;
-	bIsFalling = CharacterStateTag == UEGameplayTags::State_Character_Fall;
-	bIsLanding = CharacterStateTag == UEGameplayTags::State_Character_Landing;
+	// 점프 상태는 태그 갱신 시점이 아니라 실제 CharacterMovement 공중 상태를 기준으로 판정한다.
+	bIsJumping = bMovementIsFalling && Velocity.Z > 0.0f;
+	bIsFalling = bMovementIsFalling && Velocity.Z <= 0.0f;
+	bIsLanding = !bMovementIsFalling &&
+		(bWasMovementFalling || CharacterStateTag == UEGameplayTags::State_Character_Landing);
 	bIsHolding = CharacterStateTag == UEGameplayTags::State_Character_Holding;
 	bIsThrowing = CharacterStateTag == UEGameplayTags::State_Character_Throw;
 	bIsTakingDamage = CharacterStateTag == UEGameplayTags::State_Character_Damage;

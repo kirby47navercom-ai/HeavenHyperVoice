@@ -8,6 +8,7 @@
 #include "UEAnimInstance.generated.h"
 
 class AUEPlayerCharacter;
+class UAnimSequenceBase;
 
 /**
  * 플레이어 애니메이션 블루프린트가 읽는 공통 부모 클래스다.
@@ -22,8 +23,8 @@ public:
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
-	// 구르기 몽타주 에셋을 AnimGraph의 FullBodySlot에서 1회 재생한다.
-	float PlayRollMontage();
+	// 데이터 에셋의 구르기 시퀀스를 FullBodySlot용 동적 몽타주로 1회 재생한다.
+	float PlayRollMontage(UAnimSequenceBase* RollAnimation);
 
 protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Character")

@@ -215,6 +215,7 @@ private:
 	void RefreshCharacterState();
 	void FinishRoll();
 	void FinishRollMovement();
+	void CancelLanding();
 	void FinishLanding();
 	void RegisterPokemonServerRoster();
 	FUEPokemonServerSpawnResponse RequestPokemonServerSpawn();

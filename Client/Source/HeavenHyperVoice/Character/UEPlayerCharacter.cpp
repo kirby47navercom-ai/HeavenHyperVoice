@@ -616,6 +616,7 @@ void AUEPlayerCharacter::Jump()
 		return;
 	}
 
+	CancelLanding();
 	Super::Jump();
 	CharacterStateTag = UEGameplayTags::State_Character_Jump;
 }
@@ -633,6 +634,14 @@ void AUEPlayerCharacter::Landed(const FHitResult& Hit)
 	// 구르기용 전방 발사가 바닥에 닿을 때 별도 착지 상태로 덮어쓰지 않는다.
 	if (bIsRolling)
 	{
+		return;
+	}
+
+	// 이동하거나 다른 행동 중이면 착지 모션을 거치지 않고 현재 상태로 바로 이어간다.
+	if (!MovementInput.IsNearlyZero() || ActionStateTag.IsValid())
+	{
+		CancelLanding();
+		RefreshCharacterState();
 		return;
 	}
 
@@ -680,6 +689,7 @@ void AUEPlayerCharacter::SetCharacterActionState(const FGameplayTag& NewStateTag
 		return;
 	}
 
+	CancelLanding();
 	ActionStateTag = NewStateTag;
 	RefreshCharacterState();
 }
@@ -751,8 +761,19 @@ void AUEPlayerCharacter::FinishRollMovement()
 
 void AUEPlayerCharacter::FinishLanding()
 {
-	bLandingStateActive = false;
+	CancelLanding();
 	RefreshCharacterState();
+}
+
+void AUEPlayerCharacter::CancelLanding()
+{
+	if (!bLandingStateActive)
+	{
+		return;
+	}
+
+	bLandingStateActive = false;
+	GetWorldTimerManager().ClearTimer(LandingStateTimerHandle);
 }
 
 void AUEPlayerCharacter::RefreshMovementSpeed()
@@ -766,6 +787,12 @@ void AUEPlayerCharacter::RefreshMovementSpeed()
 void AUEPlayerCharacter::SetMovementInput(const FVector2D& NewMovementInput)
 {
 	MovementInput = NewMovementInput.GetClampedToMaxSize(1.0f);
+	if (bLandingStateActive && !MovementInput.IsNearlyZero())
+	{
+		// 착지 중 이동 입력이 들어오면 착지 끝을 기다리지 않고 로코모션으로 보간한다.
+		CancelLanding();
+		RefreshCharacterState();
+	}
 }
 
 void AUEPlayerCharacter::TogglePokemonCompanion()
@@ -1541,15 +1568,23 @@ void AUEPlayerCharacter::Roll()
 		ActiveRollDirection = GetActorForwardVector().GetSafeNormal2D();
 	}
 
-	bLandingStateActive = false;
-	GetWorldTimerManager().ClearTimer(LandingStateTimerHandle);
+	CancelLanding();
 	bIsRolling = true;
 	bRollMovementActive = true;
 	RefreshCharacterState();
 	float RollMontageDuration = 0.0f;
 	if (UUEAnimInstance* PlayerAnimInstance = Cast<UUEAnimInstance>(GetMesh()->GetAnimInstance()))
 	{
-		RollMontageDuration = PlayerAnimInstance->PlayRollMontage();
+		UAnimSequence* RollAnimation = nullptr;
+		if (PlayerAnimationData)
+		{
+			const FUEPlayerGenderAnimationSet& AnimationSet =
+				PlayerAnimationData->GetAnimationSetForGender(CurrentCustomizationGender);
+			RollAnimation = AnimationSet.RollSequence
+				? AnimationSet.RollSequence.Get()
+				: PlayerAnimationData->RollSequence.Get();
+		}
+		RollMontageDuration = PlayerAnimInstance->PlayRollMontage(RollAnimation);
 	}
 
 	// 애니메이션의 루트 이동은 사용하지 않으므로 실제 캡슐을 입력 방향으로 이동시킨다.
