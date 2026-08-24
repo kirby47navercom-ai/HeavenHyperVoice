@@ -5,10 +5,36 @@
 #include "../Character/UEPlayerCharacter.h"
 #include "../UEGameplayTags.h"
 
+#include "Animation/AnimMontage.h"
+
 void UUEAnimInstance::NativeInitializeAnimation()
 {
 	Super::NativeInitializeAnimation();
 	OwnerCharacter = Cast<AUEPlayerCharacter>(TryGetPawnOwner());
+	SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
+}
+
+float UUEAnimInstance::PlayRollMontage()
+{
+	if (!OwnerCharacter)
+	{
+		OwnerCharacter = Cast<AUEPlayerCharacter>(TryGetPawnOwner());
+	}
+	if (!OwnerCharacter)
+	{
+		return 0.0f;
+	}
+
+	const TCHAR* MontagePath = OwnerCharacter->GetCustomizationGender() == EUEHHVGender::TypeB
+		? TEXT("/Game/Character/Animation/Male/AM_Player_Male_Roll.AM_Player_Male_Roll")
+		: TEXT("/Game/Character/Animation/Female/AM_Player_Female_Roll.AM_Player_Female_Roll");
+	UAnimMontage* RollMontage = LoadObject<UAnimMontage>(nullptr, MontagePath);
+	if (!RollMontage)
+	{
+		return 0.0f;
+	}
+
+	return Montage_Play(RollMontage, 1.0f);
 }
 
 void UUEAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
