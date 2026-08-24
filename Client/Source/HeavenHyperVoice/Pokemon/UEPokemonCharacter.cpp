@@ -5,6 +5,7 @@
 #include "../AI/UEAIController.h"
 #include "UEPokemonSpeciesData.h"
 #include "Server/UEPokemonServerComponent.h"
+#include "UEPokemonSpeciesCatalog.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -15,21 +16,36 @@
 
 namespace
 {
-	// 서버 PokemonSpecies.h 의 종족 순서(1~10)에 맞춘 대표 색. 실제 모델이
-	// 없을 때 큐브를 칠하는 용도라 정확할 필요는 없고 구분만 되면 된다.
+	// 서버 PokemonSpecies.h 의 종족 순서(1~20)에 맞춘 대표 색.
+	//
+	// 진짜 모델이 붙기 전까지 큐브를 칠하는 용도라 정확할 필요는 없고 구분만
+	// 되면 된다. Client/Content/Pokemon/Asset 의 폴더가 들어오면 이 팔레트는
+	// 쓰이지 않는다 (ApplyDebugAppearance 가 SkeletalMesh 있으면 바로 빠진다).
+	//
+	// 순서를 바꾸면 서버 id 와 어긋난다. PokemonSpecies.h 와 같이 고칠 것.
 	const TArray<FLinearColor>& SpeciesPalette()
 	{
 		static const TArray<FLinearColor> Palette = {
-			FLinearColor(1.00f, 0.85f, 0.10f),  // 1 피카츄   노랑
-			FLinearColor(0.20f, 0.70f, 0.30f),  // 2 이상해꽃 초록
-			FLinearColor(0.95f, 0.45f, 0.15f),  // 3 리자몽   주황
-			FLinearColor(0.20f, 0.50f, 0.90f),  // 4 거북왕   파랑
-			FLinearColor(0.55f, 0.55f, 0.60f),  // 5 딱구리   회색
-			FLinearColor(0.80f, 0.65f, 0.30f),  // 6 후딘     황갈
-			FLinearColor(0.15f, 0.25f, 0.45f),  // 7 잠만보   남색
-			FLinearColor(0.55f, 0.30f, 0.70f),  // 8 포푸니라 보라
-			FLinearColor(0.30f, 0.55f, 0.85f),  // 9 루카리오 청색
-			FLinearColor(0.60f, 0.80f, 0.35f),  // 10 귀뚤톡크 연두
+			FLinearColor(0.45f, 0.35f, 0.20f),  //  1 귀뚤뚜기   갈색
+			FLinearColor(0.25f, 0.20f, 0.30f),  //  2 기라티나   흑자
+			FLinearColor(0.20f, 0.35f, 0.75f),  //  3 꼬링크     남청
+			FLinearColor(0.35f, 0.65f, 0.85f),  //  4 꼬부기     하늘
+			FLinearColor(0.70f, 0.90f, 0.95f),  //  5 꽁어름     얼음
+			FLinearColor(0.30f, 0.55f, 0.95f),  //  6 디아루가   강청
+			FLinearColor(0.90f, 0.85f, 0.90f),  //  7 랄토스     흰보라
+			FLinearColor(0.35f, 0.70f, 0.35f),  //  8 모부기     초록
+			FLinearColor(0.55f, 0.55f, 0.60f),  //  9 벼리짱     회색
+			FLinearColor(0.95f, 0.50f, 0.20f),  // 10 불꽃숭이   주황
+			FLinearColor(0.95f, 0.92f, 0.75f),  // 11 아르세우스 미백
+			FLinearColor(0.75f, 0.60f, 0.35f),  // 12 이브이     갈황
+			FLinearColor(0.30f, 0.75f, 0.45f),  // 13 이상해씨   연두
+			FLinearColor(0.80f, 0.20f, 0.30f),  // 14 자망칼     적흑
+			FLinearColor(0.40f, 0.30f, 0.25f),  // 15 터검니     암갈
+			FLinearColor(0.95f, 0.35f, 0.15f),  // 16 파이리     붉은주황
+			FLinearColor(0.95f, 0.95f, 0.45f),  // 17 파치리스   노랑
+			FLinearColor(0.20f, 0.45f, 0.80f),  // 18 팽도리     짙은파랑
+			FLinearColor(0.85f, 0.55f, 0.85f),  // 19 펄기아     분홍보라
+			FLinearColor(1.00f, 0.85f, 0.10f),  // 20 피카츄     노랑
 		};
 		return Palette;
 	}
@@ -116,6 +132,21 @@ void AUEPokemonCharacter::SetWildSpecies(int32 SpeciesNumber)
 	// 종족 번호를 이름으로 박아 착색이 팔레트를 그대로 쓰게 한다.
 	ServerSpeciesId = FName(*FString::FromInt(SpeciesNumber));
 	RenderType = EUEPokemonRenderType::Wild;
+
+	// 카탈로그에 그 종족의 실제 모델이 있으면 그걸 쓴다. 아직 에셋이 없으면
+	// 카탈로그가 비어 있고, 예전처럼 종족 색 큐브로 뜬다.
+	if (const UUEPokemonSpeciesCatalog* Catalog = UUEPokemonSpeciesCatalog::Get())
+	{
+		if (UUEPokemonSpeciesData* Data = Catalog->Find(SpeciesNumber))
+		{
+			// SetPokemonSpeciesData 가 메시·캡슐·애니메이션까지 다 적용하고
+			// ServerSpeciesId 를 데이터 쪽 이름으로 덮는다. 착색은 그 안에서
+			// 알아서 빠진다 (SkeletalMesh 가 있으면 큐브를 안 건드린다).
+			SetPokemonSpeciesData(Data);
+			return;
+		}
+	}
+
 	ApplyDebugAppearance();
 }
 
@@ -210,8 +241,8 @@ void AUEPokemonCharacter::ApplyDebugAppearance()
 	FLinearColor Color;
 	if (Species.IsNone() && RenderType == EUEPokemonRenderType::Own)
 	{
-		// 플레이어 동행은 피카츄로 취급한다 (팔레트 1번, 노랑).
-		Color = ColorForSpecies(FName(TEXT("1")));
+		// 플레이어 동행은 피카츄로 취급한다 (PokemonSpecies.h 의 20번).
+		Color = ColorForSpecies(FName(TEXT("20")));
 	}
 	else
 	{

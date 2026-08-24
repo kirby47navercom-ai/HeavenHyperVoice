@@ -168,9 +168,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Companion")
 	TObjectPtr<UUEPokemonSpeciesData> PokemonCompanionSpeciesData = nullptr;
 
-	// 시작하자마자 동행 포켓몬(피카츄)을 소환한다. 입력 키로도 껐다 켤 수 있다.
+	// 시작하자마자 동행 포켓몬을 소환한다. 입력 키로도 껐다 켤 수 있다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Companion")
 	bool bAutoSpawnPokemonCompanion = true;
+
+	// PokemonCompanionSpeciesData 가 비어 있을 때 종족 카탈로그에서 끌어올 번호.
+	// Server/Protocol/PokemonSpecies.h 의 id 다 (20 = 피카츄). 0 이면 안 쓴다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Companion", meta = (ClampMin = "0"))
+	int32 DefaultCompanionSpeciesId = 20;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (ClampMin = "1"))
 	int32 ServerPlayerId = 1;

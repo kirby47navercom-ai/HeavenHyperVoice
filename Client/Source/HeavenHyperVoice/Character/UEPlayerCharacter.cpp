@@ -5,6 +5,7 @@
 #include "../Player/Server/UEPlayerMovementSyncComponent.h"
 #include "../Data/UEPlayerAnimationDataAsset.h"
 #include "../Pokemon/UEPokemonCharacter.h"
+#include "../Pokemon/UEPokemonSpeciesCatalog.h"
 #include "../Pokemon/UEPokemonSpeciesData.h"
 #include "../Pokemon/Server/UEPokemonServerComponent.h"
 #include "../Pokemon/Server/UEPokemonServerSubsystem.h"
@@ -1005,6 +1006,17 @@ void AUEPlayerCharacter::RegisterPokemonServerRoster()
 	}
 
 	ServerPlayerId = FMath::Max(ServerPlayerId, 1);
+
+	// 동행 종족 데이터가 비어 있으면 카탈로그에서 기본 종족을 끌어온다. 이게
+	// 없으면 동행은 종족 없는(SpeciesId=None) 큐브로 뜬다. 카탈로그가 아직
+	// 비어 있으면 그대로 예전 동작이다.
+	if (!PokemonCompanionSpeciesData && DefaultCompanionSpeciesId > 0)
+	{
+		if (const UUEPokemonSpeciesCatalog* Catalog = UUEPokemonSpeciesCatalog::Get())
+		{
+			PokemonCompanionSpeciesData = Catalog->Find(DefaultCompanionSpeciesId);
+		}
+	}
 
 	TArray<FUEPokemonServerOwnedPokemon> OwnedPokemons = ServerOwnedPokemons;
 	if (OwnedPokemons.IsEmpty())
