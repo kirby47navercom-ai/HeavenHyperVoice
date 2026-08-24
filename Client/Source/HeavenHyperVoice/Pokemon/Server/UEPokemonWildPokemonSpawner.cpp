@@ -13,7 +13,6 @@
 #include "HAL/PlatformTime.h"
 #include "Misc/Guid.h"
 #include "Misc/Paths.h"
-#include "UObject/ConstructorHelpers.h"
 
 namespace
 {
@@ -38,12 +37,6 @@ namespace
 AUEPokemonWildPokemonSpawner::AUEPokemonWildPokemonSpawner()
 {
 	PrimaryActorTick.bCanEverTick = false;
-
-	static ConstructorHelpers::FClassFinder<AUEPokemonCharacter> PokemonClassFinder(TEXT("/Game/Pokemon/BP_Pokemon"));
-	if (PokemonClassFinder.Succeeded())
-	{
-		WildPokemonClass = PokemonClassFinder.Class;
-	}
 }
 
 void AUEPokemonWildPokemonSpawner::BeginPlay()
@@ -105,9 +98,9 @@ int32 AUEPokemonWildPokemonSpawner::SpawnWildPokemons()
 	}
 	if (ValidSpeciesPool.IsEmpty())
 	{
-		if (const UUEPokemonSpeciesCatalog* SpeciesCatalog = UUEPokemonSpeciesCatalog::Get())
+		if (PokemonSpeciesCatalog)
 		{
-			for (UUEPokemonSpeciesData* SpeciesData : SpeciesCatalog->Species)
+			for (UUEPokemonSpeciesData* SpeciesData : PokemonSpeciesCatalog->Species)
 			{
 				if (IsValid(SpeciesData))
 				{
@@ -278,7 +271,7 @@ FString AUEPokemonWildPokemonSpawner::ResolveServerMapFilePath() const
 		return ServerMapFilePath;
 	}
 
-	if (!bTryLoadDefaultServerMap)
+	if (!bTryLoadDefaultServerMap || DefaultServerMapFileName.IsEmpty())
 	{
 		return FString();
 	}
@@ -286,6 +279,6 @@ FString AUEPokemonWildPokemonSpawner::ResolveServerMapFilePath() const
 	return FPaths::Combine(
 		FPaths::ProjectSavedDir(),
 		TEXT("ServerMaps"),
-		TEXT("PlayerTestLevel.hhvservermap")
+		DefaultServerMapFileName
 	);
 }

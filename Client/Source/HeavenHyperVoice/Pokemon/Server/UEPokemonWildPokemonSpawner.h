@@ -8,6 +8,7 @@
 #include "UEPokemonWildPokemonSpawner.generated.h"
 
 class AUEPokemonCharacter;
+class UUEPokemonSpeciesCatalog;
 class UUEPokemonSpeciesData;
 
 UCLASS(Blueprintable)
@@ -34,6 +35,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Wild")
 	TArray<TObjectPtr<UUEPokemonSpeciesData>> WildPokemonSpeciesPool;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Wild")
+	TObjectPtr<UUEPokemonSpeciesCatalog> PokemonSpeciesCatalog = nullptr;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Wild")
 	TSubclassOf<AUEPokemonCharacter> WildPokemonClass;
 
@@ -48,6 +52,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Wild")
 	FString ServerMapFilePath;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Wild")
+	FString DefaultServerMapFileName;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Wild", meta = (ClampMin = "1"))
 	int32 SpawnSearchAttempts = 256;

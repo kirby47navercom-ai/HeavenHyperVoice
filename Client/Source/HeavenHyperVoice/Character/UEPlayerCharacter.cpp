@@ -20,7 +20,6 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
-#include "Engine/Texture.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -28,12 +27,9 @@
 #include "Materials/MaterialInterface.h"
 #include "Misc/Paths.h"
 #include "Rendering/SkeletalMeshRenderData.h"
-#include "UObject/ConstructorHelpers.h"
 
 namespace
 {
-	const TCHAR* HHVMorphSafeMaterialFolder = TEXT("/Game/CharacterCustomization/HHV/Generated/MorphSafeMaterials");
-	const TCHAR* HHVEyeCompositeFolder = TEXT("/Game/CharacterCustomization/HHV/Generated/EyeComposite");
 	constexpr int32 HHVMaxVisibleOutfits = 14;
 	constexpr int32 HHVFirstVisibleOutfitIndex = 1;
 
@@ -101,113 +97,6 @@ namespace
 			}
 		}
 		return FString::Printf(TEXT("MI_MS_%s"), *AssetName);
-	}
-
-	int32 ExtractPlayerHHVEyeNumber(const FUEHHVCustomizationOption& Option)
-	{
-		const FString Identity = FString::Printf(
-			TEXT("%s %s %s"),
-			*Option.Id,
-			*Option.DisplayName,
-			*GetPathNameSafe(Option.Material));
-		const int32 EyeMarker = Identity.Find(TEXT("Eye"), ESearchCase::IgnoreCase);
-		const int32 TypeMarker = Identity.Find(TEXT("Type"), ESearchCase::IgnoreCase);
-		int32 Start = EyeMarker != INDEX_NONE ? EyeMarker + 3 : (TypeMarker != INDEX_NONE ? TypeMarker + 4 : 0);
-		while (Start < Identity.Len() && !FChar::IsDigit(Identity[Start]))
-		{
-			++Start;
-		}
-
-		FString Digits;
-		for (int32 Index = Start; Index < Identity.Len() && FChar::IsDigit(Identity[Index]); ++Index)
-		{
-			Digits.AppendChar(Identity[Index]);
-		}
-		return Digits.IsEmpty() ? 1 : FMath::Clamp(FCString::Atoi(*Digits), 1, 999);
-	}
-
-	int32 FindNearestHHVEyePaletteIndex(const TArray<FLinearColor>& Palette, const FLinearColor& Color)
-	{
-		if (Palette.IsEmpty())
-		{
-			return 0;
-		}
-
-		int32 BestIndex = 0;
-		float BestDistance = TNumericLimits<float>::Max();
-		for (int32 Index = 0; Index < Palette.Num(); ++Index)
-		{
-			const FLinearColor Candidate = Palette[Index].GetClamped();
-			const float Distance =
-				FMath::Square(Candidate.R - Color.R) +
-				FMath::Square(Candidate.G - Color.G) +
-				FMath::Square(Candidate.B - Color.B);
-			if (Distance < BestDistance)
-			{
-				BestDistance = Distance;
-				BestIndex = Index;
-			}
-		}
-		return FMath::Clamp(BestIndex, 0, 9);
-	}
-
-	UTexture* LoadHHVEyeCompositeTexture(
-		const FUEHHVCustomizationOption& Option,
-		const FLinearColor& EyeColor,
-		const TArray<FLinearColor>& EyePalette)
-	{
-		const int32 EyeNumber = ExtractPlayerHHVEyeNumber(Option);
-		const int32 ColorIndex = FindNearestHHVEyePaletteIndex(EyePalette, EyeColor.GetClamped());
-		const FString TextureName = FString::Printf(
-			TEXT("T_Player_Eye%03d_Composite_C%02d"),
-			EyeNumber,
-			ColorIndex);
-		const FString TexturePath = FString::Printf(
-			TEXT("%s/Eye%03d/%s.%s"),
-			HHVEyeCompositeFolder,
-			EyeNumber,
-			*TextureName,
-			*TextureName);
-		if (UTexture* Texture = LoadObject<UTexture>(nullptr, *TexturePath))
-		{
-			return Texture;
-		}
-
-		const FString FallbackName = FString::Printf(TEXT("T_Player_Eye%03d_Composite"), EyeNumber);
-		const FString FallbackPath = FString::Printf(
-			TEXT("%s/Eye%03d/%s.%s"),
-			HHVEyeCompositeFolder,
-			EyeNumber,
-			*FallbackName,
-			*FallbackName);
-		return LoadObject<UTexture>(nullptr, *FallbackPath);
-	}
-
-	void ApplyPlayerHHVEyeColorParameters(UMaterialInstanceDynamic* Material, const FLinearColor& EyeColor)
-	{
-		if (!Material)
-		{
-			return;
-		}
-
-		const FLinearColor Color = EyeColor.GetClamped();
-		for (const FName ParameterName : {TEXT("TintColor"), TEXT("Color"), TEXT("BaseColor"), TEXT("Base Color"), TEXT("IrisColor"), TEXT("Iris Color"), TEXT("EyeColor"), TEXT("Eye Color"), TEXT("MainColor")})
-		{
-			Material->SetVectorParameterValue(ParameterName, Color);
-		}
-	}
-
-	void ApplyPlayerHHVEyeTextureParameters(UMaterialInstanceDynamic* Material, UTexture* Texture)
-	{
-		if (!Material || !Texture)
-		{
-			return;
-		}
-
-		for (const FName ParameterName : {TEXT("Base Texture"), TEXT("BaseTexture"), TEXT("BaseMap"), TEXT("MainTex"), TEXT("Texture"), TEXT("Diffuse"), TEXT("Albedo")})
-		{
-			Material->SetTextureParameterValue(ParameterName, Texture);
-		}
 	}
 
 	void EnsurePlayerHHVSkeletalMaterialUsage(UMaterialInterface* Material)
@@ -395,12 +284,6 @@ AUEPlayerCharacter::AUEPlayerCharacter()
 
 	MovementSyncComponent = CreateDefaultSubobject<UUEPlayerMovementSyncComponent>(TEXT("MovementSyncComponent"));
 
-	static ConstructorHelpers::FClassFinder<AUEPokemonCharacter> DefaultPokemonClass(TEXT("/Game/Pokemon/BP_Pokemon"));
-	if (DefaultPokemonClass.Succeeded())
-	{
-		PokemonCompanionClass = DefaultPokemonClass.Class;
-	}
-
 	GetCapsuleComponent()->InitCapsuleSize(34.0f, 88.0f);
 	GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
 	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()));
@@ -420,20 +303,6 @@ AUEPlayerCharacter::AUEPlayerCharacter()
 	HHVHairMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	HHVHairMesh->bReceivesDecals = false;
 
-	static ConstructorHelpers::FObjectFinder<UUEHHVCustomizationCatalog> CatalogFinder(
-		TEXT("/Game/CharacterCustomization/HHV/Data/DA_HHVCustomizationCatalog"));
-	if (CatalogFinder.Succeeded())
-	{
-		HHVCustomizationCatalog = CatalogFinder.Object;
-	}
-
-	static ConstructorHelpers::FObjectFinder<UUEPlayerAnimationDataAsset> PlayerAnimationDataFinder(
-		TEXT("/Game/Data/Animation/DA_PlayerAnimation"));
-	if (PlayerAnimationDataFinder.Succeeded())
-	{
-		// 몽타주/시퀀스 참조는 데이터 에셋에 모아두고, 캐릭터는 그 에셋만 기본으로 잡는다.
-		PlayerAnimationData = PlayerAnimationDataFinder.Object;
-	}
 }
 
 void AUEPlayerCharacter::PlayerCharacterInit()
@@ -953,17 +822,6 @@ bool AUEPlayerCharacter::TrySpawnPokemonCompanion()
 	TSubclassOf<AUEPokemonCharacter> ClassToSpawn = PokemonCompanionClass;
 	if (!ClassToSpawn)
 	{
-		// PokemonCompanionClass 는 EditDefaultsOnly 라 플레이어 BP 가 저장한 값이
-		// 생성자의 FClassFinder 를 덮어쓴다. BP 에서 비어 있으면 여기가 None 이다.
-		// 야생 쪽도 똑같은 함정을 밟아서 같은 방식으로 때웠다
-		// (UEPlayerMovementSyncComponent::StartFieldConnection 참고).
-		ClassToSpawn = LoadClass<AUEPokemonCharacter>(
-			nullptr, TEXT("/Game/Pokemon/BP_Pokemon.BP_Pokemon_C"));
-		UE_LOG(LogTemp, Warning, TEXT("TrySpawnPokemonCompanion: PokemonCompanionClass fallback load: %s"),
-			ClassToSpawn ? TEXT("ok") : TEXT("FAILED"));
-	}
-	if (!ClassToSpawn)
-	{
 		// 예전에는 여기서 AUEPokemonCharacter::StaticClass() 로 넘어갔다. 그건
 		// 메시도 큐브도 없는 맨 C++ 클래스라, **보이지 않는** 동행이 조용히
 		// 스폰되고 함수는 true 를 반환했다. 동행이 안 보이는데 로그 한 줄
@@ -1124,9 +982,9 @@ void AUEPlayerCharacter::RegisterPokemonServerRoster()
 	// 비어 있으면 그대로 예전 동작이다.
 	if (!PokemonCompanionSpeciesData && DefaultCompanionSpeciesId > 0)
 	{
-		if (const UUEPokemonSpeciesCatalog* Catalog = UUEPokemonSpeciesCatalog::Get())
+		if (PokemonSpeciesCatalog)
 		{
-			PokemonCompanionSpeciesData = Catalog->Find(DefaultCompanionSpeciesId);
+			PokemonCompanionSpeciesData = PokemonSpeciesCatalog->Find(DefaultCompanionSpeciesId);
 		}
 	}
 
@@ -1377,13 +1235,9 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 {
 	if (!HHVCustomizationCatalog)
 	{
-		HHVCustomizationCatalog = LoadObject<UUEHHVCustomizationCatalog>(
-			nullptr,
-			TEXT("/Game/CharacterCustomization/HHV/Data/DA_HHVCustomizationCatalog.DA_HHVCustomizationCatalog"));
-		if (!HHVCustomizationCatalog)
-		{
-			return;
-		}
+		UE_LOG(LogTemp, Error,
+			TEXT("HHVCustomizationCatalog is not assigned in the PlayerCharacter Blueprint defaults."));
+		return;
 	}
 
 	FUEHHVAppearance Appearance = NewAppearance;
@@ -1440,11 +1294,10 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 	// 애니메이션 기준 메시와 체형은 항상 Body 메시가 담당한다.
 	// 선택 의상으로 기준 메시를 교체하면 의상에 없는 다리와 발이 사라진다.
 	USkeletalMesh* LeaderMesh = BaseMesh;
-	const TCHAR* PlayerAnimationBlueprintPath =
+	const TSubclassOf<UAnimInstance> PlayerAnimationBlueprint =
 		Appearance.Gender == EUEHHVGender::TypeA
-			? TEXT("/Game/Data/Animation/HeavenHyperVoice/Player/ABP_UEAnimInstance_Actions_InPlace.ABP_UEAnimInstance_Actions_InPlace_C")
-			: TEXT("/Game/Data/Animation/HeavenHyperVoice/Player/ABP_UEAnimInstance_Male_Actions_InPlace.ABP_UEAnimInstance_Male_Actions_InPlace_C");
-	UClass* PlayerAnimationBlueprint = LoadClass<UAnimInstance>(nullptr, PlayerAnimationBlueprintPath);
+			? TypeAAnimationClass
+			: TypeBAnimationClass;
 	GetMesh()->SetSkeletalMesh(LeaderMesh);
 	// 게임 레벨에서 커마 메쉬를 교체해도 플레이어 애님 블루프린트를 유지한다.
 	// 메쉬 교체 뒤 SingleNode가 남으면 블렌드스페이스가 실행되지 않는다.
@@ -1662,7 +1515,7 @@ void AUEPlayerCharacter::ApplyHHVMeshLocalMaterials(USkeletalMeshComponent* Comp
 
 void AUEPlayerCharacter::ApplyHHVMorphSafeMaterials(USkeletalMeshComponent* Component) const
 {
-	if (!Component)
+	if (!Component || MorphSafeMaterialDirectory.Path.IsEmpty())
 	{
 		return;
 	}
@@ -1673,7 +1526,7 @@ void AUEPlayerCharacter::ApplyHHVMorphSafeMaterials(USkeletalMeshComponent* Comp
 		const FString SafeName = MakeHHVMorphSafeMaterialName(OriginalMaterial);
 		const FString SafePath = FString::Printf(
 			TEXT("%s/%s.%s"),
-			HHVMorphSafeMaterialFolder,
+			*MorphSafeMaterialDirectory.Path,
 			*SafeName,
 			*SafeName);
 		UMaterialInterface* SafeMaterial = LoadObject<UMaterialInterface>(nullptr, *SafePath);

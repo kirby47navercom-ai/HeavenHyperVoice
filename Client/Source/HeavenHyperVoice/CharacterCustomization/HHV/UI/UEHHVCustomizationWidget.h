@@ -9,6 +9,7 @@
 #include "UEHHVCustomizationWidget.generated.h"
 
 class AUEHHVCustomizationPreviewActor;
+class AGameModeBase;
 class UTextBlock;
 class USkeletalMesh;
 class UTexture2D;
@@ -18,6 +19,7 @@ class UUEHHVCustomizationWidget;
 class UUEHHVCustomizationCatalog;
 class UVerticalBox;
 class UButton;
+class UWorld;
 
 UCLASS()
 class HEAVENHYPERVOICE_API UUEHHVOptionButton : public UButton
@@ -160,6 +162,9 @@ private:
 	bool bPanningPreview = false;
 	FVector2D LastPointerScreenPosition = FVector2D::ZeroVector;
 
-	UPROPERTY(EditAnywhere, Category = "Customization|Travel")
-	FName StartLevelName = TEXT("PlayerTestLevel");
+	UPROPERTY(EditDefaultsOnly, Category = "Customization|Travel")
+	TSoftObjectPtr<UWorld> StartLevel;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Customization|Travel")
+	TSubclassOf<AGameModeBase> GameplayGameModeClass;
 };

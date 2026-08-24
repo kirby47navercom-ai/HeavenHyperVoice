@@ -136,9 +136,9 @@ void AUEPokemonCharacter::SetWildSpecies(int32 SpeciesNumber)
 
 	// 카탈로그에 그 종족의 실제 모델이 있으면 그걸 쓴다. 아직 에셋이 없으면
 	// 카탈로그가 비어 있고, 예전처럼 종족 색 큐브로 뜬다.
-	if (const UUEPokemonSpeciesCatalog* Catalog = UUEPokemonSpeciesCatalog::Get())
+	if (PokemonSpeciesCatalog)
 	{
-		if (UUEPokemonSpeciesData* Data = Catalog->Find(SpeciesNumber))
+		if (UUEPokemonSpeciesData* Data = PokemonSpeciesCatalog->Find(SpeciesNumber))
 		{
 			// SetPokemonSpeciesData 가 메시·캡슐·애니메이션까지 다 적용하고
 			// ServerSpeciesId 를 데이터 쪽 이름으로 덮는다. 착색은 그 안에서

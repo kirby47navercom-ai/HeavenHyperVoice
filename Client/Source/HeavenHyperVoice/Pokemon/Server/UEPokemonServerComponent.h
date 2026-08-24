@@ -148,6 +148,9 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
 	FString ServerMapFilePath;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
+	FString DefaultServerMapFileName;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<AActor> FollowTargetActor = nullptr;
 

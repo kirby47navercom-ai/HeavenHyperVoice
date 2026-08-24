@@ -6,10 +6,12 @@
 #include "../Pokemon/Server/UEPokemonServerSubsystem.h"
 #include "GameFramework/Character.h"
 #include "GameplayTagContainer.h"
+#include "UObject/SoftObjectPath.h"
 #include "TimerManager.h"
 #include "UEPlayerCharacter.generated.h"
 
 class AUEPokemonCharacter;
+class UAnimInstance;
 class UCameraComponent;
 class UAnimSequence;
 class USpringArmComponent;
@@ -19,6 +21,7 @@ class UUEPokemonSpeciesData;
 class UUEPokemonWorldSubsystem;
 class UUEPlayerAnimationDataAsset;
 class UUEPlayerMovementSyncComponent;
+class UUEPokemonSpeciesCatalog;
 
 UCLASS(Blueprintable)
 class HEAVENHYPERVOICE_API AUEPlayerCharacter : public ACharacter
@@ -158,9 +161,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Customization")
 	TObjectPtr<UUEHHVCustomizationCatalog> HHVCustomizationCatalog = nullptr;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Customization|Materials")
+	FDirectoryPath MorphSafeMaterialDirectory;
+
 	// 플레이어 애님 블루프린트나 몽타주 재생 코드가 참조할 기본 애니메이션 데이터 에셋이다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<UUEPlayerAnimationDataAsset> PlayerAnimationData = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+	TSubclassOf<UAnimInstance> TypeAAnimationClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+	TSubclassOf<UAnimInstance> TypeBAnimationClass;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Movement", meta = (ClampMin = "0.0"))
 	float WalkSpeed = 260.0f;
@@ -170,6 +182,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Companion")
 	TSubclassOf<AUEPokemonCharacter> PokemonCompanionClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Companion")
+	TObjectPtr<UUEPokemonSpeciesCatalog> PokemonSpeciesCatalog = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Companion")
 	TObjectPtr<UUEPokemonSpeciesData> PokemonCompanionSpeciesData = nullptr;

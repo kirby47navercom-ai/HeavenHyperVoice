@@ -55,7 +55,7 @@ struct FUEServerMapData
 
 struct FUEServerMapExportOptions
 {
-	FString MapPackageName = TEXT("/Game/Level/PlayerTestLevel");
+	FString MapPackageName;
 	FString GroundProfileName = TEXT("ServerGround");
 	FString WallProfileName = TEXT("ServerWall");
 	float HeightCellSize = 50.0f;

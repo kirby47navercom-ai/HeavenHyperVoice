@@ -5,21 +5,12 @@
 
 #include "EngineUtils.h"
 #include "InputCoreTypes.h"
-#include "UObject/ConstructorHelpers.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogUEHHVCustomization, Log, All);
 
 AUEHHVCustomizationPlayerController::AUEHHVCustomizationPlayerController()
 {
 	PrimaryActorTick.bCanEverTick = true;
-
-	static ConstructorHelpers::FClassFinder<UUEHHVCustomizationWidget> WidgetFinder(
-		TEXT("/Game/CharacterCustomization/HHV/Blueprints/WBP_HHVCustomization"));
-	CustomizationWidgetClass = UUEHHVCustomizationWidget::StaticClass();
-	if (WidgetFinder.Succeeded())
-	{
-		CustomizationWidgetClass = WidgetFinder.Class;
-	}
 	bShowMouseCursor = true;
 }
 
@@ -49,13 +40,14 @@ void AUEHHVCustomizationPlayerController::BeginPlay()
 		UE_LOG(LogUEHHVCustomization, Warning, TEXT("HeavenHyperVoice customization preview actor was not found."));
 	}
 
-	TSubclassOf<UUEHHVCustomizationWidget> WidgetClassToCreate = CustomizationWidgetClass;
-	if (!WidgetClassToCreate)
+	if (!CustomizationWidgetClass)
 	{
-		WidgetClassToCreate = UUEHHVCustomizationWidget::StaticClass();
+		UE_LOG(LogUEHHVCustomization, Error,
+			TEXT("CustomizationWidgetClass is not assigned in the PlayerController Blueprint defaults."));
+		return;
 	}
 
-	CustomizationWidget = CreateWidget<UUEHHVCustomizationWidget>(this, WidgetClassToCreate);
+	CustomizationWidget = CreateWidget<UUEHHVCustomizationWidget>(this, CustomizationWidgetClass);
 	if (CustomizationWidget)
 	{
 		CustomizationWidget->SetPreviewActor(PreviewActor);

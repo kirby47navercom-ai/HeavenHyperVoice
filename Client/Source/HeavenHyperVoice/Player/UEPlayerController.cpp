@@ -6,27 +6,17 @@
 #include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
 #include "../Data/UEDataAsset.h"
 #include "../System/UEGameInstance.h"
-#include "../UI/Login/UELoginWidget.h"
 #include "../UEGameplayTags.h"
 
-#include "Blueprint/UserWidget.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "InputAction.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "UObject/ConstructorHelpers.h"
 
 AUEPlayerController::AUEPlayerController()
 {
-	LoginWidgetClass = UUELoginWidget::StaticClass();
-	bShowMouseCursor = true;
-
-	static ConstructorHelpers::FObjectFinder<UUEDataAsset> DefaultInputData(TEXT("/Game/Data/Input/DA_PlayerInput.DA_PlayerInput"));
-	if (DefaultInputData.Succeeded())
-	{
-		InputData = DefaultInputData.Object;
-	}
+	bShowMouseCursor = false;
 }
 
 void AUEPlayerController::BeginPlay()
@@ -34,18 +24,8 @@ void AUEPlayerController::BeginPlay()
 	Super::BeginPlay();
 
 	AddDefaultMappingContext();
-	
-	if (Bplay)
-	{
-		// 커마 완료 뒤 넘어온 게임 레벨은 로그인 화면을 다시 덮지 않고 곧바로 캐릭터를 보여준다.
-		HideLoginScreen();
-		return;
-	}
-
-	if (bShowLoginOnBeginPlay)
-	{
-		ShowLoginScreen();
-	}
+	SetInputMode(FInputModeGameOnly());
+	bShowMouseCursor = false;
 	
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
@@ -84,55 +64,6 @@ void AUEPlayerController::SetupInputComponent()
 	Super::SetupInputComponent();
 
 	BindGameplayInput();
-}
-
-void AUEPlayerController::ShowLoginScreen()
-{
-	if (!LoginWidgetInstance)
-	{
-		TSubclassOf<UUELoginWidget> WidgetClassToCreate = LoginWidgetClass;
-		if (!WidgetClassToCreate)
-		{
-			WidgetClassToCreate = UUELoginWidget::StaticClass();
-		}
-
-		LoginWidgetInstance = CreateWidget<UUELoginWidget>(this, WidgetClassToCreate);
-		if (!LoginWidgetInstance)
-		{
-			return;
-		}
-	}
-
-	LoginWidgetInstance->OnLoginSucceeded.AddUniqueDynamic(this, &ThisClass::HandleLoginSucceeded);
-	LoginWidgetInstance->AddToViewport(LoginWidgetZOrder);
-
-	// Login UI should receive keyboard and mouse input before gameplay starts.
-	FInputModeUIOnly InputMode;
-	InputMode.SetWidgetToFocus(LoginWidgetInstance->TakeWidget());
-	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	SetInputMode(InputMode);
-	bShowMouseCursor = true;
-}
-
-void AUEPlayerController::HideLoginScreen()
-{
-	if (LoginWidgetInstance)
-	{
-		LoginWidgetInstance->OnLoginSucceeded.RemoveDynamic(this, &ThisClass::HandleLoginSucceeded);
-		LoginWidgetInstance->RemoveFromParent();
-	}
-
-	// After login, return control to the character movement input path.
-	FInputModeGameOnly InputMode;
-	SetInputMode(InputMode);
-	bShowMouseCursor = false;
-}
-
-void AUEPlayerController::HandleLoginSucceeded(const FString& UserId, const FString& Nickname)
-{
-	// Gameplay input is enabled only after the local account subsystem accepted both credentials.
-	HideLoginScreen();
-	BP_OnLocalLoginSucceeded(UserId, Nickname);
 }
 
 void AUEPlayerController::AddDefaultMappingContext() const
@@ -177,11 +108,6 @@ void AUEPlayerController::BindMoveInput(UEnhancedInputComponent* EnhancedInputCo
 
 	// 풀 받은 입력 데이터는 W/A/S/D를 하나의 2D IA_Move로 통합한다.
 	const UInputAction* MoveAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_Move);
-	if (!MoveAction)
-	{
-		MoveAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_Move.IA_Move"));
-	}
-
 	if (MoveAction)
 	{
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &ThisClass::HandleMove);
@@ -209,11 +135,6 @@ void AUEPlayerController::BindLookInput(UEnhancedInputComponent* EnhancedInputCo
 void AUEPlayerController::BindActionInput(UEnhancedInputComponent* EnhancedInputComponent)
 {
 	const UInputAction* SpawnPokemonAction = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_SpawnPokemon);
-	if (!SpawnPokemonAction)
-	{
-		SpawnPokemonAction = LoadObject<UInputAction>(nullptr, TEXT("/Game/Input/Actions/IA_SpawnPokemon.IA_SpawnPokemon"));
-	}
-
 	if (SpawnPokemonAction)
 	{
 		EnhancedInputComponent->BindAction(SpawnPokemonAction, ETriggerEvent::Started, this, &ThisClass::HandlePokemonToggle);

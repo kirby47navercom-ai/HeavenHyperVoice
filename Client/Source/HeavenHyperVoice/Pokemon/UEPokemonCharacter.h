@@ -7,6 +7,7 @@
 #include "UEPokemonCharacter.generated.h"
 
 class UUEPokemonServerComponent;
+class UUEPokemonSpeciesCatalog;
 class UUEPokemonSpeciesData;
 
 UENUM(BlueprintType)
@@ -239,6 +240,9 @@ private:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Species", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UUEPokemonSpeciesData> PokemonSpeciesData = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Species", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UUEPokemonSpeciesCatalog> PokemonSpeciesCatalog = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float ServerLocationInterpSpeed = 12.0f;

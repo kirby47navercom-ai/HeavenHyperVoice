@@ -9,7 +9,6 @@
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Controller.h"
-#include "UObject/ConstructorHelpers.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "HAL/PlatformMisc.h"
 #include "Misc/CommandLine.h"
@@ -24,11 +23,6 @@ UUEPlayerMovementSyncComponent::UUEPlayerMovementSyncComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
 
-	static ConstructorHelpers::FClassFinder<AUEPokemonCharacter> WildClassFinder(TEXT("/Game/Pokemon/BP_Pokemon"));
-	if (WildClassFinder.Succeeded())
-	{
-		WildPokemonClass = WildClassFinder.Class;
-	}
 }
 
 void UUEPlayerMovementSyncComponent::BeginPlay()
@@ -89,15 +83,10 @@ void UUEPlayerMovementSyncComponent::TickComponent(float DeltaTime, ELevelTick T
 
 void UUEPlayerMovementSyncComponent::StartFieldConnection()
 {
-	// 이 컴포넌트가 BP 에 배치돼 있으면 BP 저장값(None)이 생성자의 FClassFinder 를
-	// 덮어써 WildPokemonClass 가 비어버린다. 그러면 야생을 한 마리도 못 그린다.
-	// 런타임에 직접 로드해 확실히 채운다.
 	if (!WildPokemonClass)
 	{
-		WildPokemonClass = LoadClass<AUEPokemonCharacter>(
-			nullptr, TEXT("/Game/Pokemon/BP_Pokemon.BP_Pokemon_C"));
-		UE_LOG(LogTemp, Warning, TEXT("[WILD] WildPokemonClass fallback load: %s"),
-			WildPokemonClass ? TEXT("ok") : TEXT("FAILED"));
+		UE_LOG(LogTemp, Error,
+			TEXT("[WILD] WildPokemonClass is not assigned in the MovementSync component Blueprint defaults."));
 	}
 
 	FieldConnection = std::make_unique<FHHVFieldConnection>();
@@ -560,7 +549,7 @@ FString UUEPlayerMovementSyncComponent::ResolveServerMapFilePath() const
 		return ServerMapFilePath;
 	}
 
-	if (!bTryLoadDefaultServerMap)
+	if (!bTryLoadDefaultServerMap || DefaultServerMapFileName.IsEmpty())
 	{
 		return FString();
 	}
@@ -568,7 +557,7 @@ FString UUEPlayerMovementSyncComponent::ResolveServerMapFilePath() const
 	return FPaths::Combine(
 		FPaths::ProjectSavedDir(),
 		TEXT("ServerMaps"),
-		TEXT("PlayerTestLevel.hhvservermap")
+		DefaultServerMapFileName
 	);
 }
 

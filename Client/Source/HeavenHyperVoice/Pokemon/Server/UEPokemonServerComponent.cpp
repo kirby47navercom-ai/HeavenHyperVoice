@@ -706,7 +706,7 @@ FString UUEPokemonServerComponent::ResolveServerMapFilePath() const
 		return ServerMapFilePath;
 	}
 
-	if (!bTryLoadDefaultServerMap)
+	if (!bTryLoadDefaultServerMap || DefaultServerMapFileName.IsEmpty())
 	{
 		return FString();
 	}
@@ -714,7 +714,7 @@ FString UUEPokemonServerComponent::ResolveServerMapFilePath() const
 	return FPaths::Combine(
 		FPaths::ProjectSavedDir(),
 		TEXT("ServerMaps"),
-		TEXT("PlayerTestLevel.hhvservermap")
+		DefaultServerMapFileName
 	);
 }
 

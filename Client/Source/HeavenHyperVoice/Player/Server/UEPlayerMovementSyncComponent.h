@@ -117,6 +117,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Local Server")
 	FString ServerMapFilePath;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Movement Sync|Local Server")
+	FString DefaultServerMapFileName;
+
 	/** Ignored while bEnableLocalServerValidation is on. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
 	FString FieldServerHost = TEXT("14.51.64.96");
@@ -144,7 +147,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
 	float WorldOriginOffset = 25600.0f;
 
-	/** 서버 야생 포켓몬을 그릴 액터 클래스. 기본은 BP_Pokemon. */
+	/** 서버 야생 포켓몬을 그릴 액터 클래스. 소유 캐릭터 Blueprint에서 지정한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
 	TSubclassOf<AUEPokemonCharacter> WildPokemonClass;
 

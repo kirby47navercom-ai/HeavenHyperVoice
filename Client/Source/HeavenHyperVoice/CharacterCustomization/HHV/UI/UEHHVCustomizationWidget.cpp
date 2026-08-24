@@ -22,6 +22,7 @@
 #include "Components/Widget.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/Texture2D.h"
+#include "GameFramework/GameModeBase.h"
 #include "InputCoreTypes.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -137,26 +138,28 @@ void UUEHHVCustomizationWidget::StartWithCurrentAppearance()
 	RefreshFromPreview();
 	if (UUEGameInstance* UEGameInstance = Cast<UUEGameInstance>(GetGameInstance()))
 	{
-		UEGameInstance->SetPendingHHVAppearance(CachedAppearance);
-	}
-
-	if (!StartLevelName.IsNone())
-	{
-		FString LevelNameString = StartLevelName.ToString();
-		if (LevelNameString == TEXT("PlayerTestLevel"))
+		// 선택 화면에서 고른 슬롯에 저장한 뒤 같은 외형으로 플레이를 시작한다.
+		if (!UEGameInstance->SaveAppearanceToSelectedSlot(CachedAppearance))
 		{
-			LevelNameString = TEXT("/Game/Level/PlayerTestLevel");
+			UEGameInstance->SetPendingHHVAppearance(CachedAppearance);
 		}
-
-		// 커마 레벨에서 넘어갈 때는 맵의 기존 월드 세팅보다 우리 게임 플레이어 게임모드를 우선 사용한다.
-		UGameplayStatics::OpenLevel(
-			this,
-			FName(*LevelNameString),
-			true,
-			// 맵 이동 옵션은 '?'로 시작해야 PlayerTestLevel의 기본 게임모드보다
-			// 우리 플레이어 캐릭터 게임모드가 우선 적용된다.
-			TEXT("?game=/Script/HeavenHyperVoice.UEGameModeBase"));
 	}
+
+	if (StartLevel.IsNull())
+	{
+		UE_LOG(LogTemp, Error, TEXT("StartLevel is not assigned in the customization widget Blueprint defaults."));
+		return;
+	}
+	if (!GameplayGameModeClass)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("GameplayGameModeClass is not assigned in the customization widget Blueprint defaults."));
+		return;
+	}
+
+	const FString TravelOptions = FString::Printf(
+		TEXT("?game=%s"), *GameplayGameModeClass->GetPathName());
+	UGameplayStatics::OpenLevelBySoftObjectPtr(this, StartLevel, true, TravelOptions);
 }
 
 void UUEHHVCustomizationWidget::OpenCategory(EUEHHVCustomizationCategory Category)
@@ -257,5 +260,3 @@ void UUEHHVCustomizationWidget::HandleStartClicked()
 {
 	StartWithCurrentAppearance();
 }
-
-

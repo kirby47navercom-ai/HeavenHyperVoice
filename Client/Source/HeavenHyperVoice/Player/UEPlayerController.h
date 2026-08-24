@@ -8,15 +8,9 @@
 #include "UEPlayerController.generated.h"
 
 class AUEPlayerCharacter;
-class UUELoginWidget;
 class UUEDataAsset;
 
-/**
- * PlayerController for the client entry flow.
- *
- * It shows the login widget first, then switches back to game input when
- * HideLoginScreen is called by Blueprint or future login code.
- */
+/** 실제 플레이 레벨의 이동과 액션 입력을 처리한다. */
 UCLASS()
 class HEAVENHYPERVOICE_API AUEPlayerController : public APlayerController
 {
@@ -25,22 +19,11 @@ class HEAVENHYPERVOICE_API AUEPlayerController : public APlayerController
 public:
 	AUEPlayerController();
 
-	UFUNCTION(BlueprintCallable, Category = "Login")
-	void ShowLoginScreen();
-
-	UFUNCTION(BlueprintCallable, Category = "Login")
-	void HideLoginScreen();
-
 protected:
 	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void SetupInputComponent() override;
 
-	// Blueprint can continue the client flow after C++ has accepted the credentials.
-	UFUNCTION(BlueprintImplementableEvent, Category = "Login", meta = (DisplayName = "On Local Login Succeeded"))
-	void BP_OnLocalLoginSucceeded(const FString& UserId, const FString& Nickname);
-
-protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UUEDataAsset> InputData = nullptr;
 
@@ -50,19 +33,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input|Look", meta = (ClampMin = "0.0"))
 	float LookPitchRate = 1.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Login")
-	TSubclassOf<UUELoginWidget> LoginWidgetClass;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login")
-	bool bShowLoginOnBeginPlay = true;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login")
-	int32 LoginWidgetZOrder = 100;
-
 private:
-	UFUNCTION()
-	void HandleLoginSucceeded(const FString& UserId, const FString& Nickname);
-
 	void AddDefaultMappingContext() const;
 	void BindGameplayInput();
 	void BindMoveInput(class UEnhancedInputComponent* EnhancedInputComponent);
@@ -99,13 +70,7 @@ private:
 	void HandlePokemonAttack4(const FInputActionValue& Value);
 	void HandlePokemonAttackSlot(int32 AttackSlot);
 
-	UPROPERTY(Transient)
-	TObjectPtr<UUELoginWidget> LoginWidgetInstance = nullptr;
-	
-	
-	
 	FVector2D PendingMovementInput = FVector2D::ZeroVector;
-	bool Bplay = true;
 	float MaxWalkSpeed = 260.0f;
 	float RunCross = 1.5f;
 };

@@ -25,7 +25,6 @@
 
 namespace
 {
-	constexpr TCHAR DefaultMapPackageName[] = TEXT("/Game/Level/PlayerTestLevel");
 	constexpr TCHAR DefaultGroundProfileName[] = TEXT("ServerGround");
 	constexpr TCHAR DefaultWallProfileName[] = TEXT("ServerWall");
 	constexpr float DefaultWorldBoundsPadding = 1000.0f;
@@ -51,7 +50,11 @@ namespace
 
 	FString MakeDefaultOutputPath(const FString& MapPackageName)
 	{
-		const FString MapName = FPackageName::GetShortName(MapPackageName.IsEmpty() ? DefaultMapPackageName : MapPackageName);
+		FString MapName = FPackageName::GetShortName(MapPackageName);
+		if (MapName.IsEmpty())
+		{
+			MapName = TEXT("ServerMap");
+		}
 		return FPaths::Combine(
 			FPaths::ProjectSavedDir(),
 			TEXT("ServerMaps"),
@@ -260,7 +263,7 @@ FString FUEServerMapFile::NormalizeMapPackageName(const FString& RawMapPackageNa
 {
 	if (RawMapPackageName.IsEmpty())
 	{
-		return DefaultMapPackageName;
+		return FString();
 	}
 
 	FString LongPackageName;
@@ -289,6 +292,11 @@ bool FUEServerMapFile::ExportMapPackageToFile(const FUEServerMapExportOptions& O
 {
 	FUEServerMapExportOptions NormalizedOptions = Options;
 	NormalizedOptions.MapPackageName = NormalizeMapPackageName(Options.MapPackageName);
+	if (NormalizedOptions.MapPackageName.IsEmpty())
+	{
+		OutErrorMessage = TEXT("Server map export failed: a map package must be provided.");
+		return false;
+	}
 	NormalizedOptions.OutputPath = ResolveOutputPath(NormalizedOptions.MapPackageName, Options.OutputPath);
 
 	UWorld* World = LoadWorld(NormalizedOptions.MapPackageName, OutErrorMessage);
@@ -321,6 +329,10 @@ bool FUEServerMapFile::BuildFromWorld(UWorld* World, const FUEServerMapExportOpt
 
 	OutMapData = FUEServerMapData{};
 	OutMapData.SourceMapPackageName = NormalizeMapPackageName(Options.MapPackageName);
+	if (OutMapData.SourceMapPackageName.IsEmpty())
+	{
+		OutMapData.SourceMapPackageName = World->GetOutermost()->GetName();
+	}
 
 	for (ULevel* Level : World->GetLevels())
 	{
@@ -656,7 +668,6 @@ UUEServerMapExportCommandlet::UUEServerMapExportCommandlet()
 int32 UUEServerMapExportCommandlet::Main(const FString& Params)
 {
 	FUEServerMapExportOptions Options;
-	Options.MapPackageName = DefaultMapPackageName;
 	Options.GroundProfileName = DefaultGroundProfileName;
 	Options.WallProfileName = DefaultWallProfileName;
 
