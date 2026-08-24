@@ -22,6 +22,9 @@ public:
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
+	// 구르기 몽타주 에셋을 AnimGraph의 FullBodySlot에서 1회 재생한다.
+	float PlayRollMontage();
+
 protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Character")
 	TObjectPtr<AUEPlayerCharacter> OwnerCharacter = nullptr;

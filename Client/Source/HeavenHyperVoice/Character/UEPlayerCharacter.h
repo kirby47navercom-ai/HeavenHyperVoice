@@ -112,8 +112,10 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void NotifyJumpApex() override;
 
 	void ApplyLocalMovementInput();
+	void ApplyRollMovement();
 	FVector GetCameraForwardAxis(const FRotator& ViewRotation) const;
 	FVector GetCameraRightAxis(const FRotator& ViewRotation) const;
 	FVector GetMoveDirectionFromInput(const FVector2D& Input, const FRotator& ViewRotation) const;
@@ -208,6 +210,7 @@ private:
 	void RefreshMovementSpeed();
 	void RefreshCharacterState();
 	void FinishRoll();
+	void FinishRollMovement();
 	void FinishLanding();
 	void RegisterPokemonServerRoster();
 	FUEPokemonServerSpawnResponse RequestPokemonServerSpawn();
@@ -254,9 +257,7 @@ private:
 	void HideHHVBaseBodyOutfitSections(USkeletalMeshComponent* Component) const;
 	void HideHHVEquipmentSkinSections(USkeletalMeshComponent* Component) const;
 	void HideUnsupportedHHVAttachmentComponents() const;
-	void UpdateHHVAnimation();
-	void PlayHHVAnimation(UAnimSequence* Sequence, bool bLoop);
-	void PlayHHVAnimationOnComponent(USkeletalMeshComponent* Component, UAnimSequence* Sequence, bool bLoop) const;
+	float GetHHVActionDuration(const FGameplayTag& StateTag, float FallbackDuration) const;
 	void ApplyHHVScale(const FUEHHVAppearance& NewAppearance) const;
 	void StartGameplayQAIfRequested();
 	void AdvanceGameplayQA();
@@ -282,7 +283,13 @@ private:
 	float RollStateDuration = 0.6f;
 
 	UPROPERTY(EditAnywhere, Category = "Character|State", meta = (ClampMin = "0.0"))
-	float LandingStateDuration = 0.15f;
+	float RollLaunchSpeed = 900.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Character|State", meta = (ClampMin = "0.0"))
+	float RollTravelDuration = 0.65f;
+
+	UPROPERTY(EditAnywhere, Category = "Character|State", meta = (ClampMin = "0.0"))
+	float LandingStateDuration = 0.45f;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Customization", meta = (AllowPrivateAccess = "true"))
 	EUEHHVGender CurrentCustomizationGender = EUEHHVGender::TypeA;
@@ -293,17 +300,18 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<AUEPokemonCharacter> PendingDespawnPokemon = nullptr;
 
-	UPROPERTY(Transient)
-	TObjectPtr<UAnimSequence> CurrentHHVAnimation = nullptr;
+	FVector ActiveRollDirection = FVector::ForwardVector;
 
 	HHV::PokemonAI::PokemonFSM PokemonLifecycleBrain;
 	FTimerHandle PokemonDespawnTimerHandle;
 	FTimerHandle RollStateTimerHandle;
+	FTimerHandle RollMovementTimerHandle;
 	FTimerHandle LandingStateTimerHandle;
 	FTimerHandle GameplayQATimerHandle;
 	int32 GameplayQAPhase = 0;
 	bool bPokemonDespawnInProgress = false;
 	bool bLandingStateActive = false;
+	bool bRollMovementActive = false;
 public:
 	//행동관련
 	void Roll();

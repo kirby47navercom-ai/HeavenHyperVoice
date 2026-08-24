@@ -1,6 +1,7 @@
 #include "UEPlayerCharacter.h"
 
 #include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
+#include "../Animation/UEAnimInstance.h"
 #include "../Animation/UEFollowerAnimInstance.h"
 #include "../Player/Server/UEPlayerMovementSyncComponent.h"
 #include "../Data/UEPlayerAnimationDataAsset.h"
@@ -379,6 +380,7 @@ AUEPlayerCharacter::AUEPlayerCharacter()
 	bUseControllerRotationRoll = false;
 
 	GetCharacterMovement()->bOrientRotationToMovement = true;
+	GetCharacterMovement()->bNotifyApex = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 540.0f, 0.0f);
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
 
@@ -497,15 +499,21 @@ void AUEPlayerCharacter::Tick(float DeltaSeconds)
 	if (bIsRemoteProxy)
 	{
 		// 입력이 없다. 좌표는 스냅샷이 지시하고 여기서는 따라가기만 한다.
+		// 구르기도 그 플레이어 클라가 판정해 좌표로 넘어온다.
 		UpdateRemoteProxyMovement(DeltaSeconds);
 		RefreshCharacterState();
 		return;
 	}
 
-	ApplyLocalMovementInput();
+	if (bIsRolling && bRollMovementActive)
+	{
+		ApplyRollMovement();
+	}
+	else if (!bIsRolling)
+	{
+		ApplyLocalMovementInput();
+	}
 	RefreshCharacterState();
-	// 전신 로코모션은 ABP_UEAnimInstance의 1D 블렌드스페이스가 GroundSpeed로 계산한다.
-	// 여기서 SingleNode 시퀀스를 재생하면 매 프레임 AnimBP가 해제되어 걷기/뛰기가 멈춘다.
 }
 
 void AUEPlayerCharacter::MakeRemoteProxy()
@@ -612,9 +620,21 @@ void AUEPlayerCharacter::Jump()
 	CharacterStateTag = UEGameplayTags::State_Character_Jump;
 }
 
+void AUEPlayerCharacter::NotifyJumpApex()
+{
+	Super::NotifyJumpApex();
+	CharacterStateTag = UEGameplayTags::State_Character_Fall;
+}
+
 void AUEPlayerCharacter::Landed(const FHitResult& Hit)
 {
 	Super::Landed(Hit);
+
+	// 구르기용 전방 발사가 바닥에 닿을 때 별도 착지 상태로 덮어쓰지 않는다.
+	if (bIsRolling)
+	{
+		return;
+	}
 
 	bLandingStateActive = true;
 	CharacterStateTag = UEGameplayTags::State_Character_Landing;
@@ -623,7 +643,7 @@ void AUEPlayerCharacter::Landed(const FHitResult& Hit)
 		LandingStateTimerHandle,
 		this,
 		&ThisClass::FinishLanding,
-		FMath::Max(LandingStateDuration, 0.01f),
+		LandingStateDuration,
 		false);
 }
 
@@ -712,8 +732,21 @@ void AUEPlayerCharacter::RefreshCharacterState()
 
 void AUEPlayerCharacter::FinishRoll()
 {
+	FinishRollMovement();
 	bIsRolling = false;
 	RefreshCharacterState();
+}
+
+void AUEPlayerCharacter::FinishRollMovement()
+{
+	bRollMovementActive = false;
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		FVector StoppedVelocity = MovementComponent->Velocity;
+		StoppedVelocity.X = 0.0f;
+		StoppedVelocity.Y = 0.0f;
+		MovementComponent->Velocity = StoppedVelocity;
+	}
 }
 
 void AUEPlayerCharacter::FinishLanding()
@@ -784,6 +817,21 @@ void AUEPlayerCharacter::ApplyLocalMovementInput()
 	// 이동 입력은 카메라 yaw 기준으로 계산하고, 대기 중 카메라 회전만으로 캐릭터를 돌리지는 않는다.
 	const float InputStrength = FMath::Clamp(MovementInput.Size(), 0.0f, 1.0f);
 	AddMovementInput(DesiredDirection, InputStrength);
+}
+
+void AUEPlayerCharacter::ApplyRollMovement()
+{
+	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
+	if (!MovementComponent)
+	{
+		return;
+	}
+
+	// 구르기 동안 지면 마찰에 감속되지 않도록 캡슐의 수평 속도를 유지한다.
+	FVector RollVelocity = MovementComponent->Velocity;
+	RollVelocity.X = ActiveRollDirection.X * RollLaunchSpeed;
+	RollVelocity.Y = ActiveRollDirection.Y * RollLaunchSpeed;
+	MovementComponent->Velocity = RollVelocity;
 }
 
 FVector AUEPlayerCharacter::GetCameraForwardAxis(const FRotator& ViewRotation) const
@@ -1330,8 +1378,8 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 	USkeletalMesh* LeaderMesh = BaseMesh;
 	const TCHAR* PlayerAnimationBlueprintPath =
 		Appearance.Gender == EUEHHVGender::TypeA
-			? TEXT("/Game/Data/Animation/HeavenHyperVoice/Player/ABP_UEAnimInstance.ABP_UEAnimInstance_C")
-			: TEXT("/Game/Data/Animation/HeavenHyperVoice/Player/ABP_UEAnimInstance_Male.ABP_UEAnimInstance_Male_C");
+			? TEXT("/Game/Data/Animation/HeavenHyperVoice/Player/ABP_UEAnimInstance_Actions_InPlace.ABP_UEAnimInstance_Actions_InPlace_C")
+			: TEXT("/Game/Data/Animation/HeavenHyperVoice/Player/ABP_UEAnimInstance_Male_Actions_InPlace.ABP_UEAnimInstance_Male_Actions_InPlace_C");
 	UClass* PlayerAnimationBlueprint = LoadClass<UAnimInstance>(nullptr, PlayerAnimationBlueprintPath);
 	GetMesh()->SetSkeletalMesh(LeaderMesh);
 	// 게임 레벨에서 커마 메쉬를 교체해도 플레이어 애님 블루프린트를 유지한다.
@@ -1356,7 +1404,6 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 	HHVBodyEquipmentMesh->SetHiddenInGame(!bUsesSeparateOutfit, true);
 	HHVHeadMesh->SetSkeletalMesh(Head.LoadMesh(Appearance.Gender));
 	HHVHairMesh->SetSkeletalMesh(Hair.LoadMesh(Appearance.Gender));
-	CurrentHHVAnimation = nullptr;
 
 	ResetHHVMaterials(GetMesh());
 	ResetHHVMaterials(HHVBodyEquipmentMesh);
@@ -1436,41 +1483,12 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 	HideUnsupportedHHVAttachmentComponents();
 }
 
-void AUEPlayerCharacter::UpdateHHVAnimation()
+float AUEPlayerCharacter::GetHHVActionDuration(const FGameplayTag& StateTag, float FallbackDuration) const
 {
-	// 이동 애니메이션은 UEAnimInstance의 GroundSpeed와 1D Blend Space가 담당한다.
-	// 여기서 SingleNode로 바꾸면 AnimBP가 끊기므로 런타임에서 별도 시퀀스를 재생하지 않는다.
-}
-
-void AUEPlayerCharacter::PlayHHVAnimation(UAnimSequence* Sequence, bool bLoop)
-{
-	if (!GetMesh() || !Sequence)
-	{
-		return;
-	}
-
-	// 현재 추출 애니메이션은 본체 스켈레톤 기준으로 검증된 시퀀스다.
-	// 본체만 직접 재생하고, 의상/얼굴/머리는 아래의 리더 포즈를 공유한다.
-	GetMesh()->SetEnableAnimation(true);
-	GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode, true);
-	GetMesh()->PlayAnimation(Sequence, bLoop);
-	CurrentHHVAnimation = Sequence;
-}
-
-void AUEPlayerCharacter::PlayHHVAnimationOnComponent(
-	USkeletalMeshComponent* Component,
-	UAnimSequence* Sequence,
-	bool bLoop) const
-{
-	if (!Component || !Sequence || Component == GetMesh())
-	{
-		return;
-	}
-
-	// 리더 포즈를 쓸 수 없는 별도 파츠를 명시적으로 재생해야 할 때의 호환용 함수다.
-	Component->SetEnableAnimation(true);
-	Component->SetAnimationMode(EAnimationMode::AnimationSingleNode, true);
-	Component->PlayAnimation(Sequence, bLoop);
+	const UAnimSequence* Sequence = PlayerAnimationData
+		? PlayerAnimationData->FindSequenceByTagForGender(StateTag, CurrentCustomizationGender)
+		: nullptr;
+	return FMath::Max(Sequence ? Sequence->GetPlayLength() : FallbackDuration, 0.01f);
 }
 
 void AUEPlayerCharacter::Roll()
@@ -1480,14 +1498,40 @@ void AUEPlayerCharacter::Roll()
 		return;
 	}
 
+	ActiveRollDirection = GetDesiredMovementDirection().GetSafeNormal2D();
+	if (ActiveRollDirection.IsNearlyZero())
+	{
+		ActiveRollDirection = GetActorForwardVector().GetSafeNormal2D();
+	}
+
+	bLandingStateActive = false;
+	GetWorldTimerManager().ClearTimer(LandingStateTimerHandle);
 	bIsRolling = true;
+	bRollMovementActive = true;
 	RefreshCharacterState();
+	float RollMontageDuration = 0.0f;
+	if (UUEAnimInstance* PlayerAnimInstance = Cast<UUEAnimInstance>(GetMesh()->GetAnimInstance()))
+	{
+		RollMontageDuration = PlayerAnimInstance->PlayRollMontage();
+	}
+
+	// 애니메이션의 루트 이동은 사용하지 않으므로 실제 캡슐을 입력 방향으로 이동시킨다.
+	ApplyRollMovement();
+	GetWorldTimerManager().ClearTimer(RollMovementTimerHandle);
+	GetWorldTimerManager().SetTimer(
+		RollMovementTimerHandle,
+		this,
+		&ThisClass::FinishRollMovement,
+		FMath::Max(RollTravelDuration, 0.01f),
+		false);
 	GetWorldTimerManager().ClearTimer(RollStateTimerHandle);
 	GetWorldTimerManager().SetTimer(
 		RollStateTimerHandle,
 		this,
 		&ThisClass::FinishRoll,
-		FMath::Max(RollStateDuration, 0.01f),
+		RollMontageDuration > 0.0f
+			? RollMontageDuration
+			: GetHHVActionDuration(UEGameplayTags::State_Character_Roll, RollStateDuration),
 		false);
 }
 
