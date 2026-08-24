@@ -3,14 +3,37 @@
 #include "UEPokemonWildPokemonSpawner.h"
 
 #include "../UEPokemonCharacter.h"
+#include "../UEPokemonSpeciesCatalog.h"
 #include "../UEPokemonSpeciesData.h"
 #include "../UEPokemonWorldSubsystem.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "HAL/PlatformTime.h"
+#include "Misc/Guid.h"
 #include "Misc/Paths.h"
 #include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+	void ShuffleSpeciesPool(TArray<UUEPokemonSpeciesData*>& SpeciesPool, FRandomStream& RandomStream)
+	{
+		for (int32 Index = SpeciesPool.Num() - 1; Index > 0; --Index)
+		{
+			SpeciesPool.Swap(Index, RandomStream.RandRange(0, Index));
+		}
+	}
+
+	int32 MakeRuntimeSpawnSeed()
+	{
+		const FGuid SessionGuid = FGuid::NewGuid();
+		const uint64 Cycles = FPlatformTime::Cycles64();
+		const uint32 MixedSeed = SessionGuid.A ^ SessionGuid.B ^ SessionGuid.C ^ SessionGuid.D
+			^ static_cast<uint32>(Cycles) ^ static_cast<uint32>(Cycles >> 32);
+		return MixedSeed == 0 ? 1 : static_cast<int32>(MixedSeed);
+	}
+}
 
 AUEPokemonWildPokemonSpawner::AUEPokemonWildPokemonSpawner()
 {
@@ -70,7 +93,7 @@ int32 AUEPokemonWildPokemonSpawner::SpawnWildPokemons()
 		ClassToSpawn = AUEPokemonCharacter::StaticClass();
 	}
 
-	// 배열의 null 항목은 제외합니다. 배열이 비어 있으면 기존 단일 설정을 사용합니다.
+	// 명시적으로 지정한 후보가 없으면 종족 카탈로그 전체를 사용합니다.
 	TArray<UUEPokemonSpeciesData*> ValidSpeciesPool;
 	ValidSpeciesPool.Reserve(WildPokemonSpeciesPool.Num());
 	for (UUEPokemonSpeciesData* SpeciesData : WildPokemonSpeciesPool)
@@ -80,17 +103,35 @@ int32 AUEPokemonWildPokemonSpawner::SpawnWildPokemons()
 			ValidSpeciesPool.Add(SpeciesData);
 		}
 	}
+	if (ValidSpeciesPool.IsEmpty())
+	{
+		if (const UUEPokemonSpeciesCatalog* SpeciesCatalog = UUEPokemonSpeciesCatalog::Get())
+		{
+			for (UUEPokemonSpeciesData* SpeciesData : SpeciesCatalog->Species)
+			{
+				if (IsValid(SpeciesData))
+				{
+					ValidSpeciesPool.AddUnique(SpeciesData);
+				}
+			}
+		}
+	}
 	if (ValidSpeciesPool.IsEmpty() && IsValid(WildPokemonSpeciesData))
 	{
 		ValidSpeciesPool.Add(WildPokemonSpeciesData);
 	}
+	ShuffleSpeciesPool(ValidSpeciesPool, SpawnRandomStream);
 
 	int32 SpawnedCount = 0;
 	for (int32 SpawnIndex = 0; SpawnIndex < WildPokemonCount; ++SpawnIndex)
 	{
+		if (SpawnIndex > 0 && !ValidSpeciesPool.IsEmpty() && SpawnIndex % ValidSpeciesPool.Num() == 0)
+		{
+			ShuffleSpeciesPool(ValidSpeciesPool, SpawnRandomStream);
+		}
 		UUEPokemonSpeciesData* SelectedSpeciesData = ValidSpeciesPool.IsEmpty()
 			? nullptr
-			: ValidSpeciesPool[SpawnRandomStream.RandRange(0, ValidSpeciesPool.Num() - 1)];
+			: ValidSpeciesPool[SpawnIndex % ValidSpeciesPool.Num()];
 		const HHV::Map::AgentSettings Agent = MakeWildSpawnAgentSettings(SelectedSpeciesData);
 
 		FVector SpawnLocation;
@@ -141,9 +182,11 @@ bool AUEPokemonWildPokemonSpawner::TryLoadServerMap()
 	bServerMapLoaded = ServerMapRuntime.LoadFromFile(TCHAR_TO_UTF8(*MapFilePath));
 	if (bServerMapLoaded && !bRandomStreamInitialized)
 	{
-		const int32 Seed = SpawnRandomSeed != 0 ? SpawnRandomSeed : 20260818;
+		const int32 Seed = bUseFixedSpawnSeed ? SpawnRandomSeed : MakeRuntimeSpawnSeed();
 		SpawnRandomStream.Initialize(Seed);
 		bRandomStreamInitialized = true;
+		UE_LOG(LogTemp, Log, TEXT("[POKEMON] wild spawn random seed: %d%s"),
+			Seed, bUseFixedSpawnSeed ? TEXT(" (fixed)") : TEXT(""));
 	}
 	return bServerMapLoaded;
 }

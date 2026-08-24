@@ -52,8 +52,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Wild", meta = (ClampMin = "1"))
 	int32 SpawnSearchAttempts = 256;
 
+	/** 재현 가능한 테스트가 필요할 때만 SpawnRandomSeed를 사용합니다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Wild")
-	int32 SpawnRandomSeed = 20260818;
+	bool bUseFixedSpawnSeed = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Wild")
+	int32 SpawnRandomSeed = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Wild", meta = (ClampMin = "1"))
 	int32 FirstRuntimePokemonId = 100000;
