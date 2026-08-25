@@ -122,7 +122,7 @@ protected:
 
 	/** Ignored while bEnableLocalServerValidation is on. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
-	FString FieldServerHost = TEXT("14.51.64.96");
+	FString FieldServerHost = TEXT("210.99.120.106");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server", meta = (ClampMin = "1", ClampMax = "65535"))
 	int32 FieldServerPort = 9200;
