@@ -333,15 +333,29 @@ void AUEPokemonCharacter::UpdateServerDrivenMovement(float DeltaSeconds)
 {
 	if (!bHasServerMoveTarget)
 	{
+		// 목표에 도달했다. 속도를 남겨두면 제자리에 서서 걷는 모션이 계속 돈다.
+		GetCharacterMovement()->Velocity = FVector::ZeroVector;
 		return;
 	}
 
-	const FVector NewLocation = FMath::VInterpTo(GetActorLocation(), TargetServerLocation, DeltaSeconds, ServerLocationInterpSpeed);
+	const FVector PreviousLocation = GetActorLocation();
+	const FVector NewLocation = FMath::VInterpTo(PreviousLocation, TargetServerLocation, DeltaSeconds, ServerLocationInterpSpeed);
 	const FRotator NewRotation = FMath::RInterpTo(GetActorRotation(), TargetServerRotation, DeltaSeconds, ServerRotationInterpSpeed);
 
 	SetActorLocation(NewLocation, false);
 	SetActorRotation(NewRotation);
-	GetCharacterMovement()->Velocity = TargetServerVelocity;
+
+	// SetActorLocation 은 직접 옮기는 것이라 CharacterMovement 가 속도를 계산해 주지
+	// 않는다. 여기서 채우지 않으면 GetVelocity() 가 0 이고, 애님 BP 의 GroundSpeed 가
+	// 늘 0 이라 걸어다니는 동안에도 idle 만 나온다.
+	//
+	// 서버가 준 속도가 아니라 **이번 프레임에 실제로 움직인 양**에서 뽑는다. 보간
+	// 때문에 화면에서 움직이는 속도는 서버 의도와 다른데, 애니메이션은 눈에 보이는
+	// 움직임과 맞아야 한다.
+	if (DeltaSeconds > SMALL_NUMBER)
+	{
+		GetCharacterMovement()->Velocity = (NewLocation - PreviousLocation) / DeltaSeconds;
+	}
 
 	if (FVector::DistSquared(NewLocation, TargetServerLocation) <= 1.0f)
 	{
