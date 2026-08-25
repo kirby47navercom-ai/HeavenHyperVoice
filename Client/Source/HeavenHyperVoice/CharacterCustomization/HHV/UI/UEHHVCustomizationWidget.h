@@ -216,15 +216,27 @@ protected:
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTileView> ColorOptionList = nullptr;
 	UPROPERTY(meta = (BindWidget)) TObjectPtr<UTextBlock> OptionTitleText = nullptr;
 
+	// 카테고리 이름은 WBP에 배치한 텍스트에 데이터만 전달한다.
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> BodyCategoryButton_Label = nullptr;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> HeadCategoryButton_Label = nullptr;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> HairCategoryButton_Label = nullptr;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> EyeCategoryButton_Label = nullptr;
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> OutfitCategoryButton_Label = nullptr;
+	// 현재 선택한 항목 요약은 WBP의 원본 위치에 데이터만 갱신한다.
+	UPROPERTY(meta = (BindWidgetOptional)) TObjectPtr<UTextBlock> SelectionSummaryText = nullptr;
+
 private:
 	void RebuildAppearanceOptions();
 	void RebuildColorOptions();
+	void RefreshCategoryLabels();
+	void SetCategoryLabel(UTextBlock* Label, EUEHHVCustomizationCategory Category);
 	void OpenColorChannel(EUEHHVColorChannel Channel);
 	int32 GetSelectedIndex(EUEHHVCustomizationCategory Category) const;
 	int32 GetFirstVisibleOptionIndex(EUEHHVCustomizationCategory Category) const;
 	int32 GetVisibleOptionCount(EUEHHVCustomizationCategory Category) const;
 	FLinearColor GetChannelColor(EUEHHVColorChannel Channel) const;
 	const TArray<FLinearColor>* GetCatalogColors(EUEHHVColorChannel Channel) const;
+	TArray<FLinearColor> BuildPaletteColors(EUEHHVColorChannel Channel) const;
 	FText GetCategoryTitle(EUEHHVCustomizationCategory Category) const;
 	bool IsPointerOverPreviewArea(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) const;
 	void BindDesignerEvents();
@@ -288,6 +300,10 @@ protected:
 	// 선택지는 WBP_StarterPokemon 기본값에서 자유롭게 추가·삭제한다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Starter Pokemon")
 	TArray<TObjectPtr<UUEPokemonSpeciesData>> StarterPokemonOptions;
+
+	// 포켓몬별 선택 초상화도 WBP 기본값에서 지정하며, 비워 두면 이름만 중앙에 표시한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Starter Pokemon")
+	TMap<TObjectPtr<UUEPokemonSpeciesData>, TObjectPtr<UTexture2D>> StarterPokemonPortraits;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Starter Pokemon|Text")
 	FText ReadyMessage;

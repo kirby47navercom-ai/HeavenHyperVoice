@@ -11,6 +11,22 @@
 #include "Components/TileView.h"
 #include "Engine/Texture2D.h"
 
+namespace
+{
+	void AddUniquePaletteColor(TArray<FLinearColor>& Colors, const FLinearColor& Color)
+	{
+		const FLinearColor ClampedColor = Color.GetClamped();
+		for (const FLinearColor& ExistingColor : Colors)
+		{
+			if (ExistingColor.Equals(ClampedColor, 0.015f))
+			{
+				return;
+			}
+		}
+		Colors.Add(ClampedColor);
+	}
+}
+
 void UUECharacterCreationEntryWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -80,6 +96,7 @@ void UUEHHVCustomizationWidget::NativeConstruct()
 	BindDesignerEvents();
 
 	RefreshFromPreview();
+	RefreshCategoryLabels();
 	OpenCategory(CurrentCategory);
 	OpenColorChannel(CurrentColorChannel);
 }
@@ -107,6 +124,7 @@ void UUEHHVCustomizationWidget::SetPreviewActor(AUEHHVCustomizationPreviewActor*
 		Catalog = PreviewActor->GetCatalog();
 	}
 	RefreshFromPreview();
+	RefreshCategoryLabels();
 	RebuildAppearanceOptions();
 	RebuildColorOptions();
 }
@@ -114,6 +132,7 @@ void UUEHHVCustomizationWidget::SetPreviewActor(AUEHHVCustomizationPreviewActor*
 void UUEHHVCustomizationWidget::SetCatalog(UUEHHVCustomizationCatalog* InCatalog)
 {
 	Catalog = InCatalog;
+	RefreshCategoryLabels();
 	RebuildAppearanceOptions();
 	RebuildColorOptions();
 }
@@ -153,6 +172,7 @@ void UUEHHVCustomizationWidget::OpenCategory(EUEHHVCustomizationCategory Categor
 	CurrentCategory = Category;
 	if (OptionTitleText)
 	{
+		// 선택 영역에는 현재 카테고리 이름만 간결하게 표시한다.
 		OptionTitleText->SetText(GetCategoryTitle(Category));
 	}
 	RebuildAppearanceOptions();
@@ -171,6 +191,17 @@ FString UUEHHVCustomizationWidget::GetOptionLabel(EUEHHVCustomizationCategory Ca
 	}
 
 	const FUEHHVCustomizationOption& Option = Catalog->GetOption(Category, Index);
+	if (Category == EUEHHVCustomizationCategory::Body)
+	{
+		if (Option.Id.Equals(TEXT("TypeA"), ESearchCase::IgnoreCase))
+		{
+			return TEXT("체형 1");
+		}
+		if (Option.Id.Equals(TEXT("TypeB"), ESearchCase::IgnoreCase))
+		{
+			return TEXT("체형 2");
+		}
+	}
 	return Option.DisplayName.IsEmpty() ? Option.Id : Option.DisplayName;
 }
 
@@ -232,13 +263,16 @@ void UUEHHVCustomizationWidget::RebuildAppearanceOptions()
 		Entry->CustomizationOwner = this;
 		Entry->AppearanceCategory = CurrentCategory;
 		Entry->AppearanceIndex = ActualIndex;
-		Entry->Label = FText::FromString(GetOptionLabel(CurrentCategory, ActualIndex));
+		// 외형 선택은 썸네일 자체로 구분하므로 카드 안에 번호와 이름을 중복 표시하지 않는다.
+		Entry->Label = FText::GetEmpty();
 		Entry->Icon = GetOptionIcon(CurrentCategory, ActualIndex);
 		Entry->bSelected = ActualIndex == SelectedIndex;
 		AppearanceEntryItems.Add(Entry);
 		ListItems.Add(Entry);
 	}
 	AppearanceOptionList->SetListItems(ListItems);
+
+	// 선택 상태는 카드 테두리로만 보여 주며 하단 요약 문구는 사용하지 않는다.
 }
 
 void UUEHHVCustomizationWidget::RebuildColorOptions()
@@ -250,11 +284,11 @@ void UUEHHVCustomizationWidget::RebuildColorOptions()
 
 	ColorEntryItems.Reset();
 	TArray<UObject*> ListItems;
-	const TArray<FLinearColor>* Colors = GetCatalogColors(CurrentColorChannel);
-	if (Colors)
+	const TArray<FLinearColor> Colors = BuildPaletteColors(CurrentColorChannel);
+	if (!Colors.IsEmpty())
 	{
 		const FLinearColor SelectedColor = GetChannelColor(CurrentColorChannel);
-		for (const FLinearColor& Color : *Colors)
+		for (const FLinearColor& Color : Colors)
 		{
 			UUECharacterCreationEntryData* Entry = NewObject<UUECharacterCreationEntryData>(this);
 			Entry->Kind = EUECharacterCreationEntryKind::Color;
@@ -267,6 +301,28 @@ void UUEHHVCustomizationWidget::RebuildColorOptions()
 		}
 	}
 	ColorOptionList->SetListItems(ListItems);
+}
+
+void UUEHHVCustomizationWidget::RefreshCategoryLabels()
+{
+	SetCategoryLabel(BodyCategoryButton_Label, EUEHHVCustomizationCategory::Body);
+	SetCategoryLabel(HeadCategoryButton_Label, EUEHHVCustomizationCategory::Head);
+	SetCategoryLabel(HairCategoryButton_Label, EUEHHVCustomizationCategory::Hair);
+	SetCategoryLabel(EyeCategoryButton_Label, EUEHHVCustomizationCategory::Eyes);
+	SetCategoryLabel(OutfitCategoryButton_Label, EUEHHVCustomizationCategory::BodyEquipment);
+}
+
+void UUEHHVCustomizationWidget::SetCategoryLabel(
+	UTextBlock* Label,
+	EUEHHVCustomizationCategory Category)
+{
+	if (!Label)
+	{
+		return;
+	}
+
+	// 카테고리 버튼에는 이름만 보여 주고 항목 개수는 표시하지 않는다.
+	Label->SetText(GetCategoryTitle(Category));
 }
 
 void UUEHHVCustomizationWidget::OpenColorChannel(EUEHHVColorChannel Channel)
@@ -341,6 +397,77 @@ const TArray<FLinearColor>* UUEHHVCustomizationWidget::GetCatalogColors(EUEHHVCo
 	case EUEHHVColorChannel::Eye: return &Catalog->EyeColors;
 	default: return nullptr;
 	}
+}
+
+TArray<FLinearColor> UUEHHVCustomizationWidget::BuildPaletteColors(EUEHHVColorChannel Channel) const
+{
+	TArray<FLinearColor> Colors;
+	if (const TArray<FLinearColor>* CatalogColors = GetCatalogColors(Channel))
+	{
+		for (const FLinearColor& Color : *CatalogColors)
+		{
+			AddUniquePaletteColor(Colors, Color);
+		}
+	}
+
+	// 원본 커마 화면의 촘촘한 색상표를 복원하되, WBP에는 색상 데이터만 전달한다.
+	if (Channel == EUEHHVColorChannel::Skin)
+	{
+		for (const float Value : {1.0f, 0.92f, 0.84f, 0.76f, 0.66f, 0.56f})
+		{
+			for (const float Saturation : {0.12f, 0.22f, 0.34f, 0.46f, 0.58f, 0.70f})
+			{
+				AddUniquePaletteColor(Colors, FLinearColor::MakeFromHSV8(
+					22,
+					static_cast<uint8>(Saturation * 255.0f),
+					static_cast<uint8>(Value * 255.0f)));
+			}
+		}
+	}
+	else if (Channel == EUEHHVColorChannel::Hair)
+	{
+		for (const float Value : {0.18f, 0.32f, 0.48f, 0.68f, 0.86f})
+		{
+			for (const uint8 Hue : {0, 14, 24, 34, 48, 64, 96, 128, 160, 190, 216, 238})
+			{
+				AddUniquePaletteColor(Colors, FLinearColor::MakeFromHSV8(
+					Hue,
+					185,
+					static_cast<uint8>(Value * 255.0f)));
+			}
+		}
+	}
+	else
+	{
+		for (const float Value : {0.30f, 0.46f, 0.62f, 0.78f})
+		{
+			for (const uint8 Hue : {0, 24, 42, 74, 105, 135, 160, 186, 210, 232})
+			{
+				AddUniquePaletteColor(Colors, FLinearColor::MakeFromHSV8(
+					Hue,
+					180,
+					static_cast<uint8>(Value * 255.0f)));
+			}
+		}
+		AddUniquePaletteColor(Colors, FLinearColor(0.08f, 0.08f, 0.08f));
+		AddUniquePaletteColor(Colors, FLinearColor(0.72f, 0.72f, 0.72f));
+	}
+
+	// 팔레트 위치를 매번 예측할 수 있도록 RGB 16진수 코드(#000000 -> #FFFFFF) 순서로 정렬한다.
+	Colors.Sort([](const FLinearColor& Left, const FLinearColor& Right)
+	{
+		const auto ToRgbCode = [](const FLinearColor& Color)
+		{
+			const FColor Quantized = Color.GetClamped().ToFColorSRGB();
+			return (static_cast<uint32>(Quantized.R) << 16)
+				| (static_cast<uint32>(Quantized.G) << 8)
+				| static_cast<uint32>(Quantized.B);
+		};
+
+		return ToRgbCode(Left) < ToRgbCode(Right);
+	});
+
+	return Colors;
 }
 
 FText UUEHHVCustomizationWidget::GetCategoryTitle(EUEHHVCustomizationCategory Category) const
@@ -471,6 +598,11 @@ void UUEStarterPokemonWidget::RebuildOptions()
 		FString PokemonDisplayName = Pokemon->GetName();
 		PokemonDisplayName.RemoveFromStart(TEXT("DA_"));
 		Entry->Label = FText::FromString(PokemonDisplayName);
+		// 초상화는 WBP 기본값에서만 연결하며 에셋 경로를 코드에 고정하지 않는다.
+		if (const TObjectPtr<UTexture2D>* Portrait = StarterPokemonPortraits.Find(Pokemon))
+		{
+			Entry->Icon = Portrait->Get();
+		}
 		Entry->bSelected = Pokemon == SelectedStarterPokemon;
 		EntryItems.Add(Entry);
 		ListItems.Add(Entry);
