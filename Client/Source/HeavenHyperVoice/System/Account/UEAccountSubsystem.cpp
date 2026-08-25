@@ -9,8 +9,6 @@
 #include "Misc/Guid.h"
 #include "Subsystems/SubsystemCollection.h"
 
-const FString UUEAccountSubsystem::SaveSlotName = TEXT("HV_LocalAccounts");
-
 void UUEAccountSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
@@ -65,7 +63,7 @@ EUELocalAccountResult UUEAccountSubsystem::RegisterAccount(
 	const EUELocalAccountResult AvailabilityResult = CheckUserIdAvailability(UserId);
 	if (AvailabilityResult != EUELocalAccountResult::Success)
 	{
-		// Check again at creation time so an earlier UI duplicate check cannot become stale.
+		// UI에서 확인한 뒤 값이 달라질 수 있으므로 실제 생성 시점에 다시 검사한다.
 		return AvailabilityResult;
 	}
 
@@ -93,7 +91,7 @@ EUELocalAccountResult UUEAccountSubsystem::RegisterAccount(
 	AccountSaveGame->Accounts.Add(NormalizedUserId, MoveTemp(NewAccount));
 	if (!SaveAccounts())
 	{
-		// Do not keep an account in memory when persistence failed.
+		// 저장에 실패한 계정은 메모리에도 남기지 않는다.
 		AccountSaveGame->Accounts.Remove(NormalizedUserId);
 		return EUELocalAccountResult::SaveFailed;
 	}
@@ -173,7 +171,7 @@ bool UUEAccountSubsystem::HasValidUserIdCharacters(const FString& UserId)
 
 FString UUEAccountSubsystem::HashPassword(const FString& Password, const FString& Salt)
 {
-	// Salt prevents identical passwords from producing identical stored values.
+	// 같은 비밀번호라도 저장 해시가 같아지지 않도록 계정별 솔트를 섞는다.
 	const FString SaltedPassword = Salt + TEXT("\n") + Password;
 	FTCHARToUTF8 Utf8Password(*SaltedPassword);
 	const FBlake3Hash Hash = FBlake3::HashBuffer(Utf8Password.Get(), Utf8Password.Length());

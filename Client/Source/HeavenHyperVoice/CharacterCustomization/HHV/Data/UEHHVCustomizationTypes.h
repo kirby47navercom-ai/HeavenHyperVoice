@@ -75,40 +75,40 @@ struct HEAVENHYPERVOICE_API FUEHHVAppearance
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Customization")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization")
 	EUEHHVGender Gender = EUEHHVGender::TypeA;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Customization")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization")
 	int32 BodyIndex = 1;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Customization")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization")
 	int32 HeadIndex = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Customization")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization")
 	int32 HairIndex = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Customization")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization")
 	int32 EyeIndex = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Customization")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization")
 	int32 BodyEquipmentIndex = 1;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Customization|Color")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Color")
 	FLinearColor SkinColor = FLinearColor(1.0f, 0.712f, 0.6458f, 1.0f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Customization|Color")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Color")
 	FLinearColor HairColor = FLinearColor(0.1719f, 0.1111f, 0.0850f, 1.0f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Customization|Color")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Color")
 	FLinearColor EyeColor = FLinearColor(0.070638f, 0.484375f, 0.243701f, 1.0f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Customization|Shape", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Shape", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
 	float ArmVolume = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Customization|Shape", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Shape", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
 	float TorsoVolume = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Customization|Shape", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Customization|Shape", meta = (ClampMin = "-1.0", ClampMax = "1.0"))
 	float LegVolume = 0.0f;
 };
 

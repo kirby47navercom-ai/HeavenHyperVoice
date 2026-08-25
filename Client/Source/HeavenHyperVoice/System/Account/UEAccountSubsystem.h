@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -8,7 +6,7 @@
 
 class UUEAccountSaveGame;
 
-/** Every result the UI may need to explain to the player. */
+/** UI가 사용자에게 안내할 수 있는 로컬 계정 처리 결과다. */
 UENUM(BlueprintType)
 enum class EUELocalAccountResult : uint8
 {
@@ -26,13 +24,8 @@ enum class EUELocalAccountResult : uint8
 	SaveFailed
 };
 
-/**
- * Owns client-local account creation and credential verification.
- *
- * Keeping this logic outside the widget makes the validation reusable from
- * Blueprint and gives the UI only one source of truth for account data.
- */
-UCLASS()
+/** 로컬 계정 생성과 인증을 UI에서 분리해 한 곳에서 관리하는 서브시스템이다. */
+UCLASS(Config = Game, DefaultConfig)
 class HEAVENHYPERVOICE_API UUEAccountSubsystem : public UGameInstanceSubsystem
 {
 	GENERATED_BODY()
@@ -40,11 +33,11 @@ class HEAVENHYPERVOICE_API UUEAccountSubsystem : public UGameInstanceSubsystem
 public:
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 
-	/** Returns Success only when the ID is valid and currently unused. */
+	/** 아이디 형식이 올바르고 아직 사용되지 않았을 때만 Success를 반환한다. */
 	UFUNCTION(BlueprintCallable, Category = "Account")
 	EUELocalAccountResult CheckUserIdAvailability(const FString& UserId);
 
-	/** Creates a new local account after validating every registration field. */
+	/** 회원가입 입력을 모두 검증한 뒤 로컬 계정을 만든다. */
 	UFUNCTION(BlueprintCallable, Category = "Account")
 	EUELocalAccountResult RegisterAccount(
 		const FString& Nickname,
@@ -52,14 +45,14 @@ public:
 		const FString& Password,
 		const FString& PasswordConfirmation);
 
-	/** Returns Success only when both the ID and password match one stored account. */
+	/** 저장된 계정의 아이디와 비밀번호가 모두 맞을 때만 Success를 반환한다. */
 	UFUNCTION(BlueprintCallable, Category = "Account")
 	EUELocalAccountResult LoginAccount(const FString& UserId, const FString& Password, FString& OutNickname);
 
 	UFUNCTION(BlueprintPure, Category = "Account")
 	bool IsUserIdRegistered(const FString& UserId) const;
 
-	// These limits are public constants so UI and future server code can mirror the same rules.
+	// UI와 이후 서버 구현이 같은 규칙을 공유할 수 있도록 검증 범위를 한 곳에 둔다.
 	static constexpr int32 MinNicknameLength = 2;
 	static constexpr int32 MaxNicknameLength = 16;
 	static constexpr int32 MinUserIdLength = 4;
@@ -78,6 +71,9 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UUEAccountSaveGame> AccountSaveGame = nullptr;
 
-	static const FString SaveSlotName;
-	static constexpr int32 SaveUserIndex = 0;
+	UPROPERTY(Config)
+	FString SaveSlotName;
+
+	UPROPERTY(Config)
+	int32 SaveUserIndex = 0;
 };

@@ -264,7 +264,7 @@ void AUEHHVCustomizationPreviewActor::ApplyMeshLocalMaterials(USkeletalMeshCompo
 
 void AUEHHVCustomizationPreviewActor::ApplyMorphSafeMaterials(USkeletalMeshComponent* Component)
 {
-	if (!Component)
+	if (!Component || MorphSafeMaterialFolder.IsEmpty())
 	{
 		return;
 	}
@@ -278,7 +278,7 @@ void AUEHHVCustomizationPreviewActor::ApplyMorphSafeMaterials(USkeletalMeshCompo
 			continue;
 		}
 
-		const FString SafePath = FString::Printf(TEXT("%s/%s.%s"), MorphSafeMaterialFolder, *SafeName, *SafeName);
+		const FString SafePath = FString::Printf(TEXT("%s/%s.%s"), *MorphSafeMaterialFolder, *SafeName, *SafeName);
 		UMaterialInterface* SafeMaterial = LoadObject<UMaterialInterface>(nullptr, *SafePath);
 		if (SafeMaterial)
 		{

@@ -36,8 +36,6 @@ namespace UEHHVCustomizationPreviewActorPrivate
 	inline const FUEHHVCustomizationOption PreviewEmptyOption;
 	constexpr int32 PreviewMaxVisibleOutfits = 14;
 	constexpr int32 PreviewFirstVisibleOutfitIndex = 1;
-	inline const TCHAR* const MorphSafeMaterialFolder = TEXT("/Game/CharacterCustomization/HHV/Generated/MorphSafeMaterials");
-	inline const TCHAR* const EyeCompositeFolder = TEXT("/Game/CharacterCustomization/HHV/Generated/EyeComposite");
 
 	inline USkeletalMeshComponent* CreateSkeletalPart(AActor* Owner, USceneComponent* Parent, const FName& Name)
 	{
@@ -112,86 +110,6 @@ namespace UEHHVCustomizationPreviewActorPrivate
 			}
 		}
 		return FString::Printf(TEXT("MI_MS_%s"), *AssetName);
-	}
-
-	inline int32 ExtractPreviewHHVEyeNumber(const FUEHHVCustomizationOption& Option)
-	{
-		const FString Identity = FString::Printf(
-			TEXT("%s %s %s"),
-			*Option.Id,
-			*Option.DisplayName,
-			*GetPathNameSafe(Option.Material));
-		const int32 EyeMarker = Identity.Find(TEXT("Eye"), ESearchCase::IgnoreCase);
-		const int32 TypeMarker = Identity.Find(TEXT("Type"), ESearchCase::IgnoreCase);
-		int32 Start = EyeMarker != INDEX_NONE ? EyeMarker + 3 : (TypeMarker != INDEX_NONE ? TypeMarker + 4 : 0);
-		while (Start < Identity.Len() && !FChar::IsDigit(Identity[Start]))
-		{
-			++Start;
-		}
-
-		FString Digits;
-		for (int32 Index = Start; Index < Identity.Len() && FChar::IsDigit(Identity[Index]); ++Index)
-		{
-			Digits.AppendChar(Identity[Index]);
-		}
-		return Digits.IsEmpty() ? 1 : FMath::Clamp(FCString::Atoi(*Digits), 1, 999);
-	}
-
-	inline int32 FindNearestPaletteIndex(const TArray<FLinearColor>& Palette, const FLinearColor& Color)
-	{
-		if (Palette.IsEmpty())
-		{
-			return 0;
-		}
-
-		int32 BestIndex = 0;
-		float BestDistance = TNumericLimits<float>::Max();
-		for (int32 Index = 0; Index < Palette.Num(); ++Index)
-		{
-			const FLinearColor Candidate = Palette[Index].GetClamped();
-			const float Distance =
-				FMath::Square(Candidate.R - Color.R) +
-				FMath::Square(Candidate.G - Color.G) +
-				FMath::Square(Candidate.B - Color.B);
-			if (Distance < BestDistance)
-			{
-				BestDistance = Distance;
-				BestIndex = Index;
-			}
-		}
-		return FMath::Clamp(BestIndex, 0, 9);
-	}
-
-	inline UTexture* LoadEyeCompositeTexture(
-		const FUEHHVCustomizationOption& Option,
-		const FLinearColor& EyeColor,
-		const TArray<FLinearColor>& EyePalette)
-	{
-		const int32 EyeNumber = ExtractPreviewHHVEyeNumber(Option);
-		const int32 ColorIndex = FindNearestPaletteIndex(EyePalette, EyeColor.GetClamped());
-		const FString TextureName = FString::Printf(
-			TEXT("T_Player_Eye%03d_Composite_C%02d"),
-			EyeNumber,
-			ColorIndex);
-		const FString TexturePath = FString::Printf(
-			TEXT("%s/Eye%03d/%s.%s"),
-			EyeCompositeFolder,
-			EyeNumber,
-			*TextureName,
-			*TextureName);
-		if (UTexture* Texture = LoadObject<UTexture>(nullptr, *TexturePath))
-		{
-			return Texture;
-		}
-
-		const FString FallbackName = FString::Printf(TEXT("T_Player_Eye%03d_Composite"), EyeNumber);
-		const FString FallbackPath = FString::Printf(
-			TEXT("%s/Eye%03d/%s.%s"),
-			EyeCompositeFolder,
-			EyeNumber,
-			*FallbackName,
-			*FallbackName);
-		return LoadObject<UTexture>(nullptr, *FallbackPath);
 	}
 
 	inline void ApplyPreviewEyeColorParameters(UMaterialInstanceDynamic* Material, const FLinearColor& EyeColor)

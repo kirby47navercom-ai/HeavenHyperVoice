@@ -1,102 +1,121 @@
 #include "UEHHVCustomizationWidget.h"
 
 #include "../Preview/UEHHVCustomizationPreviewActor.h"
+#include "../../../Pokemon/UEPokemonSpeciesData.h"
 #include "../../../System/UEGameInstance.h"
 
-#include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
-#include "Components/CanvasPanel.h"
-#include "Components/CanvasPanelSlot.h"
-#include "Components/HorizontalBox.h"
-#include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
-#include "Components/PanelWidget.h"
-#include "Components/ScrollBox.h"
-#include "Components/SizeBox.h"
-#include "Components/Spacer.h"
 #include "Components/TextBlock.h"
-#include "Components/UniformGridPanel.h"
-#include "Components/VerticalBox.h"
-#include "Components/VerticalBoxSlot.h"
-#include "Components/Widget.h"
-#include "Engine/SkeletalMesh.h"
+#include "Components/TileView.h"
 #include "Engine/Texture2D.h"
-#include "GameFramework/GameModeBase.h"
-#include "InputCoreTypes.h"
-#include "Kismet/GameplayStatics.h"
-#include "Kismet/KismetSystemLibrary.h"
 
-#include "UEHHVCustomizationWidgetPrivate.h"
-
-using namespace UEHHVCustomizationWidgetPrivate;
-
-void UUEHHVOptionButton::Configure(
-	UUEHHVCustomizationWidget* InOwner,
-	EUEHHVCustomizationCategory InCategory,
-	int32 InIndex)
+void UUECharacterCreationEntryWidget::NativeConstruct()
 {
-	OwnerWidget = InOwner;
-	Category = InCategory;
-	Index = InIndex;
-	OnClicked.AddUniqueDynamic(this, &ThisClass::HandleClicked);
+	Super::NativeConstruct();
+	SelectButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleClicked);
 }
 
-void UUEHHVOptionButton::HandleClicked()
+void UUECharacterCreationEntryWidget::NativeDestruct()
 {
-	if (!OwnerWidget)
+	if (SelectButton)
+	{
+		SelectButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleClicked);
+	}
+	Super::NativeDestruct();
+}
+
+void UUECharacterCreationEntryWidget::NativeOnListItemObjectSet(UObject* ListItemObject)
+{
+	EntryData = Cast<UUECharacterCreationEntryData>(ListItemObject);
+	if (!EntryData)
 	{
 		return;
 	}
 
-	if (Index == INDEX_NONE)
+	if (LabelText)
 	{
-		OwnerWidget->OpenCategory(Category);
+		LabelText->SetText(EntryData->Label);
 	}
-	else
+	if (IconImage)
 	{
-		OwnerWidget->SelectOption(Category, Index);
+		IconImage->SetBrushFromTexture(EntryData->Icon);
+		IconImage->SetVisibility(EntryData->Icon ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	}
+	if (ColorSwatch)
+	{
+		ColorSwatch->SetBrushColor(EntryData->Color);
+		ColorSwatch->SetVisibility(
+			EntryData->Kind == EUECharacterCreationEntryKind::Color
+				? ESlateVisibility::Visible
+				: ESlateVisibility::Collapsed);
+	}
+	if (SelectedMarker)
+	{
+		SelectedMarker->SetVisibility(
+			EntryData->bSelected ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 }
 
-void UUEHHVColorButton::Configure(
-	UUEHHVCustomizationWidget* InOwner,
-	EUEHHVColorChannel InChannel,
-	FLinearColor InColor)
+void UUECharacterCreationEntryWidget::HandleClicked()
 {
-	OwnerWidget = InOwner;
-	Channel = InChannel;
-	Color = InColor.GetClamped();
-	SetBackgroundColor(Color);
-	OnClicked.AddUniqueDynamic(this, &ThisClass::HandleClicked);
+	if (!EntryData)
+	{
+		return;
+	}
+	if (EntryData->CustomizationOwner)
+	{
+		EntryData->CustomizationOwner->HandleEntryActivated(EntryData);
+	}
+	else if (EntryData->StarterOwner)
+	{
+		EntryData->StarterOwner->HandleEntryActivated(EntryData);
+	}
 }
 
-void UUEHHVColorButton::HandleClicked()
+void UUEHHVCustomizationWidget::NativeConstruct()
 {
-	if (OwnerWidget)
-	{
-		OwnerWidget->SelectColor(Channel, Color);
-	}
+	Super::NativeConstruct();
+	BindDesignerEvents();
+
+	RefreshFromPreview();
+	OpenCategory(CurrentCategory);
+	OpenColorChannel(CurrentColorChannel);
+}
+
+void UUEHHVCustomizationWidget::NativeDestruct()
+{
+	UnbindDesignerEvents();
+	Super::NativeDestruct();
 }
 
 void UUEHHVCustomizationWidget::SetPreviewActor(AUEHHVCustomizationPreviewActor* InPreviewActor)
 {
 	PreviewActor = InPreviewActor;
+	if (PreviewActor)
+	{
+		FUEHHVAppearance PendingAppearance;
+		if (const UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+			GameInstance && GameInstance->GetPendingHHVAppearance(PendingAppearance))
+		{
+			PreviewActor->ApplyAppearance(PendingAppearance);
+		}
+	}
 	if (PreviewActor && !Catalog)
 	{
 		Catalog = PreviewActor->GetCatalog();
 	}
 	RefreshFromPreview();
-	RebuildCategories();
-	RebuildOptions();
-	SynchronizeControls();
+	RebuildAppearanceOptions();
+	RebuildColorOptions();
 }
 
 void UUEHHVCustomizationWidget::SetCatalog(UUEHHVCustomizationCatalog* InCatalog)
 {
 	Catalog = InCatalog;
-	RebuildCategories();
-	RebuildOptions();
+	RebuildAppearanceOptions();
+	RebuildColorOptions();
 }
 
 void UUEHHVCustomizationWidget::SelectOption(EUEHHVCustomizationCategory Category, int32 Index)
@@ -106,9 +125,7 @@ void UUEHHVCustomizationWidget::SelectOption(EUEHHVCustomizationCategory Categor
 		PreviewActor->SelectOption(Category, Index);
 		RefreshFromPreview();
 	}
-	RebuildCategories();
-	RebuildOptions();
-	SynchronizeControls();
+	RebuildAppearanceOptions();
 }
 
 void UUEHHVCustomizationWidget::SelectGender(EUEHHVGender Gender)
@@ -118,8 +135,7 @@ void UUEHHVCustomizationWidget::SelectGender(EUEHHVGender Gender)
 		PreviewActor->SelectGender(Gender);
 		RefreshFromPreview();
 	}
-	RebuildOptions();
-	SynchronizeControls();
+	RebuildAppearanceOptions();
 }
 
 void UUEHHVCustomizationWidget::SelectColor(EUEHHVColorChannel Channel, FLinearColor Color)
@@ -129,46 +145,17 @@ void UUEHHVCustomizationWidget::SelectColor(EUEHHVColorChannel Channel, FLinearC
 		PreviewActor->SetColor(Channel, Color);
 		RefreshFromPreview();
 	}
-	RebuildParameterControls();
-	SynchronizeControls();
-}
-
-void UUEHHVCustomizationWidget::StartWithCurrentAppearance()
-{
-	RefreshFromPreview();
-	if (UUEGameInstance* UEGameInstance = Cast<UUEGameInstance>(GetGameInstance()))
-	{
-		// 선택 화면에서 고른 슬롯에 저장한 뒤 같은 외형으로 플레이를 시작한다.
-		if (!UEGameInstance->SaveAppearanceToSelectedSlot(CachedAppearance))
-		{
-			UEGameInstance->SetPendingHHVAppearance(CachedAppearance);
-		}
-	}
-
-	if (StartLevel.IsNull())
-	{
-		UE_LOG(LogTemp, Error, TEXT("StartLevel is not assigned in the customization widget Blueprint defaults."));
-		return;
-	}
-	if (!GameplayGameModeClass)
-	{
-		UE_LOG(LogTemp, Error,
-			TEXT("GameplayGameModeClass is not assigned in the customization widget Blueprint defaults."));
-		return;
-	}
-
-	const FString TravelOptions = FString::Printf(
-		TEXT("?game=%s"), *GameplayGameModeClass->GetPathName());
-	UGameplayStatics::OpenLevelBySoftObjectPtr(this, StartLevel, true, TravelOptions);
+	RebuildColorOptions();
 }
 
 void UUEHHVCustomizationWidget::OpenCategory(EUEHHVCustomizationCategory Category)
 {
 	CurrentCategory = Category;
-	RebuildCategories();
-	RebuildOptions();
-	RebuildParameterControls();
-	SynchronizeControls();
+	if (OptionTitleText)
+	{
+		OptionTitleText->SetText(GetCategoryTitle(Category));
+	}
+	RebuildAppearanceOptions();
 }
 
 int32 UUEHHVCustomizationWidget::GetOptionCount(EUEHHVCustomizationCategory Category) const
@@ -184,39 +171,12 @@ FString UUEHHVCustomizationWidget::GetOptionLabel(EUEHHVCustomizationCategory Ca
 	}
 
 	const FUEHHVCustomizationOption& Option = Catalog->GetOption(Category, Index);
-	if (Category == EUEHHVCustomizationCategory::Body)
-	{
-		if (Option.Id.Equals(TEXT("TypeA"), ESearchCase::IgnoreCase))
-		{
-			return TEXT("Type 1");
-		}
-		if (Option.Id.Equals(TEXT("TypeB"), ESearchCase::IgnoreCase))
-		{
-			return TEXT("Type 2");
-		}
-	}
 	return Option.DisplayName.IsEmpty() ? Option.Id : Option.DisplayName;
 }
 
 UTexture2D* UUEHHVCustomizationWidget::GetOptionIcon(EUEHHVCustomizationCategory Category, int32 Index) const
 {
-	if (!Catalog)
-	{
-		return nullptr;
-	}
-
-	return Catalog->GetOption(Category, Index).Icon;
-}
-
-USkeletalMesh* UUEHHVCustomizationWidget::GetOptionMesh(EUEHHVCustomizationCategory Category, int32 Index) const
-{
-	if (!Catalog)
-	{
-		return nullptr;
-	}
-
-	const EUEHHVGender Gender = PreviewActor ? PreviewActor->GetAppearance().Gender : CachedAppearance.Gender;
-	return Catalog->GetOption(Category, Index).LoadMesh(Gender);
+	return Catalog ? Catalog->GetOption(Category, Index).Icon : nullptr;
 }
 
 const FUEHHVAppearance& UUEHHVCustomizationWidget::GetAppearance() const
@@ -232,31 +192,313 @@ void UUEHHVCustomizationWidget::RefreshFromPreview()
 	}
 }
 
-TSharedRef<SWidget> UUEHHVCustomizationWidget::RebuildWidget()
+void UUEHHVCustomizationWidget::HandleEntryActivated(UUECharacterCreationEntryData* EntryData)
 {
-	if (!WidgetTree)
+	if (!EntryData)
 	{
-		WidgetTree = NewObject<UWidgetTree>(this, TEXT("HeavenHyperVoiceCustomizationWidgetTree"));
+		return;
 	}
-	if (!BindDesignerInterface())
+
+	switch (EntryData->Kind)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Character customization WBP designer canvas is missing required widgets."));
+	case EUECharacterCreationEntryKind::Appearance:
+		SelectOption(EntryData->AppearanceCategory, EntryData->AppearanceIndex);
+		break;
+	case EUECharacterCreationEntryKind::Color:
+		SelectColor(EntryData->ColorChannel, EntryData->Color);
+		break;
+	default:
+		break;
 	}
-	return Super::RebuildWidget();
 }
 
-void UUEHHVCustomizationWidget::NativeConstruct()
+void UUEHHVCustomizationWidget::RebuildAppearanceOptions()
+{
+	if (!AppearanceOptionList || !Catalog)
+	{
+		return;
+	}
+
+	AppearanceEntryItems.Reset();
+	TArray<UObject*> ListItems;
+	const int32 FirstIndex = GetFirstVisibleOptionIndex(CurrentCategory);
+	const int32 Count = GetVisibleOptionCount(CurrentCategory);
+	const int32 SelectedIndex = GetSelectedIndex(CurrentCategory);
+	for (int32 Offset = 0; Offset < Count; ++Offset)
+	{
+		const int32 ActualIndex = FirstIndex + Offset;
+		UUECharacterCreationEntryData* Entry = NewObject<UUECharacterCreationEntryData>(this);
+		Entry->Kind = EUECharacterCreationEntryKind::Appearance;
+		Entry->CustomizationOwner = this;
+		Entry->AppearanceCategory = CurrentCategory;
+		Entry->AppearanceIndex = ActualIndex;
+		Entry->Label = FText::FromString(GetOptionLabel(CurrentCategory, ActualIndex));
+		Entry->Icon = GetOptionIcon(CurrentCategory, ActualIndex);
+		Entry->bSelected = ActualIndex == SelectedIndex;
+		AppearanceEntryItems.Add(Entry);
+		ListItems.Add(Entry);
+	}
+	AppearanceOptionList->SetListItems(ListItems);
+}
+
+void UUEHHVCustomizationWidget::RebuildColorOptions()
+{
+	if (!ColorOptionList)
+	{
+		return;
+	}
+
+	ColorEntryItems.Reset();
+	TArray<UObject*> ListItems;
+	const TArray<FLinearColor>* Colors = GetCatalogColors(CurrentColorChannel);
+	if (Colors)
+	{
+		const FLinearColor SelectedColor = GetChannelColor(CurrentColorChannel);
+		for (const FLinearColor& Color : *Colors)
+		{
+			UUECharacterCreationEntryData* Entry = NewObject<UUECharacterCreationEntryData>(this);
+			Entry->Kind = EUECharacterCreationEntryKind::Color;
+			Entry->CustomizationOwner = this;
+			Entry->ColorChannel = CurrentColorChannel;
+			Entry->Color = Color.GetClamped();
+			Entry->bSelected = SelectedColor.Equals(Entry->Color, KINDA_SMALL_NUMBER);
+			ColorEntryItems.Add(Entry);
+			ListItems.Add(Entry);
+		}
+	}
+	ColorOptionList->SetListItems(ListItems);
+}
+
+void UUEHHVCustomizationWidget::OpenColorChannel(EUEHHVColorChannel Channel)
+{
+	CurrentColorChannel = Channel;
+	RebuildColorOptions();
+}
+
+int32 UUEHHVCustomizationWidget::GetSelectedIndex(EUEHHVCustomizationCategory Category) const
+{
+	const FUEHHVAppearance& Appearance = GetAppearance();
+	switch (Category)
+	{
+	case EUEHHVCustomizationCategory::Body: return Appearance.BodyIndex;
+	case EUEHHVCustomizationCategory::Head: return Appearance.HeadIndex;
+	case EUEHHVCustomizationCategory::Hair: return Appearance.HairIndex;
+	case EUEHHVCustomizationCategory::Eyes: return Appearance.EyeIndex;
+	case EUEHHVCustomizationCategory::BodyEquipment: return Appearance.BodyEquipmentIndex;
+	default: return INDEX_NONE;
+	}
+}
+
+int32 UUEHHVCustomizationWidget::GetFirstVisibleOptionIndex(EUEHHVCustomizationCategory Category) const
+{
+	if (Category == EUEHHVCustomizationCategory::Body)
+	{
+		return FirstBodyOptionIndex;
+	}
+	if (Category == EUEHHVCustomizationCategory::BodyEquipment)
+	{
+		return FirstOutfitOptionIndex;
+	}
+	return 0;
+}
+
+int32 UUEHHVCustomizationWidget::GetVisibleOptionCount(EUEHHVCustomizationCategory Category) const
+{
+	const int32 Available = FMath::Max(0, GetOptionCount(Category) - GetFirstVisibleOptionIndex(Category));
+	if (Category == EUEHHVCustomizationCategory::Body)
+	{
+		return FMath::Min(Available, MaxBodyOptions);
+	}
+	if (Category == EUEHHVCustomizationCategory::BodyEquipment)
+	{
+		return FMath::Min(Available, MaxOutfitOptions);
+	}
+	return Available;
+}
+
+FLinearColor UUEHHVCustomizationWidget::GetChannelColor(EUEHHVColorChannel Channel) const
+{
+	const FUEHHVAppearance& Appearance = GetAppearance();
+	switch (Channel)
+	{
+	case EUEHHVColorChannel::Skin: return Appearance.SkinColor;
+	case EUEHHVColorChannel::Hair: return Appearance.HairColor;
+	case EUEHHVColorChannel::Eye: return Appearance.EyeColor;
+	default: return FLinearColor::Transparent;
+	}
+}
+
+const TArray<FLinearColor>* UUEHHVCustomizationWidget::GetCatalogColors(EUEHHVColorChannel Channel) const
+{
+	if (!Catalog)
+	{
+		return nullptr;
+	}
+	switch (Channel)
+	{
+	case EUEHHVColorChannel::Skin: return &Catalog->SkinColors;
+	case EUEHHVColorChannel::Hair: return &Catalog->HairColors;
+	case EUEHHVColorChannel::Eye: return &Catalog->EyeColors;
+	default: return nullptr;
+	}
+}
+
+FText UUEHHVCustomizationWidget::GetCategoryTitle(EUEHHVCustomizationCategory Category) const
+{
+	switch (Category)
+	{
+	case EUEHHVCustomizationCategory::Body: return BodyCategoryTitle;
+	case EUEHHVCustomizationCategory::Head: return HeadCategoryTitle;
+	case EUEHHVCustomizationCategory::Hair: return HairCategoryTitle;
+	case EUEHHVCustomizationCategory::Eyes: return EyeCategoryTitle;
+	case EUEHHVCustomizationCategory::BodyEquipment: return OutfitCategoryTitle;
+	default: return FText::GetEmpty();
+	}
+}
+
+void UUEHHVCustomizationWidget::BindDesignerEvents()
+{
+	BodyCategoryButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleBodyCategoryClicked);
+	HeadCategoryButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleHeadCategoryClicked);
+	HairCategoryButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleHairCategoryClicked);
+	EyeCategoryButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleEyeCategoryClicked);
+	OutfitCategoryButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleOutfitCategoryClicked);
+	TypeAButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleTypeAClicked);
+	TypeBButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleTypeBClicked);
+	SkinColorButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleSkinColorClicked);
+	HairColorButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleHairColorClicked);
+	EyeColorButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleEyeColorClicked);
+	CompleteButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCompleteClicked);
+	BackButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleBackClicked);
+}
+
+void UUEHHVCustomizationWidget::UnbindDesignerEvents()
+{
+	if (BodyCategoryButton) BodyCategoryButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleBodyCategoryClicked);
+	if (HeadCategoryButton) HeadCategoryButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleHeadCategoryClicked);
+	if (HairCategoryButton) HairCategoryButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleHairCategoryClicked);
+	if (EyeCategoryButton) EyeCategoryButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleEyeCategoryClicked);
+	if (OutfitCategoryButton) OutfitCategoryButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleOutfitCategoryClicked);
+	if (TypeAButton) TypeAButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleTypeAClicked);
+	if (TypeBButton) TypeBButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleTypeBClicked);
+	if (SkinColorButton) SkinColorButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleSkinColorClicked);
+	if (HairColorButton) HairColorButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleHairColorClicked);
+	if (EyeColorButton) EyeColorButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleEyeColorClicked);
+	if (CompleteButton) CompleteButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleCompleteClicked);
+	if (BackButton) BackButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleBackClicked);
+}
+
+void UUEHHVCustomizationWidget::HandleBodyCategoryClicked() { OpenCategory(EUEHHVCustomizationCategory::Body); }
+void UUEHHVCustomizationWidget::HandleHeadCategoryClicked() { OpenCategory(EUEHHVCustomizationCategory::Head); }
+void UUEHHVCustomizationWidget::HandleHairCategoryClicked() { OpenCategory(EUEHHVCustomizationCategory::Hair); }
+void UUEHHVCustomizationWidget::HandleEyeCategoryClicked() { OpenCategory(EUEHHVCustomizationCategory::Eyes); }
+void UUEHHVCustomizationWidget::HandleOutfitCategoryClicked() { OpenCategory(EUEHHVCustomizationCategory::BodyEquipment); }
+void UUEHHVCustomizationWidget::HandleTypeAClicked() { SelectGender(EUEHHVGender::TypeA); }
+void UUEHHVCustomizationWidget::HandleTypeBClicked() { SelectGender(EUEHHVGender::TypeB); }
+void UUEHHVCustomizationWidget::HandleSkinColorClicked() { OpenColorChannel(EUEHHVColorChannel::Skin); }
+void UUEHHVCustomizationWidget::HandleHairColorClicked() { OpenColorChannel(EUEHHVColorChannel::Hair); }
+void UUEHHVCustomizationWidget::HandleEyeColorClicked() { OpenColorChannel(EUEHHVColorChannel::Eye); }
+void UUEHHVCustomizationWidget::HandleCompleteClicked()
+{
+	RefreshFromPreview();
+	if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance()))
+	{
+		GameInstance->SetPendingHHVAppearance(CachedAppearance);
+	}
+	OnCustomizationConfirmed.Broadcast();
+}
+
+void UUEHHVCustomizationWidget::HandleBackClicked()
+{
+	OnBackRequested.Broadcast();
+}
+
+void UUEStarterPokemonWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
-	UKismetSystemLibrary::ExecuteConsoleCommand(this, TEXT("DisableAllScreenMessages"));
-	RefreshFromPreview();
-	BindDesignerInterface();
-	RebuildCategories();
+	ConfirmButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleConfirmClicked);
+	BackButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleBackClicked);
+	SetStatusMessage(ReadyMessage);
 	RebuildOptions();
-	SynchronizeControls();
 }
 
-void UUEHHVCustomizationWidget::HandleStartClicked()
+void UUEStarterPokemonWidget::NativeDestruct()
 {
-	StartWithCurrentAppearance();
+	if (ConfirmButton)
+	{
+		ConfirmButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleConfirmClicked);
+	}
+	if (BackButton)
+	{
+		BackButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleBackClicked);
+	}
+	Super::NativeDestruct();
+}
+
+void UUEStarterPokemonWidget::HandleEntryActivated(UUECharacterCreationEntryData* EntryData)
+{
+	if (!EntryData || EntryData->Kind != EUECharacterCreationEntryKind::StarterPokemon)
+	{
+		return;
+	}
+	SelectedStarterPokemon = EntryData->StarterPokemon;
+	RebuildOptions();
+}
+
+void UUEStarterPokemonWidget::SetStatusMessage(const FText& Message)
+{
+	if (StatusText)
+	{
+		StatusText->SetText(Message);
+	}
+}
+
+void UUEStarterPokemonWidget::RebuildOptions()
+{
+	EntryItems.Reset();
+	TArray<UObject*> ListItems;
+	for (UUEPokemonSpeciesData* Pokemon : StarterPokemonOptions)
+	{
+		if (!Pokemon)
+		{
+			continue;
+		}
+
+		UUECharacterCreationEntryData* Entry = NewObject<UUECharacterCreationEntryData>(this);
+		Entry->Kind = EUECharacterCreationEntryKind::StarterPokemon;
+		Entry->StarterOwner = this;
+		Entry->StarterPokemon = Pokemon;
+		FString PokemonDisplayName = Pokemon->GetName();
+		PokemonDisplayName.RemoveFromStart(TEXT("DA_"));
+		Entry->Label = FText::FromString(PokemonDisplayName);
+		Entry->bSelected = Pokemon == SelectedStarterPokemon;
+		EntryItems.Add(Entry);
+		ListItems.Add(Entry);
+	}
+	StarterPokemonList->SetListItems(ListItems);
+	if (SelectedStarterPokemon)
+	{
+		FString PokemonDisplayName = SelectedStarterPokemon->GetName();
+		PokemonDisplayName.RemoveFromStart(TEXT("DA_"));
+		SelectedPartnerText->SetText(FText::FromString(PokemonDisplayName));
+	}
+	else
+	{
+		SelectedPartnerText->SetText(FText::GetEmpty());
+	}
+}
+
+void UUEStarterPokemonWidget::HandleConfirmClicked()
+{
+	if (!SelectedStarterPokemon)
+	{
+		SetStatusMessage(SelectionRequiredMessage);
+		return;
+	}
+	OnStarterConfirmed.Broadcast(SelectedStarterPokemon);
+}
+
+void UUEStarterPokemonWidget::HandleBackClicked()
+{
+	OnBackRequested.Broadcast();
 }

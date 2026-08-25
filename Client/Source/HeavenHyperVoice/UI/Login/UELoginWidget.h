@@ -1,24 +1,19 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "UELoginWidget.generated.h"
 
-class UBorder;
 class UButton;
-class UCanvasPanel;
 class UEditableTextBox;
-class UHorizontalBox;
 class USizeBox;
 class UTextBlock;
 class UUEAccountSubsystem;
-class UVerticalBox;
 enum class EUELocalAccountResult : uint8;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FUELoginSucceededSignature, const FString&, UserId, const FString&, Nickname);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FUEAccountRegisteredSignature, const FString&, UserId, const FString&, Nickname);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FUELoginBackRequestedSignature);
 
 UENUM(BlueprintType)
 enum class EUELoginScreenMode : uint8
@@ -27,12 +22,7 @@ enum class EUELoginScreenMode : uint8
 	Register
 };
 
-/**
- * Client login and registration screen.
- *
- * The widget owns presentation and duplicate-check state only. Account storage,
- * password hashing, and credential decisions belong to UUEAccountSubsystem.
- */
+/** 로그인·회원가입 WBP의 입력과 로컬 계정 검증만 연결하는 네이티브 기반 위젯이다. */
 UCLASS(Blueprintable)
 class HEAVENHYPERVOICE_API UUELoginWidget : public UUserWidget
 {
@@ -41,36 +31,11 @@ class HEAVENHYPERVOICE_API UUELoginWidget : public UUserWidget
 public:
 	UUELoginWidget(const FObjectInitializer& ObjectInitializer);
 
-	// Every visible label can be changed from a Blueprint child class.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Text")
-	FText TitleText;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Text")
 	FText LoginSubtitleText;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Text")
 	FText RegisterSubtitleText;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Text")
-	FText LoginTabText;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Text")
-	FText RegisterTabText;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Text")
-	FText NicknameHintText;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Text")
-	FText IdHintText;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Text")
-	FText PasswordHintText;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Text")
-	FText ConfirmPasswordHintText;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Text")
-	FText CheckDuplicateButtonText;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Text")
 	FText LoginButtonText;
@@ -99,23 +64,48 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Text")
 	FText RegistrationSucceededStatusText;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Style")
-	FLinearColor InputTextColor = FLinearColor(0.02f, 0.02f, 0.02f, 1.0f);
+	// 검증 문구도 WBP 기본값에서 바꿀 수 있게 코드 문자열을 두지 않는다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Text")
+	FText StorageUnavailableStatusText;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Layout", meta = (ClampMin = "320.0"))
-	float PanelWidth = 460.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Text")
+	FText NicknameRequiredStatusText;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Layout", meta = (ClampMin = "32.0"))
-	float InputHeight = 46.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Text")
+	FText InvalidNicknameLengthStatusText;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Layout", meta = (ClampMin = "32.0"))
-	float ButtonHeight = 48.0f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Text")
+	FText UserIdRequiredStatusText;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Text")
+	FText InvalidUserIdLengthStatusText;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Text")
+	FText InvalidUserIdCharactersStatusText;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Text")
+	FText InvalidPasswordLengthStatusText;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Text")
+	FText PasswordMismatchStatusText;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Text")
+	FText AccountAlreadyExistsStatusText;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Text")
+	FText SaveFailedStatusText;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Text")
+	FText InvalidFieldsStatusText;
 
 	UPROPERTY(BlueprintAssignable, Category = "Login|Event")
 	FUELoginSucceededSignature OnLoginSucceeded;
 
 	UPROPERTY(BlueprintAssignable, Category = "Login|Event")
 	FUEAccountRegisteredSignature OnAccountRegistered;
+
+	UPROPERTY(BlueprintAssignable, Category = "Login|Event")
+	FUELoginBackRequestedSignature OnBackRequested;
 
 	UFUNCTION(BlueprintCallable, Category = "Login")
 	void SetScreenMode(EUELoginScreenMode NewMode);
@@ -127,21 +117,16 @@ public:
 	void SetStatusMessage(const FText& Message);
 
 protected:
-	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
 private:
-	void BuildLoginLayout();
 	void RefreshScreenMode();
 	void ResetDuplicateCheck();
 	void HandleLogin();
 	void HandleRegistration();
 	UUEAccountSubsystem* GetAccountSubsystem() const;
 	FText GetRegistrationResultMessage(EUELocalAccountResult Result) const;
-
-	UFUNCTION()
-	void HandleLoginTabClicked();
 
 	UFUNCTION()
 	void HandleRegisterTabClicked();
@@ -155,50 +140,47 @@ private:
 	UFUNCTION()
 	void HandleUserIdChanged(const FText& NewText);
 
+	UFUNCTION()
+	void HandleBackClicked();
+
 private:
-	UPROPERTY(Transient)
-	TObjectPtr<UCanvasPanel> RootCanvas = nullptr;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UBorder> BackgroundBorder = nullptr;
-
-	UPROPERTY(Transient)
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> SubtitleBlock = nullptr;
 
-	UPROPERTY(Transient)
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UEditableTextBox> NicknameInputBox = nullptr;
 
-	UPROPERTY(Transient)
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<USizeBox> NicknameRow = nullptr;
 
-	UPROPERTY(Transient)
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UEditableTextBox> IdInputBox = nullptr;
 
-	UPROPERTY(Transient)
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> DuplicateCheckButton = nullptr;
 
-	UPROPERTY(Transient)
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UEditableTextBox> PasswordInputBox = nullptr;
 
-	UPROPERTY(Transient)
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UEditableTextBox> ConfirmPasswordInputBox = nullptr;
 
-	UPROPERTY(Transient)
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<USizeBox> ConfirmPasswordRow = nullptr;
 
-	UPROPERTY(Transient)
-	TObjectPtr<UButton> LoginTabButton = nullptr;
-
-	UPROPERTY(Transient)
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> RegisterTabButton = nullptr;
 
-	UPROPERTY(Transient)
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> PrimaryActionButton = nullptr;
 
-	UPROPERTY(Transient)
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UButton> BackButton = nullptr;
+
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> PrimaryActionLabel = nullptr;
 
-	UPROPERTY(Transient)
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> StatusBlock = nullptr;
 
 	EUELoginScreenMode ScreenMode = EUELoginScreenMode::Login;

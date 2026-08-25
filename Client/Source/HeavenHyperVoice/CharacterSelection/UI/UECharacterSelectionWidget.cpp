@@ -1,85 +1,49 @@
 #include "UECharacterSelectionWidget.h"
 
 #include "../../System/UEGameInstance.h"
+#include "../../Pokemon/UEPokemonSpeciesData.h"
 
-#include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "GameFramework/GameModeBase.h"
 #include "Kismet/GameplayStatics.h"
-
-namespace UECharacterSelectionWidgetPrivate
-{
-	const FLinearColor DefaultButtonColor(0.10f, 0.14f, 0.17f, 1.0f);
-	const FLinearColor SelectedButtonColor(0.90f, 0.62f, 0.12f, 1.0f);
-}
 
 void UUECharacterSelectionWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	SlotButton0->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleSlot0Clicked);
-	SlotButton1->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleSlot1Clicked);
-	SlotButton2->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleSlot2Clicked);
-	StartButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleStartClicked);
-	RefreshSlots();
+	const TArray<UUECharacterLobbySlotWidget*> LobbySlots = GetLobbySlots();
+	for (int32 SlotIndex = 0; SlotIndex < LobbySlots.Num(); ++SlotIndex)
+	{
+		LobbySlots[SlotIndex]->InitializeSlot(SlotIndex);
+		LobbySlots[SlotIndex]->OnActionRequested.AddUniqueDynamic(
+			this,
+			&ThisClass::HandleLobbySlotAction);
+		LobbySlots[SlotIndex]->OnDeleteRequested.AddUniqueDynamic(
+			this,
+			&ThisClass::HandleLobbySlotDelete);
+	}
+
+	const UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	const FString SessionNickname = GameInstance ? GameInstance->GetLocalSessionNickname() : FString();
+	SetAccountName(SessionNickname.IsEmpty() ? DefaultAccountName : FText::FromString(SessionNickname));
+	RefreshLobby();
 }
 
-void UUECharacterSelectionWidget::SelectSlot(int32 SlotIndex)
+void UUECharacterSelectionWidget::NativeDestruct()
 {
-	UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
-	if (!GameInstance || !GameInstance->SelectCharacterSlot(SlotIndex))
+	for (UUECharacterLobbySlotWidget* LobbySlot : GetLobbySlots())
 	{
-		return;
-	}
-
-	if (!GameInstance->IsCharacterSlotOccupied(SlotIndex))
-	{
-		if (CustomizationLevel.IsNull())
+		if (!LobbySlot)
 		{
-			UE_LOG(LogTemp, Error, TEXT("커스터마이징 레벨이 WBP_CharacterSelection 기본값에 지정되지 않았습니다."));
-			return;
+			continue;
 		}
-
-		UGameplayStatics::OpenLevelBySoftObjectPtr(this, CustomizationLevel);
-		return;
+		LobbySlot->OnActionRequested.RemoveDynamic(this, &ThisClass::HandleLobbySlotAction);
+		LobbySlot->OnDeleteRequested.RemoveDynamic(this, &ThisClass::HandleLobbySlotDelete);
 	}
-
-	RefreshSlots();
+	Super::NativeDestruct();
 }
 
-void UUECharacterSelectionWidget::StartSelectedCharacter()
-{
-	UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
-	if (!GameInstance || !GameInstance->LoadSelectedSlotAppearance())
-	{
-		if (StatusText)
-		{
-			StatusText->SetText(FText::FromString(TEXT("먼저 생성된 캐릭터를 선택해 줘.")));
-		}
-		return;
-	}
-
-	if (GameplayLevel.IsNull())
-	{
-		UE_LOG(LogTemp, Error, TEXT("게임 레벨이 WBP_CharacterSelection 기본값에 지정되지 않았습니다."));
-		return;
-	}
-	if (!GameplayGameModeClass)
-	{
-		UE_LOG(LogTemp, Error, TEXT("게임 모드가 WBP_CharacterSelection 기본값에 지정되지 않았습니다."));
-		return;
-	}
-
-	const FString TravelOptions = FString::Printf(
-		TEXT("?game=%s"), *GameplayGameModeClass->GetPathName());
-	UGameplayStatics::OpenLevelBySoftObjectPtr(
-		this,
-		GameplayLevel,
-		true,
-		TravelOptions);
-}
-
-void UUECharacterSelectionWidget::RefreshSlots()
+void UUECharacterSelectionWidget::RefreshLobby()
 {
 	UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
 	if (!GameInstance)
@@ -87,55 +51,134 @@ void UUECharacterSelectionWidget::RefreshSlots()
 		return;
 	}
 
-	const int32 SelectedSlotIndex = GameInstance->GetSelectedCharacterSlotIndex();
-	const TArray<UButton*> Buttons = GetSlotButtons();
-	const TArray<UTextBlock*> StateTexts = GetSlotStateTexts();
-	for (int32 SlotIndex = 0; SlotIndex < Buttons.Num(); ++SlotIndex)
+	const TArray<UUECharacterLobbySlotWidget*> LobbySlots = GetLobbySlots();
+	int32 OccupiedCount = 0;
+	int32 FirstAvailableSlot = INDEX_NONE;
+	for (int32 SlotIndex = 0; SlotIndex < LobbySlots.Num(); ++SlotIndex)
 	{
-		const bool bOccupied = GameInstance->IsCharacterSlotOccupied(SlotIndex);
-		Buttons[SlotIndex]->SetBackgroundColor(
-			SlotIndex == SelectedSlotIndex
-				? UECharacterSelectionWidgetPrivate::SelectedButtonColor
-				: UECharacterSelectionWidgetPrivate::DefaultButtonColor);
-		StateTexts[SlotIndex]->SetText(FText::FromString(
-			bOccupied ? TEXT("생성됨") : TEXT("비어 있음\n선택해서 생성")));
+		if (GameInstance->IsCharacterSlotOccupied(SlotIndex))
+		{
+			++OccupiedCount;
+		}
+		else if (FirstAvailableSlot == INDEX_NONE)
+		{
+			FirstAvailableSlot = SlotIndex;
+		}
 	}
 
-	const bool bCanStart = GameInstance->IsCharacterSlotOccupied(SelectedSlotIndex);
-	StartButton->SetIsEnabled(bCanStart);
-	if (StatusText)
+	for (int32 SlotIndex = 0; SlotIndex < LobbySlots.Num(); ++SlotIndex)
 	{
-		StatusText->SetText(FText::FromString(
-			bCanStart ? TEXT("선택한 캐릭터로 시작할 수 있어.") : TEXT("캐릭터 슬롯을 선택해 줘.")));
+		FUECharacterLobbySlotViewData ViewData;
+		if (SlotDisplayDefaults.IsValidIndex(SlotIndex))
+		{
+			ViewData = SlotDisplayDefaults[SlotIndex];
+		}
+
+		FUECharacterSlotData SavedSlot;
+		if (GameInstance->GetCharacterSlot(SlotIndex, SavedSlot)
+			&& GameInstance->IsCharacterSlotOccupied(SlotIndex))
+		{
+			ViewData.State = EUECharacterLobbySlotState::Occupied;
+			ViewData.Appearance = SavedSlot.Appearance;
+			if (!SavedSlot.CharacterName.IsEmpty())
+			{
+				ViewData.CharacterName = FText::FromString(SavedSlot.CharacterName);
+			}
+
+			if (UUEPokemonSpeciesData* PartnerSpecies = SavedSlot.PartnerSpecies.LoadSynchronous())
+			{
+				ViewData.PartnerSpecies = PartnerSpecies;
+				FString PartnerDisplayName = PartnerSpecies->GetName();
+				PartnerDisplayName.RemoveFromStart(TEXT("DA_"));
+				ViewData.PartnerName = FText::FromString(PartnerDisplayName);
+			}
+		}
+		else
+		{
+			ViewData.State = SlotIndex == FirstAvailableSlot
+				? EUECharacterLobbySlotState::Available
+				: EUECharacterLobbySlotState::Locked;
+		}
+
+		LobbySlots[SlotIndex]->ApplyViewData(ViewData);
+	}
+
+	OccupiedCountValueText->SetText(FText::AsNumber(OccupiedCount));
+	TotalCountValueText->SetText(FText::AsNumber(LobbySlots.Num()));
+}
+
+void UUECharacterSelectionWidget::SetAccountName(const FText& InAccountName)
+{
+	AccountNameText->SetText(InAccountName);
+}
+
+void UUECharacterSelectionWidget::SelectSlot(int32 SlotIndex)
+{
+	HandleLobbySlotAction(SlotIndex);
+}
+
+void UUECharacterSelectionWidget::StartSelectedCharacter()
+{
+	EnterSelectedCharacter();
+}
+
+void UUECharacterSelectionWidget::RefreshSlots()
+{
+	RefreshLobby();
+}
+
+void UUECharacterSelectionWidget::HandleLobbySlotAction(int32 SlotIndex)
+{
+	UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	if (!GameInstance || !GameInstance->SelectCharacterSlot(SlotIndex))
+	{
+		return;
+	}
+
+	if (GameInstance->IsCharacterSlotOccupied(SlotIndex))
+	{
+		EnterSelectedCharacter();
+		return;
+	}
+
+	OnCharacterCreationRequested.Broadcast(SlotIndex);
+}
+
+void UUECharacterSelectionWidget::HandleLobbySlotDelete(int32 SlotIndex)
+{
+	if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance()))
+	{
+		if (GameInstance->DeleteCharacterSlot(SlotIndex))
+		{
+			RefreshLobby();
+		}
 	}
 }
 
-void UUECharacterSelectionWidget::HandleSlot0Clicked()
+void UUECharacterSelectionWidget::EnterSelectedCharacter()
 {
-	SelectSlot(0);
+	UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	if (!GameInstance || !GameInstance->LoadSelectedSlotAppearance())
+	{
+		if (StatusText)
+		{
+			StatusText->SetText(NoCharacterSelectedMessage);
+		}
+		return;
+	}
+
+	if (GameplayLevel.IsNull() || !GameplayGameModeClass)
+	{
+		UE_LOG(LogTemp, Error, TEXT("게임 레벨 또는 게임 모드가 WBP_CharacterSelection 기본값에 지정되지 않았습니다."));
+		return;
+	}
+
+	// 맵 경로를 문자열로 만들지 않고 블루프린트가 참조한 소프트 오브젝트를 사용한다.
+	const FString TravelOptions = FString::Printf(TEXT("?game=%s"), *GameplayGameModeClass->GetPathName());
+	UGameplayStatics::OpenLevelBySoftObjectPtr(this, GameplayLevel, true, TravelOptions);
 }
 
-void UUECharacterSelectionWidget::HandleSlot1Clicked()
+TArray<UUECharacterLobbySlotWidget*> UUECharacterSelectionWidget::GetLobbySlots() const
 {
-	SelectSlot(1);
-}
-
-void UUECharacterSelectionWidget::HandleSlot2Clicked()
-{
-	SelectSlot(2);
-}
-
-void UUECharacterSelectionWidget::HandleStartClicked()
-{
-	StartSelectedCharacter();
-}
-
-TArray<UButton*> UUECharacterSelectionWidget::GetSlotButtons() const
-{
-	return {SlotButton0, SlotButton1, SlotButton2};
-}
-
-TArray<UTextBlock*> UUECharacterSelectionWidget::GetSlotStateTexts() const
-{
-	return {SlotState0, SlotState1, SlotState2};
+	return {LobbySlot0, LobbySlot1, LobbySlot2};
 }

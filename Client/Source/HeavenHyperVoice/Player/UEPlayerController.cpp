@@ -50,6 +50,12 @@ void AUEPlayerController::OnPossess(APawn* InPawn)
 		// 레벨 이동 직후 빙의 순서가 달라져도 저장한 커마를 다시 입힌다.
 		PlayerCharacter->ApplyHHVAppearance(PendingAppearance);
 	}
+
+	// 로비에서 입장한 슬롯의 스타팅 포켓몬도 같은 로컬 저장값으로 맞춘다.
+	if (UUEPokemonSpeciesData* PartnerSpecies = UEGameInstance->GetSelectedPartnerSpecies())
+	{
+		PlayerCharacter->SetPokemonCompanionSpeciesData(PartnerSpecies);
+	}
 }
 
 bool AUEPlayerController::HasPendingHHVAppearance() const

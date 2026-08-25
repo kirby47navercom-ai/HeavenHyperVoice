@@ -11,7 +11,7 @@ FReply UUEHHVCustomizationWidget::NativeOnMouseButtonDown(
 		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 	}
 
-	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+	if (InMouseEvent.GetEffectingButton() == RotatePreviewButton)
 	{
 		bRotatingPreview = true;
 		bPanningPreview = false;
@@ -19,8 +19,8 @@ FReply UUEHHVCustomizationWidget::NativeOnMouseButtonDown(
 		return FReply::Handled().CaptureMouse(TakeWidget());
 	}
 
-	if (InMouseEvent.GetEffectingButton() == EKeys::RightMouseButton ||
-		InMouseEvent.GetEffectingButton() == EKeys::MiddleMouseButton)
+	if (InMouseEvent.GetEffectingButton() == PrimaryPanPreviewButton ||
+		InMouseEvent.GetEffectingButton() == SecondaryPanPreviewButton)
 	{
 		bRotatingPreview = false;
 		bPanningPreview = true;
@@ -60,7 +60,7 @@ FReply UUEHHVCustomizationWidget::NativeOnMouseMove(
 
 	if (bRotatingPreview)
 	{
-		PreviewActor->AddPreviewYaw(Delta.X * 0.28f);
+		PreviewActor->AddPreviewYaw(Delta.X * PreviewYawSensitivity);
 	}
 	else if (bPanningPreview)
 	{
@@ -79,7 +79,7 @@ FReply UUEHHVCustomizationWidget::NativeOnMouseWheel(
 		return Super::NativeOnMouseWheel(InGeometry, InMouseEvent);
 	}
 
-	PreviewActor->AddPreviewZoom(-InMouseEvent.GetWheelDelta() * 0.12f);
+	PreviewActor->AddPreviewZoom(-InMouseEvent.GetWheelDelta() * PreviewZoomSensitivity);
 	return FReply::Handled();
 }
 
@@ -95,10 +95,10 @@ bool UUEHHVCustomizationWidget::IsPointerOverPreviewArea(
 	}
 
 	// 좌우 UI 패널을 제외한 중앙 프리뷰 영역에서 회전/이동/확대 입력을 받는다.
-	return LocalPosition.X > LocalSize.X * 0.16f &&
-		LocalPosition.X < LocalSize.X * 0.86f &&
-		LocalPosition.Y > LocalSize.Y * 0.02f &&
-		LocalPosition.Y < LocalSize.Y * 0.98f;
+	return LocalPosition.X > LocalSize.X * PreviewAreaLeft &&
+		LocalPosition.X < LocalSize.X * PreviewAreaRight &&
+		LocalPosition.Y > LocalSize.Y * PreviewAreaTop &&
+		LocalPosition.Y < LocalSize.Y * PreviewAreaBottom;
 }
 
 

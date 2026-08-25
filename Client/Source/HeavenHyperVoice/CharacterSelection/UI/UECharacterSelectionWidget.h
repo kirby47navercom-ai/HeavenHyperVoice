@@ -2,72 +2,91 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UECharacterLobbySlotWidget.h"
 #include "UECharacterSelectionWidget.generated.h"
 
-class UButton;
-class UTextBlock;
 class AGameModeBase;
+class UTextBlock;
 class UWorld;
 
-/** 디자이너 UMG의 세 캐릭터 슬롯을 저장 데이터와 연결한다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FUECharacterCreationRequestedSignature, int32, SlotIndex);
+
+/** 로컬 캐릭터 슬롯을 로비 UMG에 연결한다. 서버 통신은 이 위젯의 책임이 아니다. */
 UCLASS(Blueprintable)
 class HEAVENHYPERVOICE_API UUECharacterSelectionWidget : public UUserWidget
 {
 	GENERATED_BODY()
 
 public:
-	UFUNCTION(BlueprintCallable, Category = "Character Selection")
+	UPROPERTY(BlueprintAssignable, Category = "Lobby|Event")
+	FUECharacterCreationRequestedSignature OnCharacterCreationRequested;
+
+	UFUNCTION(BlueprintCallable, Category = "Lobby")
+	void RefreshLobby();
+
+	UFUNCTION(BlueprintCallable, Category = "Lobby")
+	void SetAccountName(const FText& InAccountName);
+
+	// 기존 블루프린트 호출이 깨지지 않도록 남겨 둔 호환 함수다.
+	UFUNCTION(BlueprintCallable, Category = "Lobby")
 	void SelectSlot(int32 SlotIndex);
 
-	UFUNCTION(BlueprintCallable, Category = "Character Selection")
+	UFUNCTION(BlueprintCallable, Category = "Lobby")
 	void StartSelectedCharacter();
 
-	UFUNCTION(BlueprintCallable, Category = "Character Selection")
+	UFUNCTION(BlueprintCallable, Category = "Lobby")
 	void RefreshSlots();
 
 protected:
 	virtual void NativeConstruct() override;
+	virtual void NativeDestruct() override;
 
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UButton> SlotButton0 = nullptr;
+	TObjectPtr<UUECharacterLobbySlotWidget> LobbySlot0 = nullptr;
 
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UButton> SlotButton1 = nullptr;
+	TObjectPtr<UUECharacterLobbySlotWidget> LobbySlot1 = nullptr;
 
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UButton> SlotButton2 = nullptr;
+	TObjectPtr<UUECharacterLobbySlotWidget> LobbySlot2 = nullptr;
 
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UButton> StartButton = nullptr;
+	TObjectPtr<UTextBlock> AccountNameText = nullptr;
 
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UTextBlock> SlotState0 = nullptr;
+	TObjectPtr<UTextBlock> OccupiedCountValueText = nullptr;
 
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UTextBlock> SlotState1 = nullptr;
+	TObjectPtr<UTextBlock> TotalCountValueText = nullptr;
 
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UTextBlock> SlotState2 = nullptr;
-
-	UPROPERTY(meta = (BindWidget))
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> StatusText = nullptr;
 
-	// 이동할 레벨은 WBP_CharacterSelection의 클래스 기본값에서 지정한다.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Character Selection|Travel")
-	TSoftObjectPtr<UWorld> CustomizationLevel;
+	// 로그인 연동 전에도 로비를 독립적으로 확인할 수 있는 표시 이름이다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lobby|Display")
+	FText DefaultAccountName;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Character Selection|Travel")
+	// 이름과 파트너의 디자이너 미리보기 값은 WBP_CharacterSelection 기본값에서 바꾼다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lobby|Display")
+	TArray<FUECharacterLobbySlotViewData> SlotDisplayDefaults;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lobby|Text")
+	FText NoCharacterSelectedMessage;
+
+	// 입장할 레벨과 게임 모드는 블루프린트 기본값에서 지정한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lobby|Travel")
 	TSoftObjectPtr<UWorld> GameplayLevel;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Character Selection|Travel")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lobby|Travel")
 	TSubclassOf<AGameModeBase> GameplayGameModeClass;
 
 private:
-	UFUNCTION() void HandleSlot0Clicked();
-	UFUNCTION() void HandleSlot1Clicked();
-	UFUNCTION() void HandleSlot2Clicked();
-	UFUNCTION() void HandleStartClicked();
+	UFUNCTION()
+	void HandleLobbySlotAction(int32 SlotIndex);
 
-	TArray<UButton*> GetSlotButtons() const;
-	TArray<UTextBlock*> GetSlotStateTexts() const;
+	UFUNCTION()
+	void HandleLobbySlotDelete(int32 SlotIndex);
+
+	void EnterSelectedCharacter();
+	TArray<UUECharacterLobbySlotWidget*> GetLobbySlots() const;
 };

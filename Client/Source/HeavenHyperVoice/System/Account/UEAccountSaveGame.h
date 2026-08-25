@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #pragma once
 
 #include "CoreMinimal.h"
@@ -7,11 +5,8 @@
 #include "UEAccountSaveGame.generated.h"
 
 /**
- * One account stored by the client-only login prototype.
- *
- * Passwords are never written as plain text. Only a per-account salt and the
- * resulting hash are persisted. A real online game must replace this local
- * store with server-side authentication before release.
+ * 서버 연동 전 로컬 로그인에서 사용하는 계정 데이터다.
+ * 비밀번호 원문은 저장하지 않고 계정별 솔트와 해시만 저장한다.
  */
 USTRUCT(BlueprintType)
 struct HEAVENHYPERVOICE_API FUEStoredLocalAccount
@@ -28,14 +23,14 @@ struct HEAVENHYPERVOICE_API FUEStoredLocalAccount
 	FString PasswordHash;
 };
 
-/** SaveGame payload used only by UUEAccountSubsystem. */
+/** UUEAccountSubsystem 전용 로컬 저장 데이터다. */
 UCLASS()
 class HEAVENHYPERVOICE_API UUEAccountSaveGame : public USaveGame
 {
 	GENERATED_BODY()
 
 public:
-	// The key is a normalized, lower-case user ID so duplicate checks are case-insensitive.
+	// 소문자로 정규화한 아이디를 키로 사용해 대소문자와 무관하게 중복을 검사한다.
 	UPROPERTY(SaveGame)
 	TMap<FString, FUEStoredLocalAccount> Accounts;
 };

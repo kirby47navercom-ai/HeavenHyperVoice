@@ -104,6 +104,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Customization")
 	TObjectPtr<UUEHHVCustomizationCatalog> Catalog = nullptr;
 
+	// 생성 머티리얼의 콘텐츠 폴더는 BP_HHVCustomizationPreview 기본값에서 지정한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Customization|Generated Assets", meta = (ContentDir))
+	FString MorphSafeMaterialFolder;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Customization")
 	FUEHHVAppearance Appearance;
 

@@ -2,15 +2,17 @@
 
 #include "../Preview/UEHHVCustomizationPreviewActor.h"
 #include "../UI/UEHHVCustomizationWidget.h"
+#include "../../../Pokemon/UEPokemonSpeciesData.h"
+#include "../../../System/UEGameInstance.h"
 
 #include "EngineUtils.h"
-#include "InputCoreTypes.h"
+#include "Kismet/GameplayStatics.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogUEHHVCustomization, Log, All);
 
 AUEHHVCustomizationPlayerController::AUEHHVCustomizationPlayerController()
 {
-	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bCanEverTick = false;
 	bShowMouseCursor = true;
 }
 
@@ -37,17 +39,23 @@ void AUEHHVCustomizationPlayerController::BeginPlay()
 	}
 	else
 	{
-		UE_LOG(LogUEHHVCustomization, Warning, TEXT("HeavenHyperVoice customization preview actor was not found."));
+		UE_LOG(LogUEHHVCustomization, Warning, TEXT("커스터마이징 프리뷰 액터를 찾지 못했습니다."));
 	}
 
+	ShowCustomization();
+}
+
+void AUEHHVCustomizationPlayerController::ShowCustomization()
+{
 	if (!CustomizationWidgetClass)
 	{
 		UE_LOG(LogUEHHVCustomization, Error,
-			TEXT("CustomizationWidgetClass is not assigned in the PlayerController Blueprint defaults."));
+			TEXT("커스터마이징 위젯 클래스가 PlayerController 블루프린트 기본값에 지정되지 않았습니다."));
 		return;
 	}
 
-	CustomizationWidget = CreateWidget<UUEHHVCustomizationWidget>(this, CustomizationWidgetClass);
+	UUEHHVCustomizationWidget* CustomizationWidget =
+		CreateWidget<UUEHHVCustomizationWidget>(this, CustomizationWidgetClass);
 	if (CustomizationWidget)
 	{
 		CustomizationWidget->SetPreviewActor(PreviewActor);
@@ -55,130 +63,115 @@ void AUEHHVCustomizationPlayerController::BeginPlay()
 		{
 			CustomizationWidget->SetCatalog(PreviewActor->GetCatalog());
 		}
-		CustomizationWidget->AddToViewport(WidgetZOrder);
+		CustomizationWidget->OnCustomizationConfirmed.AddUniqueDynamic(
+			this,
+			&ThisClass::HandleCustomizationConfirmed);
+		CustomizationWidget->OnBackRequested.AddUniqueDynamic(
+			this,
+			&ThisClass::HandleCustomizationBackRequested);
+		ReplaceCurrentWidget(CustomizationWidget);
 	}
 	else
 	{
-		UE_LOG(LogUEHHVCustomization, Error, TEXT("Failed to create HeavenHyperVoice customization widget."));
+		UE_LOG(LogUEHHVCustomization, Error, TEXT("커스터마이징 위젯을 생성하지 못했습니다."));
 	}
 
+	ApplyInputMode(CustomizationWidget);
+}
+
+void AUEHHVCustomizationPlayerController::ShowStarterPokemon()
+{
+	if (!StarterPokemonWidgetClass)
+	{
+		UE_LOG(LogUEHHVCustomization, Error,
+			TEXT("스타팅 포켓몬 위젯 클래스가 BP_HHVCustomizationPlayerController 기본값에 지정되지 않았습니다."));
+		return;
+	}
+
+	UUEStarterPokemonWidget* StarterWidget =
+		CreateWidget<UUEStarterPokemonWidget>(this, StarterPokemonWidgetClass);
+	if (!StarterWidget)
+	{
+		return;
+	}
+	StarterWidget->OnStarterConfirmed.AddUniqueDynamic(this, &ThisClass::HandleStarterConfirmed);
+	StarterWidget->OnBackRequested.AddUniqueDynamic(this, &ThisClass::HandleStarterBackRequested);
+	ReplaceCurrentWidget(StarterWidget);
+	ApplyInputMode(StarterWidget);
+}
+
+void AUEHHVCustomizationPlayerController::ReplaceCurrentWidget(UUserWidget* NewWidget)
+{
+	if (!NewWidget)
+	{
+		return;
+	}
+	if (CurrentWidget)
+	{
+		CurrentWidget->RemoveFromParent();
+	}
+	CurrentWidget = NewWidget;
+	CurrentWidget->AddToViewport(WidgetZOrder);
+}
+
+void AUEHHVCustomizationPlayerController::ApplyInputMode(UUserWidget* FocusWidget)
+{
 	FInputModeGameAndUI InputMode;
 	InputMode.SetHideCursorDuringCapture(false);
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	if (CustomizationWidget)
+	if (FocusWidget)
 	{
-		InputMode.SetWidgetToFocus(CustomizationWidget->TakeWidget());
+		InputMode.SetWidgetToFocus(FocusWidget->TakeWidget());
 	}
 	SetInputMode(InputMode);
 	bShowMouseCursor = true;
 }
 
-void AUEHHVCustomizationPlayerController::SetupInputComponent()
+void AUEHHVCustomizationPlayerController::ReturnToLobby()
 {
-	Super::SetupInputComponent();
-
-	if (!InputComponent)
+	if (LobbyLevel.IsNull())
 	{
+		UE_LOG(LogUEHHVCustomization, Error,
+			TEXT("로비 레벨이 BP_HHVCustomizationPlayerController 기본값에 지정되지 않았습니다."));
 		return;
 	}
-
-	// 마우스 휠은 Input Mapping Context 없이도 커마 화면에서 바로 확대/축소되게 묶는다.
-	InputComponent->BindKey(EKeys::MouseScrollUp, IE_Pressed, this, &ThisClass::HandlePreviewZoomIn);
-	InputComponent->BindKey(EKeys::MouseScrollDown, IE_Pressed, this, &ThisClass::HandlePreviewZoomOut);
+	UGameplayStatics::OpenLevelBySoftObjectPtr(this, LobbyLevel);
 }
 
-void AUEHHVCustomizationPlayerController::Tick(float DeltaSeconds)
+void AUEHHVCustomizationPlayerController::HandleCustomizationConfirmed()
 {
-	Super::Tick(DeltaSeconds);
-	HandlePreviewMouseDrag();
+	ShowStarterPokemon();
 }
 
-bool AUEHHVCustomizationPlayerController::IsMouseOverPreviewArea(const FVector2D& MousePosition) const
+void AUEHHVCustomizationPlayerController::HandleCustomizationBackRequested()
 {
-	int32 ViewportX = 0;
-	int32 ViewportY = 0;
-	GetViewportSize(ViewportX, ViewportY);
-	if (ViewportX <= 0 || ViewportY <= 0)
+	if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance()))
 	{
-		return false;
+		GameInstance->ClearPendingCharacterCreation();
 	}
-
-	// 좌우 UI 패널 위에서는 버튼/스크롤을 우선하고, 가운데 캐릭터 영역에서만 드래그를 받는다.
-	return MousePosition.X > ViewportX * 0.16f &&
-		MousePosition.X < ViewportX * 0.86f &&
-		MousePosition.Y > ViewportY * 0.02f &&
-		MousePosition.Y < ViewportY * 0.98f;
+	ReturnToLobby();
 }
 
-void AUEHHVCustomizationPlayerController::HandlePreviewMouseDrag()
+void AUEHHVCustomizationPlayerController::HandleStarterConfirmed(UUEPokemonSpeciesData* StarterPokemon)
 {
-	if (!PreviewActor)
+	UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	FString CharacterName;
+	FUEHHVAppearance Appearance;
+	if (!GameInstance
+		|| !GameInstance->GetPendingCharacterName(CharacterName)
+		|| !GameInstance->GetPendingHHVAppearance(Appearance)
+		|| !GameInstance->SaveCharacterCreationToSelectedSlot(CharacterName, Appearance, StarterPokemon))
 	{
-		bDraggingPreview = false;
-		bPanningPreview = false;
-		return;
-	}
-
-	float MouseX = 0.0f;
-	float MouseY = 0.0f;
-	if (!GetMousePosition(MouseX, MouseY))
-	{
-		bDraggingPreview = false;
-		bPanningPreview = false;
-		return;
-	}
-
-	const FVector2D CurrentMousePosition(MouseX, MouseY);
-	const bool bLeftDown = IsInputKeyDown(EKeys::LeftMouseButton);
-	const bool bPanDown = IsInputKeyDown(EKeys::RightMouseButton) || IsInputKeyDown(EKeys::MiddleMouseButton);
-
-	if (!bLeftDown && !bPanDown)
-	{
-		bDraggingPreview = false;
-		bPanningPreview = false;
-		LastMousePosition = CurrentMousePosition;
-		return;
-	}
-
-	if (!bDraggingPreview && !bPanningPreview)
-	{
-		if (!IsMouseOverPreviewArea(CurrentMousePosition))
+		if (UUEStarterPokemonWidget* StarterWidget = Cast<UUEStarterPokemonWidget>(CurrentWidget))
 		{
-			LastMousePosition = CurrentMousePosition;
-			return;
+			StarterWidget->SetStatusMessage(SaveFailedMessage);
 		}
-
-		bDraggingPreview = bLeftDown;
-		bPanningPreview = bPanDown;
-		LastMousePosition = CurrentMousePosition;
 		return;
 	}
-
-	const FVector2D Delta = CurrentMousePosition - LastMousePosition;
-	LastMousePosition = CurrentMousePosition;
-
-	if (bDraggingPreview)
-	{
-		PreviewActor->AddPreviewYaw(Delta.X * 0.28f);
-	}
-	else if (bPanningPreview)
-	{
-		PreviewActor->AddPreviewPan(Delta);
-	}
+	ReturnToLobby();
 }
 
-void AUEHHVCustomizationPlayerController::HandlePreviewZoomIn()
+void AUEHHVCustomizationPlayerController::HandleStarterBackRequested()
 {
-	if (PreviewActor)
-	{
-		PreviewActor->AddPreviewZoom(-0.12f);
-	}
-}
-
-void AUEHHVCustomizationPlayerController::HandlePreviewZoomOut()
-{
-	if (PreviewActor)
-	{
-		PreviewActor->AddPreviewZoom(0.12f);
-	}
+	ShowCustomization();
 }
