@@ -23,6 +23,11 @@ struct Options {
     std::uint16_t fieldPort = 9200;
     // 채팅과 필드가 같은 머신에서 뜨므로 주소도 하나다. 나뉘면 그때 쪼갠다.
     std::string host = "127.0.0.1";
+
+    // 필드에 뿌릴 야생 포켓몬 수. FieldServer 의 기본값(12)보다 많이 둔다 —
+    // 배회 구역이 월드 중앙 8000x8000 으로 좁아져서 그 정도면 시야에 잘 안 든다.
+    int wildCount = 50;
+
     bool verbose = false;
 };
 
@@ -67,6 +72,8 @@ Options parseArgs(int argc, char** argv) {
             options.fieldPort = static_cast<std::uint16_t>(std::stoi(next("--field-port")));
         } else if (arg == "--host") {
             options.host = next("--host");
+        } else if (arg == "--wild-count") {
+            options.wildCount = std::stoi(next("--wild-count"));
         } else if (arg == "--verbose") {
             options.verbose = true;
         } else if (arg == "--help" || arg == "-h") {
@@ -175,8 +182,9 @@ int main(int argc, char** argv) {
             "ChatServer --port " + std::to_string(options.chatPort) + verbose;
 
         const std::filesystem::path fieldExe = dir / "FieldServer.exe";
-        const std::string fieldArgs =
-            "FieldServer --port " + std::to_string(options.fieldPort) + verbose;
+        const std::string fieldArgs = "FieldServer --port " +
+                                      std::to_string(options.fieldPort) + " --wild-count " +
+                                      std::to_string(options.wildCount) + verbose;
 
         children.push_back(startServer(loginExe, loginArgs, "LoginServer"));
         children.push_back(startServer(chatExe, chatArgs, "ChatServer"));
