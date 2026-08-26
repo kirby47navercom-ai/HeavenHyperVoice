@@ -90,6 +90,12 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float ServerMoveSpeed = 280.0f;
 
+	// 종족 DA 의 MoveSpeed 를 언리얼 uu/s 로 바꾸는 배율. DA 값이 게임 스탯
+	// 스케일(랄토스 25 ~ 자망칼 114)이라 그대로는 너무 느리다.
+	// 3.0 이면 파이리 101 -> 303 으로, 플레이어 걷기(260)를 조금 넘는다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true", ClampMin = "0.1"))
+	float SpeciesMoveSpeedToUnrealUnits = 3.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
 	EUEPokemonServerSimulationMode SimulationMode = EUEPokemonServerSimulationMode::FollowOwner;
 
