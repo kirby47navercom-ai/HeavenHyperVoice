@@ -159,8 +159,7 @@ void AUEHHVCustomizationPlayerController::HandleStarterConfirmed(UUEPokemonSpeci
 	FUEHHVAppearance Appearance;
 	if (!GameInstance
 		|| !GameInstance->GetPendingCharacterName(CharacterName)
-		|| !GameInstance->GetPendingHHVAppearance(Appearance)
-		|| !GameInstance->SaveCharacterCreationToSelectedSlot(CharacterName, Appearance, StarterPokemon))
+		|| !GameInstance->GetPendingHHVAppearance(Appearance))
 	{
 		if (UUEStarterPokemonWidget* StarterWidget = Cast<UUEStarterPokemonWidget>(CurrentWidget))
 		{
@@ -168,6 +167,32 @@ void AUEHHVCustomizationPlayerController::HandleStarterConfirmed(UUEPokemonSpeci
 		}
 		return;
 	}
+
+	// 캐릭터는 서버가 만든다. 로컬 슬롯에 저장하던 것을 대체한다 — 외형까지 함께
+	// 넘어가고, 여기가 외형이 저장되는 유일한 지점이다.
+	GameInstance->OnCharacterChangeCompleted.AddUniqueDynamic(
+		this, &ThisClass::HandleServerCreateCompleted);
+	GameInstance->RequestCreateCharacter(CharacterName, StarterPokemon, Appearance);
+}
+
+void AUEHHVCustomizationPlayerController::HandleServerCreateCompleted(bool bOk, const FString& Message)
+{
+	if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance()))
+	{
+		GameInstance->OnCharacterChangeCompleted.RemoveDynamic(
+			this, &ThisClass::HandleServerCreateCompleted);
+	}
+
+	if (!bOk)
+	{
+		if (UUEStarterPokemonWidget* StarterWidget = Cast<UUEStarterPokemonWidget>(CurrentWidget))
+		{
+			StarterWidget->SetStatusMessage(
+				Message.IsEmpty() ? SaveFailedMessage : FText::FromString(Message));
+		}
+		return;
+	}
+
 	ReturnToLobby();
 }
 
