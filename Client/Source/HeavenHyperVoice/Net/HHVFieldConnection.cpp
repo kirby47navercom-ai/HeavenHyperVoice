@@ -381,8 +381,13 @@ void FHHVFieldConnection::DispatchFrame(const uint8* Data, int32 Size)
 	}
 
 	const HeavenField::Envelope* Envelope = HeavenField::GetEnvelope(Data);
-	if (Envelope == nullptr)
+
+	// Verifier 는 payload_type 만 있고 payload 오프셋이 없는 프레임을 통과시킨다
+	// (VerifyTable(nullptr) 이 true 다). 그대로 두면 아래 payload_as_* 가 nullptr 을
+	// 돌려주고 바로 역참조해 죽는다.
+	if (Envelope == nullptr || Envelope->payload() == nullptr)
 	{
+		UE_LOG(LogHHVField, Warning, TEXT("field frame carried no payload (%d bytes)"), Size);
 		return;
 	}
 
