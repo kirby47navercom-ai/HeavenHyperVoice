@@ -56,16 +56,18 @@ void UUEPlayerMovementSyncComponent::BeginPlay()
 	PlayerCharacter->OnCharacterMovementUpdated.AddDynamic(this, &ThisClass::HandleCharacterMovementUpdated);
 	SaveLastValidatedServerState(PlayerCharacter->GetActorLocation(), PlayerCharacter->GetActorRotation());
 
-	// 프런트엔드의 로컬 로그인으로 입장한 동안에는 필드 서버 연결을 시작하지 않는다.
-	const UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetWorld()->GetGameInstance());
-	if (GameInstance && GameInstance->HasLocalSession())
-	{
-		SetComponentTickEnabled(false);
-		return;
-	}
-
+	// 서버를 거치지 않고 화면만 넘어온 경우에는 필드 연결을 시작하지 않는다.
+	//
+	// 예전에는 HasLocalSession() 으로 판단했는데, 로그인 서버를 붙이면서 그 뜻이
+	// 뒤집혔다 — 캐릭터를 고르면 닉네임을 보관하려고 SetLocalSession 을 부르므로,
+	// 서버 로그인에 성공할수록 플래그가 켜져 필드 연결이 막혔다.
+	//
+	// 실제로 서버를 거쳐 왔다는 증거는 티켓이다. 티켓이 있으면 그 주소로 붙고,
+	// 없으면 dev 경로(--dev-no-auth)로 붙는다. 판정은 StartFieldConnection 안에서 한다.
 	if (bEnableLocalServerValidation)
 	{
+		UE_LOG(LogTemp, Display,
+			TEXT("PlayerMovementSync: local validation is on; not connecting to the field server"));
 		TryLoadServerMap();
 		return;
 	}
@@ -250,9 +252,22 @@ void UUEPlayerMovementSyncComponent::HandleFieldCorrection(uint32 Sequence, floa
 
 void UUEPlayerMovementSyncComponent::HandleFieldSnapshot(const FHHVFieldSnapshot& Snapshot)
 {
+	// 스냅샷이 오는지부터 본다. 아래 [FIELD] 로그는 spawned/despawned 가 있을 때만
+	// 찍혀서, "안 왔다" 와 "비어서 왔다" 가 구분되지 않는다.
+	//
+	// 20Hz 라 계속 찍으면 로그가 잠긴다. 입장 직후만 보면 충분하므로 앞의 몇 개만 남긴다.
+	if (SnapshotsLogged < 20)
+	{
+		++SnapshotsLogged;
+		UE_LOG(LogTemp, Display, TEXT("[SNAP] %d: spawned=%d moved=%d despawned=%d"),
+			SnapshotsLogged, Snapshot.Spawned.Num(), Snapshot.Moved.Num(),
+			Snapshot.Despawned.Num());
+	}
+
 	UWorld* World = GetWorld();
 	if (!World)
 	{
+		UE_LOG(LogTemp, Error, TEXT("[SNAP] no world; dropping snapshot"));
 		return;
 	}
 

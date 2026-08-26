@@ -152,6 +152,9 @@ private:
 	TArray<FUEPlayerMovementHistoryEntry> MoveHistory;
 
 	std::unique_ptr<FHHVFieldConnection> FieldConnection;
+
+	// 입장 직후 스냅샷 몇 개만 로그로 남기기 위한 카운터. 진단용.
+	int32 SnapshotsLogged = 0;
 	float TimeSinceLastSend = 0.0f;
 
 	// 서버 entity_id -> 그 야생 포켓몬 액터.
