@@ -1460,8 +1460,21 @@ void AUEPlayerCharacter::Roll()
 		false);
 }
 
+void AUEPlayerCharacter::MakeAppearanceExternallyDriven()
+{
+	bAppearanceExternallyDriven = true;
+}
+
 void AUEPlayerCharacter::ApplyPendingHHVAppearance()
 {
+	// 로비 슬롯 프리뷰처럼 밖에서 외형을 지시받는 액터는 건드리지 않는다.
+	// PendingHHVAppearance 는 "내 캐릭터" 의 착장이라, 슬롯마다 다른 캐릭터를
+	// 그리는 자리에 입히면 방금 넣어준 서버 값을 덮어버린다.
+	if (bAppearanceExternallyDriven)
+	{
+		return;
+	}
+
 	FUEHHVAppearance PendingAppearance;
 	UUEGameInstance* UEGameInstance = Cast<UUEGameInstance>(GetGameInstance());
 	if (!UEGameInstance || !UEGameInstance->GetPendingHHVAppearance(PendingAppearance))

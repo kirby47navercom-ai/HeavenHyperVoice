@@ -47,6 +47,19 @@ public:
 	void MakeRemoteProxy();
 	bool IsRemoteProxy() const { return bIsRemoteProxy; }
 
+	/**
+	 * 외형을 밖에서 지시받는 액터로 표시한다. 로비 슬롯 프리뷰처럼 슬롯마다
+	 * 다른 캐릭터를 그리는 경우에 쓴다.
+	 *
+	 * BeginPlay 는 GameInstance 의 PendingHHVAppearance 를 입히는데, 그건
+	 * "내 캐릭터가 레벨을 넘어가도 착장을 유지한다" 는 뜻이라 프리뷰에는 맞지 않는다.
+	 * 표시해 두지 않으면 밖에서 ApplyHHVAppearance 로 넣은 값을 BeginPlay 가 덮는다.
+	 *
+	 * Spawn 직후, ApplyHHVAppearance 를 부르기 전에 호출할 것.
+	 */
+	void MakeAppearanceExternallyDriven();
+	bool IsAppearanceExternallyDriven() const { return bAppearanceExternallyDriven; }
+
 	// 스냅샷이 알려준 목표 지점. Tick 이 보간으로 따라간다. 20Hz 라 그대로 박으면
 	// 끊겨 보인다.
 	void ApplyRemoteMoveTarget(const FVector& TargetLocation, const FRotator& TargetRotation,
@@ -249,6 +262,9 @@ private:
 
 	// 다른 플레이어의 복제본인가. MakeRemoteProxy 로만 켜진다.
 	bool bIsRemoteProxy = false;
+
+	// 외형을 밖에서 넣어주는가. MakeAppearanceExternallyDriven 으로만 켜진다.
+	bool bAppearanceExternallyDriven = false;
 
 	// 서버가 지시한 목표. 도착하면 bHasRemoteTarget 이 꺼진다.
 	FVector RemoteTargetLocation = FVector::ZeroVector;
