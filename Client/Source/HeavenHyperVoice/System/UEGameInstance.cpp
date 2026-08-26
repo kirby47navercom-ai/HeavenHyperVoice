@@ -203,22 +203,23 @@ void UUEGameInstance::RequestCreateCharacter(const FString& Nickname,
 		return;
 	}
 
-	// 서버는 종족을 번호로 안다. 카탈로그가 없거나 목록에 없는 에셋이면 0 이 되고,
-	// 0 은 "파트너 없이 시작" 이라 서버가 거절하지 않는다 — 그러면 로비에서
-	// 미완성 슬롯으로 숨겨지므로 여기서 막는다.
-	int32 SpeciesId = 0;
+	// 서버는 도감번호로 종족을 받는다. 번호가 안 채워진 에셋이면 0 이 되고, 0 은
+	// "파트너 없이 시작" 이라 서버가 거절하지 않는다 — 그러면 로비에서 미완성
+	// 슬롯으로 숨겨지므로 여기서 막는다.
+	int32 DexNumber = 0;
 	if (UUEPokemonSpeciesCatalog* Catalog = GetSpeciesCatalog())
 	{
-		SpeciesId = Catalog->FindSpeciesId(PartnerSpecies);
+		DexNumber = Catalog->FindDexNumber(PartnerSpecies);
 	}
-	if (PartnerSpecies != nullptr && SpeciesId == 0)
+	if (PartnerSpecies != nullptr && DexNumber == 0)
 	{
-		UE_LOG(LogTemp, Error, TEXT("HHV: starter is not in the SpeciesCatalog; refusing to create"));
+		UE_LOG(LogTemp, Error,
+			TEXT("HHV: starter has no DexNumber; refusing to create. Fill it on the species data asset."));
 		OnCharacterChangeCompleted.Broadcast(false, TEXT("스타팅 포켓몬을 찾을 수 없습니다"));
 		return;
 	}
 
-	LoginConnection->SendCreateCharacter(Nickname, static_cast<uint16>(SpeciesId), Appearance);
+	LoginConnection->SendCreateCharacter(Nickname, static_cast<uint16>(DexNumber), Appearance);
 }
 
 void UUEGameInstance::RequestDeleteCharacter(int32 SlotIndex, const FString& ConfirmNickname)
@@ -297,12 +298,15 @@ void UUEGameInstance::ApplyServerCharacters(const TArray<FHHVCharacterSummary>& 
 
 		if (Source.bHasPartner && Catalog)
 		{
-			Slot.PartnerSpecies = Catalog->Find(static_cast<int32>(Source.Partner.SpeciesId));
+			// 배열 위치가 아니라 도감번호로 찾는다. 카탈로그에 종족을 끼워 넣어도
+			// 이미 저장된 파트너가 다른 종족으로 바뀌지 않는다.
+			Slot.PartnerSpecies = Catalog->FindByDex(static_cast<int32>(Source.Partner.DexNumber));
 			if (Slot.PartnerSpecies.IsNull())
 			{
 				UE_LOG(LogTemp, Warning,
-					TEXT("HHV: species %d is not in the catalog; character '%s' will be hidden"),
-					Source.Partner.SpeciesId, *Source.Nickname);
+					TEXT("HHV: dex %d is not in the catalog; character '%s' will be hidden. ")
+					TEXT("Fill DexNumber on the species data asset."),
+					Source.Partner.DexNumber, *Source.Nickname);
 			}
 		}
 

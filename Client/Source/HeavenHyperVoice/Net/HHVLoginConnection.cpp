@@ -146,6 +146,7 @@ namespace
 			{
 				Character.bHasPartner = true;
 				Character.Partner.SpeciesId = Partner->species_id();
+				Character.Partner.DexNumber = Partner->dex_number();
 				Character.Partner.Nickname = ReadString(Partner->nickname());
 				Character.Partner.Level = Partner->level();
 				Character.Partner.MaxHP = Partner->max_hp();
@@ -249,7 +250,7 @@ void FHHVLoginConnection::SendRegister(const FString& UserId, const FString& Pas
 	Enqueue(LoginFrameOf(Builder));
 }
 
-void FHHVLoginConnection::SendCreateCharacter(const FString& Nickname, uint16 SpeciesId,
+void FHHVLoginConnection::SendCreateCharacter(const FString& Nickname, uint16 DexNumber,
 	const FUEHHVAppearance& Appearance)
 {
 	flatbuffers::FlatBufferBuilder Builder(512);
@@ -258,7 +259,8 @@ void FHHVLoginConnection::SendCreateCharacter(const FString& Nickname, uint16 Sp
 
 	HeavenLogin::CreateCharacterRequestBuilder Request(Builder);
 	Request.add_nickname(Nick);
-	Request.add_species_id(SpeciesId);
+	// 서버는 도감번호를 받아 내부 번호로 바꾼다. species_id 는 채우지 않는다.
+	Request.add_dex_number(DexNumber);
 	Request.add_appearance(Look);
 	Builder.Finish(HeavenLogin::CreateEnvelope(
 		Builder, HeavenLogin::Payload::CreateCharacterRequest, Request.Finish().Union()));

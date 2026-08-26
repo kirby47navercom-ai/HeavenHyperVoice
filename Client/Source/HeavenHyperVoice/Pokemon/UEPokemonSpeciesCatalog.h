@@ -32,9 +32,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Species")
 	UUEPokemonSpeciesData* Find(int32 SpeciesId) const;
 
-	// Find 의 역방향. 캐릭터를 만들 때 고른 데이터 에셋을 서버가 아는 종족 번호로
-	// 바꾼다. 목록에 없으면 0 이고, 0 은 "파트너 없이 시작" 이라 서버가 거절하지 않는다.
+	/**
+	 * 도감번호로 찾는다. 서버가 파트너를 지목할 때 쓰는 경로다.
+	 *
+	 * Find(배열 위치)를 쓰지 않는 이유는, 카탈로그에 종족을 끼워 넣으면 그 뒤가
+	 * 전부 밀려 이미 저장된 파트너가 다른 종족이 되기 때문이다. 실제로 그렇게
+	 * 파이리가 피카츄로 바뀌고 다른 캐릭터가 로비에서 사라진 적이 있다.
+	 */
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Species")
-	int32 FindSpeciesId(const UUEPokemonSpeciesData* SpeciesData) const;
+	UUEPokemonSpeciesData* FindByDex(int32 DexNumber) const;
+
+	// FindByDex 의 역방향. 캐릭터를 만들 때 고른 데이터 에셋을 도감번호로 바꾼다.
+	// 번호가 안 채워진 에셋이면 0 이다.
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Species")
+	int32 FindDexNumber(const UUEPokemonSpeciesData* SpeciesData) const;
 
 };

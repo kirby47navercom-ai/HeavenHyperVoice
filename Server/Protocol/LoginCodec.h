@@ -248,6 +248,12 @@ buildCharacters(flatbuffers::FlatBufferBuilder& fbb,
             builder.add_iv_sp_atk(static_cast<std::uint8_t>(character.partner.ivs.spAtk));
             builder.add_iv_sp_def(static_cast<std::uint8_t>(character.partner.ivs.spDef));
             builder.add_iv_speed(static_cast<std::uint8_t>(character.partner.ivs.speed));
+
+            // 클라이언트는 이 번호로 종족 에셋을 찾는다. 표에 없는 종족이면 0 이
+            // 나가고, 클라이언트는 파트너를 못 찾은 것으로 처리한다.
+            if (const SpeciesBase* base = findSpecies(character.partner.speciesId)) {
+                builder.add_dex_number(base->dex);
+            }
             partner = builder.Finish();
         }
 

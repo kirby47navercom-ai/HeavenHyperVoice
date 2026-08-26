@@ -30,7 +30,11 @@ struct bio_st;
 /** 캐릭터에 딸린 포켓몬. 실 수치는 서버가 계산해서 보낸다. */
 struct FHHVPokemonSummary
 {
+	// 서버 내부 번호. 에셋을 찾는 데 쓰지 않는다 — DexNumber 를 쓴다.
 	uint16 SpeciesId = 0;
+
+	// 도감번호. 종족 에셋을 찾는 열쇠다.
+	uint16 DexNumber = 0;
 	FString Nickname;          // 비어 있으면 클라가 종족명을 쓴다
 	uint32 Level = 0;
 
@@ -132,7 +136,7 @@ public:
 
 	void SendLogin(const FString& UserId, const FString& Password);
 	void SendRegister(const FString& UserId, const FString& Password);
-	void SendCreateCharacter(const FString& Nickname, uint16 SpeciesId,
+	void SendCreateCharacter(const FString& Nickname, uint16 DexNumber,
 		const FUEHHVAppearance& Appearance);
 	void SendDeleteCharacter(uint64 CharacterId, const FString& ConfirmNickname);
 	void SendReleasePartner(uint64 CharacterId);

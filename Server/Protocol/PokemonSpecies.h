@@ -15,7 +15,17 @@
 namespace heaven::proto {
 
 struct SpeciesBase {
+    // 서버 내부 번호이자 DB 의 character_pokemon.species_id. 배열 인덱스 + 1 이다.
     std::uint16_t id;
+
+    // 도감번호. 와이어에는 이것만 실어 보낸다.
+    //
+    // 클라이언트는 이 번호로 종족 에셋을 찾는다. 내부 id 를 보내면 클라이언트
+    // 카탈로그 배열 순서가 이 표와 정확히 같아야 하는데, 팀원이 포켓몬을 추가하며
+    // 순서가 밀려 이미 저장된 파트너가 다른 종족이 된 적이 있다. 도감번호는
+    // 에셋에 이미 박혀 있고(pm0004 = 파이리) 배열 순서와 무관하다.
+    std::uint16_t dex;
+
     std::string_view name;
     std::uint16_t hp;
     std::uint16_t atk;
@@ -34,26 +44,26 @@ struct SpeciesBase {
 // 넣거나 순서를 바꾸면 이미 저장된 포켓몬이 조용히 다른 종족이 된다.
 // 늘릴 때는 반드시 뒤에 붙일 것.
 inline constexpr SpeciesBase kSpecies[] = {
-    { 1, "귀뚤뚜기",   37,  25,  41,  25,  41,  25},
-    { 2, "기라티나",  150, 100, 120, 100, 120,  90},
-    { 3, "꼬링크",     45,  65,  34,  40,  34,  45},
-    { 4, "꼬부기",     44,  48,  65,  50,  64,  43},
-    { 5, "꽁어름",     70,  80,  70,  80,  70,  70},
-    { 6, "디아루가",  100, 120, 120, 150, 100,  90},
-    { 7, "랄토스",     28,  25,  25,  45,  35,  40},
-    { 8, "모부기",     55,  68,  64,  45,  55,  31},
-    { 9, "벼리짱",     70,  80,  70,  80,  70,  70},
-    {10, "불꽃숭이",   44,  58,  44,  58,  44,  61},
-    {11, "아르세우스",120, 120, 120, 120, 120, 120},
-    {12, "이브이",     55,  55,  50,  45,  65,  55},
-    {13, "이상해씨",   45,  49,  49,  65,  65,  45},
-    {14, "자망칼",     45,  85,  70,  40,  40,  60},
-    {15, "터검니",     70,  80,  70,  80,  70,  70},
-    {16, "파이리",     39,  52,  43,  60,  50,  65},
-    {17, "파치리스",   60,  45,  70,  45,  90,  95},
-    {18, "팽도리",     53,  51,  53,  61,  56,  40},
-    {19, "펄기아",     90, 120, 100, 150, 120, 100},
-    {20, "피카츄",     35,  55,  40,  50,  50,  90},
+    {1,  401, "귀뚤뚜기",   37,  25,  41,  25,  41,  25},
+    {2,  487, "기라티나",  150, 100, 120, 100, 120,  90},
+    {3,  403, "꼬링크",     45,  65,  34,  40,  34,  45},
+    {4,    7, "꼬부기",     44,  48,  65,  50,  64,  43},
+    {5,  749, "꽁어름",     70,  80,  70,  80,  70,  70},
+    {6,  483, "디아루가",  100, 120, 120, 150, 100,  90},
+    {7,  280, "랄토스",     28,  25,  25,  45,  35,  40},
+    {8,  387, "모부기",     55,  68,  64,  45,  55,  31},
+    {9, 1105, "벼리짱",     70,  80,  70,  80,  70,  70},
+    {10,  390, "불꽃숭이",   44,  58,  44,  58,  44,  61},
+    {11,  493, "아르세우스",120, 120, 120, 120, 120, 120},
+    {12,  133, "이브이",     55,  55,  50,  45,  65,  55},
+    {13,    1, "이상해씨",   45,  49,  49,  65,  65,  45},
+    {14,  624, "자망칼",     45,  85,  70,  40,  40,  60},
+    {15,  610, "터검니",     70,  80,  70,  80,  70,  70},
+    {16,    4, "파이리",     39,  52,  43,  60,  50,  65},
+    {17,  417, "파치리스",   60,  45,  70,  45,  90,  95},
+    {18,  393, "팽도리",     53,  51,  53,  61,  56,  40},
+    {19,  484, "펄기아",     90, 120, 100, 150, 120, 100},
+    {20,   25, "피카츄",     35,  55,  40,  50,  50,  90},
 };
 
 inline constexpr std::size_t kSpeciesCount = sizeof(kSpecies) / sizeof(kSpecies[0]);
@@ -75,6 +85,43 @@ inline constexpr const SpeciesBase* findSpecies(std::uint16_t id) {
     const SpeciesBase& found = kSpecies[id - 1];
     return found.id == id ? &found : nullptr;
 }
+
+// 도감번호로 찾는다. 클라이언트가 보내는 것은 이 번호다.
+//
+// 선형 탐색인 이유는 도감번호가 연속이 아니기 때문이다(꼬부기 7, 피카츄 25,
+// 벼리짱 1105). 20 종이라 인덱스를 따로 둘 이유가 없다.
+inline constexpr const SpeciesBase* findSpeciesByDex(std::uint16_t dex) {
+    if (dex == 0) {
+        return nullptr;
+    }
+    for (const SpeciesBase& species : kSpecies) {
+        if (species.dex == dex) {
+            return &species;
+        }
+    }
+    return nullptr;
+}
+
+namespace detail {
+
+// 도감번호가 겹치면 findSpeciesByDex 가 먼저 나온 것만 돌려주고, 나머지 종족은
+// 클라이언트에서 영영 찾을 수 없게 된다. 컴파일 시점에 막는다.
+inline constexpr bool dexNumbersAreUnique() {
+    for (std::size_t i = 0; i < kSpeciesCount; ++i) {
+        if (kSpecies[i].dex == 0) {
+            return false;
+        }
+        for (std::size_t k = i + 1; k < kSpeciesCount; ++k) {
+            if (kSpecies[i].dex == kSpecies[k].dex) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+static_assert(dexNumbersAreUnique(), "도감번호가 비었거나 중복이다");
+
+}  // namespace detail
 
 // 개체값과 노력치는 같은 모양이라 타입을 공유한다. 범위만 다르다.
 struct StatSpread {
@@ -128,8 +175,8 @@ namespace detail {
 // 종족값을 여기 박아 둔다. kSpecies 에서 꺼내 쓰면 목록에 종족을 넣고 빼는
 // 것만으로 공식과 무관한 검사가 깨진다 (실제로 그렇게 깨진 적이 있다).
 // 이건 공식 검증이지 목록 검증이 아니다.
-constexpr SpeciesBase kFormulaPikachu{0, "피카츄", 35, 55, 40, 50, 50, 90};
-constexpr SpeciesBase kFormulaSnorlax{0, "잠만보", 160, 110, 65, 65, 110, 30};
+constexpr SpeciesBase kFormulaPikachu{0, 0, "피카츄", 35, 55, 40, 50, 50, 90};
+constexpr SpeciesBase kFormulaSnorlax{0, 0, "잠만보", 160, 110, 65, 65, 110, 30};
 
 // 개체값 0 / 노력치 0 은 종족값만 반영된다.
 constexpr PokemonStats kPikachuLv5Bare = computeStats(kFormulaPikachu, 5, {}, {});

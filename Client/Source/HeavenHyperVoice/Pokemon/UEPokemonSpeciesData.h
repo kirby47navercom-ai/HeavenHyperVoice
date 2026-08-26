@@ -67,6 +67,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Identity")
 	FName SpeciesId = NAME_None;
 
+	/**
+	 * 도감번호. 서버가 파트너를 지목할 때 쓰는 값이다 (파이리 4, 피카츄 25).
+	 *
+	 * 카탈로그 배열 위치로 종족을 찾던 것을 이 번호로 바꿨다. 배열 순서가 밀리면
+	 * 이미 저장된 파트너가 조용히 다른 종족이 되기 때문이다. 이 번호는 에셋
+	 * 파일명(pm0004_...)에 이미 박혀 있고 배열 순서와 무관하다.
+	 *
+	 * 0 이면 서버가 이 종족을 지목할 수 없다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Identity", meta = (ClampMin = "0"))
+	int32 DexNumber = 0;
+
 
 	// ========================================================================
 	// Visual

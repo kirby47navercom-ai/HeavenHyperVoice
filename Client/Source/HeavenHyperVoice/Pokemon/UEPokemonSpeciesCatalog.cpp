@@ -12,18 +12,26 @@ UUEPokemonSpeciesData* UUEPokemonSpeciesCatalog::Find(int32 SpeciesId) const
 	return Species[Index];
 }
 
-int32 UUEPokemonSpeciesCatalog::FindSpeciesId(const UUEPokemonSpeciesData* SpeciesData) const
+UUEPokemonSpeciesData* UUEPokemonSpeciesCatalog::FindByDex(int32 DexNumber) const
 {
-	if (SpeciesData == nullptr)
+	if (DexNumber <= 0)
 	{
-		return 0;
+		return nullptr;
 	}
-	for (int32 Index = 0; Index < Species.Num(); ++Index)
+
+	// 도감번호는 연속이 아니라(꼬부기 7, 피카츄 25, 벼리짱 1105) 인덱스로 못 짚는다.
+	// 20 종이라 선형 탐색으로 충분하다.
+	for (UUEPokemonSpeciesData* Entry : Species)
 	{
-		if (Species[Index] == SpeciesData)
+		if (Entry && Entry->DexNumber == DexNumber)
 		{
-			return Index + 1;
+			return Entry;
 		}
 	}
-	return 0;
+	return nullptr;
+}
+
+int32 UUEPokemonSpeciesCatalog::FindDexNumber(const UUEPokemonSpeciesData* SpeciesData) const
+{
+	return SpeciesData ? SpeciesData->DexNumber : 0;
 }

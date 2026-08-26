@@ -379,7 +379,8 @@ struct PokemonSummary FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_IV_DEF = 26,
     VT_IV_SP_ATK = 28,
     VT_IV_SP_DEF = 30,
-    VT_IV_SPEED = 32
+    VT_IV_SPEED = 32,
+    VT_DEX_NUMBER = 34
   };
   uint16_t species_id() const {
     return GetField<uint16_t>(VT_SPECIES_ID, 0);
@@ -426,6 +427,9 @@ struct PokemonSummary FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   uint8_t iv_speed() const {
     return GetField<uint8_t>(VT_IV_SPEED, 0);
   }
+  uint16_t dex_number() const {
+    return GetField<uint16_t>(VT_DEX_NUMBER, 0);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -445,6 +449,7 @@ struct PokemonSummary FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<uint8_t>(verifier, VT_IV_SP_ATK, 1) &&
            VerifyField<uint8_t>(verifier, VT_IV_SP_DEF, 1) &&
            VerifyField<uint8_t>(verifier, VT_IV_SPEED, 1) &&
+           VerifyField<uint16_t>(verifier, VT_DEX_NUMBER, 2) &&
            verifier.EndTable();
   }
 };
@@ -498,6 +503,9 @@ struct PokemonSummaryBuilder {
   void add_iv_speed(uint8_t iv_speed) {
     fbb_.AddElement<uint8_t>(PokemonSummary::VT_IV_SPEED, iv_speed, 0);
   }
+  void add_dex_number(uint16_t dex_number) {
+    fbb_.AddElement<uint16_t>(PokemonSummary::VT_DEX_NUMBER, dex_number, 0);
+  }
   explicit PokemonSummaryBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -525,10 +533,12 @@ inline ::flatbuffers::Offset<PokemonSummary> CreatePokemonSummary(
     uint8_t iv_def = 0,
     uint8_t iv_sp_atk = 0,
     uint8_t iv_sp_def = 0,
-    uint8_t iv_speed = 0) {
+    uint8_t iv_speed = 0,
+    uint16_t dex_number = 0) {
   PokemonSummaryBuilder builder_(_fbb);
   builder_.add_level(level);
   builder_.add_nickname(nickname);
+  builder_.add_dex_number(dex_number);
   builder_.add_speed(speed);
   builder_.add_sp_def(sp_def);
   builder_.add_sp_atk(sp_atk);
@@ -561,7 +571,8 @@ inline ::flatbuffers::Offset<PokemonSummary> CreatePokemonSummaryDirect(
     uint8_t iv_def = 0,
     uint8_t iv_sp_atk = 0,
     uint8_t iv_sp_def = 0,
-    uint8_t iv_speed = 0) {
+    uint8_t iv_speed = 0,
+    uint16_t dex_number = 0) {
   auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
   return HeavenLogin::CreatePokemonSummary(
       _fbb,
@@ -579,7 +590,8 @@ inline ::flatbuffers::Offset<PokemonSummary> CreatePokemonSummaryDirect(
       iv_def,
       iv_sp_atk,
       iv_sp_def,
-      iv_speed);
+      iv_speed,
+      dex_number);
 }
 
 struct Appearance FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -980,7 +992,8 @@ struct CreateCharacterRequest FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::T
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
     VT_NICKNAME = 4,
     VT_SPECIES_ID = 6,
-    VT_APPEARANCE = 8
+    VT_APPEARANCE = 8,
+    VT_DEX_NUMBER = 10
   };
   const ::flatbuffers::String *nickname() const {
     return GetPointer<const ::flatbuffers::String *>(VT_NICKNAME);
@@ -991,6 +1004,9 @@ struct CreateCharacterRequest FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::T
   const HeavenLogin::Appearance *appearance() const {
     return GetPointer<const HeavenLogin::Appearance *>(VT_APPEARANCE);
   }
+  uint16_t dex_number() const {
+    return GetField<uint16_t>(VT_DEX_NUMBER, 0);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -999,6 +1015,7 @@ struct CreateCharacterRequest FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::T
            VerifyField<uint16_t>(verifier, VT_SPECIES_ID, 2) &&
            VerifyOffset(verifier, VT_APPEARANCE) &&
            verifier.VerifyTable(appearance()) &&
+           VerifyField<uint16_t>(verifier, VT_DEX_NUMBER, 2) &&
            verifier.EndTable();
   }
 };
@@ -1016,6 +1033,9 @@ struct CreateCharacterRequestBuilder {
   void add_appearance(::flatbuffers::Offset<HeavenLogin::Appearance> appearance) {
     fbb_.AddOffset(CreateCharacterRequest::VT_APPEARANCE, appearance);
   }
+  void add_dex_number(uint16_t dex_number) {
+    fbb_.AddElement<uint16_t>(CreateCharacterRequest::VT_DEX_NUMBER, dex_number, 0);
+  }
   explicit CreateCharacterRequestBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -1031,10 +1051,12 @@ inline ::flatbuffers::Offset<CreateCharacterRequest> CreateCreateCharacterReques
     ::flatbuffers::FlatBufferBuilder &_fbb,
     ::flatbuffers::Offset<::flatbuffers::String> nickname = 0,
     uint16_t species_id = 0,
-    ::flatbuffers::Offset<HeavenLogin::Appearance> appearance = 0) {
+    ::flatbuffers::Offset<HeavenLogin::Appearance> appearance = 0,
+    uint16_t dex_number = 0) {
   CreateCharacterRequestBuilder builder_(_fbb);
   builder_.add_appearance(appearance);
   builder_.add_nickname(nickname);
+  builder_.add_dex_number(dex_number);
   builder_.add_species_id(species_id);
   return builder_.Finish();
 }
@@ -1043,13 +1065,15 @@ inline ::flatbuffers::Offset<CreateCharacterRequest> CreateCreateCharacterReques
     ::flatbuffers::FlatBufferBuilder &_fbb,
     const char *nickname = nullptr,
     uint16_t species_id = 0,
-    ::flatbuffers::Offset<HeavenLogin::Appearance> appearance = 0) {
+    ::flatbuffers::Offset<HeavenLogin::Appearance> appearance = 0,
+    uint16_t dex_number = 0) {
   auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
   return HeavenLogin::CreateCreateCharacterRequest(
       _fbb,
       nickname__,
       species_id,
-      appearance);
+      appearance,
+      dex_number);
 }
 
 struct CharacterListResponse FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {

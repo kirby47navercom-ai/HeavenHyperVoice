@@ -279,7 +279,20 @@ bool LoginHandler::handleLogin(TlsSession& session, const HeavenLogin::LoginRequ
 bool LoginHandler::handleCreateCharacter(TlsSession& session,
                                          const HeavenLogin::CreateCharacterRequest& request) {
     const auto* nickname = request.nickname();
-    const std::uint16_t speciesId = request.species_id();
+
+    // 클라이언트는 도감번호로 말한다. 내부 id 는 배열 위치라 클라이언트 카탈로그
+    // 순서에 묶이는데, 순서가 밀려 저장된 파트너가 다른 종족이 된 적이 있다.
+    // species_id 는 도감번호를 모르는 구버전 클라를 위해서만 본다.
+    std::uint16_t speciesId = request.species_id();
+    if (const std::uint16_t dex = request.dex_number(); dex != 0) {
+        const proto::SpeciesBase* byDex = proto::findSpeciesByDex(dex);
+        if (byDex == nullptr) {
+            resume(Stage::AwaitingSelection);
+            session.send(proto::encodeCharacterList(false, "알 수 없는 파트너입니다", {}));
+            return true;
+        }
+        speciesId = byDex->id;
+    }
 
     if (nickname == nullptr || nickname->size() > proto::kMaxNicknameBytes) {
         resume(Stage::AwaitingSelection);
