@@ -20,6 +20,7 @@ namespace heaven::data {
 // slot 0 이 따라다니는 개체다. 여러 마리가 되면 partner 를 vector 로 바꾼다.
 using Character = proto::CharacterInfo;
 using Partner = proto::PartnerInfo;
+using Appearance = proto::AppearanceInfo;
 
 enum class CreateCharacterResult {
     Created,
@@ -90,8 +91,11 @@ public:
                                           std::uint64_t characterId) = 0;
 
     // 캐릭터와 파트너를 함께 만든다. 둘 중 하나만 생기는 상태는 없어야 한다.
+    //
+    // 외형은 호출자가 이미 sanitizeAppearance 를 통과시킨 값이어야 한다.
     virtual CreateCharacterResult create(std::uint64_t accountId, std::string_view nickname,
-                                         std::uint16_t speciesId) = 0;
+                                         std::uint16_t speciesId,
+                                         const Appearance& appearance) = 0;
 
     // 소프트 삭제. 행은 남고 deleted_at 이 채워지며, 이후 조회에서 빠진다.
     // 닉네임은 계속 점유된다 (사칭 방지).

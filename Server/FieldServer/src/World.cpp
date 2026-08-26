@@ -68,17 +68,20 @@ void World::sendTo(const Entity& entity, const proto::Bytes& frame) const {
     }
 }
 
-std::shared_ptr<TlsSession> World::enter(std::uint64_t characterId, std::uint64_t accountId,
-                                         std::string nickname, std::uint16_t partnerSpecies,
-                                         const Position& position,
-                                         const std::shared_ptr<TlsSession>& session) {
+Displaced World::enter(std::uint64_t characterId, std::uint64_t accountId, std::string nickname,
+                       std::uint16_t partnerSpecies, const Position& position,
+                       const std::shared_ptr<TlsSession>& session) {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    std::shared_ptr<TlsSession> displaced;
+    Displaced displaced;
     if (const auto it = byAccount_.find(accountId); it != byAccount_.end()) {
         const std::uint64_t previous = it->second;
         if (const auto entity = entities_.find(previous); entity != entities_.end()) {
-            displaced = entity->second.session.lock();
+            displaced.session = entity->second.session.lock();
+            // 밀려난 쪽의 onClosed 는 이 자리를 못 찾아 leave() 가 헛돈다.
+            // 마지막 위치를 여기서 건네지 않으면 저장할 기회가 아예 없다.
+            displaced.characterId = previous;
+            displaced.position = entity->second.position;
             removeFromVisibility(entity->second);
             sectors_[static_cast<std::size_t>(entity->second.sector)].erase(previous);
             entities_.erase(entity);

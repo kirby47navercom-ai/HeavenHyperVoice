@@ -54,18 +54,20 @@ void UUEPlayerMovementSyncComponent::BeginPlay()
 	}
 
 	PlayerCharacter->OnCharacterMovementUpdated.AddDynamic(this, &ThisClass::HandleCharacterMovementUpdated);
-	SaveLastValidatedServerState(PlayerCharacter->GetActorLocation(), PlayerCharacter->GetVelocity(), PlayerCharacter->GetActorRotation());
+	SaveLastValidatedServerState(PlayerCharacter->GetActorLocation(), PlayerCharacter->GetActorRotation());
 
-	// 프런트엔드의 로컬 로그인으로 입장한 동안에는 필드 서버 연결을 시작하지 않는다.
-	const UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetWorld()->GetGameInstance());
-	if (GameInstance && GameInstance->HasLocalSession())
-	{
-		SetComponentTickEnabled(false);
-		return;
-	}
-
+	// 서버를 거치지 않고 화면만 넘어온 경우에는 필드 연결을 시작하지 않는다.
+	//
+	// 예전에는 HasLocalSession() 으로 판단했는데, 로그인 서버를 붙이면서 그 뜻이
+	// 뒤집혔다 — 캐릭터를 고르면 닉네임을 보관하려고 SetLocalSession 을 부르므로,
+	// 서버 로그인에 성공할수록 플래그가 켜져 필드 연결이 막혔다.
+	//
+	// 실제로 서버를 거쳐 왔다는 증거는 티켓이다. 티켓이 있으면 그 주소로 붙고,
+	// 없으면 dev 경로(--dev-no-auth)로 붙는다. 판정은 StartFieldConnection 안에서 한다.
 	if (bEnableLocalServerValidation)
 	{
+		UE_LOG(LogTemp, Display,
+			TEXT("PlayerMovementSync: local validation is on; not connecting to the field server"));
 		TryLoadServerMap();
 		return;
 	}
@@ -129,10 +131,6 @@ void UUEPlayerMovementSyncComponent::StartFieldConnection()
 	FieldConnection->OnSnapshot = [this](const FHHVFieldSnapshot& Snapshot)
 	{
 		HandleFieldSnapshot(Snapshot);
-		if (OnFieldSnapshot)
-		{
-			OnFieldSnapshot(Snapshot);
-		}
 	};
 
 	// 여러 대에서 같은 필드에 붙는 테스트를 하려면 클라마다 번호가 달라야 한다
@@ -172,6 +170,23 @@ void UUEPlayerMovementSyncComponent::StartFieldConnection()
 	Settings.Port = FieldServerPort;
 	Settings.DevName = ResolvedName;
 	Settings.DevCharacterId = ResolvedCharacterId;
+
+	// 로그인 서버를 거쳐 왔으면 티켓과 접속 주소가 GameInstance 에 들어 있다.
+	// 그때는 위의 dev 값과 에디터에 박아둔 호스트를 쓰지 않는다 — 어디로 붙을지는
+	// 서버가 정한다.
+	if (const UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetWorld()->GetGameInstance()))
+	{
+		FString TicketHost;
+		int32 TicketPort = 0;
+		TArray<uint8> Ticket;
+		if (GameInstance->GetFieldEndpoint(TicketHost, TicketPort, Ticket) && Ticket.Num() > 0)
+		{
+			Settings.Host = TicketHost;
+			Settings.Port = TicketPort;
+			Settings.Ticket = MoveTemp(Ticket);
+		}
+	}
+
 	FieldConnection->Start(Settings);
 
 	UE_LOG(LogTemp, Display, TEXT("PlayerMovementSync: connecting to %s:%d as %s (id %llu)"),
@@ -198,7 +213,7 @@ void UUEPlayerMovementSyncComponent::HandleFieldEnterAck(uint64 EntityId, float 
 	SpawnRotation.Yaw = Facing;
 
 	PlayerCharacter->ApplyServerMovementCorrection(SpawnPosition, FVector::ZeroVector, SpawnRotation, true);
-	SaveLastValidatedServerState(SpawnPosition, FVector::ZeroVector, SpawnRotation);
+	SaveLastValidatedServerState(SpawnPosition, SpawnRotation);
 
 	UE_LOG(
 		LogTemp,
@@ -237,9 +252,22 @@ void UUEPlayerMovementSyncComponent::HandleFieldCorrection(uint32 Sequence, floa
 
 void UUEPlayerMovementSyncComponent::HandleFieldSnapshot(const FHHVFieldSnapshot& Snapshot)
 {
+	// 스냅샷이 오는지부터 본다. 아래 [FIELD] 로그는 spawned/despawned 가 있을 때만
+	// 찍혀서, "안 왔다" 와 "비어서 왔다" 가 구분되지 않는다.
+	//
+	// 20Hz 라 계속 찍으면 로그가 잠긴다. 입장 직후만 보면 충분하므로 앞의 몇 개만 남긴다.
+	if (SnapshotsLogged < 20)
+	{
+		++SnapshotsLogged;
+		UE_LOG(LogTemp, Display, TEXT("[SNAP] %d: spawned=%d moved=%d despawned=%d"),
+			SnapshotsLogged, Snapshot.Spawned.Num(), Snapshot.Moved.Num(),
+			Snapshot.Despawned.Num());
+	}
+
 	UWorld* World = GetWorld();
 	if (!World)
 	{
+		UE_LOG(LogTemp, Error, TEXT("[SNAP] no world; dropping snapshot"));
 		return;
 	}
 
@@ -252,22 +280,20 @@ void UUEPlayerMovementSyncComponent::HandleFieldSnapshot(const FHHVFieldSnapshot
 		return FVector(ToUnrealAxis(ServerX), ToUnrealAxis(ServerY), GroundZ);
 	};
 
-	// 새로 시야에 들어온 야생 포켓몬을 스폰한다. 다른 플레이어(Species==0)는
-	// 아직 다루지 않는다.
-	int32 Made = 0, SkippedExisting = 0, SkippedNoClass = 0, FailedSpawn = 0;
-	int32 SpawnedPlayers = 0;
+	// 새로 시야에 들어온 야생 포켓몬을 스폰한다.
 	for (const FHHVFieldEntity& Entity : Snapshot.Spawned)
 	{
 		if (Entity.Species == 0)
 		{
 			// 다른 플레이어다. 서버는 자기 자신을 빼고 보내므로 여기 내가 섞일
 			// 일은 없다 (World::updateVisibility 가 self 를 건너뛴다).
-			++SpawnedPlayers;
 			SpawnRemotePlayer(Entity, MakeLocation(Entity.X, Entity.Y));
 			continue;
 		}
-		if (WildActors.Contains(Entity.EntityId)) { ++SkippedExisting; continue; }
-		if (!WildPokemonClass) { ++SkippedNoClass; continue; }
+		if (WildActors.Contains(Entity.EntityId) || !WildPokemonClass)
+		{
+			continue;
+		}
 
 		// 지연 스폰으로 만든다. AutoPossessAI 는 스폰 직후 프레임에 컨트롤러를
 		// 빙의시키는데, 그 로컬 AI(FollowOwner 계열)가 야생을 플레이어 쪽으로
@@ -279,7 +305,6 @@ void UUEPlayerMovementSyncComponent::HandleFieldSnapshot(const FHHVFieldSnapshot
 			ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 		if (!WildActor)
 		{
-			++FailedSpawn;
 			continue;
 		}
 		WildActor->AutoPossessAI = EAutoPossessAI::Disabled;
@@ -296,12 +321,6 @@ void UUEPlayerMovementSyncComponent::HandleFieldSnapshot(const FHHVFieldSnapshot
 		}
 
 		WildActor->FinishSpawning(SpawnTransform);
-		++Made;
-
-		const FVector SpawnLoc = SpawnTransform.GetLocation();
-		UE_LOG(LogTemp, Warning,
-			TEXT("[WILD] spawn id=%llu unreal=(%.0f, %.0f, %.0f) server=(%.0f, %.0f)"),
-			Entity.EntityId, SpawnLoc.X, SpawnLoc.Y, SpawnLoc.Z, Entity.X, Entity.Y);
 
 		// 서버가 위치를 완전히 지시하므로 로컬 충돌도 끈다. 겹쳐 스폰돼도 서로
 		// 밀치지 않는다.
@@ -330,8 +349,6 @@ void UUEPlayerMovementSyncComponent::HandleFieldSnapshot(const FHHVFieldSnapshot
 			}
 			continue;
 		}
-		// ponytail: 좌표를 즉시 박는다. 20Hz 라 조금 끊겨 보이면 목표를 두고
-		//           Tick 에서 보간하면 되지만, 지금은 눈에 띄는지부터 본다.
 		// 목표만 넘긴다. 액터의 Tick(UpdateServerDrivenMovement)이 VInterpTo 로
 		// 서서히 이동하므로, 20Hz 스냅샷 사이가 부드럽게 채워진다.
 		AUEPokemonCharacter* WildActor = Found->Get();
@@ -339,14 +356,12 @@ void UUEPlayerMovementSyncComponent::HandleFieldSnapshot(const FHHVFieldSnapshot
 			FRotator(0.0f, Entity.Facing, 0.0f), /*bTeleported=*/false);
 	}
 
-	// 시야에서 나갔거나 사라진 야생 포켓몬을 제거한다.
-	int32 Removed = 0;
+	// 시야에서 나갔거나 사라진 엔티티를 제거한다.
 	for (const uint64 EntityId : Snapshot.Despawned)
 	{
 		TWeakObjectPtr<AUEPokemonCharacter> WildActor;
 		if (WildActors.RemoveAndCopyValue(EntityId, WildActor))
 		{
-			++Removed;
 			if (WildActor.IsValid())
 			{
 				WildActor->Destroy();
@@ -355,24 +370,10 @@ void UUEPlayerMovementSyncComponent::HandleFieldSnapshot(const FHHVFieldSnapshot
 		}
 
 		TWeakObjectPtr<AUEPlayerCharacter> RemotePlayer;
-		if (RemotePlayers.RemoveAndCopyValue(EntityId, RemotePlayer))
+		if (RemotePlayers.RemoveAndCopyValue(EntityId, RemotePlayer) && RemotePlayer.IsValid())
 		{
-			++Removed;
-			if (RemotePlayer.IsValid())
-			{
-				RemotePlayer->Destroy();
-			}
+			RemotePlayer->Destroy();
 		}
-	}
-
-	if (Snapshot.Spawned.Num() > 0 || Snapshot.Despawned.Num() > 0)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[FIELD] in.spawned=%d wild.made=%d player.made=%d skip(exist=%d noclass=%d fail=%d)")
-			TEXT(" | despawned=%d removed=%d | live wild=%d player=%d class=%s"),
-			Snapshot.Spawned.Num(), Made, SpawnedPlayers, SkippedExisting, SkippedNoClass, FailedSpawn,
-			Snapshot.Despawned.Num(), Removed, WildActors.Num(), RemotePlayers.Num(),
-			WildPokemonClass ? TEXT("ok") : TEXT("NULL"));
 	}
 }
 
@@ -409,8 +410,6 @@ void UUEPlayerMovementSyncComponent::SpawnRemotePlayer(const FHHVFieldEntity& En
 	Proxy->FinishSpawning(SpawnTransform);
 
 	RemotePlayers.Add(Entity.EntityId, Proxy);
-	UE_LOG(LogTemp, Warning, TEXT("[FIELD] remote player spawn id=%llu name=%s at (%.0f, %.0f)"),
-		Entity.EntityId, *Entity.Nickname, SpawnLocation.X, SpawnLocation.Y);
 }
 
 void UUEPlayerMovementSyncComponent::DestroyRemotePlayers()
@@ -437,7 +436,7 @@ void UUEPlayerMovementSyncComponent::DestroyWildActors()
 	WildActors.Empty();
 }
 
-FUEPlayerMovementPacket UUEPlayerMovementSyncComponent::BuildMovementPacket(float DeltaSeconds)
+FUEPlayerMovementPacket UUEPlayerMovementSyncComponent::BuildMovementPacket()
 {
 	FUEPlayerMovementPacket MovementPacket;
 
@@ -448,11 +447,8 @@ FUEPlayerMovementPacket UUEPlayerMovementSyncComponent::BuildMovementPacket(floa
 	}
 
 	MovementPacket.Sequence = NextMoveSequence++;
-	MovementPacket.DeltaSeconds = DeltaSeconds;
-	MovementPacket.MoveInput = PlayerCharacter->GetMovementInput();
 	MovementPacket.ClientPosition = PlayerCharacter->GetActorLocation();
 	MovementPacket.ClientVelocity = PlayerCharacter->GetVelocity();
-	MovementPacket.ControlRotation = PlayerCharacter->GetControlRotation();
 	MovementPacket.ActorRotation = PlayerCharacter->GetActorRotation();
 
 	return MovementPacket;
@@ -463,7 +459,6 @@ void UUEPlayerMovementSyncComponent::RecordMovementPacket(const FUEPlayerMovemen
 	FUEPlayerMovementHistoryEntry HistoryEntry;
 	HistoryEntry.Packet = MovementPacket;
 	HistoryEntry.ReportedPosition = MovementPacket.ClientPosition;
-	HistoryEntry.ReportedVelocity = MovementPacket.ClientVelocity;
 	HistoryEntry.ReportedRotation = MovementPacket.ActorRotation;
 	MoveHistory.Add(MoveTemp(HistoryEntry));
 
@@ -529,7 +524,7 @@ bool UUEPlayerMovementSyncComponent::BuildLocalServerMovementResult(const FUEPla
 {
 	if (!bServerMapLoaded)
 	{
-		SaveLastValidatedServerState(MovementPacket.ClientPosition, MovementPacket.ClientVelocity, MovementPacket.ActorRotation);
+		SaveLastValidatedServerState(MovementPacket.ClientPosition, MovementPacket.ActorRotation);
 		OutServerPosition = MovementPacket.ClientPosition;
 		OutServerVelocity = MovementPacket.ClientVelocity;
 		OutServerRotation = MovementPacket.ActorRotation;
@@ -555,7 +550,7 @@ bool UUEPlayerMovementSyncComponent::BuildLocalServerMovementResult(const FUEPla
 		OutServerPosition = MovementPacket.ClientPosition;
 		OutServerVelocity = MovementPacket.ClientVelocity;
 		OutServerRotation = MovementPacket.ActorRotation;
-		SaveLastValidatedServerState(OutServerPosition, OutServerVelocity, OutServerRotation);
+		SaveLastValidatedServerState(OutServerPosition, OutServerRotation);
 		return true;
 	}
 
@@ -668,26 +663,11 @@ AUEPlayerCharacter* UUEPlayerMovementSyncComponent::GetPlayerCharacter() const
 	return Cast<AUEPlayerCharacter>(GetOwner());
 }
 
-void UUEPlayerMovementSyncComponent::SaveLastValidatedServerState(const FVector& ServerPosition, const FVector& ServerVelocity, const FRotator& ServerRotation)
+void UUEPlayerMovementSyncComponent::SaveLastValidatedServerState(const FVector& ServerPosition, const FRotator& ServerRotation)
 {
 	LastValidatedServerPosition = ServerPosition;
-	LastValidatedServerVelocity = ServerVelocity;
 	LastValidatedServerRotation = ServerRotation;
 	bLastValidatedServerStateValid = true;
-}
-
-HHV::Map::Vec3 UUEPlayerMovementSyncComponent::ToServerVec3(const FVector& Vector)
-{
-	return HHV::Map::Vec3{
-		static_cast<float>(Vector.X),
-		static_cast<float>(Vector.Y),
-		static_cast<float>(Vector.Z)
-	};
-}
-
-FVector UUEPlayerMovementSyncComponent::ToUnrealVector(const HHV::Map::Vec3& Vector)
-{
-	return FVector(Vector.X, Vector.Y, Vector.Z);
 }
 
 void UUEPlayerMovementSyncComponent::HandleCharacterMovementUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity)
@@ -714,7 +694,7 @@ void UUEPlayerMovementSyncComponent::HandleCharacterMovementUpdated(float DeltaS
 		TimeSinceLastSend = 0.0f;
 	}
 
-	const FUEPlayerMovementPacket MovementPacket = BuildMovementPacket(DeltaSeconds);
+	const FUEPlayerMovementPacket MovementPacket = BuildMovementPacket();
 	RecordMovementPacket(MovementPacket);
 	SendMovementPacketToServer(MovementPacket);
 }

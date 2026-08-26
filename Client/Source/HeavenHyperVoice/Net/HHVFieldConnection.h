@@ -62,7 +62,13 @@ struct FHHVFieldSettings
 	FString Host;
 	int32 Port = 0;
 
-	/** Server must be running with --dev-no-auth. Real tickets come later. */
+	/**
+	 * LoginServer 가 audience:"field" 로 서명한 티켓. 비어 있지 않으면 이것만
+	 * 보내고 dev_* 는 싣지 않는다.
+	 */
+	TArray<uint8> Ticket;
+
+	/** Ticket 이 비었을 때만 쓴다. 서버가 --dev-no-auth 로 떠 있어야 통한다. */
 	FString DevName;
 	uint64 DevCharacterId = 0;
 	uint16 DevPartnerSpecies = 0;

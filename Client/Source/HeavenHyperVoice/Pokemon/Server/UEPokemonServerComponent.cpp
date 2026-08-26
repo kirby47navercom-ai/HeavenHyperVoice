@@ -531,7 +531,19 @@ float UUEPokemonServerComponent::GetServerTimeSeconds() const
 float UUEPokemonServerComponent::ResolveServerMoveSpeed(const AUEPokemonCharacter& PokemonCharacter) const
 {
 	const float SpeciesMoveSpeed = PokemonCharacter.GetConfiguredMoveSpeed();
-	return SpeciesMoveSpeed > 0.0f ? SpeciesMoveSpeed : ServerMoveSpeed;
+	if (SpeciesMoveSpeed <= 0.0f)
+	{
+		return ServerMoveSpeed;
+	}
+
+	// 종족 DA 의 MoveSpeed 는 언리얼 uu/s 가 아니라 게임 스탯 스케일이다
+	// (랄토스 25, 파이리 101, 자망칼 114). 그대로 쓰면 플레이어 걷기(260)의
+	// 절반도 안 돼서 파트너가 계속 뒤처지고, 서버가 움직이는 야생(200uu/s)
+	// 보다도 느리다.
+	//
+	// 에셋 20 개를 고치는 대신 여기서 환산한다. 종족별 상대 차이는 그대로
+	// 남는다. 나중에 DA 를 진짜 uu/s 로 정리하면 이 값을 1.0 으로 되돌리면 된다.
+	return SpeciesMoveSpeed * SpeciesMoveSpeedToUnrealUnits;
 }
 
 void UUEPokemonServerComponent::SendIdleSnapshot(AUEPokemonCharacter& PokemonCharacter)

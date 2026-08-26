@@ -144,6 +144,10 @@ void UUECharacterLobbySlotWidget::RefreshPreview()
 		if (AUEPlayerCharacter* CharacterPreview = Cast<AUEPlayerCharacter>(PreviewActor))
 		{
 			CharacterPreview->SetActorTransform(CharacterPreviewTransform);
+
+			// ApplyHHVAppearance 보다 먼저 표시해야 한다. 이게 없으면 BeginPlay 의
+			// ApplyPendingHHVAppearance 가 아래에서 넣은 슬롯 외형을 덮는다.
+			CharacterPreview->MakeAppearanceExternallyDriven();
 			CharacterPreview->ApplyHHVAppearance(ViewData.Appearance);
 			CharacterPreview->SetActorEnableCollision(false);
 			CharacterPreview->SetActorTickEnabled(false);

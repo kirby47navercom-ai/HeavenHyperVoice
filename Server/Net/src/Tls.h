@@ -38,8 +38,6 @@ public:
     TlsChannel(const TlsChannel&) = delete;
     TlsChannel& operator=(const TlsChannel&) = delete;
 
-    bool handshakeDone() const { return SSL_is_init_finished(ssl_) != 0; }
-
     // 네트워크에서 받은 암호문을 밀어 넣는다.
     void feedEncrypted(const char* data, std::size_t len);
 

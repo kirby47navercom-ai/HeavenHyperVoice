@@ -39,15 +39,10 @@ public:
     // 접속을 시도한다. 실패해도 예외를 던지지 않는다.
     bool connect();
 
-    bool connected();
-
     // 인자를 그대로 넘겨 명령을 실행한다. 이진 안전하다.
     // 문자열 응답이면 그 값을, 그 외(nil/오류/정수)면 nullopt.
     // 끊겨 있으면 한 번 재접속을 시도한다.
     std::optional<std::string> commandForString(const std::vector<std::string>& arguments);
-
-    // 정수 응답을 기대하는 명령. 실패하면 nullopt.
-    std::optional<long long> commandForInteger(const std::vector<std::string>& arguments);
 
     // 응답 내용을 보지 않는 명령. 성공 여부만 돌려준다.
     bool command(const std::vector<std::string>& arguments);

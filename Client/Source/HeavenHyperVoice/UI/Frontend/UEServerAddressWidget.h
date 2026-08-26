@@ -39,6 +39,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Frontend|Server Address|Text")
 	FText InvalidAddressMessage;
 
+	/**
+	 * 아무것도 입력하지 않고 확인하면 이 주소로 붙는다.
+	 *
+	 * 로컬에서 서버를 띄워놓고 테스트하는 일이 대부분이라, 매번 같은 주소를
+	 * 치게 하는 것보다 엔터 한 번으로 넘어가는 편이 낫다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Frontend|Server Address")
+	FString DefaultServerAddress = TEXT("127.0.0.1");
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
@@ -60,6 +69,13 @@ protected:
 private:
 	UFUNCTION()
 	void HandleConfirmClicked();
+
+	// 입력칸에서 엔터를 쳐도 확인 버튼과 같게 동작한다.
+	UFUNCTION()
+	void HandleAddressCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+
+	// 버튼과 엔터가 함께 쓰는 실제 처리.
+	void ConfirmAddress();
 
 	UFUNCTION()
 	void HandleBackClicked();

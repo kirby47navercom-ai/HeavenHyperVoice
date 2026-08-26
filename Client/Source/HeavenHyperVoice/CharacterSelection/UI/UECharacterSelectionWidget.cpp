@@ -23,7 +23,17 @@ void UUECharacterSelectionWidget::NativeConstruct()
 			&ThisClass::HandleLobbySlotDelete);
 	}
 
-	const UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	if (GameInstance)
+	{
+		GameInstance->OnEnterReady.AddUniqueDynamic(this, &ThisClass::HandleServerEnterReady);
+		GameInstance->OnCharacterChangeCompleted.AddUniqueDynamic(
+			this, &ThisClass::HandleServerActionFailed);
+
+		// 목록이 바뀌면(생성·삭제) 다시 그린다.
+		GameInstance->OnCharacterListChanged.AddUniqueDynamic(this, &ThisClass::RefreshLobby);
+	}
+
 	const FString SessionNickname = GameInstance ? GameInstance->GetLocalSessionNickname() : FString();
 	SetAccountName(SessionNickname.IsEmpty() ? DefaultAccountName : FText::FromString(SessionNickname));
 	RefreshLobby();
@@ -40,6 +50,17 @@ void UUECharacterSelectionWidget::NativeDestruct()
 		LobbySlot->OnActionRequested.RemoveDynamic(this, &ThisClass::HandleLobbySlotAction);
 		LobbySlot->OnDeleteRequested.RemoveDynamic(this, &ThisClass::HandleLobbySlotDelete);
 	}
+
+	// GameInstance 는 이 위젯보다 오래 산다. 떼지 않으면 레벨을 넘어간 뒤
+	// 파괴된 위젯으로 콜백이 간다.
+	if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance()))
+	{
+		GameInstance->OnEnterReady.RemoveDynamic(this, &ThisClass::HandleServerEnterReady);
+		GameInstance->OnCharacterChangeCompleted.RemoveDynamic(
+			this, &ThisClass::HandleServerActionFailed);
+		GameInstance->OnCharacterListChanged.RemoveDynamic(this, &ThisClass::RefreshLobby);
+	}
+
 	Super::NativeDestruct();
 }
 
@@ -137,11 +158,41 @@ void UUECharacterSelectionWidget::HandleLobbySlotAction(int32 SlotIndex)
 
 	if (GameInstance->IsCharacterSlotOccupied(SlotIndex))
 	{
-		EnterSelectedCharacter();
+		// 바로 넘어가지 않는다. 서버가 이 캐릭터로 필드·채팅 티켓을 발급해야
+		// 하고, 그게 도착하면 HandleServerEnterReady 가 레벨을 연다.
+		if (GameInstance->IsServerRequestPending())
+		{
+			return;
+		}
+
+		if (StatusText && !EnteringMessage.IsEmpty())
+		{
+			StatusText->SetText(EnteringMessage);
+		}
+		GameInstance->RequestSelectCharacter(SlotIndex);
 		return;
 	}
 
 	OnCharacterCreationRequested.Broadcast(SlotIndex);
+}
+
+void UUECharacterSelectionWidget::HandleServerEnterReady(const FString& Nickname)
+{
+	EnterSelectedCharacter();
+}
+
+void UUECharacterSelectionWidget::HandleServerActionFailed(bool bOk, const FString& Message)
+{
+	if (bOk)
+	{
+		return;
+	}
+
+	if (StatusText)
+	{
+		StatusText->SetText(Message.IsEmpty() ? NoCharacterSelectedMessage
+		                                      : FText::FromString(Message));
+	}
 }
 
 void UUECharacterSelectionWidget::HandleLobbySlotDelete(int32 SlotIndex)

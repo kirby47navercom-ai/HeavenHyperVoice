@@ -113,7 +113,7 @@ bool FieldHandler::enterWithoutAuth(TlsSession& session, const HeavenField::Ente
     const data::Position start{0, proto::kSpawnX, proto::kSpawnY, 0.f};
     auto self = session.shared_from_this();
 
-    std::shared_ptr<TlsSession> displaced;
+    Displaced displaced;
     {
         // stage_ 를 InField 로 올린 순간부터 onClosed 가 leave() 를 부를 수 있다.
         // 그 사이에 enter() 가 아직 안 끝났으면 leave 가 헛돌고, 뒤늦게 들어간
@@ -132,10 +132,12 @@ bool FieldHandler::enterWithoutAuth(TlsSession& session, const HeavenField::Ente
         displaced = context_.world->enter(characterId, characterId, nickname_,
                                           request.dev_partner_species(), start, self);
     }
-    if (displaced) {
-        displaced->send(proto::encodeFieldNotice("다른 곳에서 접속하여 연결을 종료합니다"));
-        displaced->closeAfterFlush();
+    if (displaced.session) {
+        displaced.session->send(
+            proto::encodeFieldNotice("다른 곳에서 접속하여 연결을 종료합니다"));
+        displaced.session->closeAfterFlush();
     }
+    // 밀려난 쪽의 위치는 저장하지 않는다. 개발 모드에는 저장소가 아예 없다.
 
     spdlog::warn("entered WITHOUT AUTH: {} (id {}, {}) - {} in field", nickname_, characterId,
                  session.peer(), context_.world->size());
@@ -211,7 +213,7 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
         const std::uint16_t partner =
             character->hasPartner ? character->partner.speciesId : std::uint16_t{0};
 
-        std::shared_ptr<TlsSession> displaced;
+        Displaced displaced;
         {
             // 로드하는 동안 연결이 끊겼으면 월드에 넣지 않는다.
             //
@@ -232,9 +234,20 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
             displaced = context->world->enter(characterId, accountId, character->nickname,
                                               partner, start, self);
         }
-        if (displaced) {
-            displaced->send(proto::encodeFieldNotice("다른 곳에서 접속하여 연결을 종료합니다"));
-            displaced->closeAfterFlush();
+        if (displaced.session) {
+            displaced.session->send(
+                proto::encodeFieldNotice("다른 곳에서 접속하여 연결을 종료합니다"));
+            displaced.session->closeAfterFlush();
+        }
+
+        // 밀려난 쪽은 leave() 를 타지 못한다 (그 자리는 이미 이 세션 것이다).
+        // 여기서 저장하지 않으면 그 캐릭터가 접속 이후 움직인 것이 사라진다.
+        // 이미 DB 스레드 위라 그대로 쓴다.
+        if (displaced.characterId != 0) {
+            context->characters->savePosition(displaced.characterId, displaced.position);
+            if (context->redis != nullptr) {
+                context->redis->command({"DEL", positionKey(displaced.characterId)});
+            }
         }
 
         spdlog::info("entered: {} (character {}, {}) at ({:.0f}, {:.0f}) - {} in field",

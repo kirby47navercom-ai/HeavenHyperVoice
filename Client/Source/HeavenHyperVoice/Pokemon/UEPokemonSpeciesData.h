@@ -69,6 +69,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Identity")
 	FName SpeciesId = NAME_None;
 
+	/**
+	 * 전국도감 번호. 저장된 파트너가 카탈로그 배열 순서에 영향을 받지 않게 한다.
+	 *
+	 * 카탈로그 위치 대신 이 값을 사용하며, 에셋 파일명의 도감번호와 일치해야 한다.
+	 * 0이면 유효한 종족으로 등록하지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Identity", meta = (ClampMin = "0"))
+	int32 DexNumber = 0;
+
 	// HUD와 도감에 표시할 이름이다. 비어 있으면 UI가 SpeciesId를 대신 사용한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Profile")
 	FText DisplayName;

@@ -175,7 +175,10 @@ void AUEPokemonCharacter::ApplyPokemonSpeciesData()
 		MeshComponent->SetRelativeTransform(PokemonSpeciesData->MeshRelativeTransform);
 	}
 
+	// 이 값은 게임 스탯 스케일이라 uu/s 로 쓰려면 환산이 필요하다
+	// (UEPokemonServerComponent 의 SpeciesMoveSpeedToUnrealUnits).
 	ConfiguredMoveSpeed = PokemonSpeciesData->MoveSpeed;
+
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
 		MovementComponent->MaxWalkSpeed = ConfiguredMoveSpeed;

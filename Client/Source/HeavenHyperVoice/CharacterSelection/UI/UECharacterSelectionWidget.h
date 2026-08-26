@@ -73,6 +73,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lobby|Text")
 	FText NoCharacterSelectedMessage;
 
+	// 캐릭터를 고르고 서버 응답을 기다리는 동안 보여준다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lobby|Text")
+	FText EnteringMessage;
+
 	// 입장할 레벨과 게임 모드는 블루프린트 기본값에서 지정한다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Lobby|Travel")
 	TSoftObjectPtr<UWorld> GameplayLevel;
@@ -86,6 +90,15 @@ private:
 
 	UFUNCTION()
 	void HandleLobbySlotDelete(int32 SlotIndex);
+
+	// 입장은 서버 왕복이다. 캐릭터를 고르면 서버가 필드·채팅 티켓을 발급하고,
+	// 그게 도착해야 게임 레벨로 넘어간다. 티켓 없이 넘어가면 필드 서버가
+	// 입장을 거절한다.
+	UFUNCTION()
+	void HandleServerEnterReady(const FString& Nickname);
+
+	UFUNCTION()
+	void HandleServerActionFailed(bool bOk, const FString& Message);
 
 	void EnterSelectedCharacter();
 	TArray<UUECharacterLobbySlotWidget*> GetLobbySlots() const;

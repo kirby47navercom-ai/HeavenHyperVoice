@@ -19,24 +19,9 @@ inline constexpr std::size_t kMaxChatTextBytes = 1024;
 // 발화 사이 최소 간격. 사람이 치는 속도보다 넉넉하다.
 inline constexpr std::chrono::milliseconds kMinSayInterval{200};
 
-// 닉네임은 티켓 안에 있다. 클라이언트가 스스로 주장하지 않는다.
-inline Bytes encodeHello(const Bytes& ticket) {
-    flatbuffers::FlatBufferBuilder fbb;
-    auto blob = fbb.CreateVector(ticket);
-    auto hello = HeavenChat::CreateHello(fbb, blob);
-    auto envelope = HeavenChat::CreateEnvelope(fbb, HeavenChat::Payload::Hello, hello.Union());
-    fbb.Finish(envelope);
-    return finishFrame(fbb);
-}
-
-inline Bytes encodeSay(std::string_view text) {
-    flatbuffers::FlatBufferBuilder fbb;
-    auto body = fbb.CreateString(text.data(), text.size());
-    auto say = HeavenChat::CreateSay(fbb, body);
-    auto envelope = HeavenChat::CreateEnvelope(fbb, HeavenChat::Payload::Say, say.Union());
-    fbb.Finish(envelope);
-    return finishFrame(fbb);
-}
+// Hello 와 Say 를 만드는 코드는 여기 없다. 서버는 그 둘을 받기만 하고,
+// 보내는 쪽은 클라이언트가 자기 인코더를 들고 있다. 닉네임은 티켓 안에 있어서
+// 어차피 클라이언트가 주장할 수 있는 값이 아니다.
 
 inline Bytes encodeNotice(std::string_view text) {
     flatbuffers::FlatBufferBuilder fbb;
@@ -64,7 +49,12 @@ inline const HeavenChat::Envelope* verifyEnvelope(const Bytes& body) {
     if (!HeavenChat::VerifyEnvelopeBuffer(verifier)) {
         return nullptr;
     }
-    return HeavenChat::GetEnvelope(body.data());
+    const HeavenChat::Envelope* envelope = HeavenChat::GetEnvelope(body.data());
+
+    // Verifier 는 payload_type 만 있고 payload 오프셋이 없는 프레임을 통과시킨다
+    // (VerifyTable(nullptr) 이 true 다). 그대로 두면 payload_as_* 가 nullptr 을
+    // 돌려주고, 그것을 역참조하는 호출부가 죽는다.
+    return envelope->payload() != nullptr ? envelope : nullptr;
 }
 
 }  // namespace heaven::proto

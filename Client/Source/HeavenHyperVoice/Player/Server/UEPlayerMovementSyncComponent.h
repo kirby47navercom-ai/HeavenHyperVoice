@@ -15,14 +15,13 @@
 class AUEPlayerCharacter;
 class AUEPokemonCharacter;
 
+// 서버로 나가는 것은 위치와 각도, 그리고 보정을 되짚을 순번뿐이다.
+// 입력이나 카메라 각도는 서버가 보지 않는다.
 struct FUEPlayerMovementPacket
 {
 	uint32 Sequence = 0;
-	float DeltaSeconds = 0.0f;
-	FVector2D MoveInput = FVector2D::ZeroVector;
 	FVector ClientPosition = FVector::ZeroVector;
 	FVector ClientVelocity = FVector::ZeroVector;
-	FRotator ControlRotation = FRotator::ZeroRotator;
 	FRotator ActorRotation = FRotator::ZeroRotator;
 };
 
@@ -30,7 +29,6 @@ struct FUEPlayerMovementHistoryEntry
 {
 	FUEPlayerMovementPacket Packet;
 	FVector ReportedPosition = FVector::ZeroVector;
-	FVector ReportedVelocity = FVector::ZeroVector;
 	FRotator ReportedRotation = FRotator::ZeroRotator;
 };
 
@@ -44,15 +42,12 @@ public:
 
 	void HandleServerMovementResult(uint32 AckSequence, const FVector& ServerPosition, const FVector& ServerVelocity, const FRotator& ServerRotation);
 
-	/** Set by the field connection so remote-player actors can be driven from Snapshot. */
-	TFunction<void(const FHHVFieldSnapshot&)> OnFieldSnapshot;
-
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	FUEPlayerMovementPacket BuildMovementPacket(float DeltaSeconds);
+	FUEPlayerMovementPacket BuildMovementPacket();
 	void RecordMovementPacket(const FUEPlayerMovementPacket& MovementPacket);
 	void SendMovementPacketToServer(const FUEPlayerMovementPacket& MovementPacket);
 	void TryLoadServerMap();
@@ -83,10 +78,7 @@ protected:
 	void PruneMoveHistory(int32 LastConfirmedIndex);
 	int32 FindMoveHistoryIndex(uint32 Sequence) const;
 	AUEPlayerCharacter* GetPlayerCharacter() const;
-	void SaveLastValidatedServerState(const FVector& ServerPosition, const FVector& ServerVelocity, const FRotator& ServerRotation);
-
-	static HHV::Map::Vec3 ToServerVec3(const FVector& Vector);
-	static FVector ToUnrealVector(const HHV::Map::Vec3& Vector);
+	void SaveLastValidatedServerState(const FVector& ServerPosition, const FRotator& ServerRotation);
 
 	UFUNCTION()
 	void HandleCharacterMovementUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity);
@@ -121,6 +113,9 @@ protected:
 	FString DefaultServerMapFileName;
 
 	/** Ignored while bEnableLocalServerValidation is on. */
+	// ini(DefaultGame.ini)에서 온다. 로그인 서버를 거쳐 오면 티켓과 함께 받은
+	// 주소가 이 값을 덮으므로, 실제로 쓰이는 것은 dev 경로(--dev-no-auth)로
+	// 직접 붙을 때뿐이다.
 	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
 	FString FieldServerHost;
 
@@ -157,6 +152,9 @@ private:
 	TArray<FUEPlayerMovementHistoryEntry> MoveHistory;
 
 	std::unique_ptr<FHHVFieldConnection> FieldConnection;
+
+	// 입장 직후 스냅샷 몇 개만 로그로 남기기 위한 카운터. 진단용.
+	int32 SnapshotsLogged = 0;
 	float TimeSinceLastSend = 0.0f;
 
 	// 서버 entity_id -> 그 야생 포켓몬 액터.
@@ -170,6 +168,5 @@ private:
 	bool bServerMapLoaded = false;
 	bool bLastValidatedServerStateValid = false;
 	FVector LastValidatedServerPosition = FVector::ZeroVector;
-	FVector LastValidatedServerVelocity = FVector::ZeroVector;
 	FRotator LastValidatedServerRotation = FRotator::ZeroRotator;
 };
