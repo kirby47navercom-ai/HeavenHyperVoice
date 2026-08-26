@@ -5,6 +5,7 @@
 #include "../../Character/UEPlayerCharacter.h"
 #include "../../Pokemon/Server/UEPokemonServerComponent.h"
 #include "../../Pokemon/UEPokemonCharacter.h"
+#include "../../System/UEGameInstance.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
@@ -148,6 +149,23 @@ void UUEPlayerMovementSyncComponent::StartFieldConnection()
 	Settings.Port = FieldServerPort;
 	Settings.DevName = ResolvedName;
 	Settings.DevCharacterId = ResolvedCharacterId;
+
+	// 로그인 서버를 거쳐 왔으면 티켓과 접속 주소가 GameInstance 에 들어 있다.
+	// 그때는 위의 dev 값과 에디터에 박아둔 호스트를 쓰지 않는다 — 어디로 붙을지는
+	// 서버가 정한다.
+	if (const UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetWorld()->GetGameInstance()))
+	{
+		FString TicketHost;
+		int32 TicketPort = 0;
+		TArray<uint8> Ticket;
+		if (GameInstance->GetFieldEndpoint(TicketHost, TicketPort, Ticket) && Ticket.Num() > 0)
+		{
+			Settings.Host = TicketHost;
+			Settings.Port = TicketPort;
+			Settings.Ticket = MoveTemp(Ticket);
+		}
+	}
+
 	FieldConnection->Start(Settings);
 
 	UE_LOG(LogTemp, Display, TEXT("PlayerMovementSync: connecting to %s:%d as %s (id %llu)"),

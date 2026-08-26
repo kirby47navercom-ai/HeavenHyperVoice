@@ -151,11 +151,30 @@ uint32 FHHVFieldConnection::Run()
 	}
 
 	{
-		flatbuffers::FlatBufferBuilder Builder(256);
-		const auto Name = Builder.CreateString(TCHAR_TO_UTF8(*Settings.DevName));
-		const auto Enter = HeavenField::CreateEnter(Builder, /*ticket=*/0, Name,
-			Settings.DevCharacterId, Settings.DevPartnerSpecies);
-		Builder.Finish(HeavenField::CreateEnvelope(Builder, HeavenField::Payload::Enter, Enter.Union()));
+		flatbuffers::FlatBufferBuilder Builder(512);
+
+		// 티켓이 있으면 그것만 보낸다. dev_* 를 같이 실으면 서버가 --dev-no-auth
+		// 로 떠 있을 때 티켓을 무시하고 dev 경로를 타므로, 어느 쪽으로 들어갔는지
+		// 헷갈린다.
+		if (Settings.Ticket.Num() > 0)
+		{
+			const auto Blob = Builder.CreateVector(Settings.Ticket.GetData(), Settings.Ticket.Num());
+			const auto Enter = HeavenField::CreateEnter(Builder, Blob);
+			Builder.Finish(HeavenField::CreateEnvelope(Builder, HeavenField::Payload::Enter, Enter.Union()));
+			UE_LOG(LogHHVField, Display, TEXT("entering with a %d byte ticket"),
+				Settings.Ticket.Num());
+		}
+		else
+		{
+			const auto Name = Builder.CreateString(TCHAR_TO_UTF8(*Settings.DevName));
+			const auto Enter = HeavenField::CreateEnter(Builder, /*ticket=*/0, Name,
+				Settings.DevCharacterId, Settings.DevPartnerSpecies);
+			Builder.Finish(HeavenField::CreateEnvelope(Builder, HeavenField::Payload::Enter, Enter.Union()));
+			UE_LOG(LogHHVField, Warning,
+				TEXT("no ticket; entering as dev '%s' (server needs --dev-no-auth)"),
+				*Settings.DevName);
+		}
+
 		Outbound.Enqueue(FrameOf(Builder));
 	}
 

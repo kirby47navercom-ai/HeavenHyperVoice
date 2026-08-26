@@ -122,7 +122,9 @@ protected:
 
 	/** Ignored while bEnableLocalServerValidation is on. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
-	FString FieldServerHost = TEXT("210.99.120.106");
+	// 로그인 서버를 거쳐 오면 티켓과 함께 받은 주소가 이 값을 덮는다.
+	// dev 경로(--dev-no-auth)로 직접 붙을 때만 쓰인다.
+	FString FieldServerHost = TEXT("127.0.0.1");
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server", meta = (ClampMin = "1", ClampMax = "65535"))
 	int32 FieldServerPort = 9200;
