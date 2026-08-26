@@ -32,4 +32,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Species")
 	UUEPokemonSpeciesData* Find(int32 SpeciesId) const;
 
+	// Find 의 역방향. 캐릭터를 만들 때 고른 데이터 에셋을 서버가 아는 종족 번호로
+	// 바꾼다. 목록에 없으면 0 이고, 0 은 "파트너 없이 시작" 이라 서버가 거절하지 않는다.
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Species")
+	int32 FindSpeciesId(const UUEPokemonSpeciesData* SpeciesData) const;
+
 };
