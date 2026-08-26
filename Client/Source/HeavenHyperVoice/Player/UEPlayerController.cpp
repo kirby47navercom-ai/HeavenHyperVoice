@@ -4,6 +4,7 @@
 #include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
 #include "../Data/UEDataAsset.h"
 #include "../System/UEGameInstance.h"
+#include "../UI/PokemonParty/UEPokemonPartyWidget.h"
 #include "../UEGameplayTags.h"
 
 #include "EnhancedInputComponent.h"
@@ -24,6 +25,7 @@ void AUEPlayerController::BeginPlay()
 	AddDefaultMappingContext();
 	SetInputMode(FInputModeGameOnly());
 	bShowMouseCursor = false;
+	ShowPokemonPartyWidget();
 	
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
@@ -53,6 +55,33 @@ void AUEPlayerController::OnPossess(APawn* InPawn)
 	if (UUEPokemonSpeciesData* PartnerSpecies = UEGameInstance->GetSelectedPartnerSpecies())
 	{
 		PlayerCharacter->SetPokemonCompanionSpeciesData(PartnerSpecies);
+	}
+
+	// 컨트롤러보다 Pawn 빙의가 늦어도 이미 생성된 HUD에 정확한 로스터 소유자를 다시 연결한다.
+	if (PokemonPartyWidget)
+	{
+		PokemonPartyWidget->InitializeForPlayer(PlayerCharacter);
+	}
+}
+
+void AUEPlayerController::ShowPokemonPartyWidget()
+{
+	if (!IsLocalController() || PokemonPartyWidget || !PokemonPartyWidgetClass)
+	{
+		return;
+	}
+
+	// 클래스는 BP_LoginPlayerController의 변수로 지정한다. 런타임 에셋 주소는 사용하지 않는다.
+	PokemonPartyWidget = CreateWidget<UUEPokemonPartyWidget>(this, PokemonPartyWidgetClass);
+	if (!PokemonPartyWidget)
+	{
+		return;
+	}
+
+	PokemonPartyWidget->AddToViewport(PokemonPartyWidgetZOrder);
+	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
+	{
+		PokemonPartyWidget->InitializeForPlayer(PlayerCharacter);
 	}
 }
 

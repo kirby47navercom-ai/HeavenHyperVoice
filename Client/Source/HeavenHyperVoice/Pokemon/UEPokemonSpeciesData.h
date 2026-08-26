@@ -9,6 +9,8 @@ class USkeletalMesh;
 class UAnimInstance;
 class UAnimMontage;
 class UAnimSequence;
+class UGameplayAbility;
+class UTexture2D;
 
 
 // ============================================================================
@@ -55,36 +57,44 @@ public:
 	// ========================================================================
 
 	/**
-	 * Æ÷ÄÏ¸ó Á¾·ù ½Äº°ÀÚ.
+	 * í¬ì¼“ëª¬ ì¢…ë¥˜ ì‹ë³„ì.
 	 *
-	 * ¿¹:
+	 * ì˜ˆ:
 	 * Bulbasaur
 	 * Charmander
 	 * Eevee
 	 *
-	 * ¼­¹ö¿Í Species¸¦ ±¸ºĞÇÒ ¶§µµ »ç¿ëÇÒ ¼ö ÀÖ½À´Ï´Ù.
+	 * ì„œë²„ì™€ Speciesë¥¼ êµ¬ë¶„í•  ë•Œë„ ì‚¬ìš©í•  ìˆ˜ ìˆìŠµë‹ˆë‹¤.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Identity")
 	FName SpeciesId = NAME_None;
+
+	// HUDì™€ ë„ê°ì— í‘œì‹œí•  ì´ë¦„ì´ë‹¤. ë¹„ì–´ ìˆìœ¼ë©´ UIê°€ SpeciesIdë¥¼ ëŒ€ì‹  ì‚¬ìš©í•œë‹¤.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Profile")
+	FText DisplayName;
+
+	// í¬ì¼“ëª¬ í”„ë¡œí•„ì— ì‚¬ìš©í•  ì´ˆìƒí™”ë‹¤. ê²½ë¡œ ë¬¸ìì—´ì´ ì•„ë‹ˆë¼ DataAsset ë³€ìˆ˜ë¡œ ì§ì ‘ ì§€ì •í•œë‹¤.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Profile")
+	TObjectPtr<UTexture2D> ProfileIcon = nullptr;
 
 
 	// ========================================================================
 	// Visual
 	// ========================================================================
 
-	/** ÀÌ Æ÷ÄÏ¸óÀÌ »ç¿ëÇÒ Skeletal Mesh */
+	/** ì´ í¬ì¼“ëª¬ì´ ì‚¬ìš©í•  Skeletal Mesh */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Visual")
 	TObjectPtr<USkeletalMesh> SkeletalMesh = nullptr;
 
-	// ½ºÄÌ·¹Å» ¸Ş½Ã°¡ ¾øÀ» ¶§ Å¥ºê¸¦ Ä¥ÇÒ »ö. ¾ËÆÄ°¡ 0ÀÌ¸é Á¾Á· ±âº»»öÀ» »ç¿ëÇÑ´Ù.
+	// ìŠ¤ì¼ˆë ˆíƒˆ ë©”ì‹œê°€ ì—†ì„ ë•Œ íë¸Œë¥¼ ì¹ í•  ìƒ‰. ì•ŒíŒŒê°€ 0ì´ë©´ ì¢…ì¡± ê¸°ë³¸ìƒ‰ì„ ì‚¬ìš©í•œë‹¤.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Visual")
 	FLinearColor DebugColor = FLinearColor(0.f, 0.f, 0.f, 0.f);
 
-	/** ÀÌ Æ÷ÄÏ¸óÀÌ »ç¿ëÇÒ Animation Blueprint */
+	/** ì´ í¬ì¼“ëª¬ì´ ì‚¬ìš©í•  Animation Blueprint */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Visual")
 	TSubclassOf<UAnimInstance> AnimInstanceClass;
 
-	/** Ä³¸¯ÅÍ CapsuleÀ» ±âÁØÀ¸·Î Mesh À§Ä¡/È¸Àü/Å©±â º¸Á¤ */
+	/** ìºë¦­í„° Capsuleì„ ê¸°ì¤€ìœ¼ë¡œ Mesh ìœ„ì¹˜/íšŒì „/í¬ê¸° ë³´ì • */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Visual")
 	FTransform MeshRelativeTransform = FTransform::Identity;
 
@@ -348,10 +358,10 @@ public:
 	// ========================================================================
 
 	/**
-	 * Æ¯Á¤ Æ÷ÄÏ¸ó¸¸ °¡Áö°í ÀÖ´Â Æ¯¼ö ¾Ö´Ï¸ŞÀÌ¼Ç.
+	 * íŠ¹ì • í¬ì¼“ëª¬ë§Œ ê°€ì§€ê³  ìˆëŠ” íŠ¹ìˆ˜ ì• ë‹ˆë©”ì´ì…˜.
 	 *
-	 * ÀÏ¹İ °øÅë ¾Ö´Ï¸ŞÀÌ¼ÇÀº À§ ½½·Ô¿¡ ³Ö°í
-	 * ¿¹¿ÜÀûÀÎ ¾Ö´Ï¸ŞÀÌ¼Ç¸¸ ¿©±â¿¡ ³Ö½À´Ï´Ù.
+	 * ì¼ë°˜ ê³µí†µ ì• ë‹ˆë©”ì´ì…˜ì€ ìœ„ ìŠ¬ë¡¯ì— ë„£ê³ 
+	 * ì˜ˆì™¸ì ì¸ ì• ë‹ˆë©”ì´ì…˜ë§Œ ì—¬ê¸°ì— ë„£ìŠµë‹ˆë‹¤.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Extra")
 	TMap<FGameplayTag, TObjectPtr<UAnimSequence>> ExtraAnimations;
@@ -389,6 +399,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Stats")
 	float MaxHP = 100.0f;
 
+	// GASì˜ ê¸°ë³¸ ê³µê²©ë ¥ì´ë‹¤. ì‹¤ì œ ê¸°ìˆ  í”¼í•´ëŸ‰ì€ GameplayEffect ê³„ì‚°ì‹ì—ì„œ ì´ ê°’ì„ ì½ëŠ”ë‹¤.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|GAS|Attribute", meta = (ClampMin = "0.0"))
+	float BaseAttackPower = 10.0f;
+
+	// GASì˜ ê¸°ë³¸ ë°©ì–´ë ¥ì´ë‹¤. ë°©ì–´ ê³µì‹ì€ ê¸°ìˆ ë³„ GameplayEffect ë˜ëŠ” ExecutionCalculationì—ì„œ ê²°ì •í•œë‹¤.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|GAS|Attribute", meta = (ClampMin = "0.0"))
+	float BaseDefense = 0.0f;
+
+	// í¬ì¼“ëª¬ì´ ìƒì„±ë  ë•Œ ASCì— ìë™ìœ¼ë¡œ ë¶€ì—¬í•  ì–´ë¹Œë¦¬í‹° ëª©ë¡ì´ë‹¤.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|GAS|Ability")
+	TArray<TSubclassOf<UGameplayAbility>> StartupAbilities;
+
 
 	// ========================================================================
 	// Skills
@@ -403,17 +425,17 @@ public:
 	// ========================================================================
 
 	/**
-	 * GameplayTag·Î ÀÌ Æ÷ÄÏ¸óÀÇ ¾Ö´Ï¸ŞÀÌ¼ÇÀ» Ã£½À´Ï´Ù.
+	 * GameplayTagë¡œ ì´ í¬ì¼“ëª¬ì˜ ì• ë‹ˆë©”ì´ì…˜ì„ ì°¾ìŠµë‹ˆë‹¤.
 	 *
-	 * ¿¹:
+	 * ì˜ˆ:
 	 * Pokemon_Animation_Walk
-	 *      -> ÇöÀç Æ÷ÄÏ¸óÀÇ Walk ¹İÈ¯
+	 *      -> í˜„ì¬ í¬ì¼“ëª¬ì˜ Walk ë°˜í™˜
 	 */
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Animation")
 	UAnimSequence* FindAnimationByTag(const FGameplayTag& AnimationTag) const;
 
 	/**
-	 * ÇØ´ç ¾Ö´Ï¸ŞÀÌ¼ÇÀÌ µî·ÏµÇ¾î ÀÖ´ÂÁö È®ÀÎÇÕ´Ï´Ù.
+	 * í•´ë‹¹ ì• ë‹ˆë©”ì´ì…˜ì´ ë“±ë¡ë˜ì–´ ìˆëŠ”ì§€ í™•ì¸í•©ë‹ˆë‹¤.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Animation")
 	bool HasAnimation(const FGameplayTag& AnimationTag) const;

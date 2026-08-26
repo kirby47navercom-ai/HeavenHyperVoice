@@ -22,6 +22,8 @@ void UUEPokemonServerSubsystem::RegisterOwnedPokemons(int32 OwnerServerPlayerId,
 	{
 		PlayerState.ActiveRuntimePokemonId = 0;
 	}
+
+	OnOwnedPokemonRosterChanged.Broadcast(OwnerServerPlayerId);
 }
 
 void UUEPokemonServerSubsystem::ClearOwnedPokemons(int32 OwnerServerPlayerId)
@@ -40,6 +42,7 @@ void UUEPokemonServerSubsystem::ClearOwnedPokemons(int32 OwnerServerPlayerId)
 	}
 
 	PlayerStates.Remove(OwnerServerPlayerId);
+	OnOwnedPokemonRosterChanged.Broadcast(OwnerServerPlayerId);
 }
 
 FUEPokemonServerSpawnResponse UUEPokemonServerSubsystem::RequestSpawnPokemon(int32 OwnerServerPlayerId, int32 PokemonInstanceId)
@@ -148,6 +151,8 @@ bool UUEPokemonServerSubsystem::RequestDespawnPokemon(int32 OwnerServerPlayerId,
 		}
 	}
 
+	OnOwnedPokemonRosterChanged.Broadcast(OwnerServerPlayerId);
+
 	return true;
 }
 
@@ -167,6 +172,12 @@ bool UUEPokemonServerSubsystem::TryGetOwnedPokemon(int32 OwnerServerPlayerId, in
 
 	OutOwnedPokemon = *OwnedPokemon;
 	return true;
+}
+
+TArray<FUEPokemonServerOwnedPokemon> UUEPokemonServerSubsystem::GetOwnedPokemons(int32 OwnerServerPlayerId) const
+{
+	const FUEPokemonServerPlayerState* PlayerState = PlayerStates.Find(OwnerServerPlayerId);
+	return PlayerState ? PlayerState->OwnedPokemons : TArray<FUEPokemonServerOwnedPokemon>();
 }
 
 FUEPokemonServerOwnedPokemon UUEPokemonServerSubsystem::NormalizeOwnedPokemon(const FUEPokemonServerOwnedPokemon& OwnedPokemon, int32& NextGeneratedInstanceId) const

@@ -6,6 +6,11 @@
 
 class UUEPokemonSpeciesData;
 
+// 보유 포켓몬 목록이 바뀌었을 때 HUD가 다시 그릴 수 있도록 알리는 델리게이트다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FUEPokemonOwnedRosterChangedSignature,
+	int32, OwnerServerPlayerId);
+
 UENUM(BlueprintType)
 enum class EUEPokemonServerSummonResult : uint8
 {
@@ -125,6 +130,9 @@ class HEAVENHYPERVOICE_API UUEPokemonServerSubsystem : public UGameInstanceSubsy
 	GENERATED_BODY()
 
 public:
+	UPROPERTY(BlueprintAssignable, Category = "Pokemon|Server|Event")
+	FUEPokemonOwnedRosterChangedSignature OnOwnedPokemonRosterChanged;
+
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
 	void RegisterOwnedPokemons(int32 OwnerServerPlayerId, const TArray<FUEPokemonServerOwnedPokemon>& OwnedPokemons);
 
@@ -142,6 +150,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Server")
 	bool TryGetOwnedPokemon(int32 OwnerServerPlayerId, int32 PokemonInstanceId, FUEPokemonServerOwnedPokemon& OutOwnedPokemon) const;
+
+	// UI에는 내부 배열 주소를 넘기지 않고 복사본을 반환해 서버 런타임 상태를 보호한다.
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Server")
+	TArray<FUEPokemonServerOwnedPokemon> GetOwnedPokemons(int32 OwnerServerPlayerId) const;
 
 private:
 	FUEPokemonServerOwnedPokemon NormalizeOwnedPokemon(const FUEPokemonServerOwnedPokemon& OwnedPokemon, int32& NextGeneratedInstanceId) const;

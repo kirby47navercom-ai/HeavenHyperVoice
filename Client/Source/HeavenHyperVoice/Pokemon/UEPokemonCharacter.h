@@ -3,13 +3,39 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AbilitySystemInterface.h"
 #include "GameFramework/Character.h"
+#include "GameplayTagContainer.h"
 #include "UEPokemonCharacter.generated.h"
 
+class AUEPokemonCharacter;
+class UAbilitySystemComponent;
+class UUEAbilitySystemComponent;
+class UUEPokemonAttributeSet;
 class UUEPokemonServerComponent;
 class UUEPokemonSummonEffectComponent;
 class UUEPokemonSpeciesCatalog;
 class UUEPokemonSpeciesData;
+struct FOnAttributeChangeData;
+
+// 블루프린트 UI와 피격 연출이 포켓몬 체력 변경을 즉시 구독할 때 사용한다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(
+	FUEPokemonHealthChangedSignature,
+	AUEPokemonCharacter*, Pokemon,
+	float, OldHealth,
+	float, NewHealth,
+	float, MaxHealth);
+
+// 체력이 처음 0이 되는 순간 한 번만 방송되는 기절 델리게이트다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FUEPokemonFaintedSignature,
+	AUEPokemonCharacter*, Pokemon);
+
+// GameplayTag로 요청한 어빌리티가 실제 활성화됐을 때 방송한다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FUEPokemonAbilityActivatedSignature,
+	AUEPokemonCharacter*, Pokemon,
+	FGameplayTag, AbilityTag);
 
 UENUM(BlueprintType)
 enum class EUEPokemonAnimationState : uint8
@@ -153,7 +179,7 @@ struct FUEPokemonServerMoveSnapshot
 };
 
 UCLASS(Blueprintable)
-class HEAVENHYPERVOICE_API AUEPokemonCharacter : public ACharacter
+class HEAVENHYPERVOICE_API AUEPokemonCharacter : public ACharacter, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
 
@@ -161,6 +187,13 @@ public:
 	AUEPokemonCharacter();
 
 	virtual void Tick(float DeltaSeconds) override;
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|GAS")
+	UUEAbilitySystemComponent* GetPokemonAbilitySystemComponent() const { return AbilitySystemComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|GAS")
+	UUEPokemonAttributeSet* GetPokemonAttributeSet() const { return AttributeSet; }
 
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
 	void ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot);
@@ -198,10 +231,36 @@ public:
 	FName GetPokemonSpeciesId() const;
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Stats")
-	float GetCurrentHP() const { return CurrentHP; }
+	float GetCurrentHP() const;
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Stats")
-	float GetMaxHP() const { return MaxHP; }
+	float GetMaxHP() const;
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|GAS|Attribute")
+	float GetAttackPower() const;
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|GAS|Attribute")
+	float GetDefense() const;
+
+	// DamageAmount는 방어 계산까지 끝난 최종 피해량이다. 기술별 방어 공식은 GameplayEffect에서 처리한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|GAS|Health", meta = (ClampMin = "0.0"))
+	float ApplyPokemonDamage(float DamageAmount);
+
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|GAS|Health", meta = (ClampMin = "0.0"))
+	float RestorePokemonHealth(float HealAmount);
+
+	// 태그와 일치하는 시작 어빌리티를 실행하고 성공 여부를 반환한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|GAS|Ability")
+	bool ActivatePokemonAbilityByTag(FGameplayTag AbilityTag);
+
+	UPROPERTY(BlueprintAssignable, Category = "Pokemon|GAS|Event")
+	FUEPokemonHealthChangedSignature OnPokemonHealthChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Pokemon|GAS|Event")
+	FUEPokemonFaintedSignature OnPokemonFainted;
+
+	UPROPERTY(BlueprintAssignable, Category = "Pokemon|GAS|Event")
+	FUEPokemonAbilityActivatedSignature OnPokemonAbilityActivated;
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Movement")
 	float GetConfiguredMoveSpeed() const { return ConfiguredMoveSpeed; }
@@ -232,12 +291,25 @@ protected:
 
 private:
 	void ApplyPokemonSpeciesData();
+	void InitializeAbilitySystem();
+	void InitializePokemonAttributes(float NewCurrentHealth, float NewMaxHealth, float NewAttackPower, float NewDefense);
+	void HandleHealthChanged(const FOnAttributeChangeData& ChangeData);
+	void HandleMaxHealthChanged(const FOnAttributeChangeData& ChangeData);
+	float SetPokemonHealth(float NewHealth);
 
 	// 실제 스켈레탈 메시가 없을 때 큐브를 종족 대표 색으로 칠한다.
 	void ApplyDebugAppearance();
 	void ApplyServerAnimationSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot);
 	void UpdateServerDrivenMovement(float DeltaSeconds);
 	void ConfigureServerDrivenMovement();
+
+	// 포켓몬 자신이 ASC의 OwnerActor와 AvatarActor를 함께 맡는 단순한 구조다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|GAS", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UUEAbilitySystemComponent> AbilitySystemComponent = nullptr;
+
+	// ASC가 관리하는 포켓몬 공통 전투 수치 묶음이다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|GAS", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UUEPokemonAttributeSet> AttributeSet = nullptr;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UUEPokemonServerComponent> ServerComponent = nullptr;
@@ -285,6 +357,12 @@ private:
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Stats", meta = (AllowPrivateAccess = "true"))
 	float MaxHP = 100.0f;
+
+	UPROPERTY(Transient)
+	bool bAbilitySystemInitialized = false;
+
+	UPROPERTY(Transient)
+	bool bFaintDelegateBroadcast = false;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Movement", meta = (AllowPrivateAccess = "true"))
 	float ConfiguredMoveSpeed = 280.0f;

@@ -106,6 +106,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Companion")
 	int32 GetSelectedPokemonCompanionInstanceId() const { return SelectedCompanionPokemonInstanceId; }
 
+	// 보유 포켓몬 HUD가 현재 로컬 플레이어의 로스터를 찾을 때 사용하는 식별자다.
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Server")
+	int32 GetPokemonServerPlayerId() const { return ServerPlayerId; }
+
 	void SetMovementInput(const FVector2D& NewMovementInput);
 	void ApplyServerMovementCorrection(const FVector& ServerPosition, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bUseHardCorrection);
 

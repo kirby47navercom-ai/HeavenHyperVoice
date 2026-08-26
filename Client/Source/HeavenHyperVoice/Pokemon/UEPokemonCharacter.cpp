@@ -2,8 +2,10 @@
 
 #include "UEPokemonCharacter.h"
 
+#include "../AbilitySystem/UEAbilitySystemComponent.h"
 #include "../AI/UEAIController.h"
 #include "../Animation/UEPokemonAnimInstance.h"
+#include "AbilitySystem/UEPokemonAttributeSet.h"
 #include "UEPokemonSpeciesData.h"
 #include "Server/UEPokemonServerComponent.h"
 #include "Effects/UEPokemonSummonEffectComponent.h"
@@ -31,6 +33,13 @@ AUEPokemonCharacter::AUEPokemonCharacter()
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 500.0f, 0.0f);
 	ConfigureServerDrivenMovement();
 
+	// 각 포켓몬이 자신의 ASC와 AttributeSet을 직접 소유한다.
+	// 별도 PlayerState가 없는 야생 포켓몬도 같은 방식으로 GAS를 사용할 수 있다.
+	AbilitySystemComponent = CreateDefaultSubobject<UUEAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	AbilitySystemComponent->SetIsReplicated(true);
+	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
+	AttributeSet = CreateDefaultSubobject<UUEPokemonAttributeSet>(TEXT("PokemonAttributeSet"));
+
 	ServerComponent = CreateDefaultSubobject<UUEPokemonServerComponent>(TEXT("ServerComponent"));
 	SummonEffectComponent = CreateDefaultSubobject<UUEPokemonSummonEffectComponent>(TEXT("SummonEffectComponent"));
 }
@@ -39,6 +48,7 @@ void AUEPokemonCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	InitializeAbilitySystem();
 	ConfigureServerDrivenMovement();
 	ApplyPokemonSpeciesData();
 	TargetServerLocation = GetActorLocation();
@@ -50,6 +60,27 @@ void AUEPokemonCharacter::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	UpdateServerDrivenMovement(DeltaSeconds);
+}
+
+UAbilitySystemComponent* AUEPokemonCharacter::GetAbilitySystemComponent() const
+{
+	return AbilitySystemComponent;
+}
+
+void AUEPokemonCharacter::InitializeAbilitySystem()
+{
+	if (!AbilitySystemComponent || !AttributeSet || bAbilitySystemInitialized)
+	{
+		return;
+	}
+
+	// 포켓몬 액터 하나가 ASC의 소유자와 실제 전투 아바타를 모두 담당한다.
+	AbilitySystemComponent->InitAbilityActorInfo(this, this);
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UUEPokemonAttributeSet::GetHealthAttribute())
+		.AddUObject(this, &AUEPokemonCharacter::HandleHealthChanged);
+	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UUEPokemonAttributeSet::GetMaxHealthAttribute())
+		.AddUObject(this, &AUEPokemonCharacter::HandleMaxHealthChanged);
+	bAbilitySystemInitialized = true;
 }
 
 void AUEPokemonCharacter::ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot)
@@ -155,8 +186,18 @@ void AUEPokemonCharacter::ApplyPokemonSpeciesData()
 
 	GetMesh()->SetRelativeLocation({0.0f,0.0f,-90.0f});
 
-	MaxHP = FMath::Max(PokemonSpeciesData->MaxHP, 1.0f);
-	CurrentHP = MaxHP;
+	const float SpeciesMaxHealth = FMath::Max(PokemonSpeciesData->MaxHP, 1.0f);
+	InitializePokemonAttributes(
+		SpeciesMaxHealth,
+		SpeciesMaxHealth,
+		PokemonSpeciesData->BaseAttackPower,
+		PokemonSpeciesData->BaseDefense);
+
+	// 종족 DataAsset에 지정한 GameplayAbility를 생성 시점에 자동으로 부여한다.
+	if (bAbilitySystemInitialized && AbilitySystemComponent)
+	{
+		AbilitySystemComponent->SetCharacterAbilities(PokemonSpeciesData->StartupAbilities);
+	}
 	ServerSpeciesId = PokemonSpeciesData->SpeciesId;
 
 	ApplyDebugAppearance();
@@ -210,8 +251,140 @@ void AUEPokemonCharacter::ApplyServerStats(float ServerCurrentHP, float ServerMa
 		return;
 	}
 
-	MaxHP = FMath::Max(ServerMaxHP, 1.0f);
-	CurrentHP = FMath::Clamp(ServerCurrentHP, 0.0f, MaxHP);
+	// 외부 서버 스냅샷도 GAS 속성에 넣어 UI와 피격 델리게이트가 같은 경로로 반응하게 한다.
+	const float SafeMaxHealth = FMath::Max(ServerMaxHP, 1.0f);
+	InitializePokemonAttributes(
+		FMath::Clamp(ServerCurrentHP, 0.0f, SafeMaxHealth),
+		SafeMaxHealth,
+		GetAttackPower(),
+		GetDefense());
+}
+
+void AUEPokemonCharacter::InitializePokemonAttributes(
+	float NewCurrentHealth,
+	float NewMaxHealth,
+	float NewAttackPower,
+	float NewDefense)
+{
+	const float SafeMaxHealth = FMath::Max(NewMaxHealth, 1.0f);
+	const float SafeCurrentHealth = FMath::Clamp(NewCurrentHealth, 0.0f, SafeMaxHealth);
+
+	if (!AbilitySystemComponent || !AttributeSet)
+	{
+		// 생성 초기처럼 ASC가 아직 준비되지 않은 경우 기존 서버 호환용 값은 유지한다.
+		MaxHP = SafeMaxHealth;
+		CurrentHP = SafeCurrentHealth;
+		return;
+	}
+
+	// SetNumericAttributeBase를 사용해야 값 변경 델리게이트와 GAS 집계기가 함께 갱신된다.
+	AbilitySystemComponent->SetNumericAttributeBase(UUEPokemonAttributeSet::GetMaxHealthAttribute(), SafeMaxHealth);
+	AbilitySystemComponent->SetNumericAttributeBase(UUEPokemonAttributeSet::GetHealthAttribute(), SafeCurrentHealth);
+	AbilitySystemComponent->SetNumericAttributeBase(UUEPokemonAttributeSet::GetAttackPowerAttribute(), FMath::Max(NewAttackPower, 0.0f));
+	AbilitySystemComponent->SetNumericAttributeBase(UUEPokemonAttributeSet::GetDefenseAttribute(), FMath::Max(NewDefense, 0.0f));
+
+	// 외부 필드 서버 코드가 기존 Getter를 그대로 사용할 수 있도록 호환용 값도 맞춘다.
+	MaxHP = AttributeSet->GetMaxHealth();
+	CurrentHP = AttributeSet->GetHealth();
+}
+
+float AUEPokemonCharacter::GetCurrentHP() const
+{
+	return AttributeSet ? AttributeSet->GetHealth() : CurrentHP;
+}
+
+float AUEPokemonCharacter::GetMaxHP() const
+{
+	return AttributeSet ? AttributeSet->GetMaxHealth() : MaxHP;
+}
+
+float AUEPokemonCharacter::GetAttackPower() const
+{
+	return AttributeSet ? AttributeSet->GetAttackPower() : 0.0f;
+}
+
+float AUEPokemonCharacter::GetDefense() const
+{
+	return AttributeSet ? AttributeSet->GetDefense() : 0.0f;
+}
+
+float AUEPokemonCharacter::SetPokemonHealth(float NewHealth)
+{
+	const float OldHealth = GetCurrentHP();
+	const float ClampedHealth = FMath::Clamp(NewHealth, 0.0f, GetMaxHP());
+
+	if (AbilitySystemComponent && AttributeSet)
+	{
+		AbilitySystemComponent->SetNumericAttributeBase(UUEPokemonAttributeSet::GetHealthAttribute(), ClampedHealth);
+	}
+	else
+	{
+		CurrentHP = ClampedHealth;
+		OnPokemonHealthChanged.Broadcast(this, OldHealth, CurrentHP, MaxHP);
+	}
+
+	return GetCurrentHP();
+}
+
+float AUEPokemonCharacter::ApplyPokemonDamage(float DamageAmount)
+{
+	const float OldHealth = GetCurrentHP();
+	SetPokemonHealth(OldHealth - FMath::Max(DamageAmount, 0.0f));
+	return OldHealth - GetCurrentHP();
+}
+
+float AUEPokemonCharacter::RestorePokemonHealth(float HealAmount)
+{
+	const float OldHealth = GetCurrentHP();
+	SetPokemonHealth(OldHealth + FMath::Max(HealAmount, 0.0f));
+	return GetCurrentHP() - OldHealth;
+}
+
+bool AUEPokemonCharacter::ActivatePokemonAbilityByTag(FGameplayTag AbilityTag)
+{
+	if (!AbilitySystemComponent || !AbilitySystemComponent->ActivateAbility(AbilityTag))
+	{
+		return false;
+	}
+
+	OnPokemonAbilityActivated.Broadcast(this, AbilityTag);
+	return true;
+}
+
+void AUEPokemonCharacter::HandleHealthChanged(const FOnAttributeChangeData& ChangeData)
+{
+	CurrentHP = FMath::Clamp(ChangeData.NewValue, 0.0f, GetMaxHP());
+	MaxHP = AttributeSet ? AttributeSet->GetMaxHealth() : MaxHP;
+	OnPokemonHealthChanged.Broadcast(this, ChangeData.OldValue, CurrentHP, MaxHP);
+
+	// 여러 GameplayEffect가 같은 프레임에 체력을 0으로 만들어도 기절 이벤트는 한 번만 보낸다.
+	if (CurrentHP <= 0.0f)
+	{
+		if (!bFaintDelegateBroadcast)
+		{
+			bFaintDelegateBroadcast = true;
+			OnPokemonFainted.Broadcast(this);
+		}
+	}
+	else
+	{
+		// 회복이나 재소환으로 체력이 생기면 다음 기절을 다시 알릴 수 있게 푼다.
+		bFaintDelegateBroadcast = false;
+	}
+}
+
+void AUEPokemonCharacter::HandleMaxHealthChanged(const FOnAttributeChangeData& ChangeData)
+{
+	MaxHP = FMath::Max(ChangeData.NewValue, 1.0f);
+
+	if (GetCurrentHP() > MaxHP)
+	{
+		SetPokemonHealth(MaxHP);
+		return;
+	}
+
+	// 최대 체력만 변한 경우에도 체력바가 비율을 다시 계산할 수 있도록 같은 델리게이트를 보낸다.
+	OnPokemonHealthChanged.Broadcast(this, GetCurrentHP(), GetCurrentHP(), MaxHP);
 }
 
 void AUEPokemonCharacter::ApplyServerMoveTarget(const FVector& ServerLocation, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bTeleported)
