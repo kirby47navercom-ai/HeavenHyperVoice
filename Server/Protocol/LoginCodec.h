@@ -271,15 +271,10 @@ inline Bytes wrap(flatbuffers::FlatBufferBuilder& fbb, HeavenLogin::Payload type
 
 }  // namespace detail
 
-// ---------------------------------------------------------------- 로그인
+// 요청(클라 -> 서버)을 만드는 코드는 여기 없다. 서버는 받기만 하고, 보내는
+// 쪽은 클라이언트가 자기 인코더를 들고 있다.
 
-inline Bytes encodeLoginRequest(std::string_view username, std::string_view password) {
-    flatbuffers::FlatBufferBuilder fbb;
-    auto user = fbb.CreateString(username.data(), username.size());
-    auto pass = fbb.CreateString(password.data(), password.size());
-    auto request = HeavenLogin::CreateLoginRequest(fbb, user, pass);
-    return detail::wrap(fbb, HeavenLogin::Payload::LoginRequest, request.Union());
-}
+// ---------------------------------------------------------------- 로그인
 
 inline Bytes encodeLoginFailure(std::string_view message) {
     flatbuffers::FlatBufferBuilder fbb;
@@ -306,14 +301,6 @@ inline Bytes encodeLoginSuccess(const std::vector<CharacterInfo>& characters,
 
 // ---------------------------------------------------------------- 가입
 
-inline Bytes encodeRegisterRequest(std::string_view username, std::string_view password) {
-    flatbuffers::FlatBufferBuilder fbb;
-    auto user = fbb.CreateString(username.data(), username.size());
-    auto pass = fbb.CreateString(password.data(), password.size());
-    auto request = HeavenLogin::CreateRegisterRequest(fbb, user, pass);
-    return detail::wrap(fbb, HeavenLogin::Payload::RegisterRequest, request.Union());
-}
-
 inline Bytes encodeRegisterResult(bool ok, std::string_view message) {
     flatbuffers::FlatBufferBuilder fbb;
     auto text = fbb.CreateString(message.data(), message.size());
@@ -325,20 +312,6 @@ inline Bytes encodeRegisterResult(bool ok, std::string_view message) {
 }
 
 // ------------------------------------------------------------- 캐릭터 생성
-
-inline Bytes encodeCreateCharacterRequest(std::string_view nickname, std::uint16_t speciesId,
-                                          const AppearanceInfo& appearance = {}) {
-    flatbuffers::FlatBufferBuilder fbb;
-    auto nick = fbb.CreateString(nickname.data(), nickname.size());
-    auto look = detail::buildAppearance(fbb, appearance);
-
-    HeavenLogin::CreateCharacterRequestBuilder builder(fbb);
-    builder.add_nickname(nick);
-    builder.add_species_id(speciesId);
-    builder.add_appearance(look);
-    return detail::wrap(fbb, HeavenLogin::Payload::CreateCharacterRequest,
-                        builder.Finish().Union());
-}
 
 // 생성/삭제/방생이 모두 이 응답을 쓴다. 셋 다 목록이 바뀌는 일이다.
 inline Bytes encodeCharacterList(bool ok, std::string_view message,
@@ -355,27 +328,7 @@ inline Bytes encodeCharacterList(bool ok, std::string_view message,
                         builder.Finish().Union());
 }
 
-inline Bytes encodeDeleteCharacterRequest(std::uint64_t characterId,
-                                          std::string_view confirmNickname) {
-    flatbuffers::FlatBufferBuilder fbb;
-    auto nick = fbb.CreateString(confirmNickname.data(), confirmNickname.size());
-    auto request = HeavenLogin::CreateDeleteCharacterRequest(fbb, characterId, nick);
-    return detail::wrap(fbb, HeavenLogin::Payload::DeleteCharacterRequest, request.Union());
-}
-
-inline Bytes encodeReleasePartnerRequest(std::uint64_t characterId) {
-    flatbuffers::FlatBufferBuilder fbb;
-    auto request = HeavenLogin::CreateReleasePartnerRequest(fbb, characterId);
-    return detail::wrap(fbb, HeavenLogin::Payload::ReleasePartnerRequest, request.Union());
-}
-
 // ------------------------------------------------------------- 캐릭터 선택
-
-inline Bytes encodeSelectCharacterRequest(std::uint64_t characterId) {
-    flatbuffers::FlatBufferBuilder fbb;
-    auto request = HeavenLogin::CreateSelectCharacterRequest(fbb, characterId);
-    return detail::wrap(fbb, HeavenLogin::Payload::SelectCharacterRequest, request.Union());
-}
 
 inline Bytes encodeSelectCharacterFailure(std::string_view message) {
     flatbuffers::FlatBufferBuilder fbb;
@@ -432,7 +385,13 @@ inline const HeavenLogin::Envelope* verifyLoginEnvelope(const Bytes& body) {
     if (!HeavenLogin::VerifyEnvelopeBuffer(verifier)) {
         return nullptr;
     }
-    return HeavenLogin::GetEnvelope(body.data());
+    const HeavenLogin::Envelope* envelope = HeavenLogin::GetEnvelope(body.data());
+
+    // Verifier 는 payload_type 만 있고 payload 오프셋이 없는 프레임을 통과시킨다
+    // (VerifyTable(nullptr) 이 true 다). 그대로 두면 payload_as_* 가 nullptr 을
+    // 돌려주고, 그것을 역참조하는 호출부가 죽는다. 여기서 한 번 막으면
+    // 모든 호출부가 같이 안전해진다.
+    return envelope->payload() != nullptr ? envelope : nullptr;
 }
 
 }  // namespace heaven::proto

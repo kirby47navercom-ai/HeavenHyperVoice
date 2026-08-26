@@ -52,11 +52,6 @@ bool RedisClient::connect() {
     return ensureConnectedLocked();
 }
 
-bool RedisClient::connected() {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return context_ != nullptr && context_->err == 0;
-}
-
 bool RedisClient::ensureConnectedLocked() {
     if (context_ != nullptr && context_->err == 0) {
         return true;
@@ -135,19 +130,6 @@ std::optional<std::string> RedisClient::commandForString(
         auto* reply = static_cast<redisReply*>(raw);
         if (reply->type == REDIS_REPLY_STRING) {
             value = std::string(reply->str, reply->len);
-        }
-    });
-    return value;
-}
-
-std::optional<long long> RedisClient::commandForInteger(
-    const std::vector<std::string>& arguments) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    std::optional<long long> value;
-    executeLocked(arguments, [&value](void* raw) {
-        auto* reply = static_cast<redisReply*>(raw);
-        if (reply->type == REDIS_REPLY_INTEGER) {
-            value = reply->integer;
         }
     });
     return value;

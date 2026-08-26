@@ -70,15 +70,27 @@ struct Entity {
 // 야생 번호는 캐릭터 번호(작은 BIGINT)와 겹치지 않게 높은 범위를 쓴다.
 inline constexpr std::uint64_t kWildIdBase = 1ull << 52;
 
+// 입장하면서 밀려난 기존 접속. 새 접속이 그 자리를 빼앗으므로, 밀려난 쪽은
+// leave() 를 타지 못한다 — 그쪽 onClosed 가 도착할 때는 이미 월드에 없다.
+// 마지막 위치를 여기 담아 돌려주지 않으면 그 캐릭터가 접속 이후 움직인 것이
+// 통째로 사라진다.
+struct Displaced {
+    // 비어 있어도 밀려난 엔티티는 있을 수 있다 (세션이 먼저 죽은 경우).
+    // "밀려난 것이 있었는가" 는 characterId 로 판단한다.
+    std::shared_ptr<TlsSession> session;
+    std::uint64_t characterId = 0;
+    Position position;
+};
+
 class World {
 public:
-    // 입장. 같은 계정이 이미 있으면 그 세션을 반환한다 (호출자가 내보낸다).
+    // 입장. 같은 계정이 이미 있으면 그 자리를 비우고 밀려난 것을 돌려준다
+    // (호출자가 내보내고 위치를 저장한다).
     // 캐릭터 단위가 아니라 계정 단위인 이유는, 한 계정으로 캐릭터 여럿을
     // 동시에 붙이는 것도 막아야 하기 때문이다.
-    std::shared_ptr<TlsSession> enter(std::uint64_t characterId, std::uint64_t accountId,
-                                      std::string nickname, std::uint16_t partnerSpecies,
-                                      const Position& position,
-                                      const std::shared_ptr<TlsSession>& session);
+    Displaced enter(std::uint64_t characterId, std::uint64_t accountId, std::string nickname,
+                    std::uint16_t partnerSpecies, const Position& position,
+                    const std::shared_ptr<TlsSession>& session);
 
     // 퇴장. 마지막 위치를 돌려준다 (저장용). 없던 엔티티면 nullopt.
     //

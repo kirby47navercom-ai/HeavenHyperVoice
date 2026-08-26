@@ -65,25 +65,8 @@ inline Bytes wrapField(flatbuffers::FlatBufferBuilder& fbb, HeavenField::Payload
 
 }  // namespace detail
 
-inline Bytes encodeEnter(const Bytes& ticket) {
-    flatbuffers::FlatBufferBuilder fbb;
-    auto blob = fbb.CreateVector(ticket);
-    auto request = HeavenField::CreateEnter(fbb, blob);
-    return detail::wrapField(fbb, HeavenField::Payload::Enter, request.Union());
-}
-
-// --dev-no-auth 로 뜬 서버에만 통한다.
-inline Bytes encodeDevEnter(std::string_view name, std::uint64_t characterId,
-                            std::uint16_t partnerSpecies) {
-    flatbuffers::FlatBufferBuilder fbb;
-    auto devName = fbb.CreateString(name.data(), name.size());
-
-    HeavenField::EnterBuilder builder(fbb);
-    builder.add_dev_name(devName);
-    builder.add_dev_character_id(characterId);
-    builder.add_dev_partner_species(partnerSpecies);
-    return detail::wrapField(fbb, HeavenField::Payload::Enter, builder.Finish().Union());
-}
+// Enter 와 Move 를 만드는 코드는 여기 없다. 서버는 그 둘을 받기만 하고,
+// 보내는 쪽은 클라이언트가 자기 인코더를 들고 있다.
 
 inline Bytes encodeEnterAck(std::uint64_t entityId, float x, float y, float facing,
                             std::uint32_t mapId) {
@@ -126,7 +109,12 @@ inline const HeavenField::Envelope* verifyFieldEnvelope(const Bytes& body) {
     if (!HeavenField::VerifyEnvelopeBuffer(verifier)) {
         return nullptr;
     }
-    return HeavenField::GetEnvelope(body.data());
+    const HeavenField::Envelope* envelope = HeavenField::GetEnvelope(body.data());
+
+    // Verifier 는 payload_type 만 있고 payload 오프셋이 없는 프레임을 통과시킨다
+    // (VerifyTable(nullptr) 이 true 다). 그대로 두면 payload_as_* 가 nullptr 을
+    // 돌려주고, 그것을 역참조하는 호출부가 죽는다.
+    return envelope->payload() != nullptr ? envelope : nullptr;
 }
 
 }  // namespace heaven::proto
