@@ -301,12 +301,16 @@ bool LoginHandler::handleCreateCharacter(TlsSession& session,
         return true;
     }
 
+    // 클라이언트가 보낸 값이므로 범위를 강제한다. 인덱스가 음수면 클라이언트가
+    // 배열 밖을 짚고, 부피가 범위를 넘으면 모델이 뒤틀린다.
+    proto::AppearanceInfo appearance = proto::detail::readAppearance(request.appearance());
+
     const LoginContext* context = &context_;
     const std::uint64_t accountId = accountId_;
 
-    return submitCharacterChange(session, [context, accountId, nick, speciesId] {
+    return submitCharacterChange(session, [context, accountId, nick, speciesId, appearance] {
         const CreateCharacterResult result =
-            context->characters->create(accountId, nick, speciesId);
+            context->characters->create(accountId, nick, speciesId, appearance);
 
         const char* message = nullptr;
         switch (result) {

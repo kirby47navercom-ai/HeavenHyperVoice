@@ -42,6 +42,27 @@ struct PartnerInfo {
     PokemonStats stats;
 };
 
+// 캐릭터 외형. 클라이언트의 FUEHHVAppearance 와 1:1 이며, 기본값도 같게 둔다.
+// 서버는 내용을 해석하지 않고 범위만 본다 — 어떤 인덱스가 어떤 머리인지는
+// 클라이언트의 카탈로그가 안다.
+struct AppearanceInfo {
+    std::uint8_t gender = 0;  // 0 = TypeA, 1 = TypeB
+
+    std::int32_t body = 1;
+    std::int32_t head = 0;
+    std::int32_t hair = 0;
+    std::int32_t eye = 0;
+    std::int32_t equipment = 1;
+
+    float skinR = 1.0f,      skinG = 0.712f,    skinB = 0.6458f;
+    float hairR = 0.1719f,   hairG = 0.1111f,   hairB = 0.0850f;
+    float eyeR  = 0.070638f, eyeG  = 0.484375f, eyeB  = 0.243701f;
+
+    float armVolume = 0.f;
+    float torsoVolume = 0.f;
+    float legVolume = 0.f;
+};
+
 // 캐릭터에는 레벨이 없다. 레벨을 갖는 것은 포켓몬이다.
 struct CharacterInfo {
     std::uint64_t id = 0;
@@ -50,7 +71,42 @@ struct CharacterInfo {
     // 파트너 없이 시작할 수 있다.
     bool hasPartner = false;
     PartnerInfo partner;
+
+    AppearanceInfo appearance;
 };
+
+// 클라이언트가 보낸 값을 그대로 저장하지 않는다. 인덱스가 음수면 배열 접근이
+// 깨지고, 부피가 범위를 벗어나면 모델이 뒤틀린다. 색은 [0,1] 밖이면 발광한다.
+//
+// 인덱스 상한은 서버가 모른다 — 카탈로그는 클라이언트 에셋이다. 음수만 막고
+// 상한은 클라이언트가 표시할 때 클램프한다.
+inline void sanitizeAppearance(AppearanceInfo& appearance) {
+    const auto clampIndex = [](std::int32_t v) { return v < 0 ? 0 : v; };
+    appearance.gender = appearance.gender != 0 ? 1 : 0;
+    appearance.body = clampIndex(appearance.body);
+    appearance.head = clampIndex(appearance.head);
+    appearance.hair = clampIndex(appearance.hair);
+    appearance.eye = clampIndex(appearance.eye);
+    appearance.equipment = clampIndex(appearance.equipment);
+
+    const auto clampUnit = [](float v) {
+        if (!(v >= 0.f)) return 0.f;  // NaN 도 여기서 걸린다
+        return v > 1.f ? 1.f : v;
+    };
+    for (float* channel : {&appearance.skinR, &appearance.skinG, &appearance.skinB,
+                           &appearance.hairR, &appearance.hairG, &appearance.hairB,
+                           &appearance.eyeR, &appearance.eyeG, &appearance.eyeB}) {
+        *channel = clampUnit(*channel);
+    }
+
+    const auto clampVolume = [](float v) {
+        if (!(v >= -1.f)) return 0.f;  // NaN 은 중립으로
+        return v > 1.f ? 1.f : v;
+    };
+    appearance.armVolume = clampVolume(appearance.armVolume);
+    appearance.torsoVolume = clampVolume(appearance.torsoVolume);
+    appearance.legVolume = clampVolume(appearance.legVolume);
+}
 
 // UTF-8 코드포인트 개수. 잘못된 바이트열이면 nullopt.
 inline std::optional<std::size_t> utf8Length(std::string_view text) {
@@ -113,6 +169,53 @@ inline const char* validateNickname(std::string_view nickname) {
 
 namespace detail {
 
+// 와이어 -> 구조체. 없으면 기본값 그대로 둔다 (외형을 안 보내는 구버전 클라).
+inline AppearanceInfo readAppearance(const HeavenLogin::Appearance* wire) {
+    AppearanceInfo out;
+    if (wire == nullptr) {
+        return out;
+    }
+    out.gender = wire->gender();
+    out.body = wire->body();
+    out.head = wire->head();
+    out.hair = wire->hair();
+    out.eye = wire->eye();
+    out.equipment = wire->equipment();
+    out.skinR = wire->skin_r();  out.skinG = wire->skin_g();  out.skinB = wire->skin_b();
+    out.hairR = wire->hair_r();  out.hairG = wire->hair_g();  out.hairB = wire->hair_b();
+    out.eyeR  = wire->eye_r();   out.eyeG  = wire->eye_g();   out.eyeB  = wire->eye_b();
+    out.armVolume = wire->arm_volume();
+    out.torsoVolume = wire->torso_volume();
+    out.legVolume = wire->leg_volume();
+    sanitizeAppearance(out);
+    return out;
+}
+
+// 구조체 -> 와이어. 상위 테이블을 시작하기 전에 불러야 한다.
+inline flatbuffers::Offset<HeavenLogin::Appearance> buildAppearance(
+    flatbuffers::FlatBufferBuilder& fbb, const AppearanceInfo& appearance) {
+    HeavenLogin::AppearanceBuilder builder(fbb);
+    builder.add_gender(appearance.gender);
+    builder.add_body(appearance.body);
+    builder.add_head(appearance.head);
+    builder.add_hair(appearance.hair);
+    builder.add_eye(appearance.eye);
+    builder.add_equipment(appearance.equipment);
+    builder.add_skin_r(appearance.skinR);
+    builder.add_skin_g(appearance.skinG);
+    builder.add_skin_b(appearance.skinB);
+    builder.add_hair_r(appearance.hairR);
+    builder.add_hair_g(appearance.hairG);
+    builder.add_hair_b(appearance.hairB);
+    builder.add_eye_r(appearance.eyeR);
+    builder.add_eye_g(appearance.eyeG);
+    builder.add_eye_b(appearance.eyeB);
+    builder.add_arm_volume(appearance.armVolume);
+    builder.add_torso_volume(appearance.torsoVolume);
+    builder.add_leg_volume(appearance.legVolume);
+    return builder.Finish();
+}
+
 // CharacterSummary 벡터를 만든다. 응답 세 종류가 같은 목록을 싣는다.
 inline flatbuffers::Offset<
     flatbuffers::Vector<flatbuffers::Offset<HeavenLogin::CharacterSummary>>>
@@ -124,6 +227,7 @@ buildCharacters(flatbuffers::FlatBufferBuilder& fbb,
     for (const CharacterInfo& character : characters) {
         // 문자열과 하위 테이블은 상위 테이블을 시작하기 전에 만들어야 한다.
         auto nickname = fbb.CreateString(character.nickname);
+        auto appearance = buildAppearance(fbb, character.appearance);
 
         flatbuffers::Offset<HeavenLogin::PokemonSummary> partner = 0;
         if (character.hasPartner) {
@@ -153,6 +257,7 @@ buildCharacters(flatbuffers::FlatBufferBuilder& fbb,
         if (!partner.IsNull()) {
             builder.add_partner(partner);
         }
+        builder.add_appearance(appearance);
         entries.push_back(builder.Finish());
     }
     return fbb.CreateVector(entries);
@@ -221,11 +326,18 @@ inline Bytes encodeRegisterResult(bool ok, std::string_view message) {
 
 // ------------------------------------------------------------- 캐릭터 생성
 
-inline Bytes encodeCreateCharacterRequest(std::string_view nickname, std::uint16_t speciesId) {
+inline Bytes encodeCreateCharacterRequest(std::string_view nickname, std::uint16_t speciesId,
+                                          const AppearanceInfo& appearance = {}) {
     flatbuffers::FlatBufferBuilder fbb;
     auto nick = fbb.CreateString(nickname.data(), nickname.size());
-    auto request = HeavenLogin::CreateCreateCharacterRequest(fbb, nick, speciesId);
-    return detail::wrap(fbb, HeavenLogin::Payload::CreateCharacterRequest, request.Union());
+    auto look = detail::buildAppearance(fbb, appearance);
+
+    HeavenLogin::CreateCharacterRequestBuilder builder(fbb);
+    builder.add_nickname(nick);
+    builder.add_species_id(speciesId);
+    builder.add_appearance(look);
+    return detail::wrap(fbb, HeavenLogin::Payload::CreateCharacterRequest,
+                        builder.Finish().Union());
 }
 
 // 생성/삭제/방생이 모두 이 응답을 쓴다. 셋 다 목록이 바뀌는 일이다.

@@ -115,6 +115,13 @@ void bindUInt32(SQLHSTMT statement, SQLUSMALLINT index, std::uint32_t& value, SQ
             SQL_HANDLE_STMT, statement, "SQLBindParameter(uint32)");
 }
 
+void bindInt32(SQLHSTMT statement, SQLUSMALLINT index, std::int32_t& value, SQLLEN& length) {
+    length = 0;
+    require(SQLBindParameter(statement, index, SQL_PARAM_INPUT, SQL_C_SLONG, SQL_INTEGER, 0, 0,
+                             &value, 0, &length),
+            SQL_HANDLE_STMT, statement, "SQLBindParameter(int32)");
+}
+
 void bindDouble(SQLHSTMT statement, SQLUSMALLINT index, double& value, SQLLEN& length) {
     length = 0;
     require(SQLBindParameter(statement, index, SQL_PARAM_INPUT, SQL_C_DOUBLE, SQL_DOUBLE, 0, 0,
@@ -174,7 +181,14 @@ constexpr const char* kCharacterColumns =
     "SELECT c.id, c.nickname, "
     "       p.species_id, p.nickname, p.level, "
     "       p.iv_hp, p.iv_atk, p.iv_def, p.iv_sp_atk, p.iv_sp_def, p.iv_speed, "
-    "       p.ev_hp, p.ev_atk, p.ev_def, p.ev_sp_atk, p.ev_sp_def, p.ev_speed "
+    "       p.ev_hp, p.ev_atk, p.ev_def, p.ev_sp_atk, p.ev_sp_def, p.ev_speed, "
+    // 외형. 18~35 번 컬럼이며 fetchCharacters 의 바인딩 순서와 맞아야 한다.
+    "       c.appearance_gender, c.appearance_body, c.appearance_head, "
+    "       c.appearance_hair, c.appearance_eye, c.appearance_equipment, "
+    "       c.skin_r, c.skin_g, c.skin_b, "
+    "       c.hair_r, c.hair_g, c.hair_b, "
+    "       c.eye_r, c.eye_g, c.eye_b, "
+    "       c.arm_volume, c.torso_volume, c.leg_volume "
     "FROM characters c "
     "LEFT JOIN character_pokemon p ON p.character_id = c.id AND p.slot = 0 ";
 
@@ -340,7 +354,13 @@ OdbcStore::OdbcStore(const OdbcSettings& settings) {
                     "INSERT INTO accounts (username, password_hash) VALUES (?, ?)",
                     "SQLPrepare(insertAccount)");
             prepare(connection->insertCharacter,
-                    "INSERT INTO characters (account_id, nickname) VALUES (?, ?)",
+                    "INSERT INTO characters "
+                    "(account_id, nickname, "
+                    " appearance_gender, appearance_body, appearance_head, "
+                    " appearance_hair, appearance_eye, appearance_equipment, "
+                    " skin_r, skin_g, skin_b, hair_r, hair_g, hair_b, "
+                    " eye_r, eye_g, eye_b, arm_volume, torso_volume, leg_volume) "
+                    "VALUES (?, ?,  ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?,  ?, ?, ?)",
                     "SQLPrepare(insertCharacter)");
             prepare(connection->lastInsertId, "SELECT LAST_INSERT_ID()",
                     "SQLPrepare(lastInsertId)");
@@ -543,9 +563,16 @@ std::vector<Character> OdbcStore::fetchCharacters(SQLHSTMT statement) {
     std::uint8_t iv[6] = {};
     std::uint8_t ev[6] = {};
 
+    // 외형. 컬럼 순서는 kCharacterColumns 와 맞아야 한다.
+    std::uint8_t appearanceGender = 0;
+    std::int32_t appearanceIndex[5] = {};   // body, head, hair, eye, equipment
+    double appearanceColor[9] = {};         // skin rgb, hair rgb, eye rgb
+    double appearanceVolume[3] = {};        // arm, torso, leg
+
     SQLLEN idLength = 0, nicknameLength = 0;
     SQLLEN speciesLength = 0, partnerNicknameLength = 0, partnerLevelLength = 0;
     SQLLEN spreadLength[12] = {};
+    SQLLEN appearanceLength[18] = {};
 
     SQLBindCol(statement, 1, SQL_C_UBIGINT, &id, sizeof(id), &idLength);
     SQLBindCol(statement, 2, SQL_C_WCHAR, nickname, sizeof(nickname), &nicknameLength);
@@ -560,10 +587,45 @@ std::vector<Character> OdbcStore::fetchCharacters(SQLHSTMT statement) {
                    sizeof(ev[i]), &spreadLength[6 + i]);
     }
 
+    // 18 번부터 외형. 순서는 kCharacterColumns 그대로다.
+    SQLBindCol(statement, 18, SQL_C_UTINYINT, &appearanceGender, sizeof(appearanceGender),
+               &appearanceLength[0]);
+    for (int i = 0; i < 5; ++i) {
+        SQLBindCol(statement, static_cast<SQLUSMALLINT>(19 + i), SQL_C_SLONG, &appearanceIndex[i],
+                   sizeof(appearanceIndex[i]), &appearanceLength[1 + i]);
+    }
+    for (int i = 0; i < 9; ++i) {
+        SQLBindCol(statement, static_cast<SQLUSMALLINT>(24 + i), SQL_C_DOUBLE, &appearanceColor[i],
+                   sizeof(appearanceColor[i]), &appearanceLength[6 + i]);
+    }
+    for (int i = 0; i < 3; ++i) {
+        SQLBindCol(statement, static_cast<SQLUSMALLINT>(33 + i), SQL_C_DOUBLE,
+                   &appearanceVolume[i], sizeof(appearanceVolume[i]), &appearanceLength[15 + i]);
+    }
+
     while (succeeded(SQLFetch(statement))) {
         Character character;
         character.id = id;
         character.nickname = narrow(nickname, nicknameLength);
+
+        character.appearance.gender = appearanceGender;
+        character.appearance.body = appearanceIndex[0];
+        character.appearance.head = appearanceIndex[1];
+        character.appearance.hair = appearanceIndex[2];
+        character.appearance.eye = appearanceIndex[3];
+        character.appearance.equipment = appearanceIndex[4];
+        character.appearance.skinR = static_cast<float>(appearanceColor[0]);
+        character.appearance.skinG = static_cast<float>(appearanceColor[1]);
+        character.appearance.skinB = static_cast<float>(appearanceColor[2]);
+        character.appearance.hairR = static_cast<float>(appearanceColor[3]);
+        character.appearance.hairG = static_cast<float>(appearanceColor[4]);
+        character.appearance.hairB = static_cast<float>(appearanceColor[5]);
+        character.appearance.eyeR = static_cast<float>(appearanceColor[6]);
+        character.appearance.eyeG = static_cast<float>(appearanceColor[7]);
+        character.appearance.eyeB = static_cast<float>(appearanceColor[8]);
+        character.appearance.armVolume = static_cast<float>(appearanceVolume[0]);
+        character.appearance.torsoVolume = static_cast<float>(appearanceVolume[1]);
+        character.appearance.legVolume = static_cast<float>(appearanceVolume[2]);
 
         // LEFT JOIN 이라 파트너가 없으면 NULL 이 온다. 004 이전에 만들어진
         // 캐릭터가 그럴 수 있다.
@@ -636,7 +698,8 @@ std::optional<Character> OdbcStore::find(std::uint64_t accountId, std::uint64_t 
 }
 
 CreateCharacterResult OdbcStore::create(std::uint64_t accountId, std::string_view nickname,
-                                        std::uint16_t speciesId) {
+                                        std::uint16_t speciesId,
+                                        const Appearance& appearance) {
     if (!canWrite_) {
         return CreateCharacterResult::NotSupported;
     }
@@ -701,11 +764,42 @@ CreateCharacterResult OdbcStore::create(std::uint64_t accountId, std::string_vie
     std::wstring wideNickname = widen(nickname);
     std::uint64_t characterId = 0;
 
+    // 바인딩은 SQLExecute 까지 주소가 살아 있어야 하므로 지역 변수로 펼친다.
+    std::uint8_t gender = appearance.gender;
+    std::int32_t indices[5] = {appearance.body, appearance.head, appearance.hair,
+                               appearance.eye, appearance.equipment};
+    double colors[9] = {appearance.skinR, appearance.skinG, appearance.skinB,
+                        appearance.hairR, appearance.hairG, appearance.hairB,
+                        appearance.eyeR,  appearance.eyeG,  appearance.eyeB};
+    double volumes[3] = {appearance.armVolume, appearance.torsoVolume, appearance.legVolume};
+    SQLLEN appearanceLengths[18] = {};
+
     try {
         SQLLEN accountLength = 0;
         SQLLEN nicknameLength = 0;
         bindUInt64(connection->insertCharacter, 1, accountId, accountLength);
         bindText(connection->insertCharacter, 2, wideNickname, nicknameLength);
+
+        // 3번부터 외형. 순서는 insertCharacter 의 컬럼 목록과 맞아야 한다.
+        //
+        // 길이 변수는 SQLExecute 까지 살아 있어야 한다. 블록 안의 지역 변수를
+        // 넘기면 SQLExecute 시점에는 이미 사라진 스택을 가리킨다.
+        require(SQLBindParameter(connection->insertCharacter, 3, SQL_PARAM_INPUT,
+                                 SQL_C_UTINYINT, SQL_TINYINT, 0, 0, &gender, 0,
+                                 &appearanceLengths[0]),
+                SQL_HANDLE_STMT, connection->insertCharacter, "SQLBindParameter(gender)");
+        for (int i = 0; i < 5; ++i) {
+            bindInt32(connection->insertCharacter, static_cast<SQLUSMALLINT>(4 + i), indices[i],
+                      appearanceLengths[1 + i]);
+        }
+        for (int i = 0; i < 9; ++i) {
+            bindDouble(connection->insertCharacter, static_cast<SQLUSMALLINT>(9 + i), colors[i],
+                       appearanceLengths[6 + i]);
+        }
+        for (int i = 0; i < 3; ++i) {
+            bindDouble(connection->insertCharacter, static_cast<SQLUSMALLINT>(18 + i), volumes[i],
+                       appearanceLengths[15 + i]);
+        }
 
         const SQLRETURN rc = SQLExecute(connection->insertCharacter);
         if (!succeeded(rc)) {
