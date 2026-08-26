@@ -98,6 +98,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Text")
 	FText InvalidFieldsStatusText;
 
+	// 서버 왕복 중에 보여준다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Text")
+	FText ConnectingStatusText;
+
+	// 아이디 형식만 통과했다는 뜻이다. 중복 여부는 가입할 때 서버가 답한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Text")
+	FText UserIdFormatOkStatusText;
+
 	UPROPERTY(BlueprintAssignable, Category = "Login|Event")
 	FUELoginSucceededSignature OnLoginSucceeded;
 
@@ -143,6 +151,23 @@ private:
 	UFUNCTION()
 	void HandleBackClicked();
 
+	// --- 로그인 서버 응답 ---
+	//
+	// 로그인과 가입은 서버 왕복이라 즉시 결과가 나오지 않는다. 요청을 보낸 뒤
+	// 버튼을 잠그고, 아래 콜백에서 푼다.
+
+	UFUNCTION()
+	void HandleServerLoginCompleted(bool bOk, const FString& Message);
+
+	UFUNCTION()
+	void HandleServerRegisterCompleted(bool bOk, const FString& Message);
+
+	UFUNCTION()
+	void HandleServerDisconnected(bool bOk, const FString& Message);
+
+	class UUEGameInstance* GetHHVGameInstance() const;
+	void SetRequestPending(bool bPending);
+
 private:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> SubtitleBlock = nullptr;
@@ -186,4 +211,12 @@ private:
 	EUELoginScreenMode ScreenMode = EUELoginScreenMode::Login;
 	bool bUserIdDuplicateChecked = false;
 	FString DuplicateCheckedUserId;
+
+	// 서버 응답을 기다리는 중이다. 연타로 두 번째 요청이 나가면 서버가 연결을
+	// 끊으므로(LoginHandler 의 Busy 단계) 버튼을 잠근다.
+	bool bRequestPending = false;
+
+	// 방금 보낸 로그인 요청의 아이디. 성공 응답에 아이디가 실려 오지 않아서
+	// 여기 들고 있다가 OnLoginSucceeded 에 싣는다.
+	FString PendingUserId;
 };

@@ -1,6 +1,9 @@
 #include "UELoginWidget.h"
 
+// 로컬 계정 시스템은 더 이상 로그인 경로에서 쓰지 않는다. 인증은 LoginServer 가
+// 한다. 헤더는 GetRegistrationResultMessage 가 아직 참조해서 남겨둔다.
 #include "../../System/Account/UEAccountSubsystem.h"
+#include "../../System/UEGameInstance.h"
 
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
@@ -23,7 +26,15 @@ void UUELoginWidget::NativeConstruct()
 	IdInputBox->OnTextChanged.AddUniqueDynamic(this, &ThisClass::HandleUserIdChanged);
 	BackButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleBackClicked);
 
+	if (UUEGameInstance* GameInstance = GetHHVGameInstance())
+	{
+		GameInstance->OnLoginCompleted.AddUniqueDynamic(this, &ThisClass::HandleServerLoginCompleted);
+		GameInstance->OnRegisterCompleted.AddUniqueDynamic(this, &ThisClass::HandleServerRegisterCompleted);
+		GameInstance->OnServerDisconnected.AddUniqueDynamic(this, &ThisClass::HandleServerDisconnected);
+	}
+
 	SetScreenMode(EUELoginScreenMode::Login);
+	SetRequestPending(false);
 }
 
 void UUELoginWidget::NativeDestruct()
@@ -47,6 +58,14 @@ void UUELoginWidget::NativeDestruct()
 	if (BackButton)
 	{
 		BackButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleBackClicked);
+	}
+
+	// GameInstance 는 이 위젯보다 오래 산다. 떼지 않으면 파괴된 위젯으로 콜백이 간다.
+	if (UUEGameInstance* GameInstance = GetHHVGameInstance())
+	{
+		GameInstance->OnLoginCompleted.RemoveDynamic(this, &ThisClass::HandleServerLoginCompleted);
+		GameInstance->OnRegisterCompleted.RemoveDynamic(this, &ThisClass::HandleServerRegisterCompleted);
+		GameInstance->OnServerDisconnected.RemoveDynamic(this, &ThisClass::HandleServerDisconnected);
 	}
 
 	Super::NativeDestruct();
@@ -103,25 +122,38 @@ void UUELoginWidget::HandlePrimaryActionClicked()
 
 void UUELoginWidget::HandleDuplicateCheckClicked()
 {
-	UUEAccountSubsystem* AccountSubsystem = GetAccountSubsystem();
-	if (!AccountSubsystem)
-	{
-		SetStatusMessage(StorageUnavailableStatusText);
-		return;
-	}
-
+	// 서버에는 "이 아이디 쓸 수 있나" 를 묻는 메시지가 없다. 넣으려면 프로토콜과
+	// 서버 핸들러가 늘어나는데, 얻는 것은 가입 버튼을 누르기 전에 알려주는 것뿐이다.
+	// 중복이면 가입 응답이 "이미 사용 중인 아이디입니다" 로 알려준다.
+	//
+	// 그래서 여기서는 서버가 어차피 거절할 형식만 미리 걸러준다. 규칙은
+	// LoginCodec.h 의 isValidUsername 과 같다: 영문/숫자/밑줄, 3~32자.
 	const FString UserId = IdInputBox->GetText().ToString().TrimStartAndEnd();
-	const EUELocalAccountResult Result = AccountSubsystem->CheckUserIdAvailability(UserId);
-	if (Result == EUELocalAccountResult::Success)
+
+	if (UserId.Len() < 3 || UserId.Len() > 32)
 	{
-		bUserIdDuplicateChecked = true;
-		DuplicateCheckedUserId = UserId.ToLower();
-		SetStatusMessage(UserIdAvailableStatusText);
+		ResetDuplicateCheck();
+		SetStatusMessage(InvalidUserIdLengthStatusText);
 		return;
 	}
 
-	ResetDuplicateCheck();
-	SetStatusMessage(GetRegistrationResultMessage(Result));
+	for (const TCHAR Character : UserId)
+	{
+		const bool bAllowed = (Character >= TEXT('a') && Character <= TEXT('z'))
+			|| (Character >= TEXT('A') && Character <= TEXT('Z'))
+			|| (Character >= TEXT('0') && Character <= TEXT('9'))
+			|| Character == TEXT('_');
+		if (!bAllowed)
+		{
+			ResetDuplicateCheck();
+			SetStatusMessage(InvalidUserIdCharactersStatusText);
+			return;
+		}
+	}
+
+	bUserIdDuplicateChecked = true;
+	DuplicateCheckedUserId = UserId.ToLower();
+	SetStatusMessage(UserIdFormatOkStatusText);
 }
 
 void UUELoginWidget::HandleBackClicked()
@@ -148,10 +180,28 @@ void UUELoginWidget::HandleUserIdChanged(const FText& NewText)
 	}
 }
 
+UUEGameInstance* UUELoginWidget::GetHHVGameInstance() const
+{
+	return GetWorld() ? Cast<UUEGameInstance>(GetWorld()->GetGameInstance()) : nullptr;
+}
+
+void UUELoginWidget::SetRequestPending(bool bPending)
+{
+	bRequestPending = bPending;
+	if (PrimaryActionButton)
+	{
+		PrimaryActionButton->SetIsEnabled(!bPending);
+	}
+	if (DuplicateCheckButton)
+	{
+		DuplicateCheckButton->SetIsEnabled(!bPending);
+	}
+}
+
 void UUELoginWidget::HandleLogin()
 {
-	UUEAccountSubsystem* AccountSubsystem = GetAccountSubsystem();
-	if (!AccountSubsystem)
+	UUEGameInstance* GameInstance = GetHHVGameInstance();
+	if (!GameInstance)
 	{
 		SetStatusMessage(LoginFailedStatusText);
 		return;
@@ -159,61 +209,97 @@ void UUELoginWidget::HandleLogin()
 
 	const FString UserId = IdInputBox->GetText().ToString().TrimStartAndEnd();
 	const FString Password = PasswordInputBox->GetText().ToString();
-	FString Nickname;
-	const EUELocalAccountResult Result = AccountSubsystem->LoginAccount(UserId, Password, Nickname);
-	if (Result != EUELocalAccountResult::Success)
+	if (UserId.IsEmpty() || Password.IsEmpty())
 	{
-		// 아이디 존재 여부를 노출하지 않도록 실패 이유를 하나의 문구로 합친다.
-		SetStatusMessage(LoginFailedStatusText);
+		SetStatusMessage(InvalidFieldsStatusText);
+		return;
+	}
+
+	// 서버 왕복이라 여기서 결과가 나오지 않는다. HandleServerLoginCompleted 에서 잇는다.
+	PendingUserId = UserId;
+	SetRequestPending(true);
+	SetStatusMessage(ConnectingStatusText);
+	GameInstance->ConnectAndLogin(UserId, Password);
+}
+
+void UUELoginWidget::HandleServerLoginCompleted(bool bOk, const FString& Message)
+{
+	SetRequestPending(false);
+
+	if (!bOk)
+	{
+		// 서버가 준 사유를 그대로 보여준다. 아이디 존재 여부는 서버가 이미
+		// 하나의 문구로 합쳐서 보낸다.
+		SetStatusMessage(Message.IsEmpty() ? LoginFailedStatusText : FText::FromString(Message));
 		return;
 	}
 
 	SetStatusMessage(LoginSucceededStatusText);
-	OnLoginSucceeded.Broadcast(UserId, Nickname);
+	PasswordInputBox->SetText(FText::GetEmpty());
+
+	// 닉네임은 캐릭터 속성이라 로그인 응답에 없다. 캐릭터를 고를 때 정해진다.
+	OnLoginSucceeded.Broadcast(PendingUserId, FString());
 }
 
-void UUELoginWidget::HandleRegistration()
+void UUELoginWidget::HandleServerRegisterCompleted(bool bOk, const FString& Message)
 {
-	const FString UserId = IdInputBox->GetText().ToString().TrimStartAndEnd();
-	if (!bUserIdDuplicateChecked || DuplicateCheckedUserId != UserId.ToLower())
+	SetRequestPending(false);
+
+	if (!bOk)
 	{
-		SetStatusMessage(DuplicateCheckRequiredStatusText);
+		ResetDuplicateCheck();
+		SetStatusMessage(Message.IsEmpty() ? SaveFailedStatusText : FText::FromString(Message));
 		return;
 	}
 
-	UUEAccountSubsystem* AccountSubsystem = GetAccountSubsystem();
-	if (!AccountSubsystem)
-	{
-		SetStatusMessage(StorageUnavailableStatusText);
-		return;
-	}
-
-	const FString Nickname = NicknameInputBox->GetText().ToString();
-	const FString Password = PasswordInputBox->GetText().ToString();
-	const FString Confirmation = ConfirmPasswordInputBox->GetText().ToString();
-	const EUELocalAccountResult Result = AccountSubsystem->RegisterAccount(Nickname, UserId, Password, Confirmation);
-	if (Result != EUELocalAccountResult::Success)
-	{
-		// 아이디가 그대로라면 비밀번호나 닉네임 수정 때문에 중복 확인을 반복하지 않는다.
-		if (Result == EUELocalAccountResult::AccountAlreadyExists
-			|| Result == EUELocalAccountResult::EmptyUserId
-			|| Result == EUELocalAccountResult::InvalidUserIdLength
-			|| Result == EUELocalAccountResult::InvalidUserIdCharacters)
-		{
-			ResetDuplicateCheck();
-		}
-		SetStatusMessage(GetRegistrationResultMessage(Result));
-		return;
-	}
-
-	OnAccountRegistered.Broadcast(UserId, Nickname.TrimStartAndEnd());
+	OnAccountRegistered.Broadcast(PendingUserId, FString());
 	PasswordInputBox->SetText(FText::GetEmpty());
 	ConfirmPasswordInputBox->SetText(FText::GetEmpty());
 	NicknameInputBox->SetText(FText::GetEmpty());
 	ScreenMode = EUELoginScreenMode::Login;
 	ResetDuplicateCheck();
 	RefreshScreenMode();
-	SetStatusMessage(RegistrationSucceededStatusText);
+	SetStatusMessage(Message.IsEmpty() ? RegistrationSucceededStatusText : FText::FromString(Message));
+}
+
+void UUELoginWidget::HandleServerDisconnected(bool bOk, const FString& Message)
+{
+	// 요청 도중 끊긴 경우다. 버튼을 풀어 다시 시도할 수 있게 한다.
+	SetRequestPending(false);
+	SetStatusMessage(Message.IsEmpty() ? LoginFailedStatusText : FText::FromString(Message));
+}
+
+void UUELoginWidget::HandleRegistration()
+{
+	UUEGameInstance* GameInstance = GetHHVGameInstance();
+	if (!GameInstance)
+	{
+		SetStatusMessage(StorageUnavailableStatusText);
+		return;
+	}
+
+	const FString UserId = IdInputBox->GetText().ToString().TrimStartAndEnd();
+	const FString Password = PasswordInputBox->GetText().ToString();
+	const FString Confirmation = ConfirmPasswordInputBox->GetText().ToString();
+
+	// 비밀번호 확인은 서버에 보낼 값이 아니라 입력 실수를 잡는 것이라 여기서 본다.
+	if (Password != Confirmation)
+	{
+		SetStatusMessage(PasswordMismatchStatusText);
+		return;
+	}
+	if (UserId.IsEmpty() || Password.IsEmpty())
+	{
+		SetStatusMessage(InvalidFieldsStatusText);
+		return;
+	}
+
+	// 닉네임은 계정이 아니라 캐릭터 속성이라 가입에 싣지 않는다. 캐릭터를 만들 때
+	// 받는다. 아이디 중복은 서버가 가입 응답으로 알려준다.
+	PendingUserId = UserId;
+	SetRequestPending(true);
+	SetStatusMessage(ConnectingStatusText);
+	GameInstance->ConnectAndRegister(UserId, Password);
 }
 
 UUEAccountSubsystem* UUELoginWidget::GetAccountSubsystem() const
