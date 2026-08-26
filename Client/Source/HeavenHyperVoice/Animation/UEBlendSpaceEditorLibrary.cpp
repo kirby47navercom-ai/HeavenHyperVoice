@@ -20,6 +20,12 @@ bool UUEBlendSpaceEditorLibrary::RebuildLocomotionBlendSpace(
 	}
 
 	BlendSpace->Modify();
+	if (!BlendSpace->GetSkeleton())
+	{
+		// 메시 재임포트 뒤 Skeleton 참조만 끊긴 BlendSpace는 샘플의 현재 스켈레톤으로 복구한다.
+		BlendSpace->SetSkeleton(IdleSequence->GetSkeleton());
+	}
+
 	while (BlendSpace->GetNumberOfBlendSamples() > 0)
 	{
 		BlendSpace->DeleteSample(BlendSpace->GetNumberOfBlendSamples() - 1);

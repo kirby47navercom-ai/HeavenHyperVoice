@@ -171,7 +171,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "HHV|Local Session")
 	FString GetLocalSessionNickname() const { return LocalSessionNickname; }
 
-	// 서버 연결을 매 프레임 편다. GameInstance 는 Tick 이 없어서 타이머로 돈다.
+	// 로그인 전에 고른 서버 주소를 이후 레벨에서도 사용할 수 있게 보관한다.
+	// 비어 있지 않으면 ConnectAndLogin 이 LoginServerHost 대신 이 값을 쓴다.
+	UFUNCTION(BlueprintCallable, Category = "HHV|Server")
+	void SetServerAddress(const FString& ServerAddress);
+
+	UFUNCTION(BlueprintPure, Category = "HHV|Server")
+	FString GetServerAddress() const { return SelectedServerAddress; }
+
+	// 서버 연결을 편다. GameInstance 는 Tick 이 없어서 엔진 티커로 돈다.
 	void PollServer();
 
 private:
@@ -221,8 +229,7 @@ private:
 
 	// --- 서버 세션 ---
 
-	// 팀원이 접속 주소 입력창을 만들면 그쪽에서 덮어쓴다. 그때까지는 로컬 테스트용
-	// 기본값을 둔다.
+	// 접속 화면에서 주소를 입력하지 않았을 때 쓰는 기본값. ini 에서 온다.
 	UPROPERTY(EditDefaultsOnly, Config, Category = "HHV|Server")
 	FString LoginServerHost = TEXT("127.0.0.1");
 
@@ -246,4 +253,8 @@ private:
 
 	UPROPERTY(Transient)
 	int32 ServerMaxSlots = CharacterSlotCount;
+
+	// 접속 화면에서 입력한 주소. 비어 있으면 LoginServerHost 를 쓴다.
+	UPROPERTY(Transient)
+	FString SelectedServerAddress;
 };

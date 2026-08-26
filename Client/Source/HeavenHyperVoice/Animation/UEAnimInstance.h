@@ -14,7 +14,7 @@ class UAnimSequenceBase;
  * 플레이어 애니메이션 블루프린트가 읽는 공통 부모 클래스다.
  * 이동 코드에 직접 접근하지 말고 아래 값만 보고 상태를 판단하게 둔다.
  */
-UCLASS()
+UCLASS(Config = Game, DefaultConfig)
 class HEAVENHYPERVOICE_API UUEAnimInstance : public UAnimInstance
 {
 	GENERATED_BODY()
@@ -23,10 +23,24 @@ public:
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 
-	// 데이터 에셋의 구르기 시퀀스를 FullBodySlot용 동적 몽타주로 1회 재생한다.
-	float PlayRollMontage(UAnimSequenceBase* RollAnimation);
+	// 데이터 에셋의 구르기 시퀀스를 지정한 슬롯의 동적 몽타주로 1회 재생한다.
+	// 반환값은 재생 배속까지 반영한 실제 구르기 지속 시간이다.
+	float PlayRollMontage(UAnimSequenceBase* RollAnimation, float PlayRate);
 
 protected:
+	// 슬롯과 블렌드 값은 Anim Blueprint Class Defaults에서 조정한다.
+	UPROPERTY(Config, EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Roll")
+	FName RollMontageSlotName = NAME_None;
+
+	UPROPERTY(Config, EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Roll", meta = (ClampMin = "0.0"))
+	float RollBlendInTime = 0.08f;
+
+	UPROPERTY(Config, EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Roll", meta = (ClampMin = "0.0"))
+	float RollBlendOutTime = 0.12f;
+
+	UPROPERTY(Config, EditDefaultsOnly, BlueprintReadOnly, Category = "Animation|Roll", meta = (ClampMin = "0.001"))
+	float MinimumMontagePlayRate = 0.01f;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Animation|Character")
 	TObjectPtr<AUEPlayerCharacter> OwnerCharacter = nullptr;
 

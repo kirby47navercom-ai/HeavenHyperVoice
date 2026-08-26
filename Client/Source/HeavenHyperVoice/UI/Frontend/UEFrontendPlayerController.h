@@ -7,6 +7,7 @@
 class UUECharacterSelectionWidget;
 class UUECharacterNameWidget;
 class UUELoginWidget;
+class UUEServerAddressWidget;
 class UUETitleWidget;
 class UUserWidget;
 class UWorld;
@@ -27,6 +28,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Frontend|Widgets")
 	TSubclassOf<UUELoginWidget> LoginWidgetClass;
 
+	// 새 화면 클래스도 BP_FrontendPlayerController 기본값에서 지정한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Frontend|Widgets")
+	TSubclassOf<UUEServerAddressWidget> ServerAddressWidgetClass;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Frontend|Widgets")
 	TSubclassOf<UUECharacterSelectionWidget> LobbyWidgetClass;
 
@@ -41,6 +46,7 @@ protected:
 
 private:
 	void ShowTitle();
+	void ShowServerAddress();
 	void ShowLogin();
 	void ShowLobby();
 	void ShowCharacterName();
@@ -49,6 +55,12 @@ private:
 
 	UFUNCTION()
 	void HandleTitleContinueRequested();
+
+	UFUNCTION()
+	void HandleServerAddressConfirmed(const FString& ServerAddress);
+
+	UFUNCTION()
+	void HandleServerAddressBackRequested();
 
 	UFUNCTION()
 	void HandleLoginSucceeded(const FString& UserId, const FString& Nickname);

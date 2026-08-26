@@ -66,8 +66,10 @@ bool UUEGameInstance::EnsureServerConnection()
 	LoginConnection = std::make_unique<FHHVLoginConnection>();
 	BindServerCallbacks();
 
+	// 접속 화면에서 입력한 주소가 있으면 그걸 쓴다. 없으면 ini 기본값이다.
 	FHHVLoginSettings ConnectionSettings;
-	ConnectionSettings.Host = LoginServerHost;
+	ConnectionSettings.Host = SelectedServerAddress.IsEmpty() ? LoginServerHost
+	                                                          : SelectedServerAddress;
 	ConnectionSettings.Port = LoginServerPort;
 	LoginConnection->Start(ConnectionSettings);
 
@@ -84,7 +86,8 @@ bool UUEGameInstance::EnsureServerConnection()
 			ServerPollIntervalSeconds);
 	}
 
-	UE_LOG(LogTemp, Display, TEXT("HHV: login server %s:%d"), *LoginServerHost, LoginServerPort);
+	UE_LOG(LogTemp, Display, TEXT("HHV: login server %s:%d"),
+		*ConnectionSettings.Host, ConnectionSettings.Port);
 	return true;
 }
 
@@ -527,6 +530,11 @@ void UUEGameInstance::ClearLocalSession()
 	LocalSessionUserId.Reset();
 	LocalSessionNickname.Reset();
 	bHasLocalSession = false;
+}
+
+void UUEGameInstance::SetServerAddress(const FString& ServerAddress)
+{
+	SelectedServerAddress = ServerAddress.TrimStartAndEnd();
 }
 
 void UUEGameInstance::LoadCharacterSlots()

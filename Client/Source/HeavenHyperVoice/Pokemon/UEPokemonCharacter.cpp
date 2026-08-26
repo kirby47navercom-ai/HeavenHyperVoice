@@ -6,6 +6,7 @@
 #include "../Animation/UEPokemonAnimInstance.h"
 #include "UEPokemonSpeciesData.h"
 #include "Server/UEPokemonServerComponent.h"
+#include "Effects/UEPokemonSummonEffectComponent.h"
 #include "UEPokemonSpeciesCatalog.h"
 
 #include "Components/CapsuleComponent.h"
@@ -14,62 +15,6 @@
 #include "Engine/SkeletalMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
-
-namespace
-{
-	// 서버 PokemonSpecies.h 의 종족 순서(1~20)에 맞춘 대표 색.
-	//
-	// 진짜 모델이 붙기 전까지 큐브를 칠하는 용도라 정확할 필요는 없고 구분만
-	// 되면 된다. Client/Content/Pokemon/Asset 의 폴더가 들어오면 이 팔레트는
-	// 쓰이지 않는다 (ApplyDebugAppearance 가 SkeletalMesh 있으면 바로 빠진다).
-	//
-	// 순서를 바꾸면 서버 id 와 어긋난다. PokemonSpecies.h 와 같이 고칠 것.
-	const TArray<FLinearColor>& SpeciesPalette()
-	{
-		static const TArray<FLinearColor> Palette = {
-			FLinearColor(0.45f, 0.35f, 0.20f),  //  1 귀뚤뚜기   갈색
-			FLinearColor(0.25f, 0.20f, 0.30f),  //  2 기라티나   흑자
-			FLinearColor(0.20f, 0.35f, 0.75f),  //  3 꼬링크     남청
-			FLinearColor(0.35f, 0.65f, 0.85f),  //  4 꼬부기     하늘
-			FLinearColor(0.70f, 0.90f, 0.95f),  //  5 꽁어름     얼음
-			FLinearColor(0.30f, 0.55f, 0.95f),  //  6 디아루가   강청
-			FLinearColor(0.90f, 0.85f, 0.90f),  //  7 랄토스     흰보라
-			FLinearColor(0.35f, 0.70f, 0.35f),  //  8 모부기     초록
-			FLinearColor(0.55f, 0.55f, 0.60f),  //  9 벼리짱     회색
-			FLinearColor(0.95f, 0.50f, 0.20f),  // 10 불꽃숭이   주황
-			FLinearColor(0.95f, 0.92f, 0.75f),  // 11 아르세우스 미백
-			FLinearColor(0.75f, 0.60f, 0.35f),  // 12 이브이     갈황
-			FLinearColor(0.30f, 0.75f, 0.45f),  // 13 이상해씨   연두
-			FLinearColor(0.80f, 0.20f, 0.30f),  // 14 자망칼     적흑
-			FLinearColor(0.40f, 0.30f, 0.25f),  // 15 터검니     암갈
-			FLinearColor(0.95f, 0.35f, 0.15f),  // 16 파이리     붉은주황
-			FLinearColor(0.95f, 0.95f, 0.45f),  // 17 파치리스   노랑
-			FLinearColor(0.20f, 0.45f, 0.80f),  // 18 팽도리     짙은파랑
-			FLinearColor(0.85f, 0.55f, 0.85f),  // 19 펄기아     분홍보라
-			FLinearColor(1.00f, 0.85f, 0.10f),  // 20 피카츄     노랑
-		};
-		return Palette;
-	}
-
-	// 종족 id 로 팔레트 색을 고른다. id 가 "1".."10" 이면 그 자리, 아니면
-	// 이름 해시로 아무 색이나 안정적으로 배정한다 (같은 종족은 늘 같은 색).
-	FLinearColor ColorForSpecies(FName SpeciesId)
-	{
-		const TArray<FLinearColor>& Palette = SpeciesPalette();
-		const FString Name = SpeciesId.ToString();
-		if (Name.IsNumeric())
-		{
-			const int32 Number = FCString::Atoi(*Name);
-			if (Number >= 1 && Number <= Palette.Num())
-			{
-				return Palette[Number - 1];
-			}
-		}
-
-		const uint32 Hash = GetTypeHash(SpeciesId);
-		return Palette[Hash % static_cast<uint32>(Palette.Num())];
-	}
-}
 
 AUEPokemonCharacter::AUEPokemonCharacter()
 {
@@ -87,6 +32,7 @@ AUEPokemonCharacter::AUEPokemonCharacter()
 	ConfigureServerDrivenMovement();
 
 	ServerComponent = CreateDefaultSubobject<UUEPokemonServerComponent>(TEXT("ServerComponent"));
+	SummonEffectComponent = CreateDefaultSubobject<UUEPokemonSummonEffectComponent>(TEXT("SummonEffectComponent"));
 }
 
 void AUEPokemonCharacter::BeginPlay()
@@ -130,7 +76,7 @@ void AUEPokemonCharacter::SetPokemonSpeciesData(UUEPokemonSpeciesData* NewSpecie
 
 void AUEPokemonCharacter::SetWildSpecies(int32 SpeciesNumber)
 {
-	// 종족 번호를 이름으로 박아 착색이 팔레트를 그대로 쓰게 한다.
+	// 서버 종족 번호는 카탈로그 조회와 디버그 식별에만 사용한다.
 	ServerSpeciesId = FName(*FString::FromInt(SpeciesNumber));
 	RenderType = EUEPokemonRenderType::Wild;
 
@@ -242,22 +188,12 @@ void AUEPokemonCharacter::ApplyDebugAppearance()
 		return;
 	}
 
-	// DebugColor 의 알파가 0 이면 미설정 → 종족 팔레트. 아니면 데이터 값 우선.
-	const FName Species = GetPokemonSpeciesId();
-	FLinearColor Color;
-	if (Species.IsNone() && RenderType == EUEPokemonRenderType::Own)
+	// 색은 종족 데이터 에셋이 소유한다. 값이 없으면 원본 머티리얼을 그대로 둔다.
+	if (!PokemonSpeciesData || PokemonSpeciesData->DebugColor.A <= 0.0f)
 	{
-		// 플레이어 동행은 피카츄로 취급한다 (PokemonSpecies.h 의 20번).
-		Color = ColorForSpecies(FName(TEXT("20")));
+		return;
 	}
-	else
-	{
-		Color = ColorForSpecies(Species);
-	}
-	if (PokemonSpeciesData && PokemonSpeciesData->DebugColor.A > 0.f)
-	{
-		Color = PokemonSpeciesData->DebugColor;
-	}
+	const FLinearColor Color = PokemonSpeciesData->DebugColor;
 
 	// BasicShapeMaterial 에는 색 파라미터가 없어 이대로는 회색 큐브다. 색이
 	// 실제로 나오게 하려면 Color(VectorParameter) 하나 있는 머티리얼을 큐브에
@@ -283,9 +219,11 @@ void AUEPokemonCharacter::ApplyServerStats(float ServerCurrentHP, float ServerMa
 
 void AUEPokemonCharacter::ApplyServerMoveTarget(const FVector& ServerLocation, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bTeleported)
 {
+	ServerMoveStartLocation = GetActorLocation();
+	ServerMoveStartRotation = GetActorRotation();
 	TargetServerLocation = ServerLocation;
-	TargetServerVelocity = ServerVelocity;
 	TargetServerRotation = ServerRotation;
+	ServerMoveElapsedSeconds = 0.0f;
 	bHasServerMoveTarget = true;
 
 	const float DistanceToServer = FVector::Dist(GetActorLocation(), ServerLocation);
@@ -293,9 +231,29 @@ void AUEPokemonCharacter::ApplyServerMoveTarget(const FVector& ServerLocation, c
 	{
 		SetActorLocation(ServerLocation, false, nullptr, ETeleportType::TeleportPhysics);
 		SetActorRotation(ServerRotation, ETeleportType::TeleportPhysics);
-		GetCharacterMovement()->Velocity = ServerVelocity;
+
+		// 순간이동 거리를 이동 속도로 취급하면 한 프레임 동안 달리기 애니메이션이 튄다.
+		// 다음 일반 이동 스냅샷을 받을 때까지 정지 속도로 유지한다.
+		GetCharacterMovement()->Velocity = FVector::ZeroVector;
 		bHasServerMoveTarget = false;
+		return;
 	}
+
+	// 네트워크 패킷이 잠시 밀려 목표점이 멀어져도 한 프레임에 따라잡지 않는다.
+	// 종별 DataAsset의 MoveSpeed를 상한으로 삼아 갑작스러운 가속과 떨림을 막는다.
+	const float SnapshotVelocity = ServerVelocity.Size2D();
+	const bool bHasAuthoritativeVelocity = SnapshotVelocity > UE_KINDA_SMALL_NUMBER;
+	const float MaximumVisualSpeed = bHasAuthoritativeVelocity
+		? SnapshotVelocity
+		: FMath::Max(ConfiguredMoveSpeed, 1.0f);
+	const float RequiredMoveSeconds = DistanceToServer / MaximumVisualSpeed;
+
+	// 로컬 서버 컴포넌트는 산책 속도 배율이 적용된 실제 속도를 함께 보낸다.
+	// 이 값을 무시하고 종별 최고속도로 움직이면 빠르게 이동한 뒤 멈추는 동작이
+	// 20Hz마다 반복되므로, 목표 거리와 실제 속도로 정확한 구간 시간을 계산한다.
+	ServerMoveDurationSeconds = bHasAuthoritativeVelocity
+		? FMath::Max(RequiredMoveSeconds, UE_SMALL_NUMBER)
+		: FMath::Max(ServerSnapshotIntervalSeconds, RequiredMoveSeconds);
 }
 
 void AUEPokemonCharacter::ApplyServerAnimationSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot)
@@ -334,35 +292,44 @@ void AUEPokemonCharacter::ApplyServerAnimationSnapshot(const FUEPokemonServerMov
 
 void AUEPokemonCharacter::UpdateServerDrivenMovement(float DeltaSeconds)
 {
+	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
 	if (!bHasServerMoveTarget)
 	{
-		// 목표에 도달했다. 속도를 남겨두면 제자리에 서서 걷는 모션이 계속 돈다.
-		GetCharacterMovement()->Velocity = FVector::ZeroVector;
+		// 서버 스냅샷 사이에 이미 목표점에 도착했다면 남아 있는 목표 속도를 지운다.
+		// 이 값이 남으면 몸은 멈췄는데 걷기 애니메이션만 계속 재생된다.
+		if (MovementComponent)
+		{
+			MovementComponent->Velocity = FVector::ZeroVector;
+		}
 		return;
 	}
 
 	const FVector PreviousLocation = GetActorLocation();
-	const FVector NewLocation = FMath::VInterpTo(PreviousLocation, TargetServerLocation, DeltaSeconds, ServerLocationInterpSpeed);
-	const FRotator NewRotation = FMath::RInterpTo(GetActorRotation(), TargetServerRotation, DeltaSeconds, ServerRotationInterpSpeed);
+	ServerMoveElapsedSeconds += FMath::Max(DeltaSeconds, 0.0f);
+	const float SafeMoveDuration = FMath::Max(ServerMoveDurationSeconds, UE_SMALL_NUMBER);
+	const float MoveAlpha = FMath::Clamp(ServerMoveElapsedSeconds / SafeMoveDuration, 0.0f, 1.0f);
+
+	// VInterpTo는 새 20Hz 좌표가 올 때마다 빠르게 출발했다가 느려져 속도가 맥동한다.
+	// 선형 보간은 구간 전체의 속도를 일정하게 유지해 몸과 발의 부들거림을 없앤다.
+	const FVector NewLocation = FMath::Lerp(ServerMoveStartLocation, TargetServerLocation, MoveAlpha);
+	const FQuat NewRotation = FQuat::Slerp(
+		ServerMoveStartRotation.Quaternion(),
+		TargetServerRotation.Quaternion(),
+		MoveAlpha).GetNormalized();
 
 	SetActorLocation(NewLocation, false);
 	SetActorRotation(NewRotation);
 
-	// SetActorLocation 은 직접 옮기는 것이라 CharacterMovement 가 속도를 계산해 주지
-	// 않는다. 여기서 채우지 않으면 GetVelocity() 가 0 이고, 애님 BP 의 GroundSpeed 가
-	// 늘 0 이라 걸어다니는 동안에도 idle 만 나온다.
-	//
-	// 서버가 준 속도가 아니라 **이번 프레임에 실제로 움직인 양**에서 뽑는다. 보간
-	// 때문에 화면에서 움직이는 속도는 서버 의도와 다른데, 애니메이션은 눈에 보이는
-	// 움직임과 맞아야 한다.
-	if (DeltaSeconds > SMALL_NUMBER)
+	if (MovementComponent)
 	{
-		GetCharacterMovement()->Velocity = (NewLocation - PreviousLocation) / DeltaSeconds;
+		// 애니메이션에는 서버가 지시한 목표 속도가 아니라 화면에서 실제로 이동한 속도를 전달한다.
+		// 보간 중 남은 이동과 정지 구간까지 같은 기준을 사용해야 발이 땅에서 덜 미끄러진다.
+		const float SafeDeltaSeconds = FMath::Max(DeltaSeconds, UE_SMALL_NUMBER);
+		MovementComponent->Velocity = (GetActorLocation() - PreviousLocation) / SafeDeltaSeconds;
 	}
 
-	if (FVector::DistSquared(NewLocation, TargetServerLocation) <= 1.0f)
+	if (MoveAlpha >= 1.0f)
 	{
-		SetActorLocation(TargetServerLocation, false);
 		bHasServerMoveTarget = false;
 	}
 }

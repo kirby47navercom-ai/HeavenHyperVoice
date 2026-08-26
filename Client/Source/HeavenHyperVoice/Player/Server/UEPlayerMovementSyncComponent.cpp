@@ -37,6 +37,14 @@ void UUEPlayerMovementSyncComponent::BeginPlay()
 		return;
 	}
 
+	// 로비 카드의 UViewport 같은 미리보기 세계에서는 네트워크 시뮬레이션을 실행하지 않는다.
+	const UWorld* OwnerWorld = GetWorld();
+	if (!OwnerWorld || (OwnerWorld->WorldType != EWorldType::Game && OwnerWorld->WorldType != EWorldType::PIE))
+	{
+		SetComponentTickEnabled(false);
+		return;
+	}
+
 	// 다른 플레이어를 그리는 복제본에도 이 컴포넌트가 딸려 온다. 여기서
 	// 물러나지 않으면 시야에 들어온 사람 수만큼 필드 서버에 TLS 연결이 열린다.
 	if (PlayerCharacter->IsRemoteProxy())
@@ -47,6 +55,14 @@ void UUEPlayerMovementSyncComponent::BeginPlay()
 
 	PlayerCharacter->OnCharacterMovementUpdated.AddDynamic(this, &ThisClass::HandleCharacterMovementUpdated);
 	SaveLastValidatedServerState(PlayerCharacter->GetActorLocation(), PlayerCharacter->GetActorRotation());
+
+	// 프런트엔드의 로컬 로그인으로 입장한 동안에는 필드 서버 연결을 시작하지 않는다.
+	const UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetWorld()->GetGameInstance());
+	if (GameInstance && GameInstance->HasLocalSession())
+	{
+		SetComponentTickEnabled(false);
+		return;
+	}
 
 	if (bEnableLocalServerValidation)
 	{
@@ -84,6 +100,13 @@ void UUEPlayerMovementSyncComponent::TickComponent(float DeltaTime, ELevelTick T
 
 void UUEPlayerMovementSyncComponent::StartFieldConnection()
 {
+	if (FieldServerHost.IsEmpty() || FieldServerPort <= 0)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("PlayerMovementSync: FieldServerHost 또는 FieldServerPort가 DefaultGame.ini에 설정되지 않았습니다."));
+		return;
+	}
+
 	if (!WildPokemonClass)
 	{
 		UE_LOG(LogTemp, Error,

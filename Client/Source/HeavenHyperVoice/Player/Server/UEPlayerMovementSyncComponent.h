@@ -32,7 +32,7 @@ struct FUEPlayerMovementHistoryEntry
 	FRotator ReportedRotation = FRotator::ZeroRotator;
 };
 
-UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+UCLASS(ClassGroup = (Custom), Config = Game, DefaultConfig, meta = (BlueprintSpawnableComponent))
 class HEAVENHYPERVOICE_API UUEPlayerMovementSyncComponent : public UActorComponent
 {
 	GENERATED_BODY()
@@ -113,17 +113,18 @@ protected:
 	FString DefaultServerMapFileName;
 
 	/** Ignored while bEnableLocalServerValidation is on. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
-	// 로그인 서버를 거쳐 오면 티켓과 함께 받은 주소가 이 값을 덮는다.
-	// dev 경로(--dev-no-auth)로 직접 붙을 때만 쓰인다.
-	FString FieldServerHost = TEXT("127.0.0.1");
+	// ini(DefaultGame.ini)에서 온다. 로그인 서버를 거쳐 오면 티켓과 함께 받은
+	// 주소가 이 값을 덮으므로, 실제로 쓰이는 것은 dev 경로(--dev-no-auth)로
+	// 직접 붙을 때뿐이다.
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
+	FString FieldServerHost;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server", meta = (ClampMin = "1", ClampMax = "65535"))
-	int32 FieldServerPort = 9200;
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server", meta = (ClampMin = "1", ClampMax = "65535"))
+	int32 FieldServerPort = 0;
 
 	/** Requires the server to run with --dev-no-auth. Replaced by a login ticket later. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
-	FString DevCharacterName = TEXT("UEClient");
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
+	FString DevCharacterName;
 
 	// 이 값을 그대로 두면 StartFieldConnection 이 머신마다 다른 번호를 만들어 쓴다.
 	// --dev-no-auth 서버는 account_id 를 dev_character_id 와 같은 값으로 두고,
@@ -131,15 +132,15 @@ protected:
 	// 나중에 붙은 쪽이 먼저 붙은 쪽을 튕겨내 서로 보이는 것을 확인할 수 없다.
 	static constexpr int64 DefaultDevCharacterId = 9001;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server", meta = (ClampMin = "1"))
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server", meta = (ClampMin = "1"))
 	int64 DevCharacterId = DefaultDevCharacterId;
 
 	/** The server drops moves closer together than 10ms and ticks at 20Hz. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server", meta = (ClampMin = "0.01"))
-	float SendIntervalSeconds = 0.05f;
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server", meta = (ClampMin = "0.01"))
+	float SendIntervalSeconds = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
-	float WorldOriginOffset = 25600.0f;
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")
+	float WorldOriginOffset = 0.0f;
 
 	/** 서버 야생 포켓몬을 그릴 액터 클래스. 소유 캐릭터 Blueprint에서 지정한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement Sync|Field Server")

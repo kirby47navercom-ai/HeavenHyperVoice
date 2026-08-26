@@ -11,8 +11,7 @@
 			"AdditionalDependencies": [
 				"Engine",
 				"AIModule",
-				"GameplayAbilities",
-				"GeometryScriptingEditor"
+				"GameplayAbilities"
 			]
 		}
 	],
@@ -52,6 +51,13 @@
 		},
 		{
 			"Name": "PythonScriptPlugin",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			]
+		},
+		{
+			"Name": "CascadeToNiagaraConverter",
 			"Enabled": true,
 			"TargetAllowList": [
 				"Editor"

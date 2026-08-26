@@ -1,5 +1,3 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
 #include "UEPlayerController.h"
 
 #include "../Character/UEPlayerCharacter.h"
@@ -194,10 +192,8 @@ AUEPlayerCharacter* AUEPlayerController::GetControlledPlayerCharacter() const
 
 void AUEPlayerController::HandleMove(const FInputActionValue& Value)
 {
-	// 입력 에셋은 X=좌우, Y=앞뒤 순서로 값을 보낸다.
-	// 캐릭터 내부 기준은 X=앞뒤, Y=좌우이므로 여기서 한 번만 교환한다.
-	const FVector2D RawInput = Value.Get<FVector2D>();
-	PendingMovementInput = FVector2D(RawInput.Y, RawInput.X);
+	// 이동 입력은 X=앞/뒤, Y=좌/우로 캐릭터까지 그대로 전달한다.
+	PendingMovementInput = Value.Get<FVector2D>();
 	PushMovementInputToCharacter();
 }
 

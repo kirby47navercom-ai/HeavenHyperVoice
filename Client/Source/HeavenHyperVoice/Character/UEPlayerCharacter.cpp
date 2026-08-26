@@ -10,6 +10,7 @@
 #include "../Pokemon/UEPokemonSpeciesData.h"
 #include "../Pokemon/Server/UEPokemonServerComponent.h"
 #include "../Pokemon/Server/UEPokemonServerSubsystem.h"
+#include "../Pokemon/Effects/UEPokemonSummonEffectComponent.h"
 #include "../Pokemon/UEPokemonWorldSubsystem.h"
 #include "../System/UEGameInstance.h"
 #include "../UEGameplayTags.h"
@@ -374,10 +375,6 @@ void AUEPlayerCharacter::Tick(float DeltaSeconds)
 		return;
 	}
 
-	if (bIsRolling && bRollMovementActive)
-	{
-		ApplyRollMovement();
-	}
 	else if (!bIsRolling)
 	{
 		ApplyLocalMovementInput();
@@ -611,21 +608,8 @@ void AUEPlayerCharacter::RefreshCharacterState()
 
 void AUEPlayerCharacter::FinishRoll()
 {
-	FinishRollMovement();
 	bIsRolling = false;
 	RefreshCharacterState();
-}
-
-void AUEPlayerCharacter::FinishRollMovement()
-{
-	bRollMovementActive = false;
-	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
-	{
-		FVector StoppedVelocity = MovementComponent->Velocity;
-		StoppedVelocity.X = 0.0f;
-		StoppedVelocity.Y = 0.0f;
-		MovementComponent->Velocity = StoppedVelocity;
-	}
 }
 
 void AUEPlayerCharacter::FinishLanding()
@@ -673,10 +657,14 @@ void AUEPlayerCharacter::TogglePokemonCompanion()
 
 	if (IsValid(SpawnedPokemon))
 	{
+		// R 키는 플레이어 모션을 재생하지 않는다. 포켓몬 쪽 연출 컴포넌트가
+		// 포켓몬의 빛을 플레이어 몸으로 되돌린 뒤 안전하게 파괴한다.
 		RequestDespawnPokemonCompanion();
 		return;
 	}
 
+	// 볼을 던지는 동작 대신 플레이어 몸에서 소환 위치로 빛이 이동한다.
+	// 자동 소환도 같은 TrySpawn 경로를 사용하므로 입력/자동 소환의 화면 규칙이 같다.
 	TrySpawnPokemonCompanion();
 }
 
@@ -750,21 +738,6 @@ void AUEPlayerCharacter::ApplyLocalMovementInput()
 	// 이동 입력은 카메라 yaw 기준으로 계산하고, 대기 중 카메라 회전만으로 캐릭터를 돌리지는 않는다.
 	const float InputStrength = FMath::Clamp(MovementInput.Size(), 0.0f, 1.0f);
 	AddMovementInput(DesiredDirection, InputStrength);
-}
-
-void AUEPlayerCharacter::ApplyRollMovement()
-{
-	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
-	if (!MovementComponent)
-	{
-		return;
-	}
-
-	// 구르기 동안 지면 마찰에 감속되지 않도록 캡슐의 수평 속도를 유지한다.
-	FVector RollVelocity = MovementComponent->Velocity;
-	RollVelocity.X = ActiveRollDirection.X * RollLaunchSpeed;
-	RollVelocity.Y = ActiveRollDirection.Y * RollLaunchSpeed;
-	MovementComponent->Velocity = RollVelocity;
 }
 
 FVector AUEPlayerCharacter::GetCameraForwardAxis(const FRotator& ViewRotation) const
@@ -878,6 +851,16 @@ bool AUEPlayerCharacter::TrySpawnPokemonCompanion()
 		NewPokemon->SetPokemonSpeciesData(SpawnResponse.SpeciesData);
 		NewPokemon->ApplyServerStats(SpawnResponse.CurrentHP, SpawnResponse.MaxHP);
 	}
+	float SpawnDuration = PokemonSpawnAnimationDuration;
+	if (UUEPokemonSummonEffectComponent* SummonEffect = NewPokemon->GetSummonEffectComponent())
+	{
+		// 빛의 시작점은 포켓몬 Owner를 추측하지 않고 이 플레이어로 명시한다.
+		// 모듈형 몸 메시의 spine_03을 찾아 베지어 곡선 P0로 사용한다.
+		SummonEffect->SetEffectBodyActor(this);
+		// 메시와 종별 크기가 모두 적용된 뒤 시작해야 입자와 발광 크기가 포켓몬에 맞는다.
+		// 반환된 실제 시간을 서버 애니메이션 상태에도 넘겨 화면 연출과 상태 종료를 맞춘다.
+		SpawnDuration = SummonEffect->PlaySpawnEffect(PokemonSpawnAnimationDuration);
+	}
 	if (UUEPokemonServerComponent* ServerComponent = NewPokemon->GetServerComponent())
 	{
 		ServerComponent->InitializeServerRuntimePokemon(
@@ -890,14 +873,13 @@ bool AUEPlayerCharacter::TrySpawnPokemonCompanion()
 		ServerComponent->SendServerAnimationEvent(
 			EUEPokemonAnimationEvent::SpawnStarted,
 			EUEPokemonAnimationState::Spawning,
-			PokemonSpawnAnimationDuration
+			SpawnDuration
 		);
 	}
 	if (UUEPokemonWorldSubsystem* PokemonWorldSubsystem = GetPokemonWorldSubsystem())
 	{
 		PokemonWorldSubsystem->RegisterExistingPokemon(NewPokemon, EUEPokemonRenderType::Own, ServerPlayerId);
 	}
-
 	PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::NonCombat);
 	BP_OnPokemonSpawned(NewPokemon);
 	return true;
@@ -922,19 +904,27 @@ void AUEPlayerCharacter::RequestDespawnPokemonCompanion()
 
 	PendingDespawnPokemon = SpawnedPokemon;
 	bPokemonDespawnInProgress = true;
+	float DespawnDuration = PokemonDespawnDelay;
+	if (UUEPokemonSummonEffectComponent* SummonEffect = PendingDespawnPokemon->GetSummonEffectComponent())
+	{
+		// 귀환 곡선의 마지막 점 P3도 이 플레이어의 현재 가슴 위치로 고정한다.
+		SummonEffect->SetEffectBodyActor(this);
+		// 설정값이 0이어도 컴포넌트 기본 시간으로 연출하고, 반환 시간을 파괴 타이머와 맞춘다.
+		DespawnDuration = SummonEffect->PlayDespawnEffect(PokemonDespawnDelay);
+	}
 	if (UUEPokemonServerComponent* ServerComponent = PendingDespawnPokemon->GetServerComponent())
 	{
 		ServerComponent->SendServerAnimationEvent(
 			EUEPokemonAnimationEvent::DespawnStarted,
 			EUEPokemonAnimationState::Despawning,
-			PokemonDespawnDelay
+			DespawnDuration
 		);
 	}
 	BP_OnPokemonDespawnRequested(PendingDespawnPokemon.Get());
 
-	if (PokemonDespawnDelay > 0.0f)
+	if (DespawnDuration > 0.0f)
 	{
-		GetWorldTimerManager().SetTimer(PokemonDespawnTimerHandle, this, &ThisClass::FinishPokemonDespawn, PokemonDespawnDelay, false);
+		GetWorldTimerManager().SetTimer(PokemonDespawnTimerHandle, this, &ThisClass::FinishPokemonDespawn, DespawnDuration, false);
 		return;
 	}
 
@@ -1420,10 +1410,10 @@ void AUEPlayerCharacter::Roll()
 	{
 		ActiveRollDirection = GetActorForwardVector().GetSafeNormal2D();
 	}
+	SetActorRotation(ActiveRollDirection.Rotation());
 
 	CancelLanding();
 	bIsRolling = true;
-	bRollMovementActive = true;
 	RefreshCharacterState();
 	float RollMontageDuration = 0.0f;
 	if (UUEAnimInstance* PlayerAnimInstance = Cast<UUEAnimInstance>(GetMesh()->GetAnimInstance()))
@@ -1437,18 +1427,11 @@ void AUEPlayerCharacter::Roll()
 				? AnimationSet.RollSequence.Get()
 				: PlayerAnimationData->RollSequence.Get();
 		}
-		RollMontageDuration = PlayerAnimInstance->PlayRollMontage(RollAnimation);
+		RollMontageDuration = PlayerAnimInstance->PlayRollMontage(
+			RollAnimation,
+			RollAnimationPlayRate);
 	}
 
-	// 애니메이션의 루트 이동은 사용하지 않으므로 실제 캡슐을 입력 방향으로 이동시킨다.
-	ApplyRollMovement();
-	GetWorldTimerManager().ClearTimer(RollMovementTimerHandle);
-	GetWorldTimerManager().SetTimer(
-		RollMovementTimerHandle,
-		this,
-		&ThisClass::FinishRollMovement,
-		FMath::Max(RollTravelDuration, 0.01f),
-		false);
 	GetWorldTimerManager().ClearTimer(RollStateTimerHandle);
 	GetWorldTimerManager().SetTimer(
 		RollStateTimerHandle,

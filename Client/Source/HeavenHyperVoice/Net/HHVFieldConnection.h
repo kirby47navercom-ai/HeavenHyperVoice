@@ -59,8 +59,8 @@ struct FHHVFieldEventData
 
 struct FHHVFieldSettings
 {
-	FString Host = TEXT("127.0.0.1");
-	int32 Port = 9200;
+	FString Host;
+	int32 Port = 0;
 
 	/**
 	 * LoginServer 가 audience:"field" 로 서명한 티켓. 비어 있지 않으면 이것만
