@@ -243,6 +243,11 @@ void UUEGameInstance::ClearLocalSession()
 	bHasLocalSession = false;
 }
 
+void UUEGameInstance::SetServerAddress(const FString& ServerAddress)
+{
+	SelectedServerAddress = ServerAddress.TrimStartAndEnd();
+}
+
 void UUEGameInstance::LoadCharacterSlots()
 {
 	CharacterSlotSave = Cast<UUECharacterSlotSaveGame>(

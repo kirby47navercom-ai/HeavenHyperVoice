@@ -9,15 +9,8 @@
 -- 원하는 노드만 intent 에 목표를 채운다. 새 행동을 넣으려면 노드 함수를
 -- 하나 만들어 selector 에 끼우면 되고 C++ 은 건드리지 않는다.
 
--- 야생이 돌아다니는 구역. 월드 전체가 아니라 중앙의 정사각형으로 묶어 둔다.
--- 클라이언트는 원점이 월드 중앙이므로(WorldOriginOffset), 언리얼 좌표로는
--- -4000 ~ +4000 인 8000x8000 상자다.
-local AREA_CENTER      = 25600.0   -- FieldGeometry.h 의 kSpawnX / kSpawnY
-local AREA_HALF_EXTENT = 4000.0
-local WANDER_RADIUS    = 1500.0    -- 한 번에 배회하는 최대 거리.
-                                   -- 구역 반폭(4000)만큼 크게 두면 고른 목표가
-                                   -- 매번 구역 밖이라 전부 경계로 클램프되고,
-                                   -- 야생이 테두리에 몰려 선다.
+local WORLD_SIZE       = 51200.0   -- FieldGeometry.h 의 kWorldSize 와 같아야 한다
+local WANDER_RADIUS    = 4000.0    -- 한 번에 배회하는 최대 거리
 local ARRIVE_RADIUS    = 80.0      -- 이보다 가까우면 도착으로 본다
 local REST_MIN         = 1.5       -- 목표 사이 쉬는 시간(초) 범위
 local REST_MAX         = 4.0
@@ -36,11 +29,9 @@ local function board_of(id, x, y)
     return b
 end
 
-local function clamp_area(v)
-    local lo = AREA_CENTER - AREA_HALF_EXTENT
-    local hi = AREA_CENTER + AREA_HALF_EXTENT
-    if v < lo then return lo end
-    if v > hi then return hi end
+local function clamp_world(v)
+    if v < 0.0 then return 0.0 end
+    if v > WORLD_SIZE then return WORLD_SIZE end
     return v
 end
 
@@ -67,8 +58,8 @@ local function node_pick_target(bb, x, y)
     end
     local angle = math.random() * math.pi * 2.0
     local radius = math.random() * WANDER_RADIUS
-    bb.tx = clamp_area(x + math.cos(angle) * radius)
-    bb.ty = clamp_area(y + math.sin(angle) * radius)
+    bb.tx = clamp_world(x + math.cos(angle) * radius)
+    bb.ty = clamp_world(y + math.sin(angle) * radius)
     bb.has_target = true
     return SUCCESS
 end

@@ -12,24 +12,30 @@ void UUEAnimInstance::NativeInitializeAnimation()
 {
 	Super::NativeInitializeAnimation();
 	OwnerCharacter = Cast<AUEPlayerCharacter>(TryGetPawnOwner());
-	SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
 }
 
-float UUEAnimInstance::PlayRollMontage(UAnimSequenceBase* RollAnimation)
+float UUEAnimInstance::PlayRollMontage(UAnimSequenceBase* RollAnimation, float PlayRate)
 {
 	if (!RollAnimation)
 	{
 		return 0.0f;
 	}
 
+	if (RollMontageSlotName.IsNone())
+	{
+		return 0.0f;
+	}
+
+	const float SafePlayRate = FMath::Max(PlayRate, MinimumMontagePlayRate);
+
 	UAnimMontage* RollMontage = PlaySlotAnimationAsDynamicMontage(
 		RollAnimation,
-		TEXT("FullBodySlot"),
-		0.1f,
-		0.1f,
-		1.0f,
+		RollMontageSlotName,
+		RollBlendInTime,
+		RollBlendOutTime,
+		SafePlayRate,
 		1);
-	return RollMontage ? RollMontage->GetPlayLength() : 0.0f;
+	return RollMontage ? RollMontage->GetPlayLength() / SafePlayRate : 0.0f;
 }
 
 void UUEAnimInstance::NativeUpdateAnimation(float DeltaSeconds)

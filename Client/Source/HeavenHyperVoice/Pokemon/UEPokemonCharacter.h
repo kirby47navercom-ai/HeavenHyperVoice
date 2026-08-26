@@ -7,6 +7,7 @@
 #include "UEPokemonCharacter.generated.h"
 
 class UUEPokemonServerComponent;
+class UUEPokemonSummonEffectComponent;
 class UUEPokemonSpeciesCatalog;
 class UUEPokemonSpeciesData;
 
@@ -220,6 +221,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Server")
 	UUEPokemonServerComponent* GetServerComponent() const { return ServerComponent; }
 
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Effects")
+	UUEPokemonSummonEffectComponent* GetSummonEffectComponent() const { return SummonEffectComponent; }
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -238,17 +242,20 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UUEPokemonServerComponent> ServerComponent = nullptr;
 
+	// 서버 상태와 분리된 소환/귀환 화면 연출 컴포넌트다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|Effects", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UUEPokemonSummonEffectComponent> SummonEffectComponent = nullptr;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Species", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UUEPokemonSpeciesData> PokemonSpeciesData = nullptr;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Species", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UUEPokemonSpeciesCatalog> PokemonSpeciesCatalog = nullptr;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
-	float ServerLocationInterpSpeed = 12.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
-	float ServerRotationInterpSpeed = 12.0f;
+	// 필드 서버는 20Hz로 좌표를 보낸다. 클라이언트는 이 시간 동안 이전 좌표와
+	// 새 좌표를 일정한 속도로 연결해 프레임 사이의 떨림을 없앤다.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true", ClampMin = "0.01", ClampMax = "0.2"))
+	float ServerSnapshotIntervalSeconds = 0.05f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float ServerHardSnapDistance = 300.0f;
@@ -259,10 +266,19 @@ private:
 	FVector TargetServerLocation = FVector::ZeroVector;
 
 	UPROPERTY(Transient)
-	FVector TargetServerVelocity = FVector::ZeroVector;
+	FVector ServerMoveStartLocation = FVector::ZeroVector;
 
 	UPROPERTY(Transient)
 	FRotator TargetServerRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(Transient)
+	FRotator ServerMoveStartRotation = FRotator::ZeroRotator;
+
+	UPROPERTY(Transient)
+	float ServerMoveElapsedSeconds = 0.0f;
+
+	UPROPERTY(Transient)
+	float ServerMoveDurationSeconds = 0.05f;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Stats", meta = (AllowPrivateAccess = "true"))
 	float CurrentHP = 100.0f;

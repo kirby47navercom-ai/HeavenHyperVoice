@@ -249,14 +249,7 @@ int main(int argc, char** argv) {
             // --wild-seed 가 같은 판을 실제로 재현한다.
             wildAi->seed(options.wildSeed);
             std::mt19937 rng(options.wildSeed != 0 ? options.wildSeed : std::random_device{}());
-
-            // 월드 전체에 흩뿌리지 않고 중앙 8000x8000 안에만 넣는다. 배회 구역도
-            // 같은 상자다 (scripts/wild_ai.lua 의 AREA_*). 두 값이 어긋나면 스폰된
-            // 자리에서 구역 안으로 걸어 들어가느라 처음 몇 초가 어색해진다.
-            constexpr float kWildAreaHalfExtent = 4000.f;
-            std::uniform_real_distribution<float> coord(
-                heaven::proto::kSpawnX - kWildAreaHalfExtent,
-                heaven::proto::kSpawnX + kWildAreaHalfExtent);
+            std::uniform_real_distribution<float> coord(0.f, heaven::proto::kWorldSize);
             std::uniform_int_distribution<int> species(1, static_cast<int>(
                                                               heaven::proto::kSpeciesCount));
 

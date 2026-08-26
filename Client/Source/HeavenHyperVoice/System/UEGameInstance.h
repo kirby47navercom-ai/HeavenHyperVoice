@@ -91,6 +91,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "HHV|Local Session")
 	FString GetLocalSessionNickname() const { return LocalSessionNickname; }
 
+	// 로그인 전에 고른 서버 주소를 이후 레벨에서도 사용할 수 있게 보관한다.
+	UFUNCTION(BlueprintCallable, Category = "HHV|Server")
+	void SetServerAddress(const FString& ServerAddress);
+
+	UFUNCTION(BlueprintPure, Category = "HHV|Server")
+	FString GetServerAddress() const { return SelectedServerAddress; }
+
 private:
 	void LoadCharacterSlots();
 	bool SaveCharacterSlots() const;
@@ -125,5 +132,8 @@ private:
 
 	UPROPERTY(Transient)
 	bool bHasLocalSession = false;
+
+	UPROPERTY(Transient)
+	FString SelectedServerAddress;
 	
 };

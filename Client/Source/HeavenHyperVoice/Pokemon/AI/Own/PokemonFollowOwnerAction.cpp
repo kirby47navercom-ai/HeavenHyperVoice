@@ -31,14 +31,10 @@ namespace HHV::PokemonAI
 
 	Command FollowOwnerAction::Tick(const OwnContext& Context)
 	{
-		const float DistanceToOwner = Distance2D(Context.PokemonLocation, Context.OwnerLocation);
-		if (DistanceToOwner >= Settings.TeleportDistance)
+		if (Distance2D(Context.PokemonLocation, Context.OwnerLocation) >= Settings.TeleportDistance)
 		{
 			return MakeTeleportCommand(CalculateOwnerTeleportTarget(Context));
 		}
-
-		// 아래에서 MoveTo 를 만드는 두 곳이 이 값을 싣는다.
-		CurrentCatchUpScale = CalculateCatchUpSpeedScale(DistanceToOwner);
 
 		if (!Context.ServerMap || !Context.ServerMap->IsLoaded())
 		{
@@ -119,7 +115,6 @@ namespace HHV::PokemonAI
 		Result.Type = CommandType::MoveTo;
 		Result.TargetLocation = TargetLocation;
 		Result.AcceptanceRadius = Settings.MoveAcceptanceRadius;
-		Result.MoveSpeedScale = CurrentCatchUpScale;
 		return Result;
 	}
 
@@ -155,7 +150,6 @@ namespace HHV::PokemonAI
 		OutCommand.TargetLocation = PathResult.Points.size() > 1 ? PathResult.Points[1] : PathResult.Points.back();
 		OutCommand.AcceptanceRadius = Settings.MoveAcceptanceRadius;
 		OutCommand.PathPoints = PathResult.Points;
-		OutCommand.MoveSpeedScale = CurrentCatchUpScale;
 		return true;
 	}
 
@@ -204,21 +198,6 @@ namespace HHV::PokemonAI
 		}
 
 		return Context.OwnerLocation;
-	}
-
-	// 가까우면 등속, 멀수록 선형으로 빨라진다. TeleportDistance 에 닿기 전에
-	// 최대 배율이 나와야 순간이동까지 가지 않는다.
-	float FollowOwnerAction::CalculateCatchUpSpeedScale(float DistanceToOwner) const
-	{
-		const float Near = Settings.CatchUpNearDistance;
-		const float Far = Settings.TeleportDistance;
-		if (DistanceToOwner <= Near || Far <= Near)
-		{
-			return 1.0f;
-		}
-
-		const float Alpha = std::min((DistanceToOwner - Near) / (Far - Near), 1.0f);
-		return 1.0f + (Settings.CatchUpMaxScale - 1.0f) * Alpha;
 	}
 
 	float FollowOwnerAction::Distance2D(const HHV::Map::Vec3& A, const HHV::Map::Vec3& B) const

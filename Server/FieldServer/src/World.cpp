@@ -15,8 +15,30 @@ namespace {
 constexpr float kEnterRadiusSquared = proto::kEnterRadius * proto::kEnterRadius;
 constexpr float kExitRadiusSquared = proto::kExitRadius * proto::kExitRadius;
 
-// 야생 포켓몬 이동 속도. 플레이어 달리기(kMaxSpeed)보다 느린 걷기.
-constexpr float kWildSpeed = 200.f;
+// 일반 포켓몬의 이동 속도는 클라이언트 DataAsset에서 측정한 달리기 보폭과
+// 같은 cm/s를 사용한다. 모든 종에 공통 200을 쓰면 작은 포켓몬은 미끄러지고
+// 지나치게 빨라 보이므로 종족 번호별로 서버 권위 속도를 나눈다.
+float wildMoveSpeed(std::uint16_t species) {
+    switch (species) {
+    case 1:  return 44.09f;   // 귀뚤뚜기
+    case 3:  return 98.05f;   // 꼬링크
+    case 4:  return 80.08f;   // 꼬부기
+    case 5:  return 29.47f;   // 꽁어름
+    case 7:  return 25.27f;   // 랄토스
+    case 8:  return 60.93f;   // 모부기
+    case 9:  return 66.50f;   // 벼리짱
+    case 10: return 86.41f;   // 불꽃숭이
+    case 12: return 68.42f;   // 이브이
+    case 13: return 108.51f;  // 이상해씨
+    case 14: return 113.51f;  // 자망칼
+    case 15: return 74.17f;   // 터검니
+    case 16: return 101.33f;  // 파이리
+    case 17: return 45.66f;   // 파치리스
+    case 18: return 95.56f;   // 팽도리
+    case 20: return 60.90f;   // 피카츄
+    default: return 100.0f;   // 아직 보폭을 확정하지 않은 종의 임시 안전 속도
+    }
+}
 
 // 캡슐 크기는 클라이언트 기본값과 같아야 예측이 어긋나지 않는다. 서버가
 // 뜬 뒤로 바뀌지 않으므로 상수로 둔다.
@@ -190,7 +212,9 @@ void World::advanceWild(float dt, WildAi& ai) {
             continue;
         }
 
-        const float step = kWildSpeed * dt;
+        // 서버 틱의 dt를 곱하므로 서버 부하나 클라이언트 FPS가 달라도
+        // 초당 이동 거리는 같고, 종별 애니메이션 보폭과도 일치한다.
+        const float step = wildMoveSpeed(entity.species) * dt;
         const float ratio = step >= distance ? 1.f : step / distance;
         const float nx = proto::clampToWorld(entity.position.x + dx * ratio);
         const float ny = proto::clampToWorld(entity.position.y + dy * ratio);

@@ -59,8 +59,8 @@ struct FHHVFieldEventData
 
 struct FHHVFieldSettings
 {
-	FString Host = TEXT("127.0.0.1");
-	int32 Port = 9200;
+	FString Host;
+	int32 Port = 0;
 
 	/** Server must be running with --dev-no-auth. Real tickets come later. */
 	FString DevName;

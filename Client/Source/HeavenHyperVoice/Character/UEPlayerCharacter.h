@@ -122,7 +122,6 @@ protected:
 	virtual void NotifyJumpApex() override;
 
 	void ApplyLocalMovementInput();
-	void ApplyRollMovement();
 	FVector GetCameraForwardAxis(const FRotator& ViewRotation) const;
 	FVector GetCameraRightAxis(const FRotator& ViewRotation) const;
 	FVector GetMoveDirectionFromInput(const FVector2D& Input, const FRotator& ViewRotation) const;
@@ -229,7 +228,6 @@ private:
 	void RefreshMovementSpeed();
 	void RefreshCharacterState();
 	void FinishRoll();
-	void FinishRollMovement();
 	void CancelLanding();
 	void FinishLanding();
 	void RegisterPokemonServerRoster();
@@ -302,11 +300,9 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Character|State", meta = (ClampMin = "0.0"))
 	float RollStateDuration = 0.6f;
 
-	UPROPERTY(EditAnywhere, Category = "Character|State", meta = (ClampMin = "0.0"))
-	float RollLaunchSpeed = 900.0f;
-
-	UPROPERTY(EditAnywhere, Category = "Character|State", meta = (ClampMin = "0.0"))
-	float RollTravelDuration = 0.65f;
+	// 원본 구르기 시퀀스가 약 2초이므로 게임용 회피 동작 길이에 맞춰 재생한다.
+	UPROPERTY(EditAnywhere, Category = "Character|State", meta = (ClampMin = "0.01"))
+	float RollAnimationPlayRate = 2.5f;
 
 	UPROPERTY(EditAnywhere, Category = "Character|State", meta = (ClampMin = "0.0"))
 	float LandingStateDuration = 0.45f;
@@ -325,14 +321,12 @@ private:
 	HHV::PokemonAI::PokemonFSM PokemonLifecycleBrain;
 	FTimerHandle PokemonDespawnTimerHandle;
 	FTimerHandle RollStateTimerHandle;
-	FTimerHandle RollMovementTimerHandle;
 	FTimerHandle LandingStateTimerHandle;
 	FTimerHandle GameplayQATimerHandle;
 	FVector GameplayQAStartLocation = FVector::ZeroVector;
 	int32 GameplayQAPhase = 0;
 	bool bPokemonDespawnInProgress = false;
 	bool bLandingStateActive = false;
-	bool bRollMovementActive = false;
 public:
 	//행동관련
 	void Roll();

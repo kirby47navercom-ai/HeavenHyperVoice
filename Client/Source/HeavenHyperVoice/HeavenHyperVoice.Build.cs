@@ -21,6 +21,7 @@ public class HeavenHyperVoice : ModuleRules
 			"GameplayTags",
 			"UMG",
 			"GameplayAbilities",
+			"Niagara",
 			"GameplayTasks","GeometryCore",
 			"GeometryFramework","ProceduralMeshComponent"
 		});

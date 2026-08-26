@@ -2,6 +2,7 @@
 
 #include "UETitleWidget.h"
 #include "UECharacterNameWidget.h"
+#include "UEServerAddressWidget.h"
 #include "../Login/UELoginWidget.h"
 #include "../../CharacterSelection/UI/UECharacterSelectionWidget.h"
 #include "../../System/UEGameInstance.h"
@@ -57,6 +58,34 @@ void AUEFrontendPlayerController::ShowLogin()
 	LoginWidget->OnLoginSucceeded.AddUniqueDynamic(this, &ThisClass::HandleLoginSucceeded);
 	LoginWidget->OnBackRequested.AddUniqueDynamic(this, &ThisClass::HandleLoginBackRequested);
 	ReplaceCurrentWidget(LoginWidget);
+}
+
+void AUEFrontendPlayerController::ShowServerAddress()
+{
+	if (!ServerAddressWidgetClass)
+	{
+		UE_LOG(LogTemp, Error, TEXT("서버 IP 위젯 클래스가 BP_FrontendPlayerController 기본값에 지정되지 않았습니다."));
+		return;
+	}
+
+	UUEServerAddressWidget* ServerAddressWidget =
+		CreateWidget<UUEServerAddressWidget>(this, ServerAddressWidgetClass);
+	if (!ServerAddressWidget)
+	{
+		return;
+	}
+
+	if (const UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance()))
+	{
+		ServerAddressWidget->SetInitialServerAddress(GameInstance->GetServerAddress());
+	}
+	ServerAddressWidget->OnServerAddressConfirmed.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleServerAddressConfirmed);
+	ServerAddressWidget->OnBackRequested.AddUniqueDynamic(
+		this,
+		&ThisClass::HandleServerAddressBackRequested);
+	ReplaceCurrentWidget(ServerAddressWidget);
 }
 
 void AUEFrontendPlayerController::ShowLobby()
@@ -128,7 +157,21 @@ void AUEFrontendPlayerController::ApplyFrontendInputMode(UUserWidget* FocusWidge
 
 void AUEFrontendPlayerController::HandleTitleContinueRequested()
 {
+	ShowServerAddress();
+}
+
+void AUEFrontendPlayerController::HandleServerAddressConfirmed(const FString& ServerAddress)
+{
+	if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance()))
+	{
+		GameInstance->SetServerAddress(ServerAddress);
+	}
 	ShowLogin();
+}
+
+void AUEFrontendPlayerController::HandleServerAddressBackRequested()
+{
+	ShowTitle();
 }
 
 void AUEFrontendPlayerController::HandleLoginSucceeded(const FString& UserId, const FString& Nickname)
@@ -142,7 +185,7 @@ void AUEFrontendPlayerController::HandleLoginSucceeded(const FString& UserId, co
 
 void AUEFrontendPlayerController::HandleLoginBackRequested()
 {
-	ShowTitle();
+	ShowServerAddress();
 }
 
 void AUEFrontendPlayerController::HandleCharacterCreationRequested(int32 SlotIndex)
