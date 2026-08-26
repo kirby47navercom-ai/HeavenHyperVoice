@@ -10,6 +10,7 @@ void UUEServerAddressWidget::NativeConstruct()
 
 	ConfirmButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleConfirmClicked);
 	BackButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleBackClicked);
+	CharacterNameInput->OnTextCommitted.AddUniqueDynamic(this, &ThisClass::HandleAddressCommitted);
 	if (StatusText)
 	{
 		StatusText->SetText(ReadyMessage);
@@ -26,6 +27,10 @@ void UUEServerAddressWidget::NativeDestruct()
 	if (BackButton)
 	{
 		BackButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleBackClicked);
+	}
+	if (CharacterNameInput)
+	{
+		CharacterNameInput->OnTextCommitted.RemoveDynamic(this, &ThisClass::HandleAddressCommitted);
 	}
 
 	Super::NativeDestruct();
@@ -75,7 +80,31 @@ bool UUEServerAddressWidget::IsValidServerAddress(const FString& ServerAddress)
 
 void UUEServerAddressWidget::HandleConfirmClicked()
 {
-	const FString ServerAddress = CharacterNameInput->GetText().ToString().TrimStartAndEnd();
+	ConfirmAddress();
+}
+
+void UUEServerAddressWidget::HandleAddressCommitted(const FText& Text,
+	ETextCommit::Type CommitMethod)
+{
+	// 포커스가 빠지는 것만으로 넘어가면 안 된다. 엔터일 때만 확인으로 본다.
+	if (CommitMethod == ETextCommit::OnEnter)
+	{
+		ConfirmAddress();
+	}
+}
+
+void UUEServerAddressWidget::ConfirmAddress()
+{
+	FString ServerAddress = CharacterNameInput->GetText().ToString().TrimStartAndEnd();
+
+	// 비워 두고 엔터를 치면 기본 주소로 붙는다. 입력칸에도 채워 넣어 어디로
+	// 붙는지 보이게 한다.
+	if (ServerAddress.IsEmpty())
+	{
+		ServerAddress = DefaultServerAddress;
+		CharacterNameInput->SetText(FText::FromString(ServerAddress));
+	}
+
 	if (!IsValidServerAddress(ServerAddress))
 	{
 		if (StatusText)
