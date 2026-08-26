@@ -27,13 +27,17 @@ DEFINE_LOG_CATEGORY_STATIC(LogHHVLogin, Log, All);
 
 namespace
 {
+	// 이름에 Login 을 붙이는 이유는 언리얼 유니티 빌드 때문이다. 여러 .cpp 가 한
+	// 번역 단위로 합쳐지면 익명 네임스페이스라도 같은 이름끼리 충돌한다
+	// (HHVFieldConnection.cpp 에 같은 역할의 헬퍼가 있다).
+
 	/** Frames are tiny. Anything larger means the length prefix is garbage. */
-	constexpr int32 MaxFrameBytes = 64 * 1024;
+	constexpr int32 LoginMaxFrameBytes = 64 * 1024;
 
 	/** Nothing to read most iterations, so do not spin the core. */
-	constexpr float IdleSleepSeconds = 0.005f;
+	constexpr float LoginIdleSleepSeconds = 0.005f;
 
-	FString LastOpenSslError()
+	FString LastLoginSslError()
 	{
 		const unsigned long Code = ERR_get_error();
 		if (Code == 0)
@@ -47,7 +51,7 @@ namespace
 	}
 
 	/** Prefixes a finished FlatBuffer with its little-endian length. */
-	TArray<uint8> FrameOf(const flatbuffers::FlatBufferBuilder& Builder)
+	TArray<uint8> LoginFrameOf(const flatbuffers::FlatBufferBuilder& Builder)
 	{
 		const uint32 Size = Builder.GetSize();
 
@@ -229,7 +233,7 @@ void FHHVLoginConnection::SendLogin(const FString& UserId, const FString& Passwo
 
 	// 비밀번호는 로그에 남기지 않는다. 아이디만 남겨도 추적에 충분하다.
 	UE_LOG(LogHHVLogin, Display, TEXT("login as %s"), *UserId);
-	Enqueue(FrameOf(Builder));
+	Enqueue(LoginFrameOf(Builder));
 }
 
 void FHHVLoginConnection::SendRegister(const FString& UserId, const FString& Password)
@@ -242,7 +246,7 @@ void FHHVLoginConnection::SendRegister(const FString& UserId, const FString& Pas
 		Builder, HeavenLogin::Payload::RegisterRequest, Request.Union()));
 
 	UE_LOG(LogHHVLogin, Display, TEXT("register as %s"), *UserId);
-	Enqueue(FrameOf(Builder));
+	Enqueue(LoginFrameOf(Builder));
 }
 
 void FHHVLoginConnection::SendCreateCharacter(const FString& Nickname, uint16 SpeciesId,
@@ -259,7 +263,7 @@ void FHHVLoginConnection::SendCreateCharacter(const FString& Nickname, uint16 Sp
 	Builder.Finish(HeavenLogin::CreateEnvelope(
 		Builder, HeavenLogin::Payload::CreateCharacterRequest, Request.Finish().Union()));
 
-	Enqueue(FrameOf(Builder));
+	Enqueue(LoginFrameOf(Builder));
 }
 
 void FHHVLoginConnection::SendDeleteCharacter(uint64 CharacterId, const FString& ConfirmNickname)
@@ -270,7 +274,7 @@ void FHHVLoginConnection::SendDeleteCharacter(uint64 CharacterId, const FString&
 	Builder.Finish(HeavenLogin::CreateEnvelope(
 		Builder, HeavenLogin::Payload::DeleteCharacterRequest, Request.Union()));
 
-	Enqueue(FrameOf(Builder));
+	Enqueue(LoginFrameOf(Builder));
 }
 
 void FHHVLoginConnection::SendReleasePartner(uint64 CharacterId)
@@ -280,7 +284,7 @@ void FHHVLoginConnection::SendReleasePartner(uint64 CharacterId)
 	Builder.Finish(HeavenLogin::CreateEnvelope(
 		Builder, HeavenLogin::Payload::ReleasePartnerRequest, Request.Union()));
 
-	Enqueue(FrameOf(Builder));
+	Enqueue(LoginFrameOf(Builder));
 }
 
 void FHHVLoginConnection::SendSelectCharacter(uint64 CharacterId)
@@ -290,7 +294,7 @@ void FHHVLoginConnection::SendSelectCharacter(uint64 CharacterId)
 	Builder.Finish(HeavenLogin::CreateEnvelope(
 		Builder, HeavenLogin::Payload::SelectCharacterRequest, Request.Union()));
 
-	Enqueue(FrameOf(Builder));
+	Enqueue(LoginFrameOf(Builder));
 }
 
 uint32 FHHVLoginConnection::Run()
@@ -307,7 +311,7 @@ uint32 FHHVLoginConnection::Run()
 	{
 		if (!FlushOutbound())
 		{
-			PushDisconnect(TEXT("send failed: ") + LastOpenSslError());
+			PushDisconnect(TEXT("send failed: ") + LastLoginSslError());
 			break;
 		}
 
@@ -317,7 +321,7 @@ uint32 FHHVLoginConnection::Run()
 			break;
 		}
 
-		FPlatformProcess::Sleep(IdleSleepSeconds);
+		FPlatformProcess::Sleep(LoginIdleSleepSeconds);
 	}
 
 	CloseTls();
@@ -330,7 +334,7 @@ bool FHHVLoginConnection::ConnectAndHandshake(FString& OutError)
 	Ctx = SSL_CTX_new(TLS_client_method());
 	if (Ctx == nullptr)
 	{
-		OutError = TEXT("SSL_CTX_new failed: ") + LastOpenSslError();
+		OutError = TEXT("SSL_CTX_new failed: ") + LastLoginSslError();
 		return false;
 	}
 
@@ -344,14 +348,14 @@ bool FHHVLoginConnection::ConnectAndHandshake(FString& OutError)
 	Bio = BIO_new_ssl_connect(Ctx);
 	if (Bio == nullptr)
 	{
-		OutError = TEXT("BIO_new_ssl_connect failed: ") + LastOpenSslError();
+		OutError = TEXT("BIO_new_ssl_connect failed: ") + LastLoginSslError();
 		return false;
 	}
 
 	BIO_get_ssl(Bio, &Ssl);
 	if (Ssl == nullptr)
 	{
-		OutError = TEXT("BIO_get_ssl failed: ") + LastOpenSslError();
+		OutError = TEXT("BIO_get_ssl failed: ") + LastLoginSslError();
 		return false;
 	}
 
@@ -364,7 +368,7 @@ bool FHHVLoginConnection::ConnectAndHandshake(FString& OutError)
 	if (BIO_do_connect(Bio) <= 0)
 	{
 		OutError = FString::Printf(TEXT("cannot reach login server at %s: %s"),
-			*Address, *LastOpenSslError());
+			*Address, *LastLoginSslError());
 		return false;
 	}
 
@@ -453,7 +457,7 @@ bool FHHVLoginConnection::ReadInbound(FString& OutError)
 			return false;
 		}
 
-		OutError = TEXT("recv failed: ") + LastOpenSslError();
+		OutError = TEXT("recv failed: ") + LastLoginSslError();
 		return false;
 	}
 }
@@ -467,7 +471,7 @@ void FHHVLoginConnection::ParseAccumulated()
 		const uint32 Size = static_cast<uint32>(Header[0]) | (static_cast<uint32>(Header[1]) << 8) |
 			(static_cast<uint32>(Header[2]) << 16) | (static_cast<uint32>(Header[3]) << 24);
 
-		if (Size == 0 || Size > MaxFrameBytes)
+		if (Size == 0 || Size > LoginMaxFrameBytes)
 		{
 			UE_LOG(LogHHVLogin, Warning, TEXT("frame length %u out of range, dropping stream"), Size);
 			RecvAccum.Reset();
@@ -502,8 +506,13 @@ void FHHVLoginConnection::DispatchFrame(const uint8* Data, int32 Size)
 	}
 
 	const HeavenLogin::Envelope* Envelope = HeavenLogin::GetEnvelope(Data);
-	if (Envelope == nullptr)
+
+	// Verifier 는 payload_type 만 있고 payload 오프셋이 없는 프레임을 통과시킨다
+	// (VerifyTable(nullptr) 이 true 다). 그대로 두면 아래 payload_as_* 가 nullptr 을
+	// 돌려주고 바로 역참조해 죽는다.
+	if (Envelope == nullptr || Envelope->payload() == nullptr)
 	{
+		UE_LOG(LogHHVLogin, Warning, TEXT("login frame carried no payload (%d bytes)"), Size);
 		return;
 	}
 
