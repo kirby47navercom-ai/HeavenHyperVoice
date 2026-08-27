@@ -6,11 +6,14 @@
 #include "../UEPokemonSpeciesCatalog.h"
 #include "../UEPokemonSpeciesData.h"
 #include "../UEPokemonWorldSubsystem.h"
+#include "../../Player/Server/UEPlayerMovementSyncComponent.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/Pawn.h"
 #include "HAL/PlatformTime.h"
+#include "Kismet/GameplayStatics.h"
 #include "Misc/Guid.h"
 #include "Misc/Paths.h"
 
@@ -52,7 +55,17 @@ void AUEPokemonWildPokemonSpawner::BeginPlay()
 
 int32 AUEPokemonWildPokemonSpawner::SpawnWildPokemons()
 {
-	// 월드의 야생 포켓몬은 서버에서만 생성해야 모든 클라이언트가 같은 결과를 봅니다.
+	// 외부 C++ FieldServer는 언리얼 네트워크 드라이버가 아니므로 독립 실행 클라이언트의
+	// HasAuthority()는 true다. 이 검사를 먼저 하지 않으면 서버 야생과 로컬 야생이
+	// 클라이언트마다 따로 생겨 서로 다른 개체와 속도를 보게 된다.
+	if (!bAllowLocalSpawnWithExternalFieldServer && IsExternalFieldServerConfigured())
+	{
+		UE_LOG(LogTemp, Display,
+			TEXT("PokemonWildSpawner: 외부 FieldServer 모드이므로 로컬 야생 소환을 건너뜁니다."));
+		return 0;
+	}
+
+	// 언리얼 리슨/전용 서버 방식으로 이 스포너를 재사용할 경우 비권위 클라이언트에서는 생성하지 않는다.
 	if (!HasAuthority())
 	{
 		return 0;
@@ -157,6 +170,26 @@ int32 AUEPokemonWildPokemonSpawner::SpawnWildPokemons()
 
 	bHasSpawnedWildPokemons = SpawnedCount > 0;
 	return SpawnedCount;
+}
+
+bool AUEPokemonWildPokemonSpawner::IsExternalFieldServerConfigured() const
+{
+	// 플레이어 액터가 준비된 뒤라면 실제 컴포넌트 값을 우선한다. 블루프린트에서
+	// 로컬 검증 모드를 켠 테스트 맵도 이 경로에서 정확하게 구분된다.
+	if (const APawn* LocalPawn = UGameplayStatics::GetPlayerPawn(this, 0))
+	{
+		if (const UUEPlayerMovementSyncComponent* MovementSync =
+			LocalPawn->FindComponentByClass<UUEPlayerMovementSyncComponent>())
+		{
+			return MovementSync->IsExternalFieldServerConfigured();
+		}
+	}
+
+	// 액터 BeginPlay 순서 때문에 플레이어를 아직 찾지 못해도 Config가 적용된 클래스
+	// 기본 객체를 확인한다. 서버 모드에서 잠깐 로컬 포켓몬이 생기는 경쟁 상태를 막는다.
+	const UUEPlayerMovementSyncComponent* DefaultMovementSync =
+		GetDefault<UUEPlayerMovementSyncComponent>();
+	return DefaultMovementSync && DefaultMovementSync->IsExternalFieldServerConfigured();
 }
 
 bool AUEPokemonWildPokemonSpawner::TryLoadServerMap()

@@ -47,6 +47,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Wild")
 	bool bEnableLocalServerSimulation = true;
 
+	/**
+	 * 외부 FieldServer를 사용하는 중에도 이 로컬 스포너를 강제로 사용할지 정한다.
+	 *
+	 * 일반 플레이에서는 false로 둬야 서버 야생과 클라이언트 야생이 섞이지 않는다.
+	 * FieldServer 없이 맵과 애니메이션만 확인하는 전용 테스트에서만 true로 켠다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Wild|Test")
+	bool bAllowLocalSpawnWithExternalFieldServer = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Wild")
 	bool bTryLoadDefaultServerMap = true;
 
@@ -70,6 +79,7 @@ protected:
 	int32 FirstRuntimePokemonId = 100000;
 
 private:
+	bool IsExternalFieldServerConfigured() const;
 	bool TryLoadServerMap();
 	bool TryFindRandomWildSpawnLocation(const HHV::Map::AgentSettings& Agent, FVector& OutLocation);
 	HHV::Map::AgentSettings MakeWildSpawnAgentSettings(const UUEPokemonSpeciesData* SpeciesData) const;

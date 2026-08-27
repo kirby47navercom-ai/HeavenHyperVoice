@@ -16,6 +16,7 @@ class UUEPokemonServerComponent;
 class UUEPokemonSummonEffectComponent;
 class UUEPokemonSpeciesCatalog;
 class UUEPokemonSpeciesData;
+class USoundBase;
 struct FOnAttributeChangeData;
 
 // 블루프린트 UI와 피격 연출이 포켓몬 체력 변경을 즉시 구독할 때 사용한다.
@@ -283,8 +284,49 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Effects")
 	UUEPokemonSummonEffectComponent* GetSummonEffectComponent() const { return SummonEffectComponent; }
 
+	// 소환 후보 중 하나를 무작위로 재생한다. 후보가 없으면 대표 울음을 사용한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlaySummonCry();
+
+	// 기절 후보 중 하나를 무작위로 재생한다. 일반 울음을 임의로 대신 쓰지 않는다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayFaintCry();
+
+	// 현재 종족 DataAsset의 야생 울음 후보 중 하나를 무작위로 골라 재생한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayRandomWildCry();
+
+	// 블루프린트 상태 머신이나 상호작용 연출에서 기쁨 울음을 요청할 때 사용한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayRandomHappyCry();
+
+	// 적 발견·전투 진입 연출에서 분노 울음을 요청할 때 사용한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayRandomAngryCry();
+
+	// 피격·실패 연출에서 슬픔 울음을 요청할 때 사용한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayRandomSadCry();
+
+	// 물리 기술 애니메이션과 함께 짧은 공격 울음을 요청할 때 사용한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayRandomPhysicalAttackCry();
+
+	// 특수 기술 애니메이션과 함께 속성 공격 울음을 요청할 때 사용한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayRandomSpecialAttackCry();
+
+	// 컷신이나 종별 고유 연출에서 특수음성 후보를 요청할 때 사용한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayRandomSpecialCry();
+
+	// 휴식·주변 관찰 같은 필드 행동에서 환경 반응 울음을 요청할 때 사용한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayRandomAmbientCry();
+
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Pokemon|Animation", meta = (DisplayName = "On Server Animation Event"))
 	void BP_OnServerAnimationEvent(EUEPokemonAnimationEvent AnimationEvent, const FUEPokemonServerMoveSnapshot& Snapshot);
@@ -302,6 +344,10 @@ private:
 	void ApplyServerAnimationSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot);
 	void UpdateServerDrivenMovement(float DeltaSeconds);
 	void ConfigureServerDrivenMovement();
+	void RefreshWildCryTimer();
+	void HandleWildCryTimer();
+	USoundBase* SelectRandomCry(const TArray<TObjectPtr<USoundBase>>& CryCandidates, USoundBase* FallbackCry = nullptr) const;
+	void PlayCrySound(USoundBase* CrySound) const;
 
 	// 포켓몬 자신이 ASC의 OwnerActor와 AvatarActor를 함께 맡는 단순한 구조다.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|GAS", meta = (AllowPrivateAccess = "true"))
@@ -390,6 +436,9 @@ private:
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Animation", meta = (AllowPrivateAccess = "true"))
 	float LastServerAnimationEventDurationSeconds = 0.0f;
+
+	// 고정 주기 반복 타이머가 아니라 매번 새 간격을 뽑는 한 번짜리 타이머로 사용한다.
+	FTimerHandle WildCryTimerHandle;
 
 	bool bHasServerMoveTarget = false;
 };

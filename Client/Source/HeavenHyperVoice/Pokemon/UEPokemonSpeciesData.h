@@ -10,6 +10,9 @@ class UAnimInstance;
 class UAnimMontage;
 class UAnimSequence;
 class UGameplayAbility;
+class USoundAttenuation;
+class USoundBase;
+class USoundConcurrency;
 class UTexture2D;
 
 
@@ -117,6 +120,99 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Animation|Spawn")
 	TObjectPtr<UAnimMontage> DespawnMontage = nullptr;
+
+
+	// ========================================================================
+	// Audio - Cry
+	// ========================================================================
+
+	/**
+	 * 동행 포켓몬이 플레이어의 소환 요청으로 필드에 나타날 때 한 번 재생할 대표 울음소리다.
+	 * SoundWave, SoundCue, MetaSound Source처럼 USoundBase를 상속한 에셋을 지정할 수 있다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry")
+	TObjectPtr<USoundBase> SummonCry = nullptr;
+
+	/**
+	 * 소환할 때 무작위로 고를 울음소리 후보들이다.
+	 * 여러 파일을 등록하면 R 소환마다 같은 소리만 반복되지 않으며, 배열이 비어 있으면 SummonCry를 사용한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry|Summon")
+	TArray<TObjectPtr<USoundBase>> SummonCries;
+
+	/** 체력이 0이 되어 기절할 때 사용할 대표 소리다. FaintCries가 비어 있을 때 대체재로 사용한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry")
+	TObjectPtr<USoundBase> FaintCry = nullptr;
+
+	/** 기절할 때 무작위로 고를 후보들이다. 비어 있으면 FaintCry를 사용한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry|Faint")
+	TArray<TObjectPtr<USoundBase>> FaintCries;
+
+	/**
+	 * 야생 상태에서 무작위로 고를 울음소리 후보들이다.
+	 * 배열이 비어 있으면 SummonCry를 대신 사용하므로 같은 소리를 두 번 지정할 필요가 없다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry")
+	TArray<TObjectPtr<USoundBase>> WildCries;
+
+	/** 평온하거나 기분이 좋을 때 사용할 울음소리 후보들이다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry|Emotion")
+	TArray<TObjectPtr<USoundBase>> HappyCries;
+
+	/** 적을 발견했거나 전투에 들어갈 때 사용할 분노 울음소리 후보들이다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry|Emotion")
+	TArray<TObjectPtr<USoundBase>> AngryCries;
+
+	/** 피해를 받았거나 슬픈 상태를 표현할 때 사용할 울음소리 후보들이다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry|Emotion")
+	TArray<TObjectPtr<USoundBase>> SadCries;
+
+	/** 몸으로 직접 타격하는 기술이 시작될 때 사용할 짧은 공격 울음소리 후보들이다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry|Combat")
+	TArray<TObjectPtr<USoundBase>> PhysicalAttackCries;
+
+	/** 원거리·속성 기술이 시작될 때 사용할 특수공격 울음소리 후보들이다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry|Combat")
+	TArray<TObjectPtr<USoundBase>> SpecialAttackCries;
+
+	/** 종별 개성을 드러내는 특수음성 후보들이다. 소환이나 연출에서 선택적으로 재사용할 수 있다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry|Special")
+	TArray<TObjectPtr<USoundBase>> SpecialCries;
+
+	/** 필드에서 쉬거나 주변을 살필 때 사용할 환경 반응 울음소리 후보들이다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry|Ambient")
+	TArray<TObjectPtr<USoundBase>> AmbientCries;
+
+	/** 야생 포켓몬의 랜덤 울음을 끄고 싶을 때 해제한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry")
+	bool bEnableWildCries = true;
+
+	/** 야생 울음 사이의 최소 대기 시간(초)이다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry", meta = (ClampMin = "0.1", UIMin = "1.0"))
+	float WildCryMinIntervalSeconds = 8.0f;
+
+	/** 야생 울음 사이의 최대 대기 시간(초)이다. 최소값보다 작으면 런타임에서 최소값으로 맞춘다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry", meta = (ClampMin = "0.1", UIMin = "1.0"))
+	float WildCryMaxIntervalSeconds = 20.0f;
+
+	/** 이 포켓몬 울음소리의 최종 볼륨 배율이다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "2.0"))
+	float CryVolumeMultiplier = 1.0f;
+
+	/** 이 포켓몬 울음소리의 최종 피치 배율이다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Cry", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+	float CryPitchMultiplier = 1.0f;
+
+	/**
+	 * 울음을 위치 기반 3D 음향으로 만드는 거리 감쇠 설정이다.
+	 * 프로젝트 공용 Pokemon Cry 감쇠 에셋을 지정하되, 종별로 필요하면 다른 에셋으로 교체할 수 있다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Spatial")
+	TObjectPtr<USoundAttenuation> CryAttenuation = nullptr;
+
+	/** 가까운 야생 포켓몬이 동시에 울 때 과도하게 겹치는 것을 제한하는 공용 동시 재생 설정이다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Spatial")
+	TObjectPtr<USoundConcurrency> CryConcurrency = nullptr;
 
 
 	// ========================================================================

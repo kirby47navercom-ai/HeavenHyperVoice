@@ -16,7 +16,10 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Sound/SoundBase.h"
+#include "TimerManager.h"
 
 AUEPokemonCharacter::AUEPokemonCharacter()
 {
@@ -53,6 +56,14 @@ void AUEPokemonCharacter::BeginPlay()
 	ApplyPokemonSpeciesData();
 	TargetServerLocation = GetActorLocation();
 	TargetServerRotation = GetActorRotation();
+	RefreshWildCryTimer();
+}
+
+void AUEPokemonCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// 시야 밖으로 사라진 야생 포켓몬의 예약 울음이 뒤늦게 실행되지 않게 정리한다.
+	GetWorldTimerManager().ClearTimer(WildCryTimerHandle);
+	Super::EndPlay(EndPlayReason);
 }
 
 void AUEPokemonCharacter::Tick(float DeltaSeconds)
@@ -103,13 +114,15 @@ void AUEPokemonCharacter::SetPokemonSpeciesData(UUEPokemonSpeciesData* NewSpecie
 
 	PokemonSpeciesData = NewSpeciesData;
 	ApplyPokemonSpeciesData();
+	RefreshWildCryTimer();
 }
 
 void AUEPokemonCharacter::SetWildSpecies(int32 SpeciesNumber)
 {
 	// 서버 종족 번호는 카탈로그 조회와 디버그 식별에만 사용한다.
 	ServerSpeciesId = FName(*FString::FromInt(SpeciesNumber));
-	RenderType = EUEPokemonRenderType::Wild;
+	// 직접 값을 대입하지 않고 Setter를 통과시켜, 이미 종족 데이터가 있는 재사용 액터도 야생 울음 타이머를 다시 켠다.
+	SetRenderType(EUEPokemonRenderType::Wild);
 
 	// 카탈로그에 그 종족의 실제 모델이 있으면 그걸 쓴다. 아직 에셋이 없으면
 	// 카탈로그가 비어 있고, 예전처럼 종족 색 큐브로 뜬다.
@@ -126,6 +139,7 @@ void AUEPokemonCharacter::SetWildSpecies(int32 SpeciesNumber)
 	}
 
 	ApplyDebugAppearance();
+	RefreshWildCryTimer();
 }
 
 FName AUEPokemonCharacter::GetPokemonSpeciesId() const
@@ -136,6 +150,172 @@ FName AUEPokemonCharacter::GetPokemonSpeciesId() const
 void AUEPokemonCharacter::SetRenderType(EUEPokemonRenderType NewRenderType)
 {
 	RenderType = NewRenderType;
+	// 같은 포켓몬 액터가 야생과 동행 표현 사이를 오갈 때 타이머도 즉시 켜거나 끈다.
+	RefreshWildCryTimer();
+}
+
+void AUEPokemonCharacter::PlaySummonCry()
+{
+	if (!PokemonSpeciesData)
+	{
+		return;
+	}
+
+	// 소환 전용 후보가 있으면 매번 하나를 새로 고르고, 미설정 종은 대표 울음으로 안전하게 대체한다.
+	PlayCrySound(SelectRandomCry(PokemonSpeciesData->SummonCries, PokemonSpeciesData->SummonCry.Get()));
+}
+
+void AUEPokemonCharacter::PlayFaintCry()
+{
+	if (!PokemonSpeciesData)
+	{
+		return;
+	}
+
+	// 기절 전용 후보만 사용한다. 전용 소리가 없는 종이 갑자기 일반 소리를 내지 않도록 소환 울음은 대체재로 쓰지 않는다.
+	PlayCrySound(SelectRandomCry(PokemonSpeciesData->FaintCries, PokemonSpeciesData->FaintCry.Get()));
+}
+
+void AUEPokemonCharacter::PlayRandomWildCry()
+{
+	if (RenderType != EUEPokemonRenderType::Wild || !PokemonSpeciesData)
+	{
+		return;
+	}
+
+	// 야생 후보에는 평온·기쁨·환경·특수음성만 넣는다. 전투·분노·슬픔 소리는 섞지 않는다.
+	PlayCrySound(SelectRandomCry(PokemonSpeciesData->WildCries, PokemonSpeciesData->SummonCry.Get()));
+}
+
+void AUEPokemonCharacter::PlayRandomHappyCry()
+{
+	PlayCrySound(PokemonSpeciesData ? SelectRandomCry(PokemonSpeciesData->HappyCries) : nullptr);
+}
+
+void AUEPokemonCharacter::PlayRandomAngryCry()
+{
+	PlayCrySound(PokemonSpeciesData ? SelectRandomCry(PokemonSpeciesData->AngryCries) : nullptr);
+}
+
+void AUEPokemonCharacter::PlayRandomSadCry()
+{
+	PlayCrySound(PokemonSpeciesData ? SelectRandomCry(PokemonSpeciesData->SadCries) : nullptr);
+}
+
+void AUEPokemonCharacter::PlayRandomPhysicalAttackCry()
+{
+	PlayCrySound(PokemonSpeciesData ? SelectRandomCry(PokemonSpeciesData->PhysicalAttackCries) : nullptr);
+}
+
+void AUEPokemonCharacter::PlayRandomSpecialAttackCry()
+{
+	PlayCrySound(PokemonSpeciesData ? SelectRandomCry(PokemonSpeciesData->SpecialAttackCries) : nullptr);
+}
+
+void AUEPokemonCharacter::PlayRandomSpecialCry()
+{
+	PlayCrySound(PokemonSpeciesData ? SelectRandomCry(PokemonSpeciesData->SpecialCries) : nullptr);
+}
+
+void AUEPokemonCharacter::PlayRandomAmbientCry()
+{
+	PlayCrySound(PokemonSpeciesData ? SelectRandomCry(PokemonSpeciesData->AmbientCries) : nullptr);
+}
+
+void AUEPokemonCharacter::RefreshWildCryTimer()
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	World->GetTimerManager().ClearTimer(WildCryTimerHandle);
+	if (RenderType != EUEPokemonRenderType::Wild || !PokemonSpeciesData || !PokemonSpeciesData->bEnableWildCries)
+	{
+		return;
+	}
+
+	bool bHasPlayableCry = PokemonSpeciesData->SummonCry != nullptr;
+	for (const TObjectPtr<USoundBase>& Cry : PokemonSpeciesData->SummonCries)
+	{
+		bHasPlayableCry |= Cry != nullptr;
+	}
+	for (const TObjectPtr<USoundBase>& Cry : PokemonSpeciesData->WildCries)
+	{
+		bHasPlayableCry |= Cry != nullptr;
+	}
+	if (!bHasPlayableCry)
+	{
+		return;
+	}
+
+	// 매 개체가 서로 다른 시점에 울도록 반복 타이머 대신 다음 한 번의 대기 시간을 매번 새로 뽑는다.
+	const float MinInterval = FMath::Max(PokemonSpeciesData->WildCryMinIntervalSeconds, 0.1f);
+	const float MaxInterval = FMath::Max(PokemonSpeciesData->WildCryMaxIntervalSeconds, MinInterval);
+	World->GetTimerManager().SetTimer(
+		WildCryTimerHandle,
+		this,
+		&ThisClass::HandleWildCryTimer,
+		FMath::FRandRange(MinInterval, MaxInterval),
+		false);
+}
+
+void AUEPokemonCharacter::HandleWildCryTimer()
+{
+	PlayRandomWildCry();
+	RefreshWildCryTimer();
+}
+
+USoundBase* AUEPokemonCharacter::SelectRandomCry(
+	const TArray<TObjectPtr<USoundBase>>& CryCandidates,
+	USoundBase* FallbackCry) const
+{
+	// DataAsset 편집 중 생긴 빈 칸은 후보에서 제외해 nullptr가 무작위로 선택되는 일을 막는다.
+	TArray<USoundBase*> ValidCries;
+	ValidCries.Reserve(CryCandidates.Num());
+	for (const TObjectPtr<USoundBase>& Cry : CryCandidates)
+	{
+		if (Cry)
+		{
+			ValidCries.Add(Cry.Get());
+		}
+	}
+
+	return ValidCries.IsEmpty()
+		? FallbackCry
+		: ValidCries[FMath::RandRange(0, ValidCries.Num() - 1)];
+}
+
+void AUEPokemonCharacter::PlayCrySound(USoundBase* CrySound) const
+{
+	if (!CrySound || !GetRootComponent())
+	{
+		return;
+	}
+
+	const float VolumeMultiplier = PokemonSpeciesData
+		? FMath::Max(PokemonSpeciesData->CryVolumeMultiplier, 0.0f)
+		: 1.0f;
+	const float PitchMultiplier = PokemonSpeciesData
+		? FMath::Max(PokemonSpeciesData->CryPitchMultiplier, 0.01f)
+		: 1.0f;
+
+	// 포켓몬의 현재 위치를 따라가는 3D 소리다. DataAsset의 공용 감쇠/동시 재생 에셋으로 거리감과 겹침을 통제한다.
+	UGameplayStatics::SpawnSoundAttached(
+		CrySound,
+		GetRootComponent(),
+		NAME_None,
+		FVector::ZeroVector,
+		FRotator::ZeroRotator,
+		EAttachLocation::KeepRelativeOffset,
+		true,
+		VolumeMultiplier,
+		PitchMultiplier,
+		0.0f,
+		PokemonSpeciesData ? PokemonSpeciesData->CryAttenuation.Get() : nullptr,
+		PokemonSpeciesData ? PokemonSpeciesData->CryConcurrency.Get() : nullptr,
+		true);
 }
 
 void AUEPokemonCharacter::ConfigureServerDrivenMovement()
@@ -366,6 +546,8 @@ void AUEPokemonCharacter::HandleHealthChanged(const FOnAttributeChangeData& Chan
 		if (!bFaintDelegateBroadcast)
 		{
 			bFaintDelegateBroadcast = true;
+			// 일반 울음과 기절 울음을 구분한다. 전용 파일이 없는 종은 조용히 넘어간다.
+			PlayFaintCry();
 			OnPokemonFainted.Broadcast(this);
 		}
 	}

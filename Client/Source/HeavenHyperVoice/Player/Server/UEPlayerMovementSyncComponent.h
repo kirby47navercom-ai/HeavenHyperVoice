@@ -42,6 +42,19 @@ public:
 
 	void HandleServerMovementResult(uint32 AckSequence, const FVector& ServerPosition, const FVector& ServerVelocity, const FRotator& ServerRotation);
 
+	/**
+	 * 외부 C++ FieldServer에 접속하도록 설정됐는지 반환한다.
+	 *
+	 * 로컬 야생 스포너처럼 필드 연결과 별도로 존재하는 시스템이 실제 서버 엔티티와
+	 * 중복 생성되지 않도록 판단할 때 사용한다. 연결 성공 여부가 아니라 실행 모드를
+	 * 구분하는 값이므로, 서버가 잠시 내려가도 로컬 야생으로 조용히 대체하지 않는다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Movement Sync|Field Server")
+	bool IsExternalFieldServerConfigured() const
+	{
+		return !bEnableLocalServerValidation && !FieldServerHost.IsEmpty() && FieldServerPort > 0;
+	}
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

@@ -861,6 +861,9 @@ bool AUEPlayerCharacter::TrySpawnPokemonCompanion()
 		// 반환된 실제 시간을 서버 애니메이션 상태에도 넘겨 화면 연출과 상태 종료를 맞춘다.
 		SpawnDuration = SummonEffect->PlaySpawnEffect(PokemonSpawnAnimationDuration);
 	}
+	// R 입력 자체가 아니라 실제 소환 성공 지점에서 재생해야 스폰 실패나 귀환 때 울지 않는다.
+	// 종족 DataAsset의 SummonCry가 비어 있으면 아무 소리도 내지 않고 안전하게 넘어간다.
+	NewPokemon->PlaySummonCry();
 	if (UUEPokemonServerComponent* ServerComponent = NewPokemon->GetServerComponent())
 	{
 		ServerComponent->InitializeServerRuntimePokemon(

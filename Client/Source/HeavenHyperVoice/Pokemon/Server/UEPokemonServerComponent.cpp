@@ -536,13 +536,15 @@ float UUEPokemonServerComponent::ResolveServerMoveSpeed(const AUEPokemonCharacte
 		return ServerMoveSpeed;
 	}
 
-	// 종족 DA 의 MoveSpeed 는 언리얼 uu/s 가 아니라 게임 스탯 스케일이다
-	// (랄토스 25, 파이리 101, 자망칼 114). 그대로 쓰면 플레이어 걷기(260)의
-	// 절반도 안 돼서 파트너가 계속 뒤처지고, 서버가 움직이는 야생(200uu/s)
-	// 보다도 느리다.
-	//
-	// 에셋 20 개를 고치는 대신 여기서 환산한다. 종족별 상대 차이는 그대로
-	// 남는다. 나중에 DA 를 진짜 uu/s 로 정리하면 이 값을 1.0 으로 되돌리면 된다.
+	// 야생은 외부 FieldServer의 wildMoveSpeed와 같은 종별 원속도를 사용한다.
+	// 로컬 테스트에서만 3배가 적용되면 서버 야생과 섞였을 때 일부 개체가 유난히
+	// 빠르게 보이고, 같은 애니메이션의 발 보폭도 서로 달라진다.
+	if (PokemonCharacter.GetRenderType() == EUEPokemonRenderType::Wild)
+	{
+		return SpeciesMoveSpeed;
+	}
+
+	// 소유 포켓몬은 플레이어를 따라잡아야 하므로 기존 추종용 배율을 유지한다.
 	return SpeciesMoveSpeed * SpeciesMoveSpeedToUnrealUnits;
 }
 

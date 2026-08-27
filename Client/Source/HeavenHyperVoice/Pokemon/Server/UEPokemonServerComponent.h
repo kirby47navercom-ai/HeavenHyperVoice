@@ -90,9 +90,9 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float ServerMoveSpeed = 280.0f;
 
-	// 종족 DA 의 MoveSpeed 를 언리얼 uu/s 로 바꾸는 배율. DA 값이 게임 스탯
-	// 스케일(랄토스 25 ~ 자망칼 114)이라 그대로는 너무 느리다.
-	// 3.0 이면 파이리 101 -> 303 으로, 플레이어 걷기(260)를 조금 넘는다.
+	// 소유 포켓몬이 플레이어를 따라올 때 종족 DA의 MoveSpeed에 곱하는 배율이다.
+	// 야생 포켓몬은 외부 FieldServer와 같은 원속도를 사용해야 두 실행 모드의 속도와
+	// 발 보폭이 달라지지 않으므로 이 배율을 적용하지 않는다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true", ClampMin = "0.1"))
 	float SpeciesMoveSpeedToUnrealUnits = 3.0f;
 
