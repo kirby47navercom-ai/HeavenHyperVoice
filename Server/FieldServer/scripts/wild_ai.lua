@@ -25,6 +25,11 @@ local REST_MAX         = 4.0
 local RUNNING, SUCCESS = "running", "success"
 
 -- 포켓몬별 상태(블랙보드). id 로 찾는다.
+--
+-- ponytail: 항목이 쌓이기만 하고 지워지지 않는다. 지금은 야생이 기동 때 한 번
+--           생기고 사라지지 않아 새지 않지만, despawn/리스폰이 들어오는 순간
+--           샌다. 그때 C++ 이 despawn 시 board_forget(id) 를 부르게 할 것 —
+--           Lua 안에서 마지막 tick 시각을 재는 것보다 정확하고 짧다.
 local boards = {}
 
 local function board_of(id, x, y)

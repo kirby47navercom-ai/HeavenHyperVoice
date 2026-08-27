@@ -278,7 +278,7 @@ OdbcStore::OdbcStore(const OdbcSettings& settings) {
         if (driver.empty()) {
             throw std::runtime_error(
                 "no MySQL Unicode ODBC driver found. Install MySQL Connector/ODBC (64-bit) "
-                "or pass --db-driver / --db-connection-string.");
+                "or pass --db-driver / --db-conn.");
         }
         spdlog::info("auto-detected ODBC driver: {}", driver);
     }

@@ -22,7 +22,7 @@
 | `DataBase/` | 스키마 마이그레이션 (`tools\apply-migrations.ps1` 로 적용) |
 
 의존성은 vcpkg 매니페스트(`vcpkg.json`)로 baseline 고정: `openssl`, `flatbuffers`, `spdlog`,
-`argon2`, `hiredis`. ODBC 드라이버 매니저와 자격증명 관리자는 Windows SDK 구성요소라
+`argon2`, `hiredis`, `lua`, `sol2`. ODBC 드라이버 매니저와 자격증명 관리자는 Windows SDK 구성요소라
 vcpkg 를 타지 않는다. **Windows 전용**이다 (IOCP).
 
 ## 인증 — Ed25519 서명 티켓
