@@ -216,6 +216,67 @@ public:
 
 
 	// ========================================================================
+	// 오디오 - 포켓몬 행동 효과음
+	// ========================================================================
+
+	// 걷기와 달리기 중 발이 지면에 닿을 때 재생할 후보 효과음이다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Movement")
+	TArray<TObjectPtr<USoundBase>> FootstepSounds;
+
+	// 점프가 시작되는 순간 재생할 후보 효과음이다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Movement")
+	TArray<TObjectPtr<USoundBase>> JumpSounds;
+
+	// 착지하는 순간 재생할 후보 효과음이다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Movement")
+	TArray<TObjectPtr<USoundBase>> LandingSounds;
+
+	// 수영 동작 중 재생할 후보 효과음이다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Movement")
+	TArray<TObjectPtr<USoundBase>> SwimSounds;
+
+	// 비행, 부유처럼 일반 발걸음으로 표현할 수 없는 이동에 사용하는 효과음이다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Movement")
+	TArray<TObjectPtr<USoundBase>> SpecialMovementSounds;
+
+	// 공격 동작이 시작될 때 재생할 후보 효과음이다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Combat")
+	TArray<TObjectPtr<USoundBase>> AttackSounds;
+
+	// 공격에 맞았을 때 재생할 후보 효과음이다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Combat")
+	TArray<TObjectPtr<USoundBase>> HitSounds;
+
+	// 큰 충격으로 쓰러지는 동작에 사용하는 후보 효과음이다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Combat")
+	TArray<TObjectPtr<USoundBase>> DownSounds;
+
+	// 전투 불능 상태가 확정될 때 재생할 후보 효과음이다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Combat")
+	TArray<TObjectPtr<USoundBase>> FaintEffectSounds;
+
+	// 먹기 동작 중 재생할 후보 효과음이다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Life")
+	TArray<TObjectPtr<USoundBase>> EatSounds;
+
+	// 기절 상태에 진입하거나 유지될 때 재생할 후보 효과음이다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Status")
+	TArray<TObjectPtr<USoundBase>> StunSounds;
+
+	// 잠들거나 수면 상태를 유지할 때 재생할 후보 효과음이다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Status")
+	TArray<TObjectPtr<USoundBase>> SleepSounds;
+
+	// 필드에 등장하는 순간 재생할 후보 효과음이다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Lifecycle")
+	TArray<TObjectPtr<USoundBase>> SpawnSounds;
+
+	// 필드에서 사라지는 순간 재생할 후보 효과음이다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Lifecycle")
+	TArray<TObjectPtr<USoundBase>> DespawnSounds;
+
+
+	// ========================================================================
 	// Animation - Idle
 	// ========================================================================
 
