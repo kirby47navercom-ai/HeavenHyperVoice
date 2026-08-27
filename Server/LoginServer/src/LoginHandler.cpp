@@ -148,8 +148,14 @@ bool LoginHandler::handleRegister(TlsSession& session,
     const char* problem = nullptr;
     if (!proto::isValidUsername(user)) {
         problem = "아이디는 영문, 숫자, 밑줄만 쓸 수 있고 3~32자여야 합니다";
-    } else if (secret.size() < proto::kMinPasswordChars ||
-               secret.size() > proto::kMaxPasswordBytes) {
+    } else if (secret.size() > proto::kMaxPasswordBytes) {
+        // 바이트 상한은 프레임 크기를 막기 위한 것이라 그대로 바이트로 본다.
+        problem = "비밀번호가 너무 깁니다";
+    } else if (const auto length = proto::utf8Length(secret); !length.has_value()) {
+        problem = "비밀번호의 문자 인코딩이 올바르지 않습니다";
+    } else if (*length < proto::kMinPasswordChars) {
+        // 최소 길이는 **글자** 수로 센다. 바이트로 세면 한글 세 글자(9바이트)가
+        // "8자 이상" 을 통과한다. 닉네임 검사와 같은 이유다.
         problem = "비밀번호는 8자 이상이어야 합니다";
     }
 
