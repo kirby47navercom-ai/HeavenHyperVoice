@@ -3,6 +3,7 @@
 #include "../Character/UEPlayerCharacter.h"
 #include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
 #include "../Data/UEDataAsset.h"
+#include "../Server/UEFieldClientSubsystem.h"
 #include "../System/UEGameInstance.h"
 #include "../UI/PokemonParty/UEPokemonPartyWidget.h"
 #include "../UEGameplayTags.h"
@@ -25,6 +26,10 @@ void AUEPlayerController::BeginPlay()
 	AddDefaultMappingContext();
 	SetInputMode(FInputModeGameOnly());
 	bShowMouseCursor = false;
+	if (UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
+	{
+		FieldClientSubsystem->RegisterPlayerController(this);
+	}
 	ShowPokemonPartyWidget();
 	
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
@@ -38,17 +43,25 @@ void AUEPlayerController::OnPossess(APawn* InPawn)
 	Super::OnPossess(InPawn);
 
 	AUEPlayerCharacter* PlayerCharacter = Cast<AUEPlayerCharacter>(InPawn);
-	UUEGameInstance* UEGameInstance = Cast<UUEGameInstance>(GetGameInstance());
-	if (!PlayerCharacter || !UEGameInstance)
+	if (!PlayerCharacter)
 	{
 		return;
 	}
 
-	FUEHHVAppearance PendingAppearance;
-	if (UEGameInstance->GetPendingHHVAppearance(PendingAppearance))
+	if (UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
 	{
-		// 레벨 이동 직후 빙의 순서가 달라져도 저장한 커마를 다시 입힌다.
-		PlayerCharacter->ApplyHHVAppearance(PendingAppearance);
+		FieldClientSubsystem->RegisterPlayerController(this);
+		FieldClientSubsystem->AttachPlayerCharacter(PlayerCharacter);
+	}
+
+	if (UUEGameInstance* UEGameInstance = Cast<UUEGameInstance>(GetGameInstance()))
+	{
+		FUEHHVAppearance PendingAppearance;
+		if (UEGameInstance->GetPendingHHVAppearance(PendingAppearance))
+		{
+			// 레벨 이동 직후 빙의 순서가 달라져도 저장한 커마를 다시 입힌다.
+			PlayerCharacter->ApplyHHVAppearance(PendingAppearance);
+		}
 	}
 
 	// 컨트롤러보다 Pawn 빙의가 늦어도 이미 생성된 HUD에 정확한 로스터 소유자를 다시 연결한다.

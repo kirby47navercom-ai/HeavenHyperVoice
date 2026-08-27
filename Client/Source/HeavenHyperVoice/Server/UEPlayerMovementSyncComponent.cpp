@@ -1,6 +1,6 @@
 #include "UEPlayerMovementSyncComponent.h"
 
-#include "../../Character/UEPlayerCharacter.h"
+#include "../Character/UEPlayerCharacter.h"
 
 UUEPlayerMovementSyncComponent::UUEPlayerMovementSyncComponent()
 {

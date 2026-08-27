@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "HHVFieldConnection.h"
+#include "../Net/HHVFieldConnection.h"
 
 #include <memory>
 
@@ -59,6 +59,9 @@ public:
 	UUEFieldServerBridgeComponent();
 	virtual void BeginDestroy() override;
 
+	void AttachToPlayer(AUEPlayerCharacter* PlayerCharacter);
+	void DetachFromPlayer();
+
 	UFUNCTION(BlueprintPure, Category = "Field Server")
 	bool IsExternalFieldServerConfigured() const;
 
@@ -112,6 +115,7 @@ private:
 	void ResolveSyncComponents();
 	void StartFieldConnection();
 	void StopFieldConnection();
+	void DestroyPresentationActors();
 	void HandleFieldEnterAck(uint64 EntityId, float ServerX, float ServerY, float Facing);
 	void HandleFieldCorrection(uint32 Sequence, float ServerX, float ServerY, float Facing);
 	void HandleFieldSnapshot(const FHHVFieldSnapshot& Snapshot);

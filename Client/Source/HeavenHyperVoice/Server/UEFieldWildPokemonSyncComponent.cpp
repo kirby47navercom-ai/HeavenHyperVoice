@@ -1,6 +1,6 @@
 #include "UEFieldWildPokemonSyncComponent.h"
 
-#include "HHVFieldConnection.h"
+#include "../Net/HHVFieldConnection.h"
 #include "../Pokemon/UEPokemonCharacter.h"
 
 #include "Engine/World.h"

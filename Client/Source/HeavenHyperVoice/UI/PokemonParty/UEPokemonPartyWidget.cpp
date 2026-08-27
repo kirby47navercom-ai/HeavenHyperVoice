@@ -1,13 +1,15 @@
 #include "UEPokemonPartyWidget.h"
 
 #include "../../Character/UEPlayerCharacter.h"
-#include "../../Net/UEFieldServerBridgeComponent.h"
+#include "../../Server/UEFieldClientSubsystem.h"
 
 #include "Components/Image.h"
 #include "Components/PanelWidget.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "Components/Widget.h"
+#include "Engine/LocalPlayer.h"
+#include "GameFramework/PlayerController.h"
 
 UUEPokemonPartyWidget::UUEPokemonPartyWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -32,9 +34,9 @@ void UUEPokemonPartyWidget::NativeConstruct()
 
 void UUEPokemonPartyWidget::NativeDestruct()
 {
-	if (UUEFieldServerBridgeComponent* Bridge = GetFieldServerBridge())
+	if (UUEFieldClientSubsystem* FieldClientSubsystem = GetFieldClientSubsystem())
 	{
-		Bridge->OnPokemonPartyChanged.RemoveDynamic(
+		FieldClientSubsystem->OnPokemonPartyChanged.RemoveDynamic(
 			this,
 			&UUEPokemonPartyWidget::HandlePokemonPartyChanged);
 	}
@@ -51,9 +53,9 @@ void UUEPokemonPartyWidget::InitializeForPlayer(AUEPlayerCharacter* PlayerCharac
 
 void UUEPokemonPartyWidget::BindRosterDelegate()
 {
-	if (UUEFieldServerBridgeComponent* Bridge = GetFieldServerBridge())
+	if (UUEFieldClientSubsystem* FieldClientSubsystem = GetFieldClientSubsystem())
 	{
-		Bridge->OnPokemonPartyChanged.AddUniqueDynamic(
+		FieldClientSubsystem->OnPokemonPartyChanged.AddUniqueDynamic(
 			this,
 			&UUEPokemonPartyWidget::HandlePokemonPartyChanged);
 	}
@@ -73,13 +75,13 @@ void UUEPokemonPartyWidget::RefreshProfiles()
 		SourcePlayer = Cast<AUEPlayerCharacter>(GetOwningPlayerPawn());
 	}
 
-	UUEFieldServerBridgeComponent* Bridge = GetFieldServerBridge();
-	if (!SourcePlayer.IsValid() || !Bridge)
+	UUEFieldClientSubsystem* FieldClientSubsystem = GetFieldClientSubsystem();
+	if (!FieldClientSubsystem)
 	{
 		return;
 	}
 
-	const TArray<FUEFieldPokemonPartyEntry>& ServerProfiles = Bridge->GetCachedPokemonPartyEntries();
+	const TArray<FUEFieldPokemonPartyEntry>& ServerProfiles = FieldClientSubsystem->GetCachedPokemonPartyEntries();
 
 	for (const FUEFieldPokemonPartyEntry& ServerProfile : ServerProfiles)
 	{
@@ -200,11 +202,17 @@ void UUEPokemonPartyWidget::ApplyActiveProfile(const FUEPokemonProfileViewData* 
 	}
 }
 
-UUEFieldServerBridgeComponent* UUEPokemonPartyWidget::GetFieldServerBridge() const
+UUEFieldClientSubsystem* UUEPokemonPartyWidget::GetFieldClientSubsystem() const
 {
-	if (!SourcePlayer.IsValid())
+	if (const APlayerController* OwningPlayer = GetOwningPlayer())
 	{
-		return nullptr;
+		if (ULocalPlayer* LocalPlayer = OwningPlayer->GetLocalPlayer())
+		{
+			return LocalPlayer->GetSubsystem<UUEFieldClientSubsystem>();
+		}
 	}
-	return SourcePlayer->GetFieldServerBridgeComponent();
+
+	return SourcePlayer.IsValid()
+		? UUEFieldClientSubsystem::Get(SourcePlayer.Get())
+		: nullptr;
 }

@@ -1,11 +1,10 @@
 #include "UEFieldServerBridgeComponent.h"
 
-#include "HHVFieldConnection.h"
 #include "UEFieldRemotePlayerSyncComponent.h"
 #include "UEFieldWildPokemonSyncComponent.h"
 #include "../Character/UEPlayerCharacter.h"
-#include "../Player/Server/UEPlayerMovementSyncComponent.h"
 #include "../System/UEGameInstance.h"
+#include "UEPlayerMovementSyncComponent.h"
 
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -22,6 +21,7 @@ UUEFieldServerBridgeComponent::UUEFieldServerBridgeComponent()
 
 void UUEFieldServerBridgeComponent::BeginDestroy()
 {
+	DetachFromPlayer();
 	StopFieldConnection();
 	Super::BeginDestroy();
 }
@@ -56,13 +56,6 @@ void UUEFieldServerBridgeComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	CachedPlayerCharacter = Cast<AUEPlayerCharacter>(GetOwner());
-	AUEPlayerCharacter* PlayerCharacter = CachedPlayerCharacter.Get();
-	if (!PlayerCharacter)
-	{
-		return;
-	}
-
 	const UWorld* OwnerWorld = GetWorld();
 	if (!OwnerWorld || (OwnerWorld->WorldType != EWorldType::Game && OwnerWorld->WorldType != EWorldType::PIE))
 	{
@@ -70,12 +63,26 @@ void UUEFieldServerBridgeComponent::BeginPlay()
 		return;
 	}
 
-	if (PlayerCharacter->IsRemoteProxy())
+	SetComponentTickEnabled(FieldConnection != nullptr);
+}
+
+void UUEFieldServerBridgeComponent::AttachToPlayer(AUEPlayerCharacter* PlayerCharacter)
+{
+	if (!PlayerCharacter || PlayerCharacter->IsRemoteProxy())
 	{
-		SetComponentTickEnabled(false);
+		DetachFromPlayer();
 		return;
 	}
 
+	if (CachedPlayerCharacter.Get() == PlayerCharacter)
+	{
+		ResolveSyncComponents();
+		StartFieldConnection();
+		return;
+	}
+
+	DetachFromPlayer();
+	CachedPlayerCharacter = PlayerCharacter;
 	ResolveSyncComponents();
 	PlayerCharacter->OnCharacterMovementUpdated.AddDynamic(
 		this,
@@ -83,9 +90,9 @@ void UUEFieldServerBridgeComponent::BeginPlay()
 	StartFieldConnection();
 }
 
-void UUEFieldServerBridgeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+void UUEFieldServerBridgeComponent::DetachFromPlayer()
 {
-	if (AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter())
+	if (AUEPlayerCharacter* PlayerCharacter = CachedPlayerCharacter.Get())
 	{
 		PlayerCharacter->OnCharacterMovementUpdated.RemoveDynamic(
 			this,
@@ -93,15 +100,18 @@ void UUEFieldServerBridgeComponent::EndPlay(const EEndPlayReason::Type EndPlayRe
 	}
 
 	StopFieldConnection();
-	if (WildPokemonSyncComponent.IsValid())
-	{
-		WildPokemonSyncComponent->DestroyWildPokemons();
-	}
-	if (RemotePlayerSyncComponent.IsValid())
-	{
-		RemotePlayerSyncComponent->DestroyRemotePlayers();
-	}
+	DestroyPresentationActors();
 
+	CachedPlayerCharacter.Reset();
+	MovementSyncComponent.Reset();
+	WildPokemonSyncComponent.Reset();
+	RemotePlayerSyncComponent.Reset();
+	TimeSinceLastSend = 0.0f;
+}
+
+void UUEFieldServerBridgeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	DetachFromPlayer();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -138,6 +148,24 @@ void UUEFieldServerBridgeComponent::ResolveSyncComponents()
 
 void UUEFieldServerBridgeComponent::StartFieldConnection()
 {
+	if (FieldConnection)
+	{
+		return;
+	}
+
+	const UWorld* OwnerWorld = GetWorld();
+	if (!OwnerWorld || (OwnerWorld->WorldType != EWorldType::Game && OwnerWorld->WorldType != EWorldType::PIE))
+	{
+		return;
+	}
+
+	if (!GetPlayerCharacter())
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("FieldServerBridge: no attached local player; field connection is delayed."));
+		return;
+	}
+
 	if (FieldServerHost.IsEmpty() || FieldServerPort <= 0)
 	{
 		UE_LOG(LogTemp, Error,
@@ -237,6 +265,18 @@ void UUEFieldServerBridgeComponent::StopFieldConnection()
 {
 	FieldConnection.reset();
 	SetComponentTickEnabled(false);
+}
+
+void UUEFieldServerBridgeComponent::DestroyPresentationActors()
+{
+	if (WildPokemonSyncComponent.IsValid())
+	{
+		WildPokemonSyncComponent->DestroyWildPokemons();
+	}
+	if (RemotePlayerSyncComponent.IsValid())
+	{
+		RemotePlayerSyncComponent->DestroyRemotePlayers();
+	}
 }
 
 void UUEFieldServerBridgeComponent::HandleFieldEnterAck(
@@ -345,12 +385,7 @@ FVector UUEFieldServerBridgeComponent::MakeEntityLocation(float ServerX, float S
 
 AUEPlayerCharacter* UUEFieldServerBridgeComponent::GetPlayerCharacter() const
 {
-	if (CachedPlayerCharacter.IsValid())
-	{
-		return CachedPlayerCharacter.Get();
-	}
-
-	return Cast<AUEPlayerCharacter>(GetOwner());
+	return CachedPlayerCharacter.Get();
 }
 
 void UUEFieldServerBridgeComponent::HandleCharacterMovementUpdated(

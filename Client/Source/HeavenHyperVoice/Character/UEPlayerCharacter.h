@@ -15,7 +15,6 @@ class USpringArmComponent;
 class USkeletalMeshComponent;
 class UUEHHVCustomizationCatalog;
 class UUEFieldRemotePlayerSyncComponent;
-class UUEFieldServerBridgeComponent;
 class UUEFieldWildPokemonSyncComponent;
 class UUEPlayerAnimationDataAsset;
 class UUEPlayerMovementSyncComponent;
@@ -91,9 +90,6 @@ public:
 	UUEPlayerMovementSyncComponent* GetMovementSyncComponent() const { return MovementSyncComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Field Server")
-	UUEFieldServerBridgeComponent* GetFieldServerBridgeComponent() const { return FieldServerBridgeComponent; }
-
-	UFUNCTION(BlueprintPure, Category = "Field Server")
 	UUEFieldWildPokemonSyncComponent* GetFieldWildPokemonSyncComponent() const { return FieldWildPokemonSyncComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Field Server")
@@ -137,9 +133,6 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Movement Sync")
 	TObjectPtr<UUEPlayerMovementSyncComponent> MovementSyncComponent = nullptr;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Field Server")
-	TObjectPtr<UUEFieldServerBridgeComponent> FieldServerBridgeComponent = nullptr;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Field Server")
 	TObjectPtr<UUEFieldWildPokemonSyncComponent> FieldWildPokemonSyncComponent = nullptr;

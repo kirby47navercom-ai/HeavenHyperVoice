@@ -3,11 +3,11 @@
 #include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
 #include "../Animation/UEAnimInstance.h"
 #include "../Animation/UEFollowerAnimInstance.h"
-#include "../Net/UEFieldRemotePlayerSyncComponent.h"
-#include "../Net/UEFieldServerBridgeComponent.h"
-#include "../Net/UEFieldWildPokemonSyncComponent.h"
 #include "../Data/UEPlayerAnimationDataAsset.h"
-#include "../Player/Server/UEPlayerMovementSyncComponent.h"
+#include "../Server/UEFieldClientSubsystem.h"
+#include "../Server/UEFieldRemotePlayerSyncComponent.h"
+#include "../Server/UEFieldWildPokemonSyncComponent.h"
+#include "../Server/UEPlayerMovementSyncComponent.h"
 #include "../System/UEGameInstance.h"
 #include "../UEGameplayTags.h"
 
@@ -280,7 +280,6 @@ AUEPlayerCharacter::AUEPlayerCharacter()
 	FollowCamera->bUsePawnControlRotation = false;
 
 	MovementSyncComponent = CreateDefaultSubobject<UUEPlayerMovementSyncComponent>(TEXT("MovementSyncComponent"));
-	FieldServerBridgeComponent = CreateDefaultSubobject<UUEFieldServerBridgeComponent>(TEXT("FieldServerBridgeComponent"));
 	FieldWildPokemonSyncComponent = CreateDefaultSubobject<UUEFieldWildPokemonSyncComponent>(TEXT("FieldWildPokemonSyncComponent"));
 	FieldRemotePlayerSyncComponent = CreateDefaultSubobject<UUEFieldRemotePlayerSyncComponent>(TEXT("FieldRemotePlayerSyncComponent"));
 
@@ -616,17 +615,19 @@ void AUEPlayerCharacter::SetMovementInput(const FVector2D& NewMovementInput)
 
 void AUEPlayerCharacter::RequestPokemonToggle()
 {
-	if (FieldServerBridgeComponent)
+	if (UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
 	{
-		FieldServerBridgeComponent->SendPokemonToggleRequest();
+		FieldClientSubsystem->SendPokemonToggleRequest();
 	}
 }
 
 bool AUEPlayerCharacter::CommandPokemonAttack(int32 AttackSlot)
 {
-	return FieldServerBridgeComponent
-		? FieldServerBridgeComponent->SendPokemonAttackRequest(AttackSlot)
-		: false;
+	if (UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
+	{
+		return FieldClientSubsystem->SendPokemonAttackRequest(AttackSlot);
+	}
+	return false;
 }
 
 void AUEPlayerCharacter::ApplyLocalMovementInput()

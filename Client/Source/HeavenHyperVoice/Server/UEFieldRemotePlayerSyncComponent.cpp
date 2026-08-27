@@ -1,6 +1,6 @@
 #include "UEFieldRemotePlayerSyncComponent.h"
 
-#include "HHVFieldConnection.h"
+#include "../Net/HHVFieldConnection.h"
 #include "../Character/UEPlayerCharacter.h"
 
 #include "Engine/World.h"

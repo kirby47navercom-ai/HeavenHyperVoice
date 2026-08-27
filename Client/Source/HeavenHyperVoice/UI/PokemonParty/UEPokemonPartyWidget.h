@@ -10,7 +10,7 @@ class UImage;
 class UPanelWidget;
 class UProgressBar;
 class UTextBlock;
-class UUEFieldServerBridgeComponent;
+class UUEFieldClientSubsystem;
 class UWidget;
 
 /**
@@ -86,7 +86,7 @@ private:
 
 	void BindRosterDelegate();
 	void ApplyActiveProfile(const FUEPokemonProfileViewData* ActiveProfile);
-	UUEFieldServerBridgeComponent* GetFieldServerBridge() const;
+	UUEFieldClientSubsystem* GetFieldClientSubsystem() const;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Party", meta = (AllowPrivateAccess = "true"))
 	TArray<FUEPokemonProfileViewData> Profiles;
