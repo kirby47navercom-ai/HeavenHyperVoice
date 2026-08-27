@@ -38,6 +38,33 @@ struct Child {
 
 HANDLE g_job = nullptr;
 
+// 띄운 자식들의 프로세스 핸들. 시작이 끝나면 더 바뀌지 않는다.
+std::vector<HANDLE> g_processes;
+
+// 자식이 스스로 정리할 때까지 기다리는 시간.
+//
+// 자식은 CREATE_NEW_PROCESS_GROUP 없이 만들어져 같은 콘솔에 붙는다. 그래서
+// Ctrl+C 는 런처와 자식 셋에 **함께** 전달되고, 각 서버는 자기 콘솔 핸들러로
+// 정상 종료를 시작한다. 여기서 바로 TerminateJobObject 를 부르면 그 정리가
+// 잘려나간다 — FieldServer 는 그때 접속자 전원의 위치를 DB 에 저장한다.
+//
+// CTRL_CLOSE_EVENT 는 시스템이 약 5초 뒤 프로세스를 강제 종료하므로 그 안쪽으로 둔다.
+//
+// ponytail: 고정 4초. 접속자가 수백 명이 되면 위치 저장이 이 안에 안 끝날 수
+//           있다. 그때는 자식이 "저장 끝났다" 를 알리게 하고 그걸 기다리면 된다.
+constexpr DWORD kGracefulExitMs = 4000;
+
+// 남은 자식이 모두 끝나기를 기다린 뒤, 그래도 살아 있으면 커널에 맡긴다.
+void stopChildren() {
+    if (!g_processes.empty()) {
+        ::WaitForMultipleObjects(static_cast<DWORD>(g_processes.size()), g_processes.data(),
+                                 TRUE, kGracefulExitMs);
+    }
+    if (g_job != nullptr) {
+        ::TerminateJobObject(g_job, 0);
+    }
+}
+
 void printUsage() {
     std::cout << "Launcher - starts the HeavenHyperVoice servers together\n"
                  "\n"
@@ -46,6 +73,9 @@ void printUsage() {
                  "  --field-port <n>  field server port (default 9200)\n"
                  "  --host <h>        host advertised to clients for chat and field\n"
                  "                    (default 127.0.0.1)\n"
+                 "  --wild-count <n>  wild pokemon the field server spawns (default 50;\n"
+                 "                    higher than the field server's own default because\n"
+                 "                    they roam only the middle 8000x8000 of the world)\n"
                  "  --verbose         pass --verbose to the servers\n"
                  "  --help            show this message\n"
                  "\n"
@@ -97,10 +127,10 @@ std::filesystem::path executableDirectory() {
 
 BOOL WINAPI consoleHandler(DWORD signal) {
     if (signal == CTRL_C_EVENT || signal == CTRL_BREAK_EVENT || signal == CTRL_CLOSE_EVENT) {
-        std::cout << "\n[launcher] shutting down, terminating servers" << std::endl;
-        if (g_job != nullptr) {
-            ::TerminateJobObject(g_job, 0);
-        }
+        // 자식들도 같은 콘솔 신호를 받아 이미 정리를 시작했다. 기다렸다가 끊는다.
+        std::cout << "\n[launcher] shutting down, waiting for servers to save and exit"
+                  << std::endl;
+        stopChildren();
         return TRUE;
     }
     return FALSE;
@@ -140,6 +170,7 @@ Child startServer(const std::filesystem::path& exe, const std::string& commandLi
     }
 
     ::ResumeThread(child.info.hThread);
+    g_processes.push_back(child.info.hProcess);
     std::cout << "[launcher] started " << name << " (pid " << child.info.dwProcessId << ')'
               << std::endl;
     return child;
@@ -195,14 +226,8 @@ int main(int argc, char** argv) {
                   << ". Ctrl+C to stop all." << std::endl;
 
         // 아무 자식이나 죽으면 나머지도 정리한다. 반쪽만 살아있는 상태를 만들지 않는다.
-        std::vector<HANDLE> handles;
-        handles.reserve(children.size());
-        for (const Child& child : children) {
-            handles.push_back(child.info.hProcess);
-        }
-
-        const DWORD result = ::WaitForMultipleObjects(static_cast<DWORD>(handles.size()),
-                                                      handles.data(), FALSE, INFINITE);
+        const DWORD result = ::WaitForMultipleObjects(static_cast<DWORD>(g_processes.size()),
+                                                      g_processes.data(), FALSE, INFINITE);
         const std::size_t index = result - WAIT_OBJECT_0;
         if (index < children.size()) {
             DWORD exitCode = 0;
@@ -211,7 +236,9 @@ int main(int argc, char** argv) {
                       << ", stopping the rest" << std::endl;
         }
 
-        ::TerminateJobObject(g_job, 0);
+        // 여기서도 즉시 죽이지 않는다. Ctrl+C 로 셋이 함께 내려가는 중일 수 있고,
+        // 그때 FieldServer 는 아직 위치를 저장하고 있다.
+        stopChildren();
 
         for (Child& child : children) {
             ::CloseHandle(child.info.hThread);
