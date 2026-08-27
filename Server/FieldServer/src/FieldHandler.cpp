@@ -56,6 +56,10 @@ void writeRedisPosition(net::RedisClient& redis, std::uint64_t characterId,
                    "EX", "300"});
 }
 
+void clearRedisPosition(net::RedisClient& redis, std::uint64_t characterId) {
+    redis.command({"DEL", positionKey(characterId)});
+}
+
 bool FieldHandler::onFrame(TlsSession& session, const proto::Bytes& body) {
     Stage stage = Stage::Done;
     {
@@ -246,7 +250,7 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
         if (displaced.characterId != 0) {
             context->characters->savePosition(displaced.characterId, displaced.position);
             if (context->redis != nullptr) {
-                context->redis->command({"DEL", positionKey(displaced.characterId)});
+                clearRedisPosition(*context->redis, displaced.characterId);
             }
         }
 
@@ -302,7 +306,7 @@ void FieldHandler::onClosed(TlsSession& session) {
     context_.dbQueue->submit([context, characterId, position] {
         context->characters->savePosition(characterId, position);
         if (context->redis != nullptr) {
-            context->redis->command({"DEL", positionKey(characterId)});
+            clearRedisPosition(*context->redis, characterId);
         }
     });
 }

@@ -260,12 +260,39 @@ int main(int argc, char** argv) {
             std::uniform_int_distribution<int> species(1, static_cast<int>(
                                                               heaven::proto::kSpeciesCount));
 
+            // 벽 안에 뜬 야생은 영원히 얼어붙는다 — blockedAlong 이 출발점부터
+            // 훑으므로 어느 방향으로 가려 해도 첫 샘플에서 막힌다. 자리를 몇 번
+            // 다시 굴려보고, 그래도 막히면 그 마리는 건너뛴다.
+            const heaven::field::AgentSettings agent{};
+            const auto insideWall = [&](float x, float y) {
+                if (!collision.loaded()) {
+                    return false;
+                }
+                const heaven::field::Vec3 point{x, y, agent.capsuleHalfHeight};
+                return collision.blockedAlong(point, point, agent);
+            };
+
+            int spawned = 0;
             for (int i = 0; i < options.wildCount; ++i) {
-                const heaven::data::Position start{0, coord(rng), coord(rng), 0.f};
+                float x = coord(rng);
+                float y = coord(rng);
+                for (int attempt = 0; attempt < 16 && insideWall(x, y); ++attempt) {
+                    x = coord(rng);
+                    y = coord(rng);
+                }
+                if (insideWall(x, y)) {
+                    continue;
+                }
                 world.enterWild(heaven::field::kWildIdBase + static_cast<std::uint64_t>(i),
-                                static_cast<std::uint16_t>(species(rng)), start);
+                                static_cast<std::uint16_t>(species(rng)),
+                                heaven::data::Position{0, x, y, 0.f});
+                ++spawned;
             }
-            spdlog::info("wild pokemon: {} spawned via {}", options.wildCount, script);
+            if (spawned < options.wildCount) {
+                spdlog::warn("{} wild pokemon skipped: no clear spawn point found",
+                             options.wildCount - spawned);
+            }
+            spdlog::info("wild pokemon: {} spawned via {}", spawned, script);
         }
 
         heaven::field::FieldContext context;
@@ -364,6 +391,11 @@ int main(int argc, char** argv) {
             const auto remaining = world.positions();
             for (const auto& [characterId, position] : remaining) {
                 characters->savePosition(characterId, position);
+                // 캐시를 지우지 않으면 입장 경로가 캐시를 먼저 보므로, 방금
+                // 저장한 위치가 다음 접속에서 최대 60초 전 값으로 되돌아간다.
+                if (redis != nullptr) {
+                    heaven::field::clearRedisPosition(*redis, characterId);
+                }
             }
             if (!remaining.empty()) {
                 spdlog::info("saved {} position(s) on shutdown", remaining.size());

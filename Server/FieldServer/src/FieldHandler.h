@@ -78,4 +78,11 @@ private:
 void writeRedisPosition(net::RedisClient& redis, std::uint64_t characterId,
                         const data::Position& position);
 
+// 캐시에 남은 위치를 지운다. **DB 에 저장한 직후에 반드시 부를 것.**
+//
+// 입장 경로가 캐시를 DB 보다 먼저 보므로(서버가 죽으면 캐시 쪽이 최신이다),
+// 지우지 않으면 방금 저장한 값이 다음 접속에서 최대 한 주기만큼 옛 위치로
+// 되돌아간다.
+void clearRedisPosition(net::RedisClient& redis, std::uint64_t characterId);
+
 }  // namespace heaven::field
