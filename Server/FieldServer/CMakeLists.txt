@@ -11,14 +11,13 @@ add_executable(FieldServer
 
 target_include_directories(FieldServer PRIVATE src)
 
-# advapi32 는 자격증명 관리자(CredRead) API 다. DB 비밀번호를 LoginServer 와
-# 같은 자격증명에서 읽으므로 추가 설정이 없다.
+# DB 비밀번호는 LoginServer 와 같은 자격증명에서 읽으므로 추가 설정이 없다.
+# 그 API(advapi32)는 Net 이 들고 온다.
 target_link_libraries(FieldServer PRIVATE
     Net
     Data
     sol2::sol2
     ${LUA_LIBRARIES}
-    advapi32
 )
 target_include_directories(FieldServer PRIVATE ${LUA_INCLUDE_DIR})
 

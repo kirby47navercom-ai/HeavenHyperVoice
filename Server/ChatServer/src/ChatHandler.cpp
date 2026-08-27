@@ -6,16 +6,6 @@
 
 namespace heaven::chat {
 
-namespace {
-
-std::int64_t nowUnix() {
-    return std::chrono::duration_cast<std::chrono::seconds>(
-               std::chrono::system_clock::now().time_since_epoch())
-        .count();
-}
-
-}  // namespace
-
 bool ChatHandler::onFrame(TlsSession& session, const proto::Bytes& body) {
     return joined_ ? handleSay(body) : handleHello(session, body);
 }
@@ -38,7 +28,7 @@ bool ChatHandler::handleHello(TlsSession& session, const proto::Bytes& body) {
     const proto::Bytes ticket(blob->begin(), blob->end());
     proto::VerifiedTicket verified;
     const proto::TicketError error =
-        proto::verifyTicket(ticket, proto::kAudienceChat, keys_, nowUnix(), verified);
+        proto::verifyTicket(ticket, proto::kAudienceChat, keys_, proto::nowUnix(), verified);
 
     if (error != proto::TicketError::Ok) {
         spdlog::warn("{}: ticket rejected - {}", session.peer(), proto::describe(error));

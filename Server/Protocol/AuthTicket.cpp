@@ -6,24 +6,12 @@
 #include <stdexcept>
 #include <utility>
 
+#include "OpenSslError.h"
 #include "auth_generated.h"
 
 namespace heaven::proto {
 
 namespace {
-
-std::string opensslError() {
-    std::string out;
-    while (const unsigned long code = ERR_get_error()) {
-        char buf[256];
-        ERR_error_string_n(code, buf, sizeof(buf));
-        if (!out.empty()) {
-            out += "; ";
-        }
-        out += buf;
-    }
-    return out.empty() ? "unknown OpenSSL error" : out;
-}
 
 EVP_PKEY* loadKey(const std::string& path, bool isPrivate) {
     BIO* bio = BIO_new_file(path.c_str(), "r");

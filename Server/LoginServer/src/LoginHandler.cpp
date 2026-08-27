@@ -2,7 +2,6 @@
 
 #include <spdlog/spdlog.h>
 
-#include <chrono>
 #include <memory>
 #include <utility>
 
@@ -10,16 +9,6 @@
 #include "PasswordHash.h"
 
 namespace heaven::login {
-
-namespace {
-
-std::int64_t nowUnix() {
-    return std::chrono::duration_cast<std::chrono::seconds>(
-               std::chrono::system_clock::now().time_since_epoch())
-        .count();
-}
-
-}  // namespace
 
 bool LoginHandler::onFrame(TlsSession& session, const proto::Bytes& body) {
     // 핸들러 상태는 IOCP 워커(여기)와 인증 스레드가 같이 만진다. 다른 핸들러와
@@ -379,7 +368,7 @@ bool LoginHandler::handleSelectCharacter(TlsSession& session,
 
         // 서비스마다 audience 를 달리해 따로 서명한다. 한 장을 돌려쓰면
         // 필드 티켓으로 채팅 서버에 들어갈 수 있게 된다.
-        const std::int64_t issued = nowUnix();
+        const std::int64_t issued = proto::nowUnix();
         std::vector<proto::EndpointInfo> endpoints;
         endpoints.reserve(context->targets.size());
 

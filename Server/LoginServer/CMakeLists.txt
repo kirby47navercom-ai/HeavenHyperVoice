@@ -5,12 +5,10 @@ add_executable(LoginServer
 
 target_include_directories(LoginServer PRIVATE src)
 
-# advapi32 는 자격증명 관리자(CredRead/CredWrite) API 다. ODBC 와 argon2 는
-# Data 가 들고 있다.
+# 자격증명 관리자(advapi32)는 Net 이, ODBC 와 argon2 는 Data 가 들고 온다.
 target_link_libraries(LoginServer PRIVATE
     Net
     Data
-    advapi32
 )
 
 target_compile_definitions(LoginServer PRIVATE

@@ -3,19 +3,12 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
-#include <chrono>
 #include <memory>
 #include <sstream>
 
 namespace heaven::field {
 
 namespace {
-
-std::int64_t nowUnix() {
-    return std::chrono::duration_cast<std::chrono::seconds>(
-               std::chrono::system_clock::now().time_since_epoch())
-        .count();
-}
 
 std::string positionKey(std::uint64_t characterId) {
     return "pos:" + std::to_string(characterId);
@@ -162,7 +155,7 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
     const proto::Bytes ticket(blob->begin(), blob->end());
     proto::VerifiedTicket verified;
     const proto::TicketError error =
-        proto::verifyTicket(ticket, proto::kAudienceField, *context_.keys, nowUnix(), verified);
+        proto::verifyTicket(ticket, proto::kAudienceField, *context_.keys, proto::nowUnix(), verified);
 
     if (error != proto::TicketError::Ok) {
         spdlog::warn("{}: ticket rejected - {}", session.peer(), proto::describe(error));

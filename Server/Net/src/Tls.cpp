@@ -1,51 +1,34 @@
 #include "Tls.h"
 
-#include <openssl/err.h>
-
 #include <stdexcept>
 
+#include "OpenSslError.h"
+
 namespace heaven::net {
-
-namespace {
-
-std::string opensslError() {
-    std::string out;
-    while (const unsigned long code = ERR_get_error()) {
-        char buf[256];
-        ERR_error_string_n(code, buf, sizeof(buf));
-        if (!out.empty()) {
-            out += "; ";
-        }
-        out += buf;
-    }
-    return out.empty() ? "unknown OpenSSL error" : out;
-}
-
-}  // namespace
 
 // ------------------------------------------------------------ TlsContext
 
 TlsContext::TlsContext(const std::string& certFile, const std::string& keyFile) {
     ctx_ = SSL_CTX_new(TLS_server_method());
     if (ctx_ == nullptr) {
-        throw std::runtime_error("SSL_CTX_new failed: " + opensslError());
+        throw std::runtime_error("SSL_CTX_new failed: " + proto::opensslError());
     }
 
     SSL_CTX_set_min_proto_version(ctx_, TLS1_2_VERSION);
     SSL_CTX_set_options(ctx_, SSL_OP_NO_COMPRESSION | SSL_OP_CIPHER_SERVER_PREFERENCE);
 
     if (SSL_CTX_use_certificate_chain_file(ctx_, certFile.c_str()) != 1) {
-        const std::string err = opensslError();
+        const std::string err = proto::opensslError();
         SSL_CTX_free(ctx_);
         throw std::runtime_error("failed to load certificate " + certFile + ": " + err);
     }
     if (SSL_CTX_use_PrivateKey_file(ctx_, keyFile.c_str(), SSL_FILETYPE_PEM) != 1) {
-        const std::string err = opensslError();
+        const std::string err = proto::opensslError();
         SSL_CTX_free(ctx_);
         throw std::runtime_error("failed to load private key " + keyFile + ": " + err);
     }
     if (SSL_CTX_check_private_key(ctx_) != 1) {
-        const std::string err = opensslError();
+        const std::string err = proto::opensslError();
         SSL_CTX_free(ctx_);
         throw std::runtime_error("certificate and private key do not match: " + err);
     }
@@ -62,7 +45,7 @@ TlsContext::~TlsContext() {
 TlsChannel::TlsChannel(SSL_CTX* ctx) {
     ssl_ = SSL_new(ctx);
     if (ssl_ == nullptr) {
-        throw std::runtime_error("SSL_new failed: " + opensslError());
+        throw std::runtime_error("SSL_new failed: " + proto::opensslError());
     }
 
     rbio_ = BIO_new(BIO_s_mem());
@@ -71,7 +54,7 @@ TlsChannel::TlsChannel(SSL_CTX* ctx) {
         if (rbio_ != nullptr) BIO_free(rbio_);
         if (wbio_ != nullptr) BIO_free(wbio_);
         SSL_free(ssl_);
-        throw std::runtime_error("BIO_new failed: " + opensslError());
+        throw std::runtime_error("BIO_new failed: " + proto::opensslError());
     }
 
     // 메모리 BIO 는 비면 재시도를 요청해야 한다. 이게 없으면 EOF 로 오인한다.
@@ -89,7 +72,7 @@ TlsChannel::~TlsChannel() {
 }
 
 void TlsChannel::captureError(const char* what, int sslError) {
-    const std::string detail = opensslError();
+    const std::string detail = proto::opensslError();
     lastError_ =
         std::string(what) + " failed (SSL error " + std::to_string(sslError) + "): " + detail;
 }

@@ -68,13 +68,13 @@ inline constexpr SpeciesBase kSpecies[] = {
 
 inline constexpr std::size_t kSpeciesCount = sizeof(kSpecies) / sizeof(kSpecies[0]);
 inline constexpr std::uint32_t kStarterLevel = 5;
-inline constexpr std::uint32_t kMaxLevel = 100;
 
 // 개체값은 스탯당 0~31 이고 태어날 때 정해져 바뀌지 않는다.
-// 노력치는 스탯당 0~252, 여섯 개 합계 510 이 상한이다.
+//
+// 노력치 상한(스탯당 252, 합계 510)과 레벨 상한(100)은 여기 두지 않는다.
+// 올릴 경로가 아직 없어 강제할 곳도 없었고, 쓰이지 않는 상수는 "검사하고
+// 있다" 는 착각만 만든다. 노력치를 올리는 코드가 생길 때 그 옆에 둘 것.
 inline constexpr std::uint8_t kMaxIndividualValue = 31;
-inline constexpr std::uint16_t kMaxEffortValue = 252;
-inline constexpr std::uint16_t kMaxEffortTotal = 510;
 
 // 알 수 없는 종족이면 nullptr. 클라이언트가 보낸 값은 반드시 이걸로 거른다.
 inline constexpr const SpeciesBase* findSpecies(std::uint16_t id) {

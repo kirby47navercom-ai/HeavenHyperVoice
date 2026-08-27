@@ -8,6 +8,7 @@
 
 #include <openssl/evp.h>
 
+#include <chrono>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -18,6 +19,17 @@
 namespace heaven::proto {
 
 inline constexpr std::size_t kEd25519SignatureBytes = 64;
+
+// 티켓의 issued/expires 와 verifyTicket 의 now 가 쓰는 시각.
+//
+// 발급하는 쪽과 검증하는 세 서버가 각자 같은 함수를 들고 있었다. 벽시계를
+// 쓰는 이유는 티켓이 프로세스 경계를 넘기 때문이다 — steady_clock 은 프로세스
+// 마다 기준점이 달라 만료를 비교할 수 없다.
+inline std::int64_t nowUnix() {
+    return std::chrono::duration_cast<std::chrono::seconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
 
 // 서비스별 audience 값. 음성/게이트웨이가 생기면 여기에 추가한다.
 //
