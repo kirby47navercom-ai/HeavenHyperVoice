@@ -1,8 +1,7 @@
 #include "UEPokemonPartyWidget.h"
 
 #include "../../Character/UEPlayerCharacter.h"
-#include "../../Pokemon/Server/UEPokemonServerSubsystem.h"
-#include "../../Pokemon/UEPokemonSpeciesData.h"
+#include "../../Net/UEFieldServerBridgeComponent.h"
 
 #include "Components/Image.h"
 #include "Components/PanelWidget.h"
@@ -33,11 +32,11 @@ void UUEPokemonPartyWidget::NativeConstruct()
 
 void UUEPokemonPartyWidget::NativeDestruct()
 {
-	if (UUEPokemonServerSubsystem* ServerSubsystem = GetPokemonServerSubsystem())
+	if (UUEFieldServerBridgeComponent* Bridge = GetFieldServerBridge())
 	{
-		ServerSubsystem->OnOwnedPokemonRosterChanged.RemoveDynamic(
+		Bridge->OnPokemonPartyChanged.RemoveDynamic(
 			this,
-			&UUEPokemonPartyWidget::HandleOwnedRosterChanged);
+			&UUEPokemonPartyWidget::HandlePokemonPartyChanged);
 	}
 
 	Super::NativeDestruct();
@@ -52,20 +51,17 @@ void UUEPokemonPartyWidget::InitializeForPlayer(AUEPlayerCharacter* PlayerCharac
 
 void UUEPokemonPartyWidget::BindRosterDelegate()
 {
-	if (UUEPokemonServerSubsystem* ServerSubsystem = GetPokemonServerSubsystem())
+	if (UUEFieldServerBridgeComponent* Bridge = GetFieldServerBridge())
 	{
-		ServerSubsystem->OnOwnedPokemonRosterChanged.AddUniqueDynamic(
+		Bridge->OnPokemonPartyChanged.AddUniqueDynamic(
 			this,
-			&UUEPokemonPartyWidget::HandleOwnedRosterChanged);
+			&UUEPokemonPartyWidget::HandlePokemonPartyChanged);
 	}
 }
 
-void UUEPokemonPartyWidget::HandleOwnedRosterChanged(int32 OwnerServerPlayerId)
+void UUEPokemonPartyWidget::HandlePokemonPartyChanged()
 {
-	if (SourcePlayer.IsValid() && SourcePlayer->GetPokemonServerPlayerId() == OwnerServerPlayerId)
-	{
-		RefreshProfiles();
-	}
+	RefreshProfiles();
 }
 
 void UUEPokemonPartyWidget::RefreshProfiles()
@@ -77,42 +73,28 @@ void UUEPokemonPartyWidget::RefreshProfiles()
 		SourcePlayer = Cast<AUEPlayerCharacter>(GetOwningPlayerPawn());
 	}
 
-	UUEPokemonServerSubsystem* ServerSubsystem = GetPokemonServerSubsystem();
-	if (!SourcePlayer.IsValid() || !ServerSubsystem)
+	UUEFieldServerBridgeComponent* Bridge = GetFieldServerBridge();
+	if (!SourcePlayer.IsValid() || !Bridge)
 	{
 		return;
 	}
 
-	const int32 OwnerServerPlayerId = SourcePlayer->GetPokemonServerPlayerId();
-	const int32 SelectedPokemonInstanceId = SourcePlayer->GetSelectedPokemonCompanionInstanceId();
-	const TArray<FUEPokemonServerOwnedPokemon> OwnedPokemons =
-		ServerSubsystem->GetOwnedPokemons(OwnerServerPlayerId);
+	const TArray<FUEFieldPokemonPartyEntry>& ServerProfiles = Bridge->GetCachedPokemonPartyEntries();
 
-	for (const FUEPokemonServerOwnedPokemon& OwnedPokemon : OwnedPokemons)
+	for (const FUEFieldPokemonPartyEntry& ServerProfile : ServerProfiles)
 	{
 		FUEPokemonProfileViewData Profile;
-		Profile.PokemonInstanceId = OwnedPokemon.PokemonInstanceId;
-		Profile.SpeciesId = OwnedPokemon.SpeciesId;
-		Profile.Level = FMath::Max(OwnedPokemon.Level, 1);
-		Profile.CurrentHP = FMath::Max(OwnedPokemon.CurrentHP, 0.0f);
-		Profile.bSelected = OwnedPokemon.PokemonInstanceId == SelectedPokemonInstanceId;
-		Profile.bCanSummon = OwnedPokemon.bCanSummon;
-
-		if (OwnedPokemon.SpeciesData)
-		{
-			Profile.DisplayName = OwnedPokemon.SpeciesData->DisplayName.IsEmpty()
-				? FText::FromName(OwnedPokemon.SpeciesData->SpeciesId)
-				: OwnedPokemon.SpeciesData->DisplayName;
-			Profile.ProfileIcon = OwnedPokemon.SpeciesData->ProfileIcon;
-			Profile.MaxHP = FMath::Max(OwnedPokemon.SpeciesData->MaxHP, 1.0f);
-		}
-		else
-		{
-			Profile.DisplayName = OwnedPokemon.SpeciesId.IsNone()
-				? UnknownPokemonText
-				: FText::FromName(OwnedPokemon.SpeciesId);
-			Profile.MaxHP = FMath::Max(OwnedPokemon.CurrentHP, 1.0f);
-		}
+		Profile.PokemonInstanceId = ServerProfile.PokemonInstanceId;
+		Profile.SpeciesId = ServerProfile.SpeciesId;
+		Profile.DisplayName = ServerProfile.DisplayName.IsEmpty()
+			? (ServerProfile.SpeciesId.IsNone() ? UnknownPokemonText : FText::FromName(ServerProfile.SpeciesId))
+			: ServerProfile.DisplayName;
+		Profile.ProfileIcon = ServerProfile.ProfileIcon;
+		Profile.Level = FMath::Max(ServerProfile.Level, 1);
+		Profile.CurrentHP = FMath::Max(ServerProfile.CurrentHP, 0.0f);
+		Profile.MaxHP = FMath::Max(ServerProfile.MaxHP, 1.0f);
+		Profile.bSelected = ServerProfile.bSelected;
+		Profile.bCanSummon = ServerProfile.bCanSummon;
 
 		Profile.CurrentHP = FMath::Clamp(Profile.CurrentHP, 0.0f, Profile.MaxHP);
 		Profiles.Add(Profile);
@@ -218,8 +200,11 @@ void UUEPokemonPartyWidget::ApplyActiveProfile(const FUEPokemonProfileViewData* 
 	}
 }
 
-UUEPokemonServerSubsystem* UUEPokemonPartyWidget::GetPokemonServerSubsystem() const
+UUEFieldServerBridgeComponent* UUEPokemonPartyWidget::GetFieldServerBridge() const
 {
-	UGameInstance* GameInstance = GetGameInstance();
-	return GameInstance ? GameInstance->GetSubsystem<UUEPokemonServerSubsystem>() : nullptr;
+	if (!SourcePlayer.IsValid())
+	{
+		return nullptr;
+	}
+	return SourcePlayer->GetFieldServerBridgeComponent();
 }

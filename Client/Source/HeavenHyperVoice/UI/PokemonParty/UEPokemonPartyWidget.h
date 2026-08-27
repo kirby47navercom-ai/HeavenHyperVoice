@@ -10,7 +10,7 @@ class UImage;
 class UPanelWidget;
 class UProgressBar;
 class UTextBlock;
-class UUEPokemonServerSubsystem;
+class UUEFieldServerBridgeComponent;
 class UWidget;
 
 /**
@@ -82,11 +82,11 @@ protected:
 
 private:
 	UFUNCTION()
-	void HandleOwnedRosterChanged(int32 OwnerServerPlayerId);
+	void HandlePokemonPartyChanged();
 
 	void BindRosterDelegate();
 	void ApplyActiveProfile(const FUEPokemonProfileViewData* ActiveProfile);
-	UUEPokemonServerSubsystem* GetPokemonServerSubsystem() const;
+	UUEFieldServerBridgeComponent* GetFieldServerBridge() const;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Party", meta = (AllowPrivateAccess = "true"))
 	TArray<FUEPokemonProfileViewData> Profiles;

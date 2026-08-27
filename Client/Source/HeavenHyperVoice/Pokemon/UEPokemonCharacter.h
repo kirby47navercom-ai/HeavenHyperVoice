@@ -12,8 +12,6 @@ class AUEPokemonCharacter;
 class UAbilitySystemComponent;
 class UUEAbilitySystemComponent;
 class UUEPokemonAttributeSet;
-class UUEPokemonServerComponent;
-class UUEPokemonSummonEffectComponent;
 class UUEPokemonSpeciesCatalog;
 class UUEPokemonSpeciesData;
 class USoundBase;
@@ -108,13 +106,6 @@ enum class EUEPokemonRenderType : uint8
 	Boss
 };
 
-UENUM(BlueprintType)
-enum class EUEPokemonServerSimulationMode : uint8
-{
-	FollowOwner,
-	Wander
-};
-
 USTRUCT(BlueprintType)
 struct FUEPokemonServerMoveSnapshot
 {
@@ -200,6 +191,9 @@ public:
 	void ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot);
 
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
+	void InitializeServerEntity(int64 NewServerEntityId, int32 SpeciesNumber, EUEPokemonRenderType NewRenderType);
+
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
 	void ApplyServerMoveTarget(const FVector& ServerLocation, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bTeleported);
 
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
@@ -207,6 +201,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Server")
 	int32 GetServerPokemonId() const { return ServerPokemonId; }
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Server")
+	int64 GetServerEntityId() const { return ServerEntityId; }
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Server")
 	int32 GetPokemonInstanceId() const { return PokemonInstanceId; }
@@ -277,12 +274,6 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Animation")
 	float GetLastServerAnimationEventDurationSeconds() const { return LastServerAnimationEventDurationSeconds; }
-
-	UFUNCTION(BlueprintPure, Category = "Pokemon|Server")
-	UUEPokemonServerComponent* GetServerComponent() const { return ServerComponent; }
-
-	UFUNCTION(BlueprintPure, Category = "Pokemon|Effects")
-	UUEPokemonSummonEffectComponent* GetSummonEffectComponent() const { return SummonEffectComponent; }
 
 	// 소환 후보 중 하나를 무작위로 재생한다. 후보가 없으면 대표 울음을 사용한다.
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
@@ -357,13 +348,6 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UUEPokemonAttributeSet> AttributeSet = nullptr;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UUEPokemonServerComponent> ServerComponent = nullptr;
-
-	// 서버 상태와 분리된 소환/귀환 화면 연출 컴포넌트다.
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|Effects", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UUEPokemonSummonEffectComponent> SummonEffectComponent = nullptr;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Species", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UUEPokemonSpeciesData> PokemonSpeciesData = nullptr;
 
@@ -415,6 +399,9 @@ private:
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
 	int32 ServerPokemonId = 0;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
+	int64 ServerEntityId = 0;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
 	int32 PokemonInstanceId = 0;

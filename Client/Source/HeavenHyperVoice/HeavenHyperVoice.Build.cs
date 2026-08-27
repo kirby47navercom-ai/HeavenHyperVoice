@@ -21,7 +21,6 @@ public class HeavenHyperVoice : ModuleRules
 			"GameplayTags",
 			"UMG",
 			"GameplayAbilities",
-			"Niagara",
 			"GameplayTasks","GeometryCore",
 			"GeometryFramework","ProceduralMeshComponent"
 		});
@@ -41,15 +40,6 @@ public class HeavenHyperVoice : ModuleRules
 		// licence notice for FlatBuffers, not the headers, so there is nothing
 		// to depend on instead. See ThirdParty/FlatBuffers/README.md.
 		PrivateIncludePaths.Add(Path.Combine(ModuleDirectory, "..", "ThirdParty", "FlatBuffers"));
-
-		if (Target.bBuildEditor)
-		{
-			PrivateDependencyModuleNames.AddRange(new string[]
-			{
-				"UnrealEd"
-			});
-		}
-
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		

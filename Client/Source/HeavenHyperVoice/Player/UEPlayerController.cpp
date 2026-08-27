@@ -51,12 +51,6 @@ void AUEPlayerController::OnPossess(APawn* InPawn)
 		PlayerCharacter->ApplyHHVAppearance(PendingAppearance);
 	}
 
-	// 로비에서 입장한 슬롯의 스타팅 포켓몬도 같은 로컬 저장값으로 맞춘다.
-	if (UUEPokemonSpeciesData* PartnerSpecies = UEGameInstance->GetSelectedPartnerSpecies())
-	{
-		PlayerCharacter->SetPokemonCompanionSpeciesData(PartnerSpecies);
-	}
-
 	// 컨트롤러보다 Pawn 빙의가 늦어도 이미 생성된 HUD에 정확한 로스터 소유자를 다시 연결한다.
 	if (PokemonPartyWidget)
 	{
@@ -375,7 +369,7 @@ void AUEPlayerController::HandlePokemonToggle(const FInputActionValue& Value)
 
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
-		PlayerCharacter->TogglePokemonCompanion();
+		PlayerCharacter->RequestPokemonToggle();
 	}
 }
 

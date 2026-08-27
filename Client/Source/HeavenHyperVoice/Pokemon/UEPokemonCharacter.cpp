@@ -3,12 +3,9 @@
 #include "UEPokemonCharacter.h"
 
 #include "../AbilitySystem/UEAbilitySystemComponent.h"
-#include "../AI/UEAIController.h"
 #include "../Animation/UEPokemonAnimInstance.h"
 #include "AbilitySystem/UEPokemonAttributeSet.h"
 #include "UEPokemonSpeciesData.h"
-#include "Server/UEPokemonServerComponent.h"
-#include "Effects/UEPokemonSummonEffectComponent.h"
 #include "UEPokemonSpeciesCatalog.h"
 
 #include "Components/CapsuleComponent.h"
@@ -25,8 +22,8 @@ AUEPokemonCharacter::AUEPokemonCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	AIControllerClass = AUEAIController::StaticClass();
-	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
+	AIControllerClass = nullptr;
+	AutoPossessAI = EAutoPossessAI::Disabled;
 
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
@@ -42,9 +39,6 @@ AUEPokemonCharacter::AUEPokemonCharacter()
 	AbilitySystemComponent->SetIsReplicated(true);
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
 	AttributeSet = CreateDefaultSubobject<UUEPokemonAttributeSet>(TEXT("PokemonAttributeSet"));
-
-	ServerComponent = CreateDefaultSubobject<UUEPokemonServerComponent>(TEXT("ServerComponent"));
-	SummonEffectComponent = CreateDefaultSubobject<UUEPokemonSummonEffectComponent>(TEXT("SummonEffectComponent"));
 }
 
 void AUEPokemonCharacter::BeginPlay()
@@ -96,6 +90,7 @@ void AUEPokemonCharacter::InitializeAbilitySystem()
 
 void AUEPokemonCharacter::ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot)
 {
+	ServerEntityId = static_cast<int64>(FMath::Max(Snapshot.PokemonId, 0));
 	ServerPokemonId = Snapshot.PokemonId;
 	PokemonInstanceId = Snapshot.PokemonInstanceId;
 	ServerSpeciesId = Snapshot.SpeciesId;
@@ -103,6 +98,24 @@ void AUEPokemonCharacter::ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnap
 	ApplyServerStats(Snapshot.CurrentHP, Snapshot.MaxHP);
 	ApplyServerAnimationSnapshot(Snapshot);
 	ApplyServerMoveTarget(Snapshot.Location, Snapshot.Velocity, Snapshot.Rotation, Snapshot.bTeleported);
+}
+
+void AUEPokemonCharacter::InitializeServerEntity(
+	int64 NewServerEntityId,
+	int32 SpeciesNumber,
+	EUEPokemonRenderType NewRenderType)
+{
+	ServerEntityId = NewServerEntityId;
+	ServerPokemonId = NewServerEntityId >= 0 && NewServerEntityId <= static_cast<int64>(MAX_int32)
+		? static_cast<int32>(NewServerEntityId)
+		: 0;
+	SetRenderType(NewRenderType);
+
+	if (SpeciesNumber > 0)
+	{
+		SetWildSpecies(SpeciesNumber);
+		SetRenderType(NewRenderType);
+	}
 }
 
 void AUEPokemonCharacter::SetPokemonSpeciesData(UUEPokemonSpeciesData* NewSpeciesData)
@@ -355,8 +368,6 @@ void AUEPokemonCharacter::ApplyPokemonSpeciesData()
 		MeshComponent->SetRelativeTransform(PokemonSpeciesData->MeshRelativeTransform);
 	}
 
-	// 이 값은 게임 스탯 스케일이라 uu/s 로 쓰려면 환산이 필요하다
-	// (UEPokemonServerComponent 의 SpeciesMoveSpeedToUnrealUnits).
 	ConfiguredMoveSpeed = PokemonSpeciesData->MoveSpeed;
 
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
