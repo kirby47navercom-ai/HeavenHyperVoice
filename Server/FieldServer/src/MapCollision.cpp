@@ -127,8 +127,19 @@ bool MapCollision::blockedAlong(const Vec3& from, const Vec3& to,
     const float step = std::max(1.f, agent.capsuleRadius);
 
     // 속도 상한이 이미 걸린 뒤라 거리가 폭주하지 않지만, 상한을 나중에 올리면
-    // 여기가 조용히 비싸진다. 개수를 묶어두고 그 이상은 성기게 본다.
+    // 여기가 조용히 비싸진다. 그래서 개수를 묶어둔다.
     constexpr int kMaxSamples = 64;
+
+    // 개수를 묶은 채로 더 긴 구간을 받으면 샘플 간격이 캡슐 반지름보다 벌어져
+    // 그 사이로 얇은 벽이 지나간다 — 검사가 켜진 채로 조용히 뚫리는 것이
+    // 제일 나쁘다. 그럴 만큼 긴 이동은 통과시키지 않는다.
+    //
+    // 정상 이동은 여기 닿지 않는다: kMaxSpeed x kMaxMoveElapsed + 여유 = 800uu 로
+    // 24 샘플이면 되고, 야생은 한 틱에 그보다 훨씬 짧게 움직인다.
+    if (distance > static_cast<float>(kMaxSamples) * step) {
+        return true;
+    }
+
     const int samples = std::min(kMaxSamples, static_cast<int>(distance / step) + 1);
 
     for (int i = 1; i <= samples; ++i) {

@@ -366,7 +366,11 @@ void World::move(std::uint64_t characterId, float x, float y, float facing,
     //
     // 지터 여유는 메시지마다 새로 주지 않고 예산으로 들고 다닌다. 상수로 주면
     // 자주 보내는 것만으로 상한을 몇십 배 넘길 수 있다 (FieldGeometry.h 참고).
-    const float elapsed = std::chrono::duration<float>(now - self.lastMoveAt).count();
+    //
+    // 경과 시간에는 상한이 있다. 없으면 Move 를 한동안 끊었다가 한 번 보내는
+    // 것만으로 허용 거리가 그만큼 커져 맵 반대편까지 순간이동한다.
+    const float elapsed = std::min(proto::kMaxMoveElapsed,
+                                   std::chrono::duration<float>(now - self.lastMoveAt).count());
     const float straight = proto::kMaxSpeed * elapsed;
     self.slack = std::min(proto::kSpeedSlack, self.slack + proto::kSlackRefill * elapsed);
 
