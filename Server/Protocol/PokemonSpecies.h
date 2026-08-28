@@ -69,6 +69,28 @@ inline constexpr SpeciesBase kSpecies[] = {
 inline constexpr std::size_t kSpeciesCount = sizeof(kSpecies) / sizeof(kSpecies[0]);
 inline constexpr std::uint32_t kStarterLevel = 5;
 
+// 캐릭터를 만들 때 고를 수 있는 종족. **도감번호**다.
+//
+// 종족 표에 있다고 다 스타터인 것은 아니다. 아르세우스로 시작하면 안 된다.
+// 클라이언트 위젯에도 같은 목록이 있지만(WBP 가 아니라 코드에), 여기가 권위다 —
+// 클라가 다른 것을 보내도 여기서 걸린다.
+inline constexpr std::uint16_t kStarterDex[] = {
+    1,    // 이상해씨
+    4,    // 파이리
+    7,    // 꼬부기
+    25,   // 피카츄
+    133,  // 이브이
+};
+
+inline constexpr bool isStarterDex(std::uint16_t dex) {
+    for (const std::uint16_t starter : kStarterDex) {
+        if (starter == dex) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // 개체값은 스탯당 0~31 이고 태어날 때 정해져 바뀌지 않는다.
 //
 // 노력치 상한(스탯당 252, 합계 510)과 레벨 상한(100)은 여기 두지 않는다.
@@ -214,6 +236,18 @@ static_assert(kSnorlaxLv100.maxHp == 461 && kSnorlaxLv100.atk == 256,
 static_assert(findSpecies(0) == nullptr, "0 은 유효한 종족이 아니다");
 static_assert(findSpecies(kSpeciesCount + 1) == nullptr, "범위 밖 종족은 걸러야 한다");
 static_assert(findSpecies(7) != nullptr && findSpecies(7)->id == 7, "id 가 인덱스와 어긋났다");
+
+// 스타터 도감번호가 전부 종족 표에 있어야 한다. 없는 번호를 넣어 두면 캐릭터
+// 생성 화면에 뜨는데 서버가 거절하는 상태가 된다.
+inline constexpr bool startersExist() {
+    for (const std::uint16_t dex : kStarterDex) {
+        if (findSpeciesByDex(dex) == nullptr) {
+            return false;
+        }
+    }
+    return true;
+}
+static_assert(startersExist(), "스타터 도감번호가 종족 표에 없다");
 }  // namespace detail
 
 }  // namespace heaven::proto

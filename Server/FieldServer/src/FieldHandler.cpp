@@ -1,5 +1,7 @@
 #include "FieldHandler.h"
 
+#include <vector>
+
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
@@ -84,10 +86,105 @@ bool FieldHandler::onFrame(TlsSession& session, const proto::Bytes& body) {
             }
             return true;
 
+        case HeavenField::Payload::SetParty:
+            if (stage != Stage::InField) {
+                spdlog::warn("{}: SetParty before entering the field", session.peer());
+                return false;
+            }
+            return handleSetParty(session, *envelope->payload_as_SetParty());
+
         default:
             spdlog::warn("{}: unexpected field payload", session.peer());
             return false;
     }
+}
+
+// 저장소가 곧 권위다. 방금 쓴 값을 다시 읽어 보내면 부분 적용이나 거절을
+// 클라가 따로 해석할 필요가 없다.
+void FieldHandler::sendPartyState(const FieldContext& context, TlsSession& session,
+                                  std::uint64_t accountId, std::uint64_t characterId,
+                                  bool ok, std::string_view message) {
+    std::vector<std::uint16_t> party;
+    std::vector<std::uint16_t> unlocked;
+    std::uint16_t activeDex = 0;
+
+    if (context.characters != nullptr) {
+        if (const auto character = context.characters->find(accountId, characterId)) {
+            party = character->party;
+            unlocked = character->unlocked;
+            if (character->hasPartner) {
+                activeDex = proto::dexOf(character->partner.speciesId);
+            }
+        }
+    }
+    session.send(proto::encodePartyState(ok, message, party, activeDex, unlocked));
+}
+
+bool FieldHandler::handleSetParty(TlsSession& session, const HeavenField::SetParty& request) {
+    // dev 모드에는 저장소가 없다. 파티는 DB 에만 있으므로 바꿀 것도 읽을 것도 없다.
+    if (context_.characters == nullptr) {
+        session.send(proto::encodePartyState(false, "이 서버에서는 파티를 바꿀 수 없습니다", {},
+                                             0, {}));
+        return true;
+    }
+
+    std::vector<std::uint16_t> dexNumbers;
+    if (const auto* numbers = request.dex_numbers()) {
+        if (numbers->size() > data::kMaxPartySize) {
+            session.send(proto::encodePartyState(false, "파티는 3마리까지입니다", {}, 0, {}));
+            return true;
+        }
+        dexNumbers.reserve(numbers->size());
+        for (const std::uint16_t dex : *numbers) {
+            dexNumbers.push_back(dex);
+        }
+    }
+
+    auto self = session.shared_from_this();
+    const FieldContext* context = &context_;
+    const std::uint64_t accountId = accountId_;
+    const std::uint64_t characterId = characterId_;
+    const std::uint16_t activeDex = request.active_dex();
+
+    // DB 왕복이라 IOCP 워커에서 하지 않는다.
+    const bool queued = context_.dbQueue->submit(
+        [self, context, accountId, characterId, dexNumbers, activeDex] {
+            const data::PartyResult result =
+                context->characters->setParty(accountId, characterId, dexNumbers, activeDex);
+
+            const char* message = nullptr;
+            switch (result) {
+                case data::PartyResult::Ok:           message = "파티를 저장했습니다"; break;
+                case data::PartyResult::NotFound:     message = "캐릭터를 찾을 수 없습니다"; break;
+                case data::PartyResult::NotUnlocked:  message = "해금하지 않은 포켓몬입니다"; break;
+                case data::PartyResult::TooMany:      message = "파티는 3마리까지입니다"; break;
+                case data::PartyResult::Duplicate:    message = "같은 포켓몬을 두 번 넣을 수 없습니다"; break;
+                case data::PartyResult::NotInParty:   message = "파티에 없는 포켓몬은 꺼낼 수 없습니다"; break;
+                case data::PartyResult::NotSupported: message = "이 서버는 파티 편집을 지원하지 않습니다"; break;
+                case data::PartyResult::Error:        message = "서버 오류로 저장하지 못했습니다"; break;
+            }
+
+            const bool ok = result == data::PartyResult::Ok;
+            sendPartyState(*context, *self, accountId, characterId, ok, message);
+
+            if (ok) {
+                // 월드에도 반영해야 남들 화면의 파트너가 바뀐다. 내부 번호로
+                // 들고 있으므로 도감번호를 되돌린다.
+                const proto::SpeciesBase* species =
+                    activeDex == 0 ? nullptr : proto::findSpeciesByDex(activeDex);
+                context->world->setPartnerSpecies(characterId,
+                                                  species != nullptr ? species->id
+                                                                     : std::uint16_t{0});
+                spdlog::info("party updated: character {} ({} members, active dex {})",
+                             characterId, dexNumbers.size(), activeDex);
+            }
+        });
+
+    if (!queued) {
+        spdlog::warn("{}: db queue full, refusing SetParty", session.peer());
+        session.send(proto::encodePartyState(false, "서버가 혼잡합니다", {}, 0, {}));
+    }
+    return true;
 }
 
 // 로그인 서버 없이 필드만 붙여볼 때. 티켓도 DB 도 건너뛴다.
@@ -246,6 +343,10 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
                 clearRedisPosition(*context->redis, displaced.characterId);
             }
         }
+
+        // 파티 화면이 열릴 때 조회하지 않도록 입장할 때 한 번 실어 보낸다.
+        // 이미 DB 스레드 위라 그대로 쓴다.
+        sendPartyState(*context, *self, accountId, characterId, true, "");
 
         spdlog::info("entered: {} (character {}, {}) at ({:.0f}, {:.0f}) - {} in field",
                      character->nickname, characterId, self->peer(), start.x, start.y,

@@ -2,6 +2,7 @@
 
 #include "UEFieldRemotePlayerSyncComponent.h"
 #include "UEFieldPartnerSyncComponent.h"
+#include "UEFieldPartyWidget.h"
 #include "UEFieldWildPokemonSyncComponent.h"
 #include "../Character/UEPlayerCharacter.h"
 #include "../Pokemon/UEPokemonSpeciesData.h"
@@ -31,13 +32,6 @@ void UUEFieldServerBridgeComponent::BeginDestroy()
 bool UUEFieldServerBridgeComponent::IsExternalFieldServerConfigured() const
 {
 	return !FieldServerHost.IsEmpty() && FieldServerPort > 0;
-}
-
-bool UUEFieldServerBridgeComponent::SendPokemonToggleRequest()
-{
-	UE_LOG(LogTemp, Verbose,
-		TEXT("FieldServerBridge: pokemon toggle request is waiting for a field protocol message."));
-	return false;
 }
 
 bool UUEFieldServerBridgeComponent::SendPokemonAttackRequest(int32 AttackSlot)
@@ -216,6 +210,14 @@ void UUEFieldServerBridgeComponent::StartFieldConnection()
 	{
 		HandleFieldDisconnected(Reason);
 	};
+	FieldConnection->OnPartyState = [this](const FHHVFieldPartyState& State)
+	{
+		HandleFieldPartyState(State);
+	};
+	FieldConnection->OnPartnerChanged = [this](uint64 EntityId, uint16 PartnerDex)
+	{
+		HandleFieldPartnerChanged(EntityId, PartnerDex);
+	};
 
 	uint64 ResolvedCharacterId = static_cast<uint64>(DevCharacterId);
 	int32 CharIdOverride = 0;
@@ -290,6 +292,11 @@ void UUEFieldServerBridgeComponent::DestroyPresentationActors()
 	{
 		PartnerSyncComponent->DestroyPartners();
 	}
+	if (PartyWidget)
+	{
+		PartyWidget->RemoveFromParent();
+		PartyWidget = nullptr;
+	}
 }
 
 void UUEFieldServerBridgeComponent::HandleFieldEnterAck(
@@ -298,6 +305,8 @@ void UUEFieldServerBridgeComponent::HandleFieldEnterAck(
 	float ServerY,
 	float Facing)
 {
+	LocalEntityId = EntityId;
+
 	if (!MovementSyncComponent.IsValid())
 	{
 		return;
@@ -417,6 +426,111 @@ void UUEFieldServerBridgeComponent::HandleFieldSnapshot(const FHHVFieldSnapshot&
 void UUEFieldServerBridgeComponent::HandleFieldDisconnected(const FString& Reason)
 {
 	UE_LOG(LogTemp, Warning, TEXT("FieldServerBridge: disconnected: %s"), *Reason);
+}
+
+void UUEFieldServerBridgeComponent::HandleFieldPartyState(const FHHVFieldPartyState& State)
+{
+	PartyState.bOk = State.bOk;
+	PartyState.Message = State.Message;
+	PartyState.ActiveDex = static_cast<int32>(State.ActiveDex);
+
+	PartyState.Party.Reset(State.Party.Num());
+	for (const uint16 Dex : State.Party)
+	{
+		PartyState.Party.Add(static_cast<int32>(Dex));
+	}
+	PartyState.Unlocked.Reset(State.Unlocked.Num());
+	for (const uint16 Dex : State.Unlocked)
+	{
+		PartyState.Unlocked.Add(static_cast<int32>(Dex));
+	}
+
+	// 내 파트너는 PartnerChanged 로 따로 오지 않는다 — 월드에 반영된 결과가
+	// 여기 실려 오므로 이걸로 바꾼다.
+	HandleFieldPartnerChanged(LocalEntityId, State.ActiveDex);
+
+	OnPartyStateChanged.Broadcast();
+}
+
+void UUEFieldServerBridgeComponent::HandleFieldPartnerChanged(uint64 EntityId, uint16 PartnerDex)
+{
+	if (!PartnerSyncComponent.IsValid() || EntityId == 0)
+	{
+		return;
+	}
+
+	// 같은 액터를 새 종족으로 바꾸지 않고 지우고 다시 만든다. 메시·캡슐·
+	// 애니메이션·울음이 전부 종족 데이터에 묶여 있어 교체 경로가 따로 필요하다.
+	PartnerSyncComponent->RemovePartner(EntityId);
+	if (PartnerDex == 0)
+	{
+		return;
+	}
+
+	AActor* Owner = EntityId == LocalEntityId
+		? static_cast<AActor*>(GetPlayerCharacter())
+		: static_cast<AActor*>(RemotePlayerSyncComponent.IsValid()
+			? RemotePlayerSyncComponent->FindRemotePlayer(EntityId)
+			: nullptr);
+	if (Owner == nullptr)
+	{
+		return;  // 시야 밖이다. 다시 스폰될 때 partner_species 로 붙는다
+	}
+
+	PartnerSyncComponent->AddPartner(EntityId, Owner, static_cast<int32>(PartnerDex));
+}
+
+void UUEFieldServerBridgeComponent::TogglePartyWidget()
+{
+	if (PartyWidget)
+	{
+		PartyWidget->RemoveFromParent();
+		PartyWidget = nullptr;
+		return;
+	}
+
+	if (!PartyWidgetClass)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("FieldServerBridge: PartyWidgetClass is not assigned; set it in DefaultGame.ini."));
+		return;
+	}
+
+	const AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter();
+	APlayerController* Controller =
+		PlayerCharacter ? Cast<APlayerController>(PlayerCharacter->GetController()) : nullptr;
+	if (!Controller)
+	{
+		return;
+	}
+
+	PartyWidget = CreateWidget<UUEFieldPartyWidget>(Controller, PartyWidgetClass);
+	if (PartyWidget)
+	{
+		PartyWidget->AddToViewport();
+	}
+}
+
+bool UUEFieldServerBridgeComponent::SendSetParty(const TArray<int32>& DexNumbers, int32 ActiveDex)
+{
+	if (!FieldConnection || !FieldConnection->IsInField())
+	{
+		return false;
+	}
+
+	TArray<uint16> Members;
+	Members.Reserve(DexNumbers.Num());
+	for (const int32 Dex : DexNumbers)
+	{
+		if (Dex > 0 && Dex <= MAX_uint16)
+		{
+			Members.Add(static_cast<uint16>(Dex));
+		}
+	}
+
+	FieldConnection->SendSetParty(
+		Members, ActiveDex > 0 && ActiveDex <= MAX_uint16 ? static_cast<uint16>(ActiveDex) : 0);
+	return true;
 }
 
 FVector UUEFieldServerBridgeComponent::MakeEntityLocation(float ServerX, float ServerY) const

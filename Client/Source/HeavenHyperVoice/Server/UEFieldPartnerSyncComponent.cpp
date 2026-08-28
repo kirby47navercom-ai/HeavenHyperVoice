@@ -3,6 +3,7 @@
 #include "../Pokemon/UEPokemonCharacter.h"
 
 #include "Engine/World.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 UUEFieldPartnerSyncComponent::UUEFieldPartnerSyncComponent()
 {
@@ -42,7 +43,10 @@ void UUEFieldPartnerSyncComponent::AddPartner(uint64 OwnerEntityId, AActor* Owne
 		return;
 	}
 
-	const FTransform SpawnTransform(OwnerActor->GetActorRotation(), OwnerActor->GetActorLocation());
+	// 주인 앞 오른쪽에서 시작한다. 첫 프레임에 가까운 쪽으로 다시 고른다.
+	const FVector SpawnLocation = StandingSpot(*OwnerActor, 1.0f);
+	const FTransform SpawnTransform(OwnerActor->GetActorRotation(), SpawnLocation);
+
 	AUEPokemonCharacter* PartnerActor = World->SpawnActorDeferred<AUEPokemonCharacter>(
 		PartnerPokemonClass,
 		SpawnTransform,
@@ -59,7 +63,7 @@ void UUEFieldPartnerSyncComponent::AddPartner(uint64 OwnerEntityId, AActor* Owne
 	PartnerActor->AIControllerClass = nullptr;
 	PartnerActor->FinishSpawning(SpawnTransform);
 
-	// 주인과 부딪히면 서로 밀어내다 둘 다 튄다. 파트너는 보여 주기만 한다.
+	// 주인과 부딪히면 서로 밀어내다 둘 다 튄다. 관통은 AvoidOwner 가 막는다.
 	PartnerActor->SetActorEnableCollision(false);
 
 	// 종족은 도감번호로 찾는다. 엔티티 id 는 서버 것이 아니라 주인 것을 그대로
@@ -101,6 +105,45 @@ void UUEFieldPartnerSyncComponent::DestroyPartners()
 	Partners.Empty();
 }
 
+FVector UUEFieldPartnerSyncComponent::StandingSpot(const AActor& Owner, float SideSign) const
+{
+	// 예전 FollowOwnerAction::CalculateOffsetTarget 과 같은 자리다.
+	return Owner.GetActorLocation()
+		+ Owner.GetActorForwardVector() * FollowForwardOffset
+		+ Owner.GetActorRightVector() * FollowSideOffset * SideSign;
+}
+
+FVector UUEFieldPartnerSyncComponent::AvoidOwner(const FVector& From, const FVector& To,
+	const AActor& Owner, float SideSign) const
+{
+	const FVector ToTarget = To - From;
+	const float Length = ToTarget.Size2D();
+	if (Length <= KINDA_SMALL_NUMBER)
+	{
+		return To;
+	}
+
+	// 주인이 선분 위에 얹혀 있는지 본다. 뒤쪽이나 너머에 있으면 지나갈 일이 없다.
+	const FVector Direction = FVector(ToTarget.X, ToTarget.Y, 0.0f) / Length;
+	const FVector ToOwner = Owner.GetActorLocation() - From;
+	const float Along = FVector::DotProduct(FVector(ToOwner.X, ToOwner.Y, 0.0f), Direction);
+	if (Along <= 0.0f || Along >= Length)
+	{
+		return To;
+	}
+
+	const FVector Closest = FVector(ToOwner.X, ToOwner.Y, 0.0f) - Direction * Along;
+	if (Closest.Size2D() >= OwnerAvoidRadius)
+	{
+		return To;
+	}
+
+	// 관통 경로다. 주인 옆(가려는 쪽)을 먼저 들렀다 간다. 거기서 목표점까지는
+	// 같은 쪽이라 다시 주인을 가로지르지 않는다.
+	return Owner.GetActorLocation()
+		+ Owner.GetActorRightVector() * (OwnerAvoidRadius + FollowSideOffset * 0.5f) * SideSign;
+}
+
 void UUEFieldPartnerSyncComponent::TickComponent(
 	float DeltaTime,
 	ELevelTick TickType,
@@ -130,17 +173,49 @@ void UUEFieldPartnerSyncComponent::TickComponent(
 
 		const AActor* Owner = Partner.Owner.Get();
 		AUEPokemonCharacter* Actor = Partner.Actor.Get();
+		const FVector Here = Actor->GetActorLocation();
 
-		const FVector FollowPoint = Owner->GetActorLocation()
-			- Owner->GetActorForwardVector() * FollowDistance
-			+ Owner->GetActorRightVector() * FollowSideOffset;
-
-		const FVector Offset = FollowPoint - Actor->GetActorLocation();
-		const float Distance = Offset.Size2D();
-		if (Distance <= FollowTolerance)
+		// 주인 앞 좌우 중 가까운 쪽. 그냥 매번 가까운 쪽을 고르면 주인이 방향을
+		// 틀 때마다 좌우가 번갈아 뒤집히므로, 반대쪽이 확실히 가까울 때만 옮긴다.
+		const FVector Kept = StandingSpot(*Owner, Partner.SideSign);
+		const FVector Other = StandingSpot(*Owner, -Partner.SideSign);
+		if (FVector::Dist2D(Here, Other) + SideSwitchMargin < FVector::Dist2D(Here, Kept))
 		{
-			// 목표점 안에 있으면 목표를 새로 주지 않는다. UpdateServerDrivenMovement
-			// 가 속도를 0 으로 떨어뜨려 서 있는 애니메이션으로 돌아간다.
+			Partner.SideSign = -Partner.SideSign;
+		}
+
+		const FVector Spot = StandingSpot(*Owner, Partner.SideSign);
+		const float SpotDistance = FVector::Dist2D(Here, Spot);
+
+		if (SpotDistance <= ArriveDistance)
+		{
+			// 도착. 목표를 새로 주지 않으면 UpdateServerDrivenMovement 가 속도를
+			// 0 으로 떨어뜨려 서 있는 애니메이션으로 돌아간다.
+			Partner.IdleSeconds += FMath::Max(DeltaTime, 0.0f);
+
+			// 잠시 서 있으면 주인 쪽으로 몸을 돌린다. 바로 돌리면 주인이 조금만
+			// 움직여도 파트너가 계속 홱홱 돈다.
+			if (Partner.IdleSeconds >= FaceOwnerDelay)
+			{
+				const FVector ToOwner = Owner->GetActorLocation() - Here;
+				if (ToOwner.Size2D() > KINDA_SMALL_NUMBER)
+				{
+					const FRotator Facing(0.0f, ToOwner.Rotation().Yaw, 0.0f);
+					Actor->SetActorRotation(
+						FMath::RInterpTo(Actor->GetActorRotation(), Facing, DeltaTime, 6.0f));
+				}
+			}
+			continue;
+		}
+
+		Partner.IdleSeconds = 0.0f;
+
+		// 주인을 뚫고 가지 않는다. 가로지르는 경로면 옆으로 먼저 돈다.
+		const FVector Target = AvoidOwner(Here, Spot, *Owner, Partner.SideSign);
+		const FVector Offset = Target - Here;
+		const float Distance = Offset.Size2D();
+		if (Distance <= KINDA_SMALL_NUMBER)
+		{
 			continue;
 		}
 
@@ -150,13 +225,13 @@ void UUEFieldPartnerSyncComponent::TickComponent(
 		const float OwnerSpeed = Owner->GetVelocity().Size2D();
 		const float BaseSpeed = FMath::Max(OwnerSpeed, Actor->GetConfiguredMoveSpeed());
 		const float ChaseSpeed = FMath::Min(
-			BaseSpeed + (Distance - FollowTolerance) * CatchUpGain,
+			BaseSpeed + FMath::Max(Distance - ArriveDistance, 0.0f) * CatchUpGain,
 			MaxFollowSpeed);
 
 		// 속도를 명시하면 ApplyServerMoveTarget 이 종족 이동속도 상한 대신 이
 		// 값으로 구간 시간을 잡는다.
 		Actor->ApplyServerMoveTarget(
-			FollowPoint,
+			Target,
 			Offset.GetSafeNormal2D() * ChaseSpeed,
 			FRotator(0.0f, Offset.Rotation().Yaw, 0.0f),
 			/*bTeleported=*/false);

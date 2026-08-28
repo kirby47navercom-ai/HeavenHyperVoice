@@ -334,6 +334,30 @@ void World::updateVisibility(Entity& self) {
     });
 }
 
+void World::setPartnerSpecies(std::uint64_t characterId, std::uint16_t partnerSpecies) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    const auto it = entities_.find(characterId);
+    if (it == entities_.end()) {
+        return;  // 아직 안 들어왔거나 이미 나갔다
+    }
+
+    Entity& entity = it->second;
+    if (entity.partnerSpecies == partnerSpecies) {
+        return;  // 같은 값이면 알릴 것이 없다
+    }
+    entity.partnerSpecies = partnerSpecies;
+
+    // 프레임은 한 번만 만들어 돌려 쓴다. 보는 사람 수만큼 직렬화할 이유가 없다.
+    const proto::Bytes frame = proto::encodePartnerChanged(characterId, partnerSpecies);
+    for (const std::uint64_t viewerId : entity.visible) {
+        if (const auto viewer = entities_.find(viewerId); viewer != entities_.end()) {
+            sendTo(viewer->second, frame);
+        }
+    }
+    sendTo(entity, frame);
+}
+
 void World::move(std::uint64_t characterId, float x, float y, float facing,
                  std::uint32_t sequence) {
     // NaN/Inf 를 먼저 막는다. clampToWorld 의 비교는 NaN 에 대해 모두 거짓이라

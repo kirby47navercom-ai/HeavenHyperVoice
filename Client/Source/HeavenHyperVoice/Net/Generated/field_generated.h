@@ -36,6 +36,15 @@ struct NoticeBuilder;
 struct Correction;
 struct CorrectionBuilder;
 
+struct SetParty;
+struct SetPartyBuilder;
+
+struct PartyState;
+struct PartyStateBuilder;
+
+struct PartnerChanged;
+struct PartnerChangedBuilder;
+
 struct Envelope;
 struct EnvelopeBuilder;
 
@@ -47,11 +56,14 @@ enum class Payload : uint8_t {
   Snapshot = 4,
   Notice = 5,
   Correction = 6,
+  SetParty = 7,
+  PartyState = 8,
+  PartnerChanged = 9,
   MIN = NONE,
-  MAX = Correction
+  MAX = PartnerChanged
 };
 
-inline const Payload (&EnumValuesPayload())[7] {
+inline const Payload (&EnumValuesPayload())[10] {
   static const Payload values[] = {
     Payload::NONE,
     Payload::Enter,
@@ -59,13 +71,16 @@ inline const Payload (&EnumValuesPayload())[7] {
     Payload::Move,
     Payload::Snapshot,
     Payload::Notice,
-    Payload::Correction
+    Payload::Correction,
+    Payload::SetParty,
+    Payload::PartyState,
+    Payload::PartnerChanged
   };
   return values;
 }
 
 inline const char * const *EnumNamesPayload() {
-  static const char * const names[8] = {
+  static const char * const names[11] = {
     "NONE",
     "Enter",
     "EnterAck",
@@ -73,13 +88,16 @@ inline const char * const *EnumNamesPayload() {
     "Snapshot",
     "Notice",
     "Correction",
+    "SetParty",
+    "PartyState",
+    "PartnerChanged",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNamePayload(Payload e) {
-  if (::flatbuffers::IsOutRange(e, Payload::NONE, Payload::Correction)) return "";
+  if (::flatbuffers::IsOutRange(e, Payload::NONE, Payload::PartnerChanged)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesPayload()[index];
 }
@@ -110,6 +128,18 @@ template<> struct PayloadTraits<HeavenField::Notice> {
 
 template<> struct PayloadTraits<HeavenField::Correction> {
   static const Payload enum_value = Payload::Correction;
+};
+
+template<> struct PayloadTraits<HeavenField::SetParty> {
+  static const Payload enum_value = Payload::SetParty;
+};
+
+template<> struct PayloadTraits<HeavenField::PartyState> {
+  static const Payload enum_value = Payload::PartyState;
+};
+
+template<> struct PayloadTraits<HeavenField::PartnerChanged> {
+  static const Payload enum_value = Payload::PartnerChanged;
 };
 
 template <bool B = false>
@@ -691,6 +721,226 @@ inline ::flatbuffers::Offset<Correction> CreateCorrection(
   return builder_.Finish();
 }
 
+struct SetParty FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef SetPartyBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_DEX_NUMBERS = 4,
+    VT_ACTIVE_DEX = 6
+  };
+  const ::flatbuffers::Vector<uint16_t> *dex_numbers() const {
+    return GetPointer<const ::flatbuffers::Vector<uint16_t> *>(VT_DEX_NUMBERS);
+  }
+  uint16_t active_dex() const {
+    return GetField<uint16_t>(VT_ACTIVE_DEX, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_DEX_NUMBERS) &&
+           verifier.VerifyVector(dex_numbers()) &&
+           VerifyField<uint16_t>(verifier, VT_ACTIVE_DEX, 2) &&
+           verifier.EndTable();
+  }
+};
+
+struct SetPartyBuilder {
+  typedef SetParty Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_dex_numbers(::flatbuffers::Offset<::flatbuffers::Vector<uint16_t>> dex_numbers) {
+    fbb_.AddOffset(SetParty::VT_DEX_NUMBERS, dex_numbers);
+  }
+  void add_active_dex(uint16_t active_dex) {
+    fbb_.AddElement<uint16_t>(SetParty::VT_ACTIVE_DEX, active_dex, 0);
+  }
+  explicit SetPartyBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<SetParty> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<SetParty>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<SetParty> CreateSetParty(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint16_t>> dex_numbers = 0,
+    uint16_t active_dex = 0) {
+  SetPartyBuilder builder_(_fbb);
+  builder_.add_dex_numbers(dex_numbers);
+  builder_.add_active_dex(active_dex);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<SetParty> CreateSetPartyDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const std::vector<uint16_t> *dex_numbers = nullptr,
+    uint16_t active_dex = 0) {
+  auto dex_numbers__ = dex_numbers ? _fbb.CreateVector<uint16_t>(*dex_numbers) : 0;
+  return HeavenField::CreateSetParty(
+      _fbb,
+      dex_numbers__,
+      active_dex);
+}
+
+struct PartyState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef PartyStateBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_OK = 4,
+    VT_MESSAGE = 6,
+    VT_DEX_NUMBERS = 8,
+    VT_ACTIVE_DEX = 10,
+    VT_UNLOCKED = 12
+  };
+  bool ok() const {
+    return GetField<uint8_t>(VT_OK, 0) != 0;
+  }
+  const ::flatbuffers::String *message() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_MESSAGE);
+  }
+  const ::flatbuffers::Vector<uint16_t> *dex_numbers() const {
+    return GetPointer<const ::flatbuffers::Vector<uint16_t> *>(VT_DEX_NUMBERS);
+  }
+  uint16_t active_dex() const {
+    return GetField<uint16_t>(VT_ACTIVE_DEX, 0);
+  }
+  const ::flatbuffers::Vector<uint16_t> *unlocked() const {
+    return GetPointer<const ::flatbuffers::Vector<uint16_t> *>(VT_UNLOCKED);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint8_t>(verifier, VT_OK, 1) &&
+           VerifyOffset(verifier, VT_MESSAGE) &&
+           verifier.VerifyString(message()) &&
+           VerifyOffset(verifier, VT_DEX_NUMBERS) &&
+           verifier.VerifyVector(dex_numbers()) &&
+           VerifyField<uint16_t>(verifier, VT_ACTIVE_DEX, 2) &&
+           VerifyOffset(verifier, VT_UNLOCKED) &&
+           verifier.VerifyVector(unlocked()) &&
+           verifier.EndTable();
+  }
+};
+
+struct PartyStateBuilder {
+  typedef PartyState Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_ok(bool ok) {
+    fbb_.AddElement<uint8_t>(PartyState::VT_OK, static_cast<uint8_t>(ok), 0);
+  }
+  void add_message(::flatbuffers::Offset<::flatbuffers::String> message) {
+    fbb_.AddOffset(PartyState::VT_MESSAGE, message);
+  }
+  void add_dex_numbers(::flatbuffers::Offset<::flatbuffers::Vector<uint16_t>> dex_numbers) {
+    fbb_.AddOffset(PartyState::VT_DEX_NUMBERS, dex_numbers);
+  }
+  void add_active_dex(uint16_t active_dex) {
+    fbb_.AddElement<uint16_t>(PartyState::VT_ACTIVE_DEX, active_dex, 0);
+  }
+  void add_unlocked(::flatbuffers::Offset<::flatbuffers::Vector<uint16_t>> unlocked) {
+    fbb_.AddOffset(PartyState::VT_UNLOCKED, unlocked);
+  }
+  explicit PartyStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<PartyState> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<PartyState>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<PartyState> CreatePartyState(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    bool ok = false,
+    ::flatbuffers::Offset<::flatbuffers::String> message = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint16_t>> dex_numbers = 0,
+    uint16_t active_dex = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint16_t>> unlocked = 0) {
+  PartyStateBuilder builder_(_fbb);
+  builder_.add_unlocked(unlocked);
+  builder_.add_dex_numbers(dex_numbers);
+  builder_.add_message(message);
+  builder_.add_active_dex(active_dex);
+  builder_.add_ok(ok);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<PartyState> CreatePartyStateDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    bool ok = false,
+    const char *message = nullptr,
+    const std::vector<uint16_t> *dex_numbers = nullptr,
+    uint16_t active_dex = 0,
+    const std::vector<uint16_t> *unlocked = nullptr) {
+  auto message__ = message ? _fbb.CreateString(message) : 0;
+  auto dex_numbers__ = dex_numbers ? _fbb.CreateVector<uint16_t>(*dex_numbers) : 0;
+  auto unlocked__ = unlocked ? _fbb.CreateVector<uint16_t>(*unlocked) : 0;
+  return HeavenField::CreatePartyState(
+      _fbb,
+      ok,
+      message__,
+      dex_numbers__,
+      active_dex,
+      unlocked__);
+}
+
+struct PartnerChanged FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef PartnerChangedBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_ENTITY_ID = 4,
+    VT_PARTNER_SPECIES = 6
+  };
+  uint64_t entity_id() const {
+    return GetField<uint64_t>(VT_ENTITY_ID, 0);
+  }
+  uint16_t partner_species() const {
+    return GetField<uint16_t>(VT_PARTNER_SPECIES, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint64_t>(verifier, VT_ENTITY_ID, 8) &&
+           VerifyField<uint16_t>(verifier, VT_PARTNER_SPECIES, 2) &&
+           verifier.EndTable();
+  }
+};
+
+struct PartnerChangedBuilder {
+  typedef PartnerChanged Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_entity_id(uint64_t entity_id) {
+    fbb_.AddElement<uint64_t>(PartnerChanged::VT_ENTITY_ID, entity_id, 0);
+  }
+  void add_partner_species(uint16_t partner_species) {
+    fbb_.AddElement<uint16_t>(PartnerChanged::VT_PARTNER_SPECIES, partner_species, 0);
+  }
+  explicit PartnerChangedBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<PartnerChanged> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<PartnerChanged>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<PartnerChanged> CreatePartnerChanged(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint64_t entity_id = 0,
+    uint16_t partner_species = 0) {
+  PartnerChangedBuilder builder_(_fbb);
+  builder_.add_entity_id(entity_id);
+  builder_.add_partner_species(partner_species);
+  return builder_.Finish();
+}
+
 struct Envelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef EnvelopeBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
@@ -721,6 +971,15 @@ struct Envelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   }
   const HeavenField::Correction *payload_as_Correction() const {
     return payload_type() == HeavenField::Payload::Correction ? static_cast<const HeavenField::Correction *>(payload()) : nullptr;
+  }
+  const HeavenField::SetParty *payload_as_SetParty() const {
+    return payload_type() == HeavenField::Payload::SetParty ? static_cast<const HeavenField::SetParty *>(payload()) : nullptr;
+  }
+  const HeavenField::PartyState *payload_as_PartyState() const {
+    return payload_type() == HeavenField::Payload::PartyState ? static_cast<const HeavenField::PartyState *>(payload()) : nullptr;
+  }
+  const HeavenField::PartnerChanged *payload_as_PartnerChanged() const {
+    return payload_type() == HeavenField::Payload::PartnerChanged ? static_cast<const HeavenField::PartnerChanged *>(payload()) : nullptr;
   }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
@@ -754,6 +1013,18 @@ template<> inline const HeavenField::Notice *Envelope::payload_as<HeavenField::N
 
 template<> inline const HeavenField::Correction *Envelope::payload_as<HeavenField::Correction>() const {
   return payload_as_Correction();
+}
+
+template<> inline const HeavenField::SetParty *Envelope::payload_as<HeavenField::SetParty>() const {
+  return payload_as_SetParty();
+}
+
+template<> inline const HeavenField::PartyState *Envelope::payload_as<HeavenField::PartyState>() const {
+  return payload_as_PartyState();
+}
+
+template<> inline const HeavenField::PartnerChanged *Envelope::payload_as<HeavenField::PartnerChanged>() const {
+  return payload_as_PartnerChanged();
 }
 
 struct EnvelopeBuilder {
@@ -815,6 +1086,18 @@ inline bool VerifyPayload(::flatbuffers::VerifierTemplate<B> &verifier, const vo
     }
     case Payload::Correction: {
       auto ptr = reinterpret_cast<const HeavenField::Correction *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::SetParty: {
+      auto ptr = reinterpret_cast<const HeavenField::SetParty *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::PartyState: {
+      auto ptr = reinterpret_cast<const HeavenField::PartyState *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::PartnerChanged: {
+      auto ptr = reinterpret_cast<const HeavenField::PartnerChanged *>(obj);
       return verifier.VerifyTable(ptr);
     }
     default: return true;

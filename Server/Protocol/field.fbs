@@ -83,13 +83,51 @@ table Correction {
   facing:float;
 }
 
+// 클라 -> 서버. 파티 구성과 꺼낼 한 마리를 정한다.
+//
+// 로그인 서버가 아니라 여기 있는 이유는, 로그인 연결이 캐릭터 선택 응답 직후
+// 닫히기 때문이다. 필드에서 파티를 바꾸려면 필드 연결로 말해야 한다.
+//
+// character_id 를 싣지 않는다. 서버는 티켓으로 이미 누구인지 알고 있고,
+// 클라가 보낸 번호를 받으면 남의 파티를 바꾸려는 시도를 막을 일이 생긴다.
+table SetParty {
+  dex_numbers:[ushort];
+  active_dex:ushort;
+}
+
+// 서버 -> 클라. 입장 직후 한 번, SetParty 응답으로 한 번.
+//
+// 거절이어도 현재 상태를 함께 보낸다. 클라가 실패한 화면을 되돌리려고 따로
+// 조회할 필요가 없다.
+table PartyState {
+  ok:bool;
+  message:string;
+
+  // 전부 도감번호다.
+  dex_numbers:[ushort];
+  active_dex:ushort;
+  unlocked:[ushort];
+}
+
+// 서버 -> 클라. 시야 안의 누군가가 꺼낸 포켓몬을 바꿨다.
+//
+// Snapshot 의 partner_species 는 spawned 에만 실린다. 그것만으로는 이미 보고
+// 있는 상대가 파트너를 바꿔도 다시 스폰될 때까지 예전 것이 보인다.
+table PartnerChanged {
+  entity_id:ulong;
+  partner_species:ushort;  // 도감번호. 0 이면 도로 넣었다
+}
+
 union Payload {
   Enter,
   EnterAck,
   Move,
   Snapshot,
   Notice,
-  Correction
+  Correction,
+  SetParty,
+  PartyState,
+  PartnerChanged
 }
 
 table Envelope {

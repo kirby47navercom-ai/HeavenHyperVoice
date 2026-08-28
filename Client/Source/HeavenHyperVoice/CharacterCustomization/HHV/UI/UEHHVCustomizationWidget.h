@@ -297,9 +297,18 @@ protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
-	// 선택지는 WBP_StarterPokemon 기본값에서 자유롭게 추가·삭제한다.
+	// WBP_StarterPokemon 기본값에 담긴 후보다. 이 목록에 무엇을 넣든 실제로
+	// 표시되는 것은 AllowedStarterDexNumbers 에 있는 것뿐이다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Starter Pokemon")
 	TArray<TObjectPtr<UUEPokemonSpeciesData>> StarterPokemonOptions;
+
+	// 캐릭터를 만들 때 고를 수 있는 도감번호.
+	//
+	// 서버의 PokemonSpecies.h kStarterDex 와 같아야 한다. 권위는 서버에 있고
+	// 이건 화면일 뿐이다 — 여기만 늘리면 서버가 거절하고, 서버만 늘리면 화면에
+	// 안 뜬다. 둘 다 안전하게 실패한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Starter Pokemon")
+	TArray<int32> AllowedStarterDexNumbers = {1, 4, 7, 25, 133};
 
 	// 포켓몬별 선택 초상화도 WBP 기본값에서 지정하며, 비워 두면 이름만 중앙에 표시한다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Starter Pokemon")

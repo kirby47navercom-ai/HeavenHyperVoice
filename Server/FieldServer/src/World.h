@@ -110,6 +110,12 @@ public:
     // 플레이어 이동이 뒤에 밀린다.
     void advanceWild(float dt, WildAi& ai);
 
+    // 꺼내 놓은 포켓몬을 바꾼다. 나를 보고 있는 사람 전부에게 알린다.
+    //
+    // Snapshot 의 partner_species 는 spawned 에만 실려서, 이미 보고 있는 상대는
+    // 이 알림이 없으면 다시 스폰될 때까지 예전 파트너를 계속 본다.
+    void setPartnerSpecies(std::uint64_t characterId, std::uint16_t partnerSpecies);
+
     // 클라이언트가 보낸 좌표. 속도 상한을 넘으면 클램프한다.
     void move(std::uint64_t characterId, float x, float y, float facing,
               std::uint32_t sequence);

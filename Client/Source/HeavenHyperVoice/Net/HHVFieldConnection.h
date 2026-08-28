@@ -36,12 +36,28 @@ struct FHHVFieldSnapshot
 	TArray<uint64> Despawned;
 };
 
+/** 서버가 보내 준 파티 상태. 입장 직후 한 번, SetParty 응답으로 한 번 온다. */
+struct FHHVFieldPartyState
+{
+	bool bOk = false;
+	FString Message;
+
+	// 전부 도감번호다. Party 의 순서가 슬롯 번호다.
+	TArray<uint16> Party;
+	uint16 ActiveDex = 0;
+
+	// 해금한 종족 전부. 파티를 고르는 화면의 후보 목록이다.
+	TArray<uint16> Unlocked;
+};
+
 enum class EHHVFieldEvent : uint8
 {
 	EnterAck,
 	Correction,
 	Snapshot,
 	Notice,
+	PartyState,
+	PartnerChanged,
 	Disconnected
 };
 
@@ -55,6 +71,10 @@ struct FHHVFieldEventData
 	float Facing = 0.0f;
 	FString Text;
 	FHHVFieldSnapshot Snapshot;
+	FHHVFieldPartyState Party;
+
+	// PartnerChanged 에서만 쓴다. 도감번호이고 0 이면 도로 넣었다는 뜻이다.
+	uint16 PartnerDex = 0;
 };
 
 struct FHHVFieldSettings
@@ -98,6 +118,14 @@ public:
 
 	void SendMove(float X, float Y, float Facing, uint32 Sequence);
 
+	/**
+	 * 파티 구성과 꺼낼 한 마리를 정한다. 전부 도감번호다.
+	 *
+	 * 캐릭터 번호를 싣지 않는다 — 서버는 티켓으로 이미 누구인지 안다.
+	 * 응답은 OnPartyState 로 온다. 거절이어도 현재 상태가 함께 온다.
+	 */
+	void SendSetParty(const TArray<uint16>& DexNumbers, uint16 ActiveDex);
+
 	/** Game thread. Drains the inbound queue and fires the callbacks. */
 	void Poll();
 
@@ -105,6 +133,8 @@ public:
 	TFunction<void(uint32 Sequence, float X, float Y, float Facing)> OnCorrection;
 	TFunction<void(const FHHVFieldSnapshot& Snapshot)> OnSnapshot;
 	TFunction<void(const FString& Text)> OnNotice;
+	TFunction<void(const FHHVFieldPartyState& State)> OnPartyState;
+	TFunction<void(uint64 EntityId, uint16 PartnerDex)> OnPartnerChanged;
 	TFunction<void(const FString& Reason)> OnDisconnected;
 
 protected:

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "../Net/HHVFieldConnection.h"
+#include "Templates/SubclassOf.h"
 
 #include <memory>
 
@@ -13,6 +14,36 @@ class AUEPokemonCharacter;
 class UTexture2D;
 class UUEFieldRemotePlayerSyncComponent;
 class UUEFieldPartnerSyncComponent;
+class UUEFieldPartyWidget;
+
+/** 서버가 알려준 파티 상태. 전부 도감번호다. */
+USTRUCT(BlueprintType)
+struct FUEFieldPartyState
+{
+	GENERATED_BODY()
+
+	// 순서가 슬롯 번호다. 최대 세 마리.
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Party")
+	TArray<int32> Party;
+
+	// 지금 꺼내 놓은 한 마리. 0 이면 아무도 안 꺼냈다.
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Party")
+	int32 ActiveDex = 0;
+
+	// 해금한 종족 전부. 파티 후보다.
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Party")
+	TArray<int32> Unlocked;
+
+	// 마지막 요청에 대한 서버 답변. 화면에 그대로 띄운다.
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Party")
+	bool bOk = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Party")
+	FString Message;
+};
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FUEOnFieldPartyStateChanged);
+
 class UUEFieldWildPokemonSyncComponent;
 class UUEPlayerMovementSyncComponent;
 
@@ -67,9 +98,6 @@ public:
 	bool IsExternalFieldServerConfigured() const;
 
 	UFUNCTION(BlueprintCallable, Category = "Field Server|Pokemon")
-	bool SendPokemonToggleRequest();
-
-	UFUNCTION(BlueprintCallable, Category = "Field Server|Pokemon")
 	bool SendPokemonAttackRequest(int32 AttackSlot);
 
 	UFUNCTION(BlueprintPure, Category = "Field Server|Pokemon")
@@ -80,6 +108,26 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Field Server|Pokemon")
 	FUEFieldPokemonPartyChangedSignature OnPokemonPartyChanged;
+
+	// 파티가 바뀔 때마다(입장 직후 포함) 브로드캐스트한다. 파티 화면이 붙는다.
+	UPROPERTY(BlueprintAssignable, Category = "Field Server|Party")
+	FUEOnFieldPartyStateChanged OnPartyStateChanged;
+
+	/** 서버가 마지막으로 알려준 파티 상태. 화면이 열릴 때 이걸로 그린다. */
+	UFUNCTION(BlueprintPure, Category = "Field Server|Party")
+	const FUEFieldPartyState& GetPartyState() const { return PartyState; }
+
+	/** 파티와 꺼낼 한 마리를 서버에 보낸다. 응답은 OnPartyStateChanged 로 온다. */
+	UFUNCTION(BlueprintCallable, Category = "Field Server|Party")
+	bool SendSetParty(const TArray<int32>& DexNumbers, int32 ActiveDex);
+
+	/** 파티 화면을 켜고 끈다. 포켓몬 꺼내기 키에 걸려 있다. */
+	UFUNCTION(BlueprintCallable, Category = "Field Server|Party")
+	void TogglePartyWidget();
+
+	// 파티 화면. 없으면 키를 눌러도 아무 일도 없다.
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server|Party")
+	TSubclassOf<UUEFieldPartyWidget> PartyWidgetClass;
 
 protected:
 	virtual void BeginPlay() override;
@@ -124,6 +172,8 @@ private:
 	void HandleFieldCorrection(uint32 Sequence, float ServerX, float ServerY, float Facing);
 	void HandleFieldSnapshot(const FHHVFieldSnapshot& Snapshot);
 	void HandleFieldDisconnected(const FString& Reason);
+	void HandleFieldPartyState(const FHHVFieldPartyState& State);
+	void HandleFieldPartnerChanged(uint64 EntityId, uint16 PartnerDex);
 	FVector MakeEntityLocation(float ServerX, float ServerY) const;
 	float ToServerAxis(double UnrealAxis) const { return static_cast<float>(UnrealAxis) + WorldOriginOffset; }
 	double ToUnrealAxis(float ServerAxis) const { return static_cast<double>(ServerAxis - WorldOriginOffset); }
@@ -133,6 +183,17 @@ private:
 	TWeakObjectPtr<UUEPlayerMovementSyncComponent> MovementSyncComponent;
 	TWeakObjectPtr<UUEFieldWildPokemonSyncComponent> WildPokemonSyncComponent;
 	TWeakObjectPtr<UUEFieldPartnerSyncComponent> PartnerSyncComponent;
+
+	// 서버가 준 마지막 파티 상태. 화면은 이것만 읽는다 — 자기 상태를 따로
+	// 들고 있으면 거절당한 변경이 화면에만 남는다.
+	UPROPERTY(Transient)
+	FUEFieldPartyState PartyState;
+
+	// 내 엔티티 번호. PartnerChanged 가 나에게 온 것인지 가리는 데 쓴다.
+	uint64 LocalEntityId = 0;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUEFieldPartyWidget> PartyWidget = nullptr;
 	TWeakObjectPtr<UUEFieldRemotePlayerSyncComponent> RemotePlayerSyncComponent;
 
 	std::unique_ptr<FHHVFieldConnection> FieldConnection;

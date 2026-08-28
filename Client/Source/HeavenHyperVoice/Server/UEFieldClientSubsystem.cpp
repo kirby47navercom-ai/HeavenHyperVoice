@@ -94,8 +94,15 @@ void UUEFieldClientSubsystem::AttachPlayerCharacter(AUEPlayerCharacter* PlayerCh
 
 bool UUEFieldClientSubsystem::SendPokemonToggleRequest()
 {
+	// 이름은 "꺼내기 요청" 이지만 실제로 하는 일은 파티 화면 열기다. 어느 것을
+	// 꺼낼지 고르는 곳이 그 화면이라 키 하나로 합쳤다.
 	UUEFieldServerBridgeComponent* Bridge = EnsureFieldServerBridge();
-	return Bridge ? Bridge->SendPokemonToggleRequest() : false;
+	if (!Bridge)
+	{
+		return false;
+	}
+	Bridge->TogglePartyWidget();
+	return true;
 }
 
 bool UUEFieldClientSubsystem::SendPokemonAttackRequest(int32 AttackSlot)

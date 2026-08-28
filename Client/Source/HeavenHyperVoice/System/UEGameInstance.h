@@ -82,6 +82,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "HHV|Character Selection")
 	UUEPokemonSpeciesData* GetSelectedPartnerSpecies() const;
 
+	// 도감번호를 종족 에셋으로 바꾸는 표. ini 의 SpeciesCatalog 가 원본이다.
+	// 필드 파티 화면처럼 WBP 없이 뜨는 화면이 빌려 쓴다.
+	UFUNCTION(BlueprintPure, Category = "HHV|Pokemon")
+	UUEPokemonSpeciesCatalog* GetPartySpeciesCatalog() const { return GetSpeciesCatalog(); }
+
 	// 이름 단계에서 받은 값을 최종 스타팅 선택까지 레벨 이동 사이에 보관한다.
 	UFUNCTION(BlueprintCallable, Category = "HHV|Character Creation")
 	void SetPendingCharacterName(const FString& CharacterName);

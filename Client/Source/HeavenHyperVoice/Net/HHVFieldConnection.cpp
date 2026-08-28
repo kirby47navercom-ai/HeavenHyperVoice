@@ -140,6 +140,23 @@ void FHHVFieldConnection::SendMove(float X, float Y, float Facing, uint32 Sequen
 	Outbound.Enqueue(FrameOf(Builder));
 }
 
+void FHHVFieldConnection::SendSetParty(const TArray<uint16>& DexNumbers, uint16 ActiveDex)
+{
+	if (bStopRequested)
+	{
+		return;
+	}
+
+	flatbuffers::FlatBufferBuilder Builder(128);
+	// 벡터는 상위 테이블을 시작하기 전에 만들어야 한다.
+	const auto Members =
+		Builder.CreateVector(DexNumbers.GetData(), static_cast<size_t>(DexNumbers.Num()));
+	const auto Request = HeavenField::CreateSetParty(Builder, Members, ActiveDex);
+	Builder.Finish(
+		HeavenField::CreateEnvelope(Builder, HeavenField::Payload::SetParty, Request.Union()));
+	Outbound.Enqueue(FrameOf(Builder));
+}
+
 uint32 FHHVFieldConnection::Run()
 {
 	FString Error;
@@ -433,6 +450,44 @@ void FHHVFieldConnection::DispatchFrame(const uint8* Data, int32 Size)
 		break;
 	}
 
+	case HeavenField::Payload::PartyState:
+	{
+		const HeavenField::PartyState* State = Envelope->payload_as_PartyState();
+		Event.Type = EHHVFieldEvent::PartyState;
+		Event.Party.bOk = State->ok();
+		if (const flatbuffers::String* Message = State->message())
+		{
+			Event.Party.Message = FString(UTF8_TO_TCHAR(Message->c_str()));
+		}
+		Event.Party.ActiveDex = State->active_dex();
+		if (const flatbuffers::Vector<uint16>* Party = State->dex_numbers())
+		{
+			Event.Party.Party.Reserve(static_cast<int32>(Party->size()));
+			for (const uint16 Dex : *Party)
+			{
+				Event.Party.Party.Add(Dex);
+			}
+		}
+		if (const flatbuffers::Vector<uint16>* Unlocked = State->unlocked())
+		{
+			Event.Party.Unlocked.Reserve(static_cast<int32>(Unlocked->size()));
+			for (const uint16 Dex : *Unlocked)
+			{
+				Event.Party.Unlocked.Add(Dex);
+			}
+		}
+		break;
+	}
+
+	case HeavenField::Payload::PartnerChanged:
+	{
+		const HeavenField::PartnerChanged* Changed = Envelope->payload_as_PartnerChanged();
+		Event.Type = EHHVFieldEvent::PartnerChanged;
+		Event.EntityId = Changed->entity_id();
+		Event.PartnerDex = Changed->partner_species();
+		break;
+	}
+
 	case HeavenField::Payload::Notice:
 	{
 		const HeavenField::Notice* Notice = Envelope->payload_as_Notice();
@@ -503,6 +558,20 @@ void FHHVFieldConnection::Poll()
 			if (OnNotice)
 			{
 				OnNotice(Event.Text);
+			}
+			break;
+
+		case EHHVFieldEvent::PartyState:
+			if (OnPartyState)
+			{
+				OnPartyState(Event.Party);
+			}
+			break;
+
+		case EHHVFieldEvent::PartnerChanged:
+			if (OnPartnerChanged)
+			{
+				OnPartnerChanged(Event.EntityId, Event.PartnerDex);
 			}
 			break;
 

@@ -591,6 +591,14 @@ void UUEStarterPokemonWidget::RebuildOptions()
 			continue;
 		}
 
+		// 도감번호로 거른다. 배열 위치로 거르면 카탈로그에 종족을 끼워 넣는
+		// 순간 다른 포켓몬이 스타터가 된다.
+		if (!AllowedStarterDexNumbers.IsEmpty()
+			&& !AllowedStarterDexNumbers.Contains(Pokemon->DexNumber))
+		{
+			continue;
+		}
+
 		UUECharacterCreationEntryData* Entry = NewObject<UUECharacterCreationEntryData>(this);
 		Entry->Kind = EUECharacterCreationEntryKind::StarterPokemon;
 		Entry->StarterOwner = this;

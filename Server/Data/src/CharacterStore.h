@@ -27,6 +27,7 @@ enum class CreateCharacterResult {
     NicknameTaken,
     SlotsFull,
     UnknownSpecies,
+    NotAStarter,   // 표에는 있지만 캐릭터 생성으로 고를 수 있는 종족이 아니다
     NotSupported,
     Error,
 };
@@ -37,6 +38,7 @@ inline const char* describe(CreateCharacterResult result) {
         case CreateCharacterResult::NicknameTaken:  return "nickname already taken";
         case CreateCharacterResult::SlotsFull:      return "no free character slot";
         case CreateCharacterResult::UnknownSpecies: return "unknown starter species";
+        case CreateCharacterResult::NotAStarter:    return "that species cannot be chosen at creation";
         case CreateCharacterResult::NotSupported:   return "character creation is not available";
         case CreateCharacterResult::Error:          return "internal error";
     }

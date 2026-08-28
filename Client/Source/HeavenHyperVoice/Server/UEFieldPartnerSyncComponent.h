@@ -3,11 +3,15 @@
 // 캐릭터를 따라다니는 파트너 포켓몬.
 //
 // 필드 서버는 파트너를 엔티티로 시뮬레이션하지 않는다. 플레이어 엔티티에
-// partner_species(도감번호) 하나가 붙어 올 뿐이다. 그래서 따라다니는 동작은
-// 전부 클라이언트가 만든다 — 서버로 나가는 것도, 서버에서 오는 것도 없다.
+// partner_species(도감번호) 하나가 붙어 올 뿐이라 따라다니는 동작은 전부
+// 클라이언트가 만든다 — 서버로 나가는 것도, 서버에서 오는 것도 없다.
 //
 // 로컬 플레이어의 파트너는 로그인 때 받은 캐릭터 정보에서 오고, 남의 파트너는
 // 그 플레이어가 스폰될 때 스냅샷에서 온다.
+//
+// 따라가는 규칙은 예전 서버의 FollowOwnerAction 을 그대로 가져왔다 (커밋
+// 4bfafa94 에서 임시 서버 코드와 함께 지워졌다). 주인 앞 좌우 중 가까운 쪽에
+// 서고, 도착하면 멈췄다가 잠시 뒤 주인을 바라본다.
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
@@ -39,17 +43,30 @@ public:
 		FActorComponentTickFunction* ThisTickFunction) override;
 
 protected:
-	// 주인 뒤로 얼마나 떨어져 따라갈지. 캡슐 반지름 두 개 남짓이면 겹치지 않는다.
+	// 주인 앞쪽으로 얼마나 나가서 설지. 뒤가 아니라 앞이라 화면에 보인다.
 	UPROPERTY(EditAnywhere, Category = "Field Server|Partner", meta = (ClampMin = "0"))
-	float FollowDistance = 180.0f;
+	float FollowForwardOffset = 150.0f;
 
-	// 주인 정중앙 뒤에 서면 카메라에 계속 가린다. 옆으로 조금 비켜 세운다.
-	UPROPERTY(EditAnywhere, Category = "Field Server|Partner")
-	float FollowSideOffset = 90.0f;
+	// 주인 정면을 막지 않게 좌우로 비켜선다. 둘 중 가까운 쪽을 고른다.
+	UPROPERTY(EditAnywhere, Category = "Field Server|Partner", meta = (ClampMin = "0"))
+	float FollowSideOffset = 150.0f;
 
-	// 이 거리 안에서는 멈춘다. 없으면 주인이 서 있어도 목표점 주변에서 떤다.
+	// 이 거리 안에 들면 도착으로 본다. 없으면 목표점 주변에서 떤다.
 	UPROPERTY(EditAnywhere, Category = "Field Server|Partner", meta = (ClampMin = "1"))
-	float FollowTolerance = 60.0f;
+	float ArriveDistance = 45.0f;
+
+	// 반대쪽이 이만큼 더 가까워야 자리를 바꾼다. 없으면 주인이 방향을 틀 때마다
+	// 좌우가 번갈아 뒤집힌다.
+	UPROPERTY(EditAnywhere, Category = "Field Server|Partner", meta = (ClampMin = "0"))
+	float SideSwitchMargin = 80.0f;
+
+	// 주인을 이 반경 안으로 관통하지 않는다. 캡슐 반지름보다 넉넉해야 한다.
+	UPROPERTY(EditAnywhere, Category = "Field Server|Partner", meta = (ClampMin = "0"))
+	float OwnerAvoidRadius = 90.0f;
+
+	// 도착해서 이만큼 서 있으면 주인 쪽으로 몸을 돌린다.
+	UPROPERTY(EditAnywhere, Category = "Field Server|Partner", meta = (ClampMin = "0"))
+	float FaceOwnerDelay = 1.0f;
 
 	// 뒤처진 거리 1 당 붙는 추가 속도. 주인과 같은 속도로만 달리면 한 번 벌어진
 	// 간격이 영원히 그대로 남는다.
@@ -60,17 +77,30 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Field Server|Partner", meta = (ClampMin = "1"))
 	float MaxFollowSpeed = 1200.0f;
 
-	// 이만큼 벌어지면 따라가기를 포기하고 붙여 놓는다. 레벨 이동처럼 정말로
-	// 멀어진 경우만 걸리게 크게 잡는다.
+	// 이만큼 벌어지면 따라가기를 포기하고 붙여 놓는다. 예전 FollowOwnerAction 과
+	// 같은 값이다.
 	UPROPERTY(EditAnywhere, Category = "Field Server|Partner", meta = (ClampMin = "1"))
-	float TeleportDistance = 3000.0f;
+	float TeleportDistance = 900.0f;
 
 private:
 	struct FPartner
 	{
 		TWeakObjectPtr<AActor> Owner;
 		TWeakObjectPtr<AUEPokemonCharacter> Actor;
+
+		// 주인 앞 어느 쪽에 서 있는지. +1 이 오른쪽이다.
+		float SideSign = 1.0f;
+
+		// 목표점에 서 있던 시간. FaceOwnerDelay 를 넘으면 주인을 본다.
+		float IdleSeconds = 0.0f;
 	};
+
+	// 주인 앞 좌우 중 한 자리. SideSign 이 +1 이면 오른쪽이다.
+	FVector StandingSpot(const AActor& Owner, float SideSign) const;
+
+	// 주인을 관통하지 않게, 필요하면 옆으로 돌아가는 경유지를 돌려준다.
+	FVector AvoidOwner(const FVector& From, const FVector& To, const AActor& Owner,
+		float SideSign) const;
 
 	// 주인 엔티티 id -> 그 주인의 파트너. 로컬 플레이어도 여기에 들어간다.
 	TMap<uint64, FPartner> Partners;

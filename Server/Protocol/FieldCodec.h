@@ -100,6 +100,32 @@ inline Bytes encodeCorrection(std::uint32_t sequence, float x, float y, float fa
     return detail::wrapField(fbb, HeavenField::Payload::Correction, correction.Union());
 }
 
+// 파티 상태. dexNumbers 와 unlocked 는 이미 도감번호다 (저장소가 그렇게 준다).
+inline Bytes encodePartyState(bool ok, std::string_view message,
+                              const std::vector<std::uint16_t>& dexNumbers,
+                              std::uint16_t activeDex,
+                              const std::vector<std::uint16_t>& unlocked) {
+    flatbuffers::FlatBufferBuilder fbb;
+    auto text = fbb.CreateString(message.data(), message.size());
+    auto party = fbb.CreateVector(dexNumbers);
+    auto candidates = fbb.CreateVector(unlocked);
+
+    HeavenField::PartyStateBuilder builder(fbb);
+    builder.add_ok(ok);
+    builder.add_message(text);
+    builder.add_dex_numbers(party);
+    builder.add_active_dex(activeDex);
+    builder.add_unlocked(candidates);
+    return detail::wrapField(fbb, HeavenField::Payload::PartyState, builder.Finish().Union());
+}
+
+// speciesId 는 서버 내부 번호다. 와이어에는 도감번호가 나간다 (EntityState 와 동일).
+inline Bytes encodePartnerChanged(std::uint64_t entityId, std::uint16_t speciesId) {
+    flatbuffers::FlatBufferBuilder fbb;
+    auto changed = HeavenField::CreatePartnerChanged(fbb, entityId, dexOf(speciesId));
+    return detail::wrapField(fbb, HeavenField::Payload::PartnerChanged, changed.Union());
+}
+
 inline Bytes encodeFieldNotice(std::string_view text) {
     flatbuffers::FlatBufferBuilder fbb;
     auto message = fbb.CreateString(text.data(), text.size());

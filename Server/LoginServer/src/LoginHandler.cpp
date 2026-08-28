@@ -304,10 +304,21 @@ bool LoginHandler::handleCreateCharacter(TlsSession& session,
         return true;
     }
     // 0 이면 파트너 없이 시작한다. 그 외에는 종족 표에 있어야 한다.
-    if (speciesId != 0 && proto::findSpecies(speciesId) == nullptr) {
+    const proto::SpeciesBase* starter =
+        speciesId == 0 ? nullptr : proto::findSpecies(speciesId);
+    if (speciesId != 0 && starter == nullptr) {
         resume(Stage::AwaitingSelection);
         session.send(
             proto::encodeCharacterList(false, "알 수 없는 파트너입니다", {}));
+        return true;
+    }
+
+    // 표에 있다고 다 스타터인 것은 아니다. 클라이언트 위젯에도 같은 목록이
+    // 있지만 그건 화면일 뿐이고, 고를 수 있는 것을 정하는 곳은 여기다.
+    if (starter != nullptr && !proto::isStarterDex(starter->dex)) {
+        resume(Stage::AwaitingSelection);
+        session.send(
+            proto::encodeCharacterList(false, "처음 고를 수 없는 포켓몬입니다", {}));
         return true;
     }
 
@@ -328,6 +339,7 @@ bool LoginHandler::handleCreateCharacter(TlsSession& session,
             case CreateCharacterResult::NicknameTaken:  message = "이미 사용 중인 닉네임입니다"; break;
             case CreateCharacterResult::SlotsFull:      message = "캐릭터 슬롯이 가득 찼습니다"; break;
             case CreateCharacterResult::UnknownSpecies: message = "알 수 없는 파트너입니다"; break;
+            case CreateCharacterResult::NotAStarter:    message = "처음 고를 수 없는 포켓몬입니다"; break;
             case CreateCharacterResult::NotSupported:   message = "이 서버는 캐릭터 생성을 지원하지 않습니다"; break;
             case CreateCharacterResult::Error:          message = "서버 오류로 만들지 못했습니다"; break;
         }
