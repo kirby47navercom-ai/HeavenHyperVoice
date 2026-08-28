@@ -15,6 +15,12 @@ bool UUEFieldRemotePlayerSyncComponent::ContainsRemotePlayer(uint64 EntityId) co
 	return RemotePlayers.Contains(EntityId);
 }
 
+AUEPlayerCharacter* UUEFieldRemotePlayerSyncComponent::FindRemotePlayer(uint64 EntityId) const
+{
+	const TWeakObjectPtr<AUEPlayerCharacter>* Found = RemotePlayers.Find(EntityId);
+	return Found && Found->IsValid() ? Found->Get() : nullptr;
+}
+
 void UUEFieldRemotePlayerSyncComponent::HandleRemotePlayerSpawned(
 	const FHHVFieldEntity& Entity,
 	const FVector& SpawnLocation)

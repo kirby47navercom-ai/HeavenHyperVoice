@@ -130,6 +130,7 @@ void AUEPokemonCharacter::SetPokemonSpeciesData(UUEPokemonSpeciesData* NewSpecie
 	RefreshWildCryTimer();
 }
 
+// SpeciesNumber 는 도감번호다 (field.fbs EntityState.species).
 void AUEPokemonCharacter::SetWildSpecies(int32 SpeciesNumber)
 {
 	// 서버 종족 번호는 카탈로그 조회와 디버그 식별에만 사용한다.
@@ -141,7 +142,9 @@ void AUEPokemonCharacter::SetWildSpecies(int32 SpeciesNumber)
 	// 카탈로그가 비어 있고, 예전처럼 종족 색 큐브로 뜬다.
 	if (PokemonSpeciesCatalog)
 	{
-		if (UUEPokemonSpeciesData* Data = PokemonSpeciesCatalog->Find(SpeciesNumber))
+		// 배열 위치가 아니라 도감번호로 찾는다. 카탈로그에 종족을 끼워 넣어도
+		// 야생 포켓몬이 다른 종족으로 바뀌지 않는다.
+		if (UUEPokemonSpeciesData* Data = PokemonSpeciesCatalog->FindByDex(SpeciesNumber))
 		{
 			// SetPokemonSpeciesData 가 메시·캡슐·애니메이션까지 다 적용하고
 			// ServerSpeciesId 를 데이터 쪽 이름으로 덮는다. 착색은 그 안에서

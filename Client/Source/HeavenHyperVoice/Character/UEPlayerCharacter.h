@@ -14,6 +14,7 @@ class UAnimSequence;
 class USpringArmComponent;
 class USkeletalMeshComponent;
 class UUEHHVCustomizationCatalog;
+class UUEFieldPartnerSyncComponent;
 class UUEFieldRemotePlayerSyncComponent;
 class UUEFieldWildPokemonSyncComponent;
 class UUEPlayerAnimationDataAsset;
@@ -95,6 +96,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Field Server")
 	UUEFieldRemotePlayerSyncComponent* GetFieldRemotePlayerSyncComponent() const { return FieldRemotePlayerSyncComponent; }
 
+	UUEFieldPartnerSyncComponent* GetFieldPartnerSyncComponent() const { return FieldPartnerSyncComponent; }
+
 	UFUNCTION(BlueprintPure, Category = "Animation")
 	UUEPlayerAnimationDataAsset* GetPlayerAnimationData() const { return PlayerAnimationData; }
 
@@ -139,6 +142,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Field Server")
 	TObjectPtr<UUEFieldRemotePlayerSyncComponent> FieldRemotePlayerSyncComponent = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Field Server", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UUEFieldPartnerSyncComponent> FieldPartnerSyncComponent = nullptr;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Customization")
 	TObjectPtr<USkeletalMeshComponent> HHVBodyEquipmentMesh = nullptr;

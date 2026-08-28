@@ -263,6 +263,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Movement")
 	float GetConfiguredMoveSpeed() const { return ConfiguredMoveSpeed; }
 
+	/**
+	 * 목표점이 이만큼 멀어지면 보간하지 않고 붙여 놓는다.
+	 *
+	 * 서버 스냅샷을 받는 야생 포켓몬에게는 300 정도가 맞다 — 그 이상 벌어졌다는
+	 * 것은 패킷이 밀렸다는 뜻이라 따라가는 것보다 맞추는 편이 낫다. 주인을 쫓는
+	 * 파트너는 정상적으로 뒤처지는 일이 잦아서 훨씬 큰 값을 쓴다.
+	 */
+	void SetServerHardSnapDistance(float InDistance) { ServerHardSnapDistance = InDistance; }
+
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Animation")
 	EUEPokemonAnimationState GetServerAnimationState() const { return ServerAnimationState; }
 

@@ -6,6 +6,7 @@
 #include "../Data/UEPlayerAnimationDataAsset.h"
 #include "../Server/UEFieldClientSubsystem.h"
 #include "../Server/UEFieldRemotePlayerSyncComponent.h"
+#include "../Server/UEFieldPartnerSyncComponent.h"
 #include "../Server/UEFieldWildPokemonSyncComponent.h"
 #include "../Server/UEPlayerMovementSyncComponent.h"
 #include "../System/UEGameInstance.h"
@@ -282,6 +283,7 @@ AUEPlayerCharacter::AUEPlayerCharacter()
 	MovementSyncComponent = CreateDefaultSubobject<UUEPlayerMovementSyncComponent>(TEXT("MovementSyncComponent"));
 	FieldWildPokemonSyncComponent = CreateDefaultSubobject<UUEFieldWildPokemonSyncComponent>(TEXT("FieldWildPokemonSyncComponent"));
 	FieldRemotePlayerSyncComponent = CreateDefaultSubobject<UUEFieldRemotePlayerSyncComponent>(TEXT("FieldRemotePlayerSyncComponent"));
+	FieldPartnerSyncComponent = CreateDefaultSubobject<UUEFieldPartnerSyncComponent>(TEXT("FieldPartnerSyncComponent"));
 
 	GetCapsuleComponent()->InitCapsuleSize(34.0f, 88.0f);
 	GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));

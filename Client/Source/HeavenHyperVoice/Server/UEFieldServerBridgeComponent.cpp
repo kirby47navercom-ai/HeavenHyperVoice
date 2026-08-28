@@ -1,8 +1,10 @@
 #include "UEFieldServerBridgeComponent.h"
 
 #include "UEFieldRemotePlayerSyncComponent.h"
+#include "UEFieldPartnerSyncComponent.h"
 #include "UEFieldWildPokemonSyncComponent.h"
 #include "../Character/UEPlayerCharacter.h"
+#include "../Pokemon/UEPokemonSpeciesData.h"
 #include "../System/UEGameInstance.h"
 #include "UEPlayerMovementSyncComponent.h"
 
@@ -106,6 +108,7 @@ void UUEFieldServerBridgeComponent::DetachFromPlayer()
 	MovementSyncComponent.Reset();
 	WildPokemonSyncComponent.Reset();
 	RemotePlayerSyncComponent.Reset();
+	PartnerSyncComponent.Reset();
 	TimeSinceLastSend = 0.0f;
 }
 
@@ -139,10 +142,16 @@ void UUEFieldServerBridgeComponent::ResolveSyncComponents()
 	MovementSyncComponent = PlayerCharacter->GetMovementSyncComponent();
 	WildPokemonSyncComponent = PlayerCharacter->FindComponentByClass<UUEFieldWildPokemonSyncComponent>();
 	RemotePlayerSyncComponent = PlayerCharacter->FindComponentByClass<UUEFieldRemotePlayerSyncComponent>();
+	PartnerSyncComponent = PlayerCharacter->FindComponentByClass<UUEFieldPartnerSyncComponent>();
 
 	if (WildPokemonSyncComponent.IsValid())
 	{
 		WildPokemonSyncComponent->SetWildPokemonClass(WildPokemonClass);
+	}
+	if (PartnerSyncComponent.IsValid())
+	{
+		// 파트너도 같은 액터 클래스를 쓴다. 야생이냐 파트너냐는 RenderType 으로만 갈린다.
+		PartnerSyncComponent->SetPartnerPokemonClass(WildPokemonClass);
 	}
 }
 
@@ -277,6 +286,10 @@ void UUEFieldServerBridgeComponent::DestroyPresentationActors()
 	{
 		RemotePlayerSyncComponent->DestroyRemotePlayers();
 	}
+	if (PartnerSyncComponent.IsValid())
+	{
+		PartnerSyncComponent->DestroyPartners();
+	}
 }
 
 void UUEFieldServerBridgeComponent::HandleFieldEnterAck(
@@ -294,6 +307,23 @@ void UUEFieldServerBridgeComponent::HandleFieldEnterAck(
 		EntityId,
 		MakeEntityLocation(ServerX, ServerY),
 		FRotator(0.0f, Facing, 0.0f));
+
+	// 내 파트너는 스냅샷에 안 온다 — 서버는 자기 자신을 자기 시야에 넣지 않는다.
+	// 로그인 때 고른 캐릭터의 파트너를 그대로 쓴다.
+	if (PartnerSyncComponent.IsValid())
+	{
+		if (const UWorld* World = GetWorld())
+		{
+			if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(World->GetGameInstance()))
+			{
+				const UUEPokemonSpeciesData* Species = GameInstance->GetSelectedPartnerSpecies();
+				if (Species && Species->DexNumber > 0)
+				{
+					PartnerSyncComponent->AddPartner(EntityId, GetPlayerCharacter(), Species->DexNumber);
+				}
+			}
+		}
+	}
 }
 
 void UUEFieldServerBridgeComponent::HandleFieldCorrection(
@@ -333,6 +363,15 @@ void UUEFieldServerBridgeComponent::HandleFieldSnapshot(const FHHVFieldSnapshot&
 			if (RemotePlayerSyncComponent.IsValid())
 			{
 				RemotePlayerSyncComponent->HandleRemotePlayerSpawned(Entity, SpawnLocation);
+
+				// partner_species 는 spawned 에만 실린다. 여기서 안 붙이면 다시 올 기회가 없다.
+				if (PartnerSyncComponent.IsValid() && Entity.PartnerSpecies > 0)
+				{
+					PartnerSyncComponent->AddPartner(
+						Entity.EntityId,
+						RemotePlayerSyncComponent->FindRemotePlayer(Entity.EntityId),
+						static_cast<int32>(Entity.PartnerSpecies));
+				}
 			}
 			continue;
 		}
@@ -360,6 +399,10 @@ void UUEFieldServerBridgeComponent::HandleFieldSnapshot(const FHHVFieldSnapshot&
 
 	for (const uint64 EntityId : Snapshot.Despawned)
 	{
+		if (PartnerSyncComponent.IsValid())
+		{
+			PartnerSyncComponent->RemovePartner(EntityId);
+		}
 		if (WildPokemonSyncComponent.IsValid() && WildPokemonSyncComponent->HandleWildPokemonDespawned(EntityId))
 		{
 			continue;

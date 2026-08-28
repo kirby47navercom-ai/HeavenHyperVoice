@@ -12,6 +12,7 @@ class AUEPlayerCharacter;
 class AUEPokemonCharacter;
 class UTexture2D;
 class UUEFieldRemotePlayerSyncComponent;
+class UUEFieldPartnerSyncComponent;
 class UUEFieldWildPokemonSyncComponent;
 class UUEPlayerMovementSyncComponent;
 
@@ -108,7 +109,10 @@ protected:
 	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server")
 	float WorldOriginOffset = 0.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Field Server|Wild Pokemon")
+	// 야생 포켓몬으로 스폰할 클래스. 네이티브 AUEPokemonCharacter 는 메시도
+	// 종족 카탈로그도 없어서 스폰해 봐야 보이지 않는다 — 둘 다 BP_Pokemon 이
+	// 들고 있다. Config 라서 DefaultGame.ini 에서 지정한다.
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server|Wild Pokemon")
 	TSubclassOf<AUEPokemonCharacter> WildPokemonClass;
 
 private:
@@ -128,6 +132,7 @@ private:
 	TWeakObjectPtr<AUEPlayerCharacter> CachedPlayerCharacter;
 	TWeakObjectPtr<UUEPlayerMovementSyncComponent> MovementSyncComponent;
 	TWeakObjectPtr<UUEFieldWildPokemonSyncComponent> WildPokemonSyncComponent;
+	TWeakObjectPtr<UUEFieldPartnerSyncComponent> PartnerSyncComponent;
 	TWeakObjectPtr<UUEFieldRemotePlayerSyncComponent> RemotePlayerSyncComponent;
 
 	std::unique_ptr<FHHVFieldConnection> FieldConnection;

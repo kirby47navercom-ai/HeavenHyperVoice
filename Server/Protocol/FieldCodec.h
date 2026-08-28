@@ -8,6 +8,7 @@
 
 #include "FieldGeometry.h"
 #include "Framing.h"
+#include "PokemonSpecies.h"
 #include "field_generated.h"
 
 namespace heaven::proto {
@@ -19,6 +20,7 @@ struct EntityView {
     float y = 0.f;
     float facing = 0.f;
     std::string nickname;
+    // 둘 다 서버 내부 번호다. 와이어로 나갈 때 도감번호로 바뀐다 (buildEntities).
     std::uint16_t partnerSpecies = 0;
     std::uint16_t species = 0;  // 야생 포켓몬 종족. 0 이면 플레이어.
 };
@@ -46,11 +48,13 @@ buildEntities(flatbuffers::FlatBufferBuilder& fbb, const std::vector<EntityView>
         if (!nickname.IsNull()) {
             builder.add_nickname(nickname);
         }
-        if (entity.partnerSpecies != 0) {
-            builder.add_partner_species(entity.partnerSpecies);
+        // 내부 번호가 아니라 도감번호를 싣는다. 클라이언트는 이 번호로 에셋을
+        // 찾으므로, 종족 표에 한 줄 끼워 넣어도 모델이 밀리지 않는다.
+        if (const std::uint16_t dex = dexOf(entity.partnerSpecies); dex != 0) {
+            builder.add_partner_species(dex);
         }
-        if (entity.species != 0) {
-            builder.add_species(entity.species);
+        if (const std::uint16_t dex = dexOf(entity.species); dex != 0) {
+            builder.add_species(dex);
         }
         entries.push_back(builder.Finish());
     }
