@@ -2,26 +2,22 @@
 
 #include "CoreMinimal.h"
 #include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
-#include "../Pokemon/AI/Own/PokemonFSM.h"
-#include "../Pokemon/Server/UEPokemonServerSubsystem.h"
 #include "GameFramework/Character.h"
 #include "GameplayTagContainer.h"
 #include "UObject/SoftObjectPath.h"
 #include "TimerManager.h"
 #include "UEPlayerCharacter.generated.h"
 
-class AUEPokemonCharacter;
 class UAnimInstance;
 class UCameraComponent;
 class UAnimSequence;
 class USpringArmComponent;
 class USkeletalMeshComponent;
 class UUEHHVCustomizationCatalog;
-class UUEPokemonSpeciesData;
-class UUEPokemonWorldSubsystem;
+class UUEFieldRemotePlayerSyncComponent;
+class UUEFieldWildPokemonSyncComponent;
 class UUEPlayerAnimationDataAsset;
 class UUEPlayerMovementSyncComponent;
-class UUEPokemonSpeciesCatalog;
 
 UCLASS(Blueprintable)
 class HEAVENHYPERVOICE_API AUEPlayerCharacter : public ACharacter
@@ -93,37 +89,26 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Character|Movement Sync")
 	UUEPlayerMovementSyncComponent* GetMovementSyncComponent() const { return MovementSyncComponent; }
 
+	UFUNCTION(BlueprintPure, Category = "Field Server")
+	UUEFieldWildPokemonSyncComponent* GetFieldWildPokemonSyncComponent() const { return FieldWildPokemonSyncComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Field Server")
+	UUEFieldRemotePlayerSyncComponent* GetFieldRemotePlayerSyncComponent() const { return FieldRemotePlayerSyncComponent; }
+
 	UFUNCTION(BlueprintPure, Category = "Animation")
 	UUEPlayerAnimationDataAsset* GetPlayerAnimationData() const { return PlayerAnimationData; }
 
 	UFUNCTION(BlueprintPure, Category = "Customization")
 	EUEHHVGender GetCustomizationGender() const { return CurrentCustomizationGender; }
 
-	UFUNCTION(BlueprintPure, Category = "Pokemon|Companion")
-	bool IsPokemonCompanionSpawned() const;
-
-	UFUNCTION(BlueprintPure, Category = "Pokemon|Companion")
-	AUEPokemonCharacter* GetSpawnedPokemonCompanion() const { return SpawnedPokemon.Get(); }
-
 	UFUNCTION(BlueprintCallable, Category = "Customization")
 	void ApplyHHVAppearance(const FUEHHVAppearance& NewAppearance);
-	UFUNCTION(BlueprintCallable, Category = "Pokemon|Companion")
-	void SetPokemonCompanionSpeciesData(UUEPokemonSpeciesData* NewSpeciesData);
-
-	UFUNCTION(BlueprintPure, Category = "Pokemon|Companion")
-	UUEPokemonSpeciesData* GetPokemonCompanionSpeciesData() const { return PokemonCompanionSpeciesData; }
-
-	UFUNCTION(BlueprintCallable, Category = "Pokemon|Companion")
-	void SetSelectedPokemonCompanionInstanceId(int32 NewPokemonInstanceId);
-
-	UFUNCTION(BlueprintPure, Category = "Pokemon|Companion")
-	int32 GetSelectedPokemonCompanionInstanceId() const { return SelectedCompanionPokemonInstanceId; }
 
 	void SetMovementInput(const FVector2D& NewMovementInput);
 	void ApplyServerMovementCorrection(const FVector& ServerPosition, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bUseHardCorrection);
 
-	UFUNCTION(BlueprintCallable, Category = "Pokemon|Companion")
-	void TogglePokemonCompanion();
+	UFUNCTION(BlueprintCallable, Category = "Field Server|Pokemon")
+	void RequestPokemonToggle();
 
 	// 숫자키 기술 슬롯을 현재 필드에 꺼낸 소유 포켓몬의 공격 명령으로 전달한다.
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Combat")
@@ -139,18 +124,6 @@ protected:
 	FVector GetCameraRightAxis(const FRotator& ViewRotation) const;
 	FVector GetMoveDirectionFromInput(const FVector2D& Input, const FRotator& ViewRotation) const;
 
-	UFUNCTION(BlueprintImplementableEvent, Category = "Pokemon|Companion", meta = (DisplayName = "On Pokemon Spawn Requested"))
-	void BP_OnPokemonSpawnRequested(const FVector& SpawnLocation, const FRotator& SpawnRotation);
-
-	UFUNCTION(BlueprintImplementableEvent, Category = "Pokemon|Companion", meta = (DisplayName = "On Pokemon Spawned"))
-	void BP_OnPokemonSpawned(AUEPokemonCharacter* SpawnedCompanion);
-
-	UFUNCTION(BlueprintImplementableEvent, Category = "Pokemon|Companion", meta = (DisplayName = "On Pokemon Despawn Requested"))
-	void BP_OnPokemonDespawnRequested(AUEPokemonCharacter* DespawningPokemon);
-
-	UFUNCTION(BlueprintImplementableEvent, Category = "Pokemon|Companion", meta = (DisplayName = "On Pokemon Despawned"))
-	void BP_OnPokemonDespawned();
-
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Camera")
 	TObjectPtr<USpringArmComponent> CameraBoom = nullptr;
@@ -160,6 +133,12 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Movement Sync")
 	TObjectPtr<UUEPlayerMovementSyncComponent> MovementSyncComponent = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Field Server")
+	TObjectPtr<UUEFieldWildPokemonSyncComponent> FieldWildPokemonSyncComponent = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Field Server")
+	TObjectPtr<UUEFieldRemotePlayerSyncComponent> FieldRemotePlayerSyncComponent = nullptr;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Customization")
 	TObjectPtr<USkeletalMeshComponent> HHVBodyEquipmentMesh = nullptr;
@@ -192,71 +171,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Movement", meta = (ClampMin = "1.0"))
 	float RunSpeedMultiplier = 1.5f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Companion")
-	TSubclassOf<AUEPokemonCharacter> PokemonCompanionClass;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Companion")
-	TObjectPtr<UUEPokemonSpeciesCatalog> PokemonSpeciesCatalog = nullptr;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Companion")
-	TObjectPtr<UUEPokemonSpeciesData> PokemonCompanionSpeciesData = nullptr;
-
-	// 시작하자마자 동행 포켓몬을 소환한다. 입력 키로도 껐다 켤 수 있다.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Companion")
-	bool bAutoSpawnPokemonCompanion = true;
-
-	// PokemonCompanionSpeciesData 가 비어 있을 때 종족 카탈로그에서 끌어올 번호.
-	// Server/Protocol/PokemonSpecies.h 의 id 다 (20 = 피카츄). 0 이면 안 쓴다.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Companion", meta = (ClampMin = "0"))
-	int32 DefaultCompanionSpeciesId = 20;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (ClampMin = "1"))
-	int32 ServerPlayerId = 1;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server")
-	TArray<FUEPokemonServerOwnedPokemon> ServerOwnedPokemons;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (ClampMin = "0"))
-	int32 SelectedCompanionPokemonInstanceId = 1;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Companion", meta = (ClampMin = "0.0"))
-	float PokemonDespawnDelay = 0.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Companion", meta = (ClampMin = "0.0"))
-	float PokemonSpawnAnimationDuration = 0.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Companion", meta = (ClampMin = "0.0"))
-	float PokemonSpawnGroundTraceDistance = 600.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Companion")
-	TEnumAsByte<ECollisionChannel> PokemonSpawnCollisionChannel = ECC_Pawn;
-
 private:
 	void ConfigureRemoteProxyMovement();
 	void UpdateRemoteProxyMovement(float DeltaSeconds);
 
-	bool TrySpawnPokemonCompanion();
-	void RequestDespawnPokemonCompanion();
-	void FinishPokemonDespawn();
 	void RefreshMovementSpeed();
 	void RefreshCharacterState();
 	void FinishRoll();
 	void CancelLanding();
 	void FinishLanding();
-	void RegisterPokemonServerRoster();
-	FUEPokemonServerSpawnResponse RequestPokemonServerSpawn();
-	void ReleasePokemonServerSpawn(const FUEPokemonServerSpawnResponse& SpawnResponse);
-	void NotifyPokemonServerDespawned(AUEPokemonCharacter* PokemonToDestroy);
-	void NotifyPokemonWorldDespawned(AUEPokemonCharacter* PokemonToDestroy);
-	UUEPokemonServerSubsystem* GetPokemonServerSubsystem() const;
-	UUEPokemonWorldSubsystem* GetPokemonWorldSubsystem() const;
-	HHV::PokemonAI::OwnContext MakePokemonLifecycleContext(HHV::PokemonAI::RequestedAction ActionRequest) const;
-	HHV::Map::AgentSettings MakePokemonAgentSettings() const;
-	bool ResolvePokemonSpawnTransform(const HHV::PokemonAI::Command& SpawnCommand, FVector& OutLocation, FRotator& OutRotation) const;
-	bool TryResolvePokemonSpawnCandidate(const FVector& CandidateLocation, const FRotator& SpawnRotation, FVector& OutLocation) const;
-
-	static HHV::Map::Vec3 ToServerVec3(const FVector& Vector);
-	static FVector ToUnrealVector(const HHV::Map::Vec3& Vector);
 
 	// 다른 플레이어의 복제본인가. MakeRemoteProxy 로만 켜진다.
 	bool bIsRemoteProxy = false;
@@ -326,22 +249,13 @@ private:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Customization", meta = (AllowPrivateAccess = "true"))
 	EUEHHVGender CurrentCustomizationGender = EUEHHVGender::TypeA;
 
-	UPROPERTY(Transient)
-	TObjectPtr<AUEPokemonCharacter> SpawnedPokemon = nullptr;
-
-	UPROPERTY(Transient)
-	TObjectPtr<AUEPokemonCharacter> PendingDespawnPokemon = nullptr;
-
 	FVector ActiveRollDirection = FVector::ForwardVector;
 
-	HHV::PokemonAI::PokemonFSM PokemonLifecycleBrain;
-	FTimerHandle PokemonDespawnTimerHandle;
 	FTimerHandle RollStateTimerHandle;
 	FTimerHandle LandingStateTimerHandle;
 	FTimerHandle GameplayQATimerHandle;
 	FVector GameplayQAStartLocation = FVector::ZeroVector;
 	int32 GameplayQAPhase = 0;
-	bool bPokemonDespawnInProgress = false;
 	bool bLandingStateActive = false;
 public:
 	//행동관련

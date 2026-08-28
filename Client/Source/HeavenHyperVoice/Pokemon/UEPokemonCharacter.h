@@ -3,13 +3,38 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AbilitySystemInterface.h"
 #include "GameFramework/Character.h"
+#include "GameplayTagContainer.h"
 #include "UEPokemonCharacter.generated.h"
 
-class UUEPokemonServerComponent;
-class UUEPokemonSummonEffectComponent;
+class AUEPokemonCharacter;
+class UAbilitySystemComponent;
+class UUEAbilitySystemComponent;
+class UUEPokemonAttributeSet;
 class UUEPokemonSpeciesCatalog;
 class UUEPokemonSpeciesData;
+class USoundBase;
+struct FOnAttributeChangeData;
+
+// 블루프린트 UI와 피격 연출이 포켓몬 체력 변경을 즉시 구독할 때 사용한다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(
+	FUEPokemonHealthChangedSignature,
+	AUEPokemonCharacter*, Pokemon,
+	float, OldHealth,
+	float, NewHealth,
+	float, MaxHealth);
+
+// 체력이 처음 0이 되는 순간 한 번만 방송되는 기절 델리게이트다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FUEPokemonFaintedSignature,
+	AUEPokemonCharacter*, Pokemon);
+
+// GameplayTag로 요청한 어빌리티가 실제 활성화됐을 때 방송한다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FUEPokemonAbilityActivatedSignature,
+	AUEPokemonCharacter*, Pokemon,
+	FGameplayTag, AbilityTag);
 
 UENUM(BlueprintType)
 enum class EUEPokemonAnimationState : uint8
@@ -81,13 +106,6 @@ enum class EUEPokemonRenderType : uint8
 	Boss
 };
 
-UENUM(BlueprintType)
-enum class EUEPokemonServerSimulationMode : uint8
-{
-	FollowOwner,
-	Wander
-};
-
 USTRUCT(BlueprintType)
 struct FUEPokemonServerMoveSnapshot
 {
@@ -153,7 +171,7 @@ struct FUEPokemonServerMoveSnapshot
 };
 
 UCLASS(Blueprintable)
-class HEAVENHYPERVOICE_API AUEPokemonCharacter : public ACharacter
+class HEAVENHYPERVOICE_API AUEPokemonCharacter : public ACharacter, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
 
@@ -161,9 +179,19 @@ public:
 	AUEPokemonCharacter();
 
 	virtual void Tick(float DeltaSeconds) override;
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|GAS")
+	UUEAbilitySystemComponent* GetPokemonAbilitySystemComponent() const { return AbilitySystemComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|GAS")
+	UUEPokemonAttributeSet* GetPokemonAttributeSet() const { return AttributeSet; }
 
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
 	void ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot);
+
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
+	void InitializeServerEntity(int64 NewServerEntityId, int32 SpeciesNumber, EUEPokemonRenderType NewRenderType);
 
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
 	void ApplyServerMoveTarget(const FVector& ServerLocation, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bTeleported);
@@ -173,6 +201,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Server")
 	int32 GetServerPokemonId() const { return ServerPokemonId; }
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Server")
+	int64 GetServerEntityId() const { return ServerEntityId; }
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Server")
 	int32 GetPokemonInstanceId() const { return PokemonInstanceId; }
@@ -198,10 +229,36 @@ public:
 	FName GetPokemonSpeciesId() const;
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Stats")
-	float GetCurrentHP() const { return CurrentHP; }
+	float GetCurrentHP() const;
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Stats")
-	float GetMaxHP() const { return MaxHP; }
+	float GetMaxHP() const;
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|GAS|Attribute")
+	float GetAttackPower() const;
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|GAS|Attribute")
+	float GetDefense() const;
+
+	// DamageAmount는 방어 계산까지 끝난 최종 피해량이다. 기술별 방어 공식은 GameplayEffect에서 처리한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|GAS|Health", meta = (ClampMin = "0.0"))
+	float ApplyPokemonDamage(float DamageAmount);
+
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|GAS|Health", meta = (ClampMin = "0.0"))
+	float RestorePokemonHealth(float HealAmount);
+
+	// 태그와 일치하는 시작 어빌리티를 실행하고 성공 여부를 반환한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|GAS|Ability")
+	bool ActivatePokemonAbilityByTag(FGameplayTag AbilityTag);
+
+	UPROPERTY(BlueprintAssignable, Category = "Pokemon|GAS|Event")
+	FUEPokemonHealthChangedSignature OnPokemonHealthChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Pokemon|GAS|Event")
+	FUEPokemonFaintedSignature OnPokemonFainted;
+
+	UPROPERTY(BlueprintAssignable, Category = "Pokemon|GAS|Event")
+	FUEPokemonAbilityActivatedSignature OnPokemonAbilityActivated;
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Movement")
 	float GetConfiguredMoveSpeed() const { return ConfiguredMoveSpeed; }
@@ -218,33 +275,78 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Animation")
 	float GetLastServerAnimationEventDurationSeconds() const { return LastServerAnimationEventDurationSeconds; }
 
-	UFUNCTION(BlueprintPure, Category = "Pokemon|Server")
-	UUEPokemonServerComponent* GetServerComponent() const { return ServerComponent; }
+	// 소환 후보 중 하나를 무작위로 재생한다. 후보가 없으면 대표 울음을 사용한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlaySummonCry();
 
-	UFUNCTION(BlueprintPure, Category = "Pokemon|Effects")
-	UUEPokemonSummonEffectComponent* GetSummonEffectComponent() const { return SummonEffectComponent; }
+	// 기절 후보 중 하나를 무작위로 재생한다. 일반 울음을 임의로 대신 쓰지 않는다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayFaintCry();
+
+	// 현재 종족 DataAsset의 야생 울음 후보 중 하나를 무작위로 골라 재생한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayRandomWildCry();
+
+	// 블루프린트 상태 머신이나 상호작용 연출에서 기쁨 울음을 요청할 때 사용한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayRandomHappyCry();
+
+	// 적 발견·전투 진입 연출에서 분노 울음을 요청할 때 사용한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayRandomAngryCry();
+
+	// 피격·실패 연출에서 슬픔 울음을 요청할 때 사용한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayRandomSadCry();
+
+	// 물리 기술 애니메이션과 함께 짧은 공격 울음을 요청할 때 사용한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayRandomPhysicalAttackCry();
+
+	// 특수 기술 애니메이션과 함께 속성 공격 울음을 요청할 때 사용한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayRandomSpecialAttackCry();
+
+	// 컷신이나 종별 고유 연출에서 특수음성 후보를 요청할 때 사용한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayRandomSpecialCry();
+
+	// 휴식·주변 관찰 같은 필드 행동에서 환경 반응 울음을 요청할 때 사용한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayRandomAmbientCry();
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Pokemon|Animation", meta = (DisplayName = "On Server Animation Event"))
 	void BP_OnServerAnimationEvent(EUEPokemonAnimationEvent AnimationEvent, const FUEPokemonServerMoveSnapshot& Snapshot);
 
 private:
 	void ApplyPokemonSpeciesData();
+	void InitializeAbilitySystem();
+	void InitializePokemonAttributes(float NewCurrentHealth, float NewMaxHealth, float NewAttackPower, float NewDefense);
+	void HandleHealthChanged(const FOnAttributeChangeData& ChangeData);
+	void HandleMaxHealthChanged(const FOnAttributeChangeData& ChangeData);
+	float SetPokemonHealth(float NewHealth);
 
 	// 실제 스켈레탈 메시가 없을 때 큐브를 종족 대표 색으로 칠한다.
 	void ApplyDebugAppearance();
 	void ApplyServerAnimationSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot);
 	void UpdateServerDrivenMovement(float DeltaSeconds);
 	void ConfigureServerDrivenMovement();
+	void RefreshWildCryTimer();
+	void HandleWildCryTimer();
+	USoundBase* SelectRandomCry(const TArray<TObjectPtr<USoundBase>>& CryCandidates, USoundBase* FallbackCry = nullptr) const;
+	void PlayCrySound(USoundBase* CrySound) const;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UUEPokemonServerComponent> ServerComponent = nullptr;
+	// 포켓몬 자신이 ASC의 OwnerActor와 AvatarActor를 함께 맡는 단순한 구조다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|GAS", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UUEAbilitySystemComponent> AbilitySystemComponent = nullptr;
 
-	// 서버 상태와 분리된 소환/귀환 화면 연출 컴포넌트다.
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|Effects", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UUEPokemonSummonEffectComponent> SummonEffectComponent = nullptr;
+	// ASC가 관리하는 포켓몬 공통 전투 수치 묶음이다.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|GAS", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UUEPokemonAttributeSet> AttributeSet = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Species", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UUEPokemonSpeciesData> PokemonSpeciesData = nullptr;
@@ -286,11 +388,20 @@ private:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Stats", meta = (AllowPrivateAccess = "true"))
 	float MaxHP = 100.0f;
 
+	UPROPERTY(Transient)
+	bool bAbilitySystemInitialized = false;
+
+	UPROPERTY(Transient)
+	bool bFaintDelegateBroadcast = false;
+
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Movement", meta = (AllowPrivateAccess = "true"))
 	float ConfiguredMoveSpeed = 280.0f;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
 	int32 ServerPokemonId = 0;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
+	int64 ServerEntityId = 0;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
 	int32 PokemonInstanceId = 0;
@@ -312,6 +423,9 @@ private:
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Animation", meta = (AllowPrivateAccess = "true"))
 	float LastServerAnimationEventDurationSeconds = 0.0f;
+
+	// 고정 주기 반복 타이머가 아니라 매번 새 간격을 뽑는 한 번짜리 타이머로 사용한다.
+	FTimerHandle WildCryTimerHandle;
 
 	bool bHasServerMoveTarget = false;
 };

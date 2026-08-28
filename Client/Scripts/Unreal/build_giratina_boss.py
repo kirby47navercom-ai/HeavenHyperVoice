@@ -147,7 +147,10 @@ def make_form(form_id, display_name, asset_root, mesh_name, preferred_group, ani
     # 기존 기라티나 필드 데이터와 같은 높이를 유지해 메시가 바닥에서 뜨지 않게 한다.
     form.set_editor_property(
         "mesh_relative_transform",
-        unreal.Transform(location=unreal.Vector(0.0, 0.0, -90.0)),
+        unreal.Transform(
+            location=unreal.Vector(0.0, 0.0, -90.0),
+            rotation=unreal.Rotator(yaw=-90.0).quaternion(),
+        ),
     )
     form.set_editor_property("animations", make_animation_set(animation_paths, preferred_group))
     return form

@@ -3,7 +3,9 @@
 #include "../Character/UEPlayerCharacter.h"
 #include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
 #include "../Data/UEDataAsset.h"
+#include "../Server/UEFieldClientSubsystem.h"
 #include "../System/UEGameInstance.h"
+#include "../UI/PokemonParty/UEPokemonPartyWidget.h"
 #include "../UEGameplayTags.h"
 
 #include "EnhancedInputComponent.h"
@@ -24,6 +26,11 @@ void AUEPlayerController::BeginPlay()
 	AddDefaultMappingContext();
 	SetInputMode(FInputModeGameOnly());
 	bShowMouseCursor = false;
+	if (UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
+	{
+		FieldClientSubsystem->RegisterPlayerController(this);
+	}
+	ShowPokemonPartyWidget();
 	
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
@@ -36,23 +43,52 @@ void AUEPlayerController::OnPossess(APawn* InPawn)
 	Super::OnPossess(InPawn);
 
 	AUEPlayerCharacter* PlayerCharacter = Cast<AUEPlayerCharacter>(InPawn);
-	UUEGameInstance* UEGameInstance = Cast<UUEGameInstance>(GetGameInstance());
-	if (!PlayerCharacter || !UEGameInstance)
+	if (!PlayerCharacter)
 	{
 		return;
 	}
 
-	FUEHHVAppearance PendingAppearance;
-	if (UEGameInstance->GetPendingHHVAppearance(PendingAppearance))
+	if (UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
 	{
-		// 레벨 이동 직후 빙의 순서가 달라져도 저장한 커마를 다시 입힌다.
-		PlayerCharacter->ApplyHHVAppearance(PendingAppearance);
+		FieldClientSubsystem->RegisterPlayerController(this);
+		FieldClientSubsystem->AttachPlayerCharacter(PlayerCharacter);
 	}
 
-	// 로비에서 입장한 슬롯의 스타팅 포켓몬도 같은 로컬 저장값으로 맞춘다.
-	if (UUEPokemonSpeciesData* PartnerSpecies = UEGameInstance->GetSelectedPartnerSpecies())
+	if (UUEGameInstance* UEGameInstance = Cast<UUEGameInstance>(GetGameInstance()))
 	{
-		PlayerCharacter->SetPokemonCompanionSpeciesData(PartnerSpecies);
+		FUEHHVAppearance PendingAppearance;
+		if (UEGameInstance->GetPendingHHVAppearance(PendingAppearance))
+		{
+			// 레벨 이동 직후 빙의 순서가 달라져도 저장한 커마를 다시 입힌다.
+			PlayerCharacter->ApplyHHVAppearance(PendingAppearance);
+		}
+	}
+
+	// 컨트롤러보다 Pawn 빙의가 늦어도 이미 생성된 HUD에 정확한 로스터 소유자를 다시 연결한다.
+	if (PokemonPartyWidget)
+	{
+		PokemonPartyWidget->InitializeForPlayer(PlayerCharacter);
+	}
+}
+
+void AUEPlayerController::ShowPokemonPartyWidget()
+{
+	if (!IsLocalController() || PokemonPartyWidget || !PokemonPartyWidgetClass)
+	{
+		return;
+	}
+
+	// 클래스는 BP_LoginPlayerController의 변수로 지정한다. 런타임 에셋 주소는 사용하지 않는다.
+	PokemonPartyWidget = CreateWidget<UUEPokemonPartyWidget>(this, PokemonPartyWidgetClass);
+	if (!PokemonPartyWidget)
+	{
+		return;
+	}
+
+	PokemonPartyWidget->AddToViewport(PokemonPartyWidgetZOrder);
+	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
+	{
+		PokemonPartyWidget->InitializeForPlayer(PlayerCharacter);
 	}
 }
 
@@ -346,7 +382,7 @@ void AUEPlayerController::HandlePokemonToggle(const FInputActionValue& Value)
 
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
-		PlayerCharacter->TogglePokemonCompanion();
+		PlayerCharacter->RequestPokemonToggle();
 	}
 }
 

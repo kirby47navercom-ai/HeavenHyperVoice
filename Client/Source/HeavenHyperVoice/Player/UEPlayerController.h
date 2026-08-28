@@ -9,6 +9,7 @@
 
 class AUEPlayerCharacter;
 class UUEDataAsset;
+class UUEPokemonPartyWidget;
 
 /** 실제 플레이 레벨의 이동과 액션 입력을 처리한다. */
 UCLASS()
@@ -18,6 +19,13 @@ class HEAVENHYPERVOICE_API AUEPlayerController : public APlayerController
 
 public:
 	AUEPlayerController();
+
+	// WBP 클래스가 지정된 경우에만 HUD를 만든다. 에셋 경로는 코드에서 찾지 않는다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|UI")
+	void ShowPokemonPartyWidget();
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|UI")
+	UUEPokemonPartyWidget* GetPokemonPartyWidget() const { return PokemonPartyWidget; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -32,6 +40,13 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Input|Look", meta = (ClampMin = "0.0"))
 	float LookPitchRate = 1.0f;
+
+	// 실제 화면 디자인은 이 변수에 지정한 WBP_PokemonParty가 담당한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|UI")
+	TSubclassOf<UUEPokemonPartyWidget> PokemonPartyWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|UI")
+	int32 PokemonPartyWidgetZOrder = 10;
 
 private:
 	void AddDefaultMappingContext() const;
@@ -73,4 +88,7 @@ private:
 	FVector2D PendingMovementInput = FVector2D::ZeroVector;
 	float MaxWalkSpeed = 260.0f;
 	float RunCross = 1.5f;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUEPokemonPartyWidget> PokemonPartyWidget = nullptr;
 };

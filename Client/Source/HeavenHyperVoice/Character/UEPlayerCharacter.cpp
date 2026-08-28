@@ -3,15 +3,11 @@
 #include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
 #include "../Animation/UEAnimInstance.h"
 #include "../Animation/UEFollowerAnimInstance.h"
-#include "../Player/Server/UEPlayerMovementSyncComponent.h"
 #include "../Data/UEPlayerAnimationDataAsset.h"
-#include "../Pokemon/UEPokemonCharacter.h"
-#include "../Pokemon/UEPokemonSpeciesCatalog.h"
-#include "../Pokemon/UEPokemonSpeciesData.h"
-#include "../Pokemon/Server/UEPokemonServerComponent.h"
-#include "../Pokemon/Server/UEPokemonServerSubsystem.h"
-#include "../Pokemon/Effects/UEPokemonSummonEffectComponent.h"
-#include "../Pokemon/UEPokemonWorldSubsystem.h"
+#include "../Server/UEFieldClientSubsystem.h"
+#include "../Server/UEFieldRemotePlayerSyncComponent.h"
+#include "../Server/UEFieldWildPokemonSyncComponent.h"
+#include "../Server/UEPlayerMovementSyncComponent.h"
 #include "../System/UEGameInstance.h"
 #include "../UEGameplayTags.h"
 
@@ -284,6 +280,8 @@ AUEPlayerCharacter::AUEPlayerCharacter()
 	FollowCamera->bUsePawnControlRotation = false;
 
 	MovementSyncComponent = CreateDefaultSubobject<UUEPlayerMovementSyncComponent>(TEXT("MovementSyncComponent"));
+	FieldWildPokemonSyncComponent = CreateDefaultSubobject<UUEFieldWildPokemonSyncComponent>(TEXT("FieldWildPokemonSyncComponent"));
+	FieldRemotePlayerSyncComponent = CreateDefaultSubobject<UUEFieldRemotePlayerSyncComponent>(TEXT("FieldRemotePlayerSyncComponent"));
 
 	GetCapsuleComponent()->InitCapsuleSize(34.0f, 88.0f);
 	GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
@@ -324,19 +322,9 @@ void AUEPlayerCharacter::BeginPlay()
 
 	if (bIsRemoteProxy)
 	{
-		// 남의 캐릭터다. 겉모습만 맞추고 끝낸다 — 로컬 포켓몬 서버 로스터에
-		// 남을 끼워 넣거나, 남 몫의 동행을 부르거나, QA 를 또 돌리면 안 된다.
+		// 남의 캐릭터다. 겉모습만 맞추고 끝낸다.
 		ConfigureRemoteProxyMovement();
 		return;
-	}
-
-	RegisterPokemonServerRoster();
-
-	// 로스터가 등록됐으니 바로 동행 포켓몬을 부른다. 입력 키(TogglePokemonCompanion)
-	// 로도 껐다 켤 수 있다.
-	if (bAutoSpawnPokemonCompanion && !IsValid(SpawnedPokemon))
-	{
-		TrySpawnPokemonCompanion();
 	}
 
 	// QA 하네스는 셋업이 다 끝난 뒤에 돈다.
@@ -345,20 +333,6 @@ void AUEPlayerCharacter::BeginPlay()
 
 void AUEPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (UWorld* World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(PokemonDespawnTimerHandle);
-	}
-
-	if (IsValid(SpawnedPokemon))
-	{
-		NotifyPokemonServerDespawned(SpawnedPokemon.Get());
-		NotifyPokemonWorldDespawned(SpawnedPokemon.Get());
-		SpawnedPokemon->Destroy();
-		SpawnedPokemon = nullptr;
-	}
-
-	PendingDespawnPokemon = nullptr;
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -390,10 +364,6 @@ void AUEPlayerCharacter::MakeRemoteProxy()
 	AutoPossessPlayer = EAutoReceiveInput::Disabled;
 	AutoPossessAI = EAutoPossessAI::Disabled;
 	AIControllerClass = nullptr;
-
-	// 동행은 그 플레이어의 클라가 부른다. 여기서 부르면 남의 파트너가 내
-	// 로컬 시뮬레이션으로 하나 더 생긴다.
-	bAutoSpawnPokemonCompanion = false;
 
 	// 카메라는 하나면 된다. 스프링암은 매 프레임 충돌을 훑으므로 꺼둔다.
 	if (CameraBoom)
@@ -527,11 +497,6 @@ FVector AUEPlayerCharacter::GetDesiredMovementDirection() const
 	return GetMoveDirectionFromInput(MovementInput, GetControlRotation());
 }
 
-bool AUEPlayerCharacter::IsPokemonCompanionSpawned() const
-{
-	return IsValid(SpawnedPokemon) && !bPokemonDespawnInProgress;
-}
-
 void AUEPlayerCharacter::SetRunning(bool bNewIsRunning)
 {
 	if (bIsRunning == bNewIsRunning)
@@ -648,83 +613,21 @@ void AUEPlayerCharacter::SetMovementInput(const FVector2D& NewMovementInput)
 	}
 }
 
-void AUEPlayerCharacter::TogglePokemonCompanion()
+void AUEPlayerCharacter::RequestPokemonToggle()
 {
-	if (bPokemonDespawnInProgress)
+	if (UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
 	{
-		return;
+		FieldClientSubsystem->SendPokemonToggleRequest();
 	}
-
-	if (IsValid(SpawnedPokemon))
-	{
-		// R 키는 플레이어 모션을 재생하지 않는다. 포켓몬 쪽 연출 컴포넌트가
-		// 포켓몬의 빛을 플레이어 몸으로 되돌린 뒤 안전하게 파괴한다.
-		RequestDespawnPokemonCompanion();
-		return;
-	}
-
-	// 볼을 던지는 동작 대신 플레이어 몸에서 소환 위치로 빛이 이동한다.
-	// 자동 소환도 같은 TrySpawn 경로를 사용하므로 입력/자동 소환의 화면 규칙이 같다.
-	TrySpawnPokemonCompanion();
 }
 
 bool AUEPlayerCharacter::CommandPokemonAttack(int32 AttackSlot)
 {
-	if (!IsPokemonCompanionSpawned())
+	if (UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
 	{
-		// 보유 포켓몬이 필드에 나오기 전에는 공격 입력을 서버로 보내지 않는다.
-		return false;
+		return FieldClientSubsystem->SendPokemonAttackRequest(AttackSlot);
 	}
-
-	EUEPokemonAttackAnimation AttackAnimation = EUEPokemonAttackAnimation::None;
-	switch (AttackSlot)
-	{
-	case 1:
-		AttackAnimation = EUEPokemonAttackAnimation::Attack01;
-		break;
-	case 2:
-		AttackAnimation = EUEPokemonAttackAnimation::Attack02;
-		break;
-	case 3:
-		AttackAnimation = EUEPokemonAttackAnimation::RangeAttack01;
-		break;
-	case 4:
-		AttackAnimation = EUEPokemonAttackAnimation::RangeAttack02;
-		break;
-	default:
-		return false;
-	}
-
-	UUEPokemonServerComponent* ServerComponent = SpawnedPokemon->GetServerComponent();
-	if (!ServerComponent)
-	{
-		return false;
-	}
-
-	// 지금은 숫자키 예시지만 이후 STT가 기술 슬롯을 찾으면 이 함수부터 같은 경로를 재사용한다.
-	return ServerComponent->SendServerAttackCommand(AttackAnimation);
-}
-
-void AUEPlayerCharacter::SetPokemonCompanionSpeciesData(UUEPokemonSpeciesData* NewSpeciesData)
-{
-	PokemonCompanionSpeciesData = NewSpeciesData;
-	if (IsValid(SpawnedPokemon))
-	{
-		SpawnedPokemon->SetPokemonSpeciesData(PokemonCompanionSpeciesData);
-	}
-}
-
-void AUEPlayerCharacter::SetSelectedPokemonCompanionInstanceId(int32 NewPokemonInstanceId)
-{
-	SelectedCompanionPokemonInstanceId = FMath::Max(NewPokemonInstanceId, 0);
-
-	FUEPokemonServerOwnedPokemon OwnedPokemon;
-	if (!IsValid(SpawnedPokemon)
-		&& GetPokemonServerSubsystem()
-		&& GetPokemonServerSubsystem()->TryGetOwnedPokemon(ServerPlayerId, SelectedCompanionPokemonInstanceId, OwnedPokemon))
-	{
-		PokemonCompanionSpeciesData = OwnedPokemon.SpeciesData;
-	}
+	return false;
 }
 
 void AUEPlayerCharacter::ApplyLocalMovementInput()
@@ -771,455 +674,6 @@ void AUEPlayerCharacter::ApplyServerMovementCorrection(const FVector& ServerPosi
 		MovementComponent->Velocity = ServerVelocity;
 	}
 }
-
-bool AUEPlayerCharacter::TrySpawnPokemonCompanion()
-{
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return false;
-	}
-
-	// 절대 두 마리를 만들지 않는다. 이 함수가 어느 경로로 다시 불려도(자동 소환,
-	// 입력 키, 서버 재등록) 이미 동행 중이면 그대로 둔다. 이 가드가 없으면
-	// 호출될 때마다 SpawnedPokemon 을 덮어써 이전 액터가 유령으로 겹쳐 쌓인다.
-	if (IsValid(SpawnedPokemon))
-	{
-		UE_LOG(LogTemp, Warning, TEXT("TrySpawnPokemonCompanion: 이미 동행 중, 중복 소환 무시"));
-		return true;
-	}
-	UE_LOG(LogTemp, Warning, TEXT("TrySpawnPokemonCompanion: 새 동행 소환"));
-
-	// 스폰할 클래스를 먼저 정한다. 서버 자리를 잡아둔 뒤에 실패하면 그걸 도로
-	// 반납해야 하는데, 여기서 끝내면 그럴 일이 없다.
-	TSubclassOf<AUEPokemonCharacter> ClassToSpawn = PokemonCompanionClass;
-	if (!ClassToSpawn)
-	{
-		// 예전에는 여기서 AUEPokemonCharacter::StaticClass() 로 넘어갔다. 그건
-		// 메시도 큐브도 없는 맨 C++ 클래스라, **보이지 않는** 동행이 조용히
-		// 스폰되고 함수는 true 를 반환했다. 동행이 안 보이는데 로그 한 줄
-		// 남지 않던 원인이다. 못 만들면 못 만들었다고 말한다.
-		UE_LOG(LogTemp, Error, TEXT("TrySpawnPokemonCompanion: 스폰할 포켓몬 클래스가 없다"));
-		return false;
-	}
-
-	const FUEPokemonServerSpawnResponse SpawnResponse = RequestPokemonServerSpawn();
-	if (!SpawnResponse.bAccepted)
-	{
-		return false;
-	}
-	PokemonCompanionSpeciesData = SpawnResponse.SpeciesData;
-
-	PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::Spawning);
-	const HHV::PokemonAI::OwnContext Context = MakePokemonLifecycleContext(HHV::PokemonAI::RequestedAction::Spawn);
-	const HHV::PokemonAI::Command SpawnCommand = PokemonLifecycleBrain.Tick(Context);
-	if (SpawnCommand.Type != HHV::PokemonAI::CommandType::Spawn)
-	{
-		PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::NonCombat);
-		ReleasePokemonServerSpawn(SpawnResponse);
-		return false;
-	}
-
-	FVector SpawnLocation;
-	FRotator SpawnRotation;
-	if (!ResolvePokemonSpawnTransform(SpawnCommand, SpawnLocation, SpawnRotation))
-	{
-		PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::NonCombat);
-		ReleasePokemonServerSpawn(SpawnResponse);
-		return false;
-	}
-
-	BP_OnPokemonSpawnRequested(SpawnLocation, SpawnRotation);
-
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = this;
-	SpawnParameters.Instigator = this;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	AUEPokemonCharacter* NewPokemon = World->SpawnActor<AUEPokemonCharacter>(ClassToSpawn, SpawnLocation, SpawnRotation, SpawnParameters);
-	if (!NewPokemon)
-	{
-		PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::NonCombat);
-		ReleasePokemonServerSpawn(SpawnResponse);
-		return false;
-	}
-
-	SpawnedPokemon = NewPokemon;
-	NewPokemon->SetRenderType(EUEPokemonRenderType::Own);
-	if (SpawnResponse.SpeciesData)
-	{
-		NewPokemon->SetPokemonSpeciesData(SpawnResponse.SpeciesData);
-		NewPokemon->ApplyServerStats(SpawnResponse.CurrentHP, SpawnResponse.MaxHP);
-	}
-	float SpawnDuration = PokemonSpawnAnimationDuration;
-	if (UUEPokemonSummonEffectComponent* SummonEffect = NewPokemon->GetSummonEffectComponent())
-	{
-		// 빛의 시작점은 포켓몬 Owner를 추측하지 않고 이 플레이어로 명시한다.
-		// 모듈형 몸 메시의 spine_03을 찾아 베지어 곡선 P0로 사용한다.
-		SummonEffect->SetEffectBodyActor(this);
-		// 메시와 종별 크기가 모두 적용된 뒤 시작해야 입자와 발광 크기가 포켓몬에 맞는다.
-		// 반환된 실제 시간을 서버 애니메이션 상태에도 넘겨 화면 연출과 상태 종료를 맞춘다.
-		SpawnDuration = SummonEffect->PlaySpawnEffect(PokemonSpawnAnimationDuration);
-	}
-	if (UUEPokemonServerComponent* ServerComponent = NewPokemon->GetServerComponent())
-	{
-		ServerComponent->InitializeServerRuntimePokemon(
-			SpawnResponse.RuntimePokemonId,
-			SpawnResponse.PokemonInstanceId,
-			SpawnResponse.CurrentHP,
-			SpawnResponse.MaxHP
-		);
-		ServerComponent->SetFollowTargetActor(this);
-		ServerComponent->SendServerAnimationEvent(
-			EUEPokemonAnimationEvent::SpawnStarted,
-			EUEPokemonAnimationState::Spawning,
-			SpawnDuration
-		);
-	}
-	if (UUEPokemonWorldSubsystem* PokemonWorldSubsystem = GetPokemonWorldSubsystem())
-	{
-		PokemonWorldSubsystem->RegisterExistingPokemon(NewPokemon, EUEPokemonRenderType::Own, ServerPlayerId);
-	}
-	PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::NonCombat);
-	BP_OnPokemonSpawned(NewPokemon);
-	return true;
-}
-
-void AUEPlayerCharacter::RequestDespawnPokemonCompanion()
-{
-	if (!IsValid(SpawnedPokemon))
-	{
-		SpawnedPokemon = nullptr;
-		return;
-	}
-
-	PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::Despawning);
-	const HHV::PokemonAI::OwnContext Context = MakePokemonLifecycleContext(HHV::PokemonAI::RequestedAction::Despawn);
-	const HHV::PokemonAI::Command DespawnCommand = PokemonLifecycleBrain.Tick(Context);
-	if (DespawnCommand.Type != HHV::PokemonAI::CommandType::Despawn)
-	{
-		PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::NonCombat);
-		return;
-	}
-
-	PendingDespawnPokemon = SpawnedPokemon;
-	bPokemonDespawnInProgress = true;
-	float DespawnDuration = PokemonDespawnDelay;
-	if (UUEPokemonSummonEffectComponent* SummonEffect = PendingDespawnPokemon->GetSummonEffectComponent())
-	{
-		// 귀환 곡선의 마지막 점 P3도 이 플레이어의 현재 가슴 위치로 고정한다.
-		SummonEffect->SetEffectBodyActor(this);
-		// 설정값이 0이어도 컴포넌트 기본 시간으로 연출하고, 반환 시간을 파괴 타이머와 맞춘다.
-		DespawnDuration = SummonEffect->PlayDespawnEffect(PokemonDespawnDelay);
-	}
-	if (UUEPokemonServerComponent* ServerComponent = PendingDespawnPokemon->GetServerComponent())
-	{
-		ServerComponent->SendServerAnimationEvent(
-			EUEPokemonAnimationEvent::DespawnStarted,
-			EUEPokemonAnimationState::Despawning,
-			DespawnDuration
-		);
-	}
-	BP_OnPokemonDespawnRequested(PendingDespawnPokemon.Get());
-
-	if (DespawnDuration > 0.0f)
-	{
-		GetWorldTimerManager().SetTimer(PokemonDespawnTimerHandle, this, &ThisClass::FinishPokemonDespawn, DespawnDuration, false);
-		return;
-	}
-
-	FinishPokemonDespawn();
-}
-
-void AUEPlayerCharacter::FinishPokemonDespawn()
-{
-	AUEPokemonCharacter* PokemonToDestroy = PendingDespawnPokemon.Get();
-	if (!IsValid(PokemonToDestroy) && IsValid(SpawnedPokemon))
-	{
-		PokemonToDestroy = SpawnedPokemon.Get();
-	}
-
-	if (IsValid(PokemonToDestroy))
-	{
-		NotifyPokemonServerDespawned(PokemonToDestroy);
-		NotifyPokemonWorldDespawned(PokemonToDestroy);
-		PokemonToDestroy->Destroy();
-	}
-
-	if (SpawnedPokemon.Get() == PokemonToDestroy || !IsValid(SpawnedPokemon))
-	{
-		SpawnedPokemon = nullptr;
-	}
-
-	PendingDespawnPokemon = nullptr;
-	bPokemonDespawnInProgress = false;
-	PokemonLifecycleBrain.SetMode(HHV::PokemonAI::OwnMode::NonCombat);
-	BP_OnPokemonDespawned();
-}
-
-void AUEPlayerCharacter::RegisterPokemonServerRoster()
-{
-	UUEPokemonServerSubsystem* ServerSubsystem = GetPokemonServerSubsystem();
-	if (!ServerSubsystem)
-	{
-		return;
-	}
-
-	ServerPlayerId = FMath::Max(ServerPlayerId, 1);
-
-	// 동행 종족 데이터가 비어 있으면 카탈로그에서 기본 종족을 끌어온다. 이게
-	// 없으면 동행은 종족 없는(SpeciesId=None) 큐브로 뜬다. 카탈로그가 아직
-	// 비어 있으면 그대로 예전 동작이다.
-	if (!PokemonCompanionSpeciesData && DefaultCompanionSpeciesId > 0)
-	{
-		if (PokemonSpeciesCatalog)
-		{
-			PokemonCompanionSpeciesData = PokemonSpeciesCatalog->Find(DefaultCompanionSpeciesId);
-		}
-	}
-
-	TArray<FUEPokemonServerOwnedPokemon> OwnedPokemons = ServerOwnedPokemons;
-	if (OwnedPokemons.IsEmpty())
-	{
-		FUEPokemonServerOwnedPokemon DefaultOwnedPokemon;
-		DefaultOwnedPokemon.PokemonInstanceId = FMath::Max(SelectedCompanionPokemonInstanceId, 1);
-		if (PokemonCompanionSpeciesData)
-		{
-			DefaultOwnedPokemon.SpeciesData = PokemonCompanionSpeciesData;
-			DefaultOwnedPokemon.SpeciesId = PokemonCompanionSpeciesData->SpeciesId;
-			DefaultOwnedPokemon.CurrentHP = PokemonCompanionSpeciesData->MaxHP;
-		}
-		else
-		{
-			TSubclassOf<AUEPokemonCharacter> ClassToInspect = PokemonCompanionClass;
-			if (!ClassToInspect)
-			{
-				ClassToInspect = AUEPokemonCharacter::StaticClass();
-			}
-
-			const AUEPokemonCharacter* DefaultPokemon = ClassToInspect ? ClassToInspect->GetDefaultObject<AUEPokemonCharacter>() : nullptr;
-			// 종족 데이터가 없을 때 특정 포켓몬 이름을 임의로 넣지 않는다.
-			DefaultOwnedPokemon.SpeciesId = NAME_None;
-			DefaultOwnedPokemon.CurrentHP = DefaultPokemon ? DefaultPokemon->GetMaxHP() : 100.0f;
-		}
-		OwnedPokemons.Add(DefaultOwnedPokemon);
-	}
-
-	if (SelectedCompanionPokemonInstanceId <= 0 && !OwnedPokemons.IsEmpty())
-	{
-		SelectedCompanionPokemonInstanceId = OwnedPokemons[0].PokemonInstanceId > 0 ? OwnedPokemons[0].PokemonInstanceId : 1;
-	}
-
-	ServerSubsystem->RegisterOwnedPokemons(ServerPlayerId, OwnedPokemons);
-
-	FUEPokemonServerOwnedPokemon SelectedOwnedPokemon;
-	if (ServerSubsystem->TryGetOwnedPokemon(ServerPlayerId, SelectedCompanionPokemonInstanceId, SelectedOwnedPokemon))
-	{
-		PokemonCompanionSpeciesData = SelectedOwnedPokemon.SpeciesData;
-	}
-}
-
-FUEPokemonServerSpawnResponse AUEPlayerCharacter::RequestPokemonServerSpawn()
-{
-	RegisterPokemonServerRoster();
-
-	UUEPokemonServerSubsystem* ServerSubsystem = GetPokemonServerSubsystem();
-	if (!ServerSubsystem)
-	{
-		FUEPokemonServerSpawnResponse Response;
-		Response.Result = EUEPokemonServerSummonResult::InvalidPlayer;
-		return Response;
-	}
-
-	return ServerSubsystem->RequestSpawnPokemon(ServerPlayerId, SelectedCompanionPokemonInstanceId);
-}
-
-void AUEPlayerCharacter::ReleasePokemonServerSpawn(const FUEPokemonServerSpawnResponse& SpawnResponse)
-{
-	if (!SpawnResponse.bAccepted)
-	{
-		return;
-	}
-
-	if (UUEPokemonServerSubsystem* ServerSubsystem = GetPokemonServerSubsystem())
-	{
-		ServerSubsystem->RequestDespawnPokemon(ServerPlayerId, SpawnResponse.RuntimePokemonId);
-	}
-}
-
-void AUEPlayerCharacter::NotifyPokemonServerDespawned(AUEPokemonCharacter* PokemonToDestroy)
-{
-	if (!PokemonToDestroy)
-	{
-		return;
-	}
-
-	const UUEPokemonServerComponent* ServerComponent = PokemonToDestroy->GetServerComponent();
-	const int32 RuntimePokemonId = ServerComponent ? ServerComponent->GetServerPokemonId() : PokemonToDestroy->GetServerPokemonId();
-	if (RuntimePokemonId <= 0)
-	{
-		return;
-	}
-
-	if (UUEPokemonServerSubsystem* ServerSubsystem = GetPokemonServerSubsystem())
-	{
-		ServerSubsystem->RequestDespawnPokemon(ServerPlayerId, RuntimePokemonId);
-	}
-}
-
-void AUEPlayerCharacter::NotifyPokemonWorldDespawned(AUEPokemonCharacter* PokemonToDestroy)
-{
-	if (!PokemonToDestroy)
-	{
-		return;
-	}
-
-	const UUEPokemonServerComponent* ServerComponent = PokemonToDestroy->GetServerComponent();
-	const int32 RuntimePokemonId = ServerComponent ? ServerComponent->GetServerPokemonId() : PokemonToDestroy->GetServerPokemonId();
-	if (RuntimePokemonId <= 0)
-	{
-		return;
-	}
-
-	if (UUEPokemonWorldSubsystem* PokemonWorldSubsystem = GetPokemonWorldSubsystem())
-	{
-		PokemonWorldSubsystem->DespawnPokemon(RuntimePokemonId, false);
-	}
-}
-
-UUEPokemonServerSubsystem* AUEPlayerCharacter::GetPokemonServerSubsystem() const
-{
-	UGameInstance* GameInstance = GetGameInstance();
-	return GameInstance ? GameInstance->GetSubsystem<UUEPokemonServerSubsystem>() : nullptr;
-}
-
-UUEPokemonWorldSubsystem* AUEPlayerCharacter::GetPokemonWorldSubsystem() const
-{
-	UWorld* World = GetWorld();
-	return World ? World->GetSubsystem<UUEPokemonWorldSubsystem>() : nullptr;
-}
-
-HHV::PokemonAI::OwnContext AUEPlayerCharacter::MakePokemonLifecycleContext(HHV::PokemonAI::RequestedAction ActionRequest) const
-{
-	HHV::PokemonAI::OwnContext Context;
-	Context.OwnerLocation = ToServerVec3(GetActorLocation());
-	Context.OwnerYawDegrees = GetActorRotation().Yaw;
-	Context.ActionRequest = ActionRequest;
-	Context.Agent = MakePokemonAgentSettings();
-	Context.PokemonLocation = IsValid(SpawnedPokemon)
-		? ToServerVec3(SpawnedPokemon->GetActorLocation())
-		: Context.OwnerLocation;
-	return Context;
-}
-
-HHV::Map::AgentSettings AUEPlayerCharacter::MakePokemonAgentSettings() const
-{
-	HHV::Map::AgentSettings Agent;
-
-	if (PokemonCompanionSpeciesData)
-	{
-		Agent.CapsuleRadius = PokemonCompanionSpeciesData->CapsuleRadius;
-		Agent.CapsuleHalfHeight = PokemonCompanionSpeciesData->CapsuleHalfHeight;
-		Agent.MaxStepHeight = PokemonCompanionSpeciesData->MaxStepHeight;
-		Agent.WalkableFloorAngleDegrees = PokemonCompanionSpeciesData->WalkableFloorAngleDegrees;
-		return Agent;
-	}
-
-	TSubclassOf<AUEPokemonCharacter> ClassToInspect = PokemonCompanionClass;
-	if (!ClassToInspect)
-	{
-		ClassToInspect = AUEPokemonCharacter::StaticClass();
-	}
-
-	const AUEPokemonCharacter* DefaultPokemon = ClassToInspect ? ClassToInspect->GetDefaultObject<AUEPokemonCharacter>() : nullptr;
-	if (!DefaultPokemon)
-	{
-		return Agent;
-	}
-
-	if (const UCapsuleComponent* DefaultCapsuleComponent = DefaultPokemon->GetCapsuleComponent())
-	{
-		Agent.CapsuleRadius = DefaultCapsuleComponent->GetScaledCapsuleRadius();
-		Agent.CapsuleHalfHeight = DefaultCapsuleComponent->GetScaledCapsuleHalfHeight();
-	}
-
-	if (const UCharacterMovementComponent* MovementComponent = DefaultPokemon->GetCharacterMovement())
-	{
-		Agent.MaxStepHeight = MovementComponent->MaxStepHeight;
-		Agent.WalkableFloorAngleDegrees = MovementComponent->GetWalkableFloorAngle();
-	}
-
-	return Agent;
-}
-
-bool AUEPlayerCharacter::ResolvePokemonSpawnTransform(const HHV::PokemonAI::Command& SpawnCommand, FVector& OutLocation, FRotator& OutRotation) const
-{
-	OutRotation = FRotator(0.0f, GetActorRotation().Yaw, 0.0f);
-
-	for (const HHV::Map::Vec3& Candidate : SpawnCommand.PathPoints)
-	{
-		if (TryResolvePokemonSpawnCandidate(ToUnrealVector(Candidate), OutRotation, OutLocation))
-		{
-			return true;
-		}
-	}
-
-	return TryResolvePokemonSpawnCandidate(ToUnrealVector(SpawnCommand.TargetLocation), OutRotation, OutLocation);
-}
-
-bool AUEPlayerCharacter::TryResolvePokemonSpawnCandidate(const FVector& CandidateLocation, const FRotator& SpawnRotation, FVector& OutLocation) const
-{
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return false;
-	}
-
-	const HHV::Map::AgentSettings Agent = MakePokemonAgentSettings();
-	FVector AdjustedLocation = CandidateLocation;
-
-	FHitResult GroundHit;
-	FCollisionQueryParams GroundTraceParams(TEXT("PokemonSpawnGroundTrace"), false, this);
-	const FVector TraceStart = CandidateLocation + FVector(0.0f, 0.0f, PokemonSpawnGroundTraceDistance);
-	const FVector TraceEnd = CandidateLocation - FVector(0.0f, 0.0f, PokemonSpawnGroundTraceDistance);
-	if (World->LineTraceSingleByChannel(GroundHit, TraceStart, TraceEnd, ECC_Visibility, GroundTraceParams))
-	{
-		AdjustedLocation.Z = GroundHit.ImpactPoint.Z + Agent.CapsuleHalfHeight;
-	}
-
-	const FCollisionShape SpawnShape = FCollisionShape::MakeCapsule(Agent.CapsuleRadius, Agent.CapsuleHalfHeight);
-	const FCollisionQueryParams SpawnOverlapParams(TEXT("PokemonSpawnOverlap"), false);
-	const bool bBlocked = World->OverlapBlockingTestByChannel(
-		AdjustedLocation,
-		SpawnRotation.Quaternion(),
-		PokemonSpawnCollisionChannel,
-		SpawnShape,
-		SpawnOverlapParams
-	);
-
-	if (bBlocked)
-	{
-		return false;
-	}
-
-	OutLocation = AdjustedLocation;
-	return true;
-}
-
-HHV::Map::Vec3 AUEPlayerCharacter::ToServerVec3(const FVector& Vector)
-{
-	return HHV::Map::Vec3{
-		static_cast<float>(Vector.X),
-		static_cast<float>(Vector.Y),
-		static_cast<float>(Vector.Z)
-	};
-}
-
-FVector AUEPlayerCharacter::ToUnrealVector(const HHV::Map::Vec3& Vector)
-{
-	return FVector(Vector.X, Vector.Y, Vector.Z);
-}
-
 
 void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearance)
 {
