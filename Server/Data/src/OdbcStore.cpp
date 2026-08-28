@@ -1,5 +1,6 @@
 #include "OdbcStore.h"
 
+#include <algorithm>
 #include <spdlog/spdlog.h>
 
 #include <random>
@@ -159,38 +160,25 @@ int driverVersion(const std::string& name) {
     return major * 100 + minor;
 }
 
-// 개체값을 굴린다. 스탯당 0~31 이고 태어날 때 한 번 정해진다.
-proto::StatSpread rollIndividualValues() {
-    // 게임 밸런스용이라 암호학적 난수가 필요하지 않다. 스레드마다 하나 둔다.
-    static thread_local std::mt19937 engine{std::random_device{}()};
-    std::uniform_int_distribution<int> roll(0, proto::kMaxIndividualValue);
-
-    proto::StatSpread spread;
-    spread.hp = static_cast<std::uint16_t>(roll(engine));
-    spread.atk = static_cast<std::uint16_t>(roll(engine));
-    spread.def = static_cast<std::uint16_t>(roll(engine));
-    spread.spAtk = static_cast<std::uint16_t>(roll(engine));
-    spread.spDef = static_cast<std::uint16_t>(roll(engine));
-    spread.speed = static_cast<std::uint16_t>(roll(engine));
-    return spread;
-}
-
 // 캐릭터 조회 두 구문이 공유하는 컬럼 목록. 순서가 fetchCharacters 의
 // 바인딩과 일치해야 한다.
+//
+// character_pokemon 조인이 사라졌다. 데리고 다니는 종족은 characters.active_dex
+// 한 컬럼이고, 능력치는 저장돼 있지 않아 읽어온 뒤 계산한다.
 constexpr const char* kCharacterColumns =
-    "SELECT c.id, c.nickname, "
-    "       p.species_id, p.nickname, p.level, "
-    "       p.iv_hp, p.iv_atk, p.iv_def, p.iv_sp_atk, p.iv_sp_def, p.iv_speed, "
-    "       p.ev_hp, p.ev_atk, p.ev_def, p.ev_sp_atk, p.ev_sp_def, p.ev_speed, "
-    // 외형. 18~35 번 컬럼이며 fetchCharacters 의 바인딩 순서와 맞아야 한다.
+    "SELECT c.id, c.nickname, c.level, c.active_dex, "
+    // 외형. 5~22 번 컬럼이며 fetchCharacters 의 바인딩 순서와 맞아야 한다.
     "       c.appearance_gender, c.appearance_body, c.appearance_head, "
     "       c.appearance_hair, c.appearance_eye, c.appearance_equipment, "
     "       c.skin_r, c.skin_g, c.skin_b, "
     "       c.hair_r, c.hair_g, c.hair_b, "
     "       c.eye_r, c.eye_g, c.eye_b, "
-    "       c.arm_volume, c.torso_volume, c.leg_volume "
+    "       c.arm_volume, c.torso_volume, c.leg_volume, "
+    // 해금 비트맵. 23 번 컬럼. 013 이전에 만들어진 캐릭터는 행이 없을 수 있어
+    // LEFT JOIN 이다 — INNER 면 그런 캐릭터가 목록에서 통째로 사라진다.
+    "       u.dex_bits "
     "FROM characters c "
-    "LEFT JOIN character_pokemon p ON p.character_id = c.id AND p.slot = 0 ";
+    "LEFT JOIN character_unlocks u ON u.character_id = c.id ";
 
 }  // namespace
 
@@ -249,19 +237,27 @@ struct OdbcStore::Connection {
     SQLHSTMT countCharacters = SQL_NULL_HSTMT;
     SQLHSTMT insertCharacter = SQL_NULL_HSTMT;
     SQLHSTMT lastInsertId = SQL_NULL_HSTMT;
-    SQLHSTMT insertPokemon = SQL_NULL_HSTMT;
     SQLHSTMT touchPlayed = SQL_NULL_HSTMT;
     SQLHSTMT selectPosition = SQL_NULL_HSTMT;
     SQLHSTMT softDelete = SQL_NULL_HSTMT;
-    SQLHSTMT deletePartner = SQL_NULL_HSTMT;
     SQLHSTMT updatePosition = SQL_NULL_HSTMT;
+
+    // 해금 비트맵.
+    SQLHSTMT insertUnlockRow = SQL_NULL_HSTMT;  // 캐릭터를 만들 때 빈 비트맵을 깐다
+    SQLHSTMT setUnlockBit = SQL_NULL_HSTMT;     // 비트 하나를 켠다
+    SQLHSTMT testUnlockBit = SQL_NULL_HSTMT;    // 해금됐는지 본다
+    SQLHSTMT setActiveDex = SQL_NULL_HSTMT;     // 데리고 다닐 종족을 세운다
+    SQLHSTMT selectParty = SQL_NULL_HSTMT;      // 파티 구성을 읽는다
+    SQLHSTMT clearParty = SQL_NULL_HSTMT;       // 파티를 통째로 비운다
+    SQLHSTMT insertPartyMember = SQL_NULL_HSTMT;
 
     // 모든 구문 핸들을 한 번에 돌기 위한 목록.
     std::vector<SQLHSTMT*> all() {
-        return {&selectAccount,   &touchLogin,      &insertAccount,   &listCharacters,
-                &findCharacter,   &countCharacters, &insertCharacter, &lastInsertId,
-                &insertPokemon,   &touchPlayed,     &selectPosition,  &updatePosition,
-                &softDelete,      &deletePartner};
+        return {&selectAccount,   &touchLogin,       &insertAccount,  &listCharacters,
+                &findCharacter,   &countCharacters,  &insertCharacter, &lastInsertId,
+                &touchPlayed,     &selectPosition,   &updatePosition, &softDelete,
+                &insertUnlockRow, &setUnlockBit,     &testUnlockBit,  &setActiveDex,
+                &selectParty,     &clearParty,       &insertPartyMember};
     }
 };
 
@@ -355,21 +351,66 @@ OdbcStore::OdbcStore(const OdbcSettings& settings) {
                     "SQLPrepare(insertAccount)");
             prepare(connection->insertCharacter,
                     "INSERT INTO characters "
-                    "(account_id, nickname, "
+                    "(account_id, nickname, level, "
                     " appearance_gender, appearance_body, appearance_head, "
                     " appearance_hair, appearance_eye, appearance_equipment, "
                     " skin_r, skin_g, skin_b, hair_r, hair_g, hair_b, "
                     " eye_r, eye_g, eye_b, arm_volume, torso_volume, leg_volume) "
-                    "VALUES (?, ?,  ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?,  ?, ?, ?)",
+                    "VALUES (?, ?, ?,  ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?,  ?, ?, ?)",
                     "SQLPrepare(insertCharacter)");
             prepare(connection->lastInsertId, "SELECT LAST_INSERT_ID()",
                     "SQLPrepare(lastInsertId)");
-            prepare(connection->insertPokemon,
-                    "INSERT INTO character_pokemon "
-                    "(character_id, slot, species_id, level, "
-                    " iv_hp, iv_atk, iv_def, iv_sp_atk, iv_sp_def, iv_speed) "
-                    "VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    "SQLPrepare(insertPokemon)");
+            // 해금 비트맵 한 행을 캐릭터와 함께 깐다. 행이 없으면 나중에 매번
+            // 존재를 확인해야 한다.
+            prepare(connection->insertUnlockRow,
+                    "INSERT INTO character_unlocks (character_id, dex_bits) "
+                    "VALUES (?, UNHEX(REPEAT('00', 160)))",
+                    "SQLPrepare(insertUnlockRow)");
+
+            // 비트 하나를 켠다. 읽고-고쳐-쓰지 않고 UPDATE 한 번으로 끝내
+            // 동시 해금이 서로를 덮지 않게 한다.
+            //
+            // 파라미터: 바이트 인덱스, 바이트 인덱스, 비트 마스크, 바이트 인덱스,
+            //           캐릭터 id, 계정 id
+            // 소유 확인은 JOIN 에 들어 있다 — 남의 캐릭터면 0행이다.
+            prepare(connection->setUnlockBit,
+                    "UPDATE character_unlocks u "
+                    "JOIN characters c ON c.id = u.character_id "
+                    "SET u.dex_bits = CONCAT("
+                    "      SUBSTRING(u.dex_bits, 1, ?), "
+                    "      CHAR(ASCII(SUBSTRING(u.dex_bits, ? + 1, 1)) | ?), "
+                    "      SUBSTRING(u.dex_bits, ? + 2)) "
+                    "WHERE u.character_id = ? AND c.account_id = ? AND c.deleted_at IS NULL",
+                    "SQLPrepare(setUnlockBit)");
+
+            // 해금 여부. 파라미터: 바이트 인덱스, 비트 마스크, 캐릭터 id, 계정 id
+            prepare(connection->testUnlockBit,
+                    "SELECT (ASCII(SUBSTRING(u.dex_bits, ? + 1, 1)) & ?) <> 0 "
+                    "FROM character_unlocks u "
+                    "JOIN characters c ON c.id = u.character_id "
+                    "WHERE u.character_id = ? AND c.account_id = ? AND c.deleted_at IS NULL",
+                    "SQLPrepare(testUnlockBit)");
+
+            // 데리고 다닐 종족. 0 이면 도로 넣는다.
+            prepare(connection->setActiveDex,
+                    "UPDATE characters SET active_dex = ? "
+                    "WHERE id = ? AND account_id = ? AND deleted_at IS NULL",
+                    "SQLPrepare(setActiveDex)");
+            prepare(connection->selectParty,
+                    "SELECT dex FROM character_party WHERE character_id = ? ORDER BY slot",
+                    "SQLPrepare(selectParty)");
+
+            // 파티 갱신은 지우고 다시 넣는다. 슬롯별 UPSERT 로 하면 줄어든
+            // 파티의 남은 칸을 따로 지워야 하고, 그걸 빠뜨리면 뺀 포켓몬이
+            // 그대로 남는다.
+            prepare(connection->clearParty,
+                    "DELETE p FROM character_party p "
+                    "JOIN characters c ON c.id = p.character_id "
+                    "WHERE p.character_id = ? AND c.account_id = ? AND c.deleted_at IS NULL",
+                    "SQLPrepare(clearParty)");
+            prepare(connection->insertPartyMember,
+                    "INSERT INTO character_party (character_id, slot, dex) VALUES (?, ?, ?)",
+                    "SQLPrepare(insertPartyMember)");
             prepare(connection->touchPlayed,
                     "UPDATE characters SET last_played_at = CURRENT_TIMESTAMP(3) WHERE id = ?",
                     "SQLPrepare(touchPlayed)");
@@ -383,11 +424,6 @@ OdbcStore::OdbcStore(const OdbcSettings& settings) {
                     "UPDATE characters SET deleted_at = CURRENT_TIMESTAMP(3) "
                     "WHERE id = ? AND account_id = ? AND nickname = ? AND deleted_at IS NULL",
                     "SQLPrepare(softDelete)");
-            prepare(connection->deletePartner,
-                    "DELETE p FROM character_pokemon p JOIN characters c ON c.id = p.character_id "
-                    "WHERE p.character_id = ? AND p.slot = 0 "
-                    "  AND c.account_id = ? AND c.deleted_at IS NULL",
-                    "SQLPrepare(deletePartner)");
             writable = true;
         } catch (const std::exception& e) {
             if (i == 0) {
@@ -555,58 +591,48 @@ std::vector<Character> OdbcStore::fetchCharacters(SQLHSTMT statement) {
 
     std::uint64_t id = 0;
     SQLWCHAR nickname[kMaxTextChars] = {};
-
-    std::uint16_t speciesId = 0;
-    SQLWCHAR partnerNickname[kMaxTextChars] = {};
-    std::uint32_t partnerLevel = 0;
-    // 실 수치는 읽지 않는다. 저장돼 있지 않고 아래에서 계산한다.
-    std::uint8_t iv[6] = {};
-    std::uint8_t ev[6] = {};
+    std::uint32_t level = 0;
+    std::uint16_t activeDex = 0;
 
     // 외형. 컬럼 순서는 kCharacterColumns 와 맞아야 한다.
     std::uint8_t appearanceGender = 0;
     std::int32_t appearanceIndex[5] = {};   // body, head, hair, eye, equipment
-    double appearanceColor[9] = {};         // skin rgb, hair rgb, eye rgb
-    double appearanceVolume[3] = {};        // arm, torso, leg
+    double appearanceColor[9] = {};        // skin rgb, hair rgb, eye rgb
+    double appearanceVolume[3] = {};       // arm, torso, leg
 
-    SQLLEN idLength = 0, nicknameLength = 0;
-    SQLLEN speciesLength = 0, partnerNicknameLength = 0, partnerLevelLength = 0;
-    SQLLEN spreadLength[12] = {};
+    // 1280 비트. 013 의 BINARY(160) 과 같은 크기여야 한다.
+    unsigned char dexBits[proto::kUnlockBitmapBytes] = {};
+
+    SQLLEN idLength = 0, nicknameLength = 0, levelLength = 0, activeDexLength = 0;
     SQLLEN appearanceLength[18] = {};
+    SQLLEN dexBitsLength = 0;
 
     SQLBindCol(statement, 1, SQL_C_UBIGINT, &id, sizeof(id), &idLength);
     SQLBindCol(statement, 2, SQL_C_WCHAR, nickname, sizeof(nickname), &nicknameLength);
-    SQLBindCol(statement, 3, SQL_C_USHORT, &speciesId, sizeof(speciesId), &speciesLength);
-    SQLBindCol(statement, 4, SQL_C_WCHAR, partnerNickname, sizeof(partnerNickname),
-               &partnerNicknameLength);
-    SQLBindCol(statement, 5, SQL_C_ULONG, &partnerLevel, sizeof(partnerLevel), &partnerLevelLength);
-    for (int i = 0; i < 6; ++i) {
-        SQLBindCol(statement, static_cast<SQLUSMALLINT>(6 + i), SQL_C_UTINYINT, &iv[i],
-                   sizeof(iv[i]), &spreadLength[i]);
-        SQLBindCol(statement, static_cast<SQLUSMALLINT>(12 + i), SQL_C_UTINYINT, &ev[i],
-                   sizeof(ev[i]), &spreadLength[6 + i]);
-    }
+    SQLBindCol(statement, 3, SQL_C_ULONG, &level, sizeof(level), &levelLength);
+    SQLBindCol(statement, 4, SQL_C_USHORT, &activeDex, sizeof(activeDex), &activeDexLength);
 
-    // 18 번부터 외형. 순서는 kCharacterColumns 그대로다.
-    SQLBindCol(statement, 18, SQL_C_UTINYINT, &appearanceGender, sizeof(appearanceGender),
+    SQLBindCol(statement, 5, SQL_C_UTINYINT, &appearanceGender, sizeof(appearanceGender),
                &appearanceLength[0]);
     for (int i = 0; i < 5; ++i) {
-        SQLBindCol(statement, static_cast<SQLUSMALLINT>(19 + i), SQL_C_SLONG, &appearanceIndex[i],
+        SQLBindCol(statement, static_cast<SQLUSMALLINT>(6 + i), SQL_C_SLONG, &appearanceIndex[i],
                    sizeof(appearanceIndex[i]), &appearanceLength[1 + i]);
     }
     for (int i = 0; i < 9; ++i) {
-        SQLBindCol(statement, static_cast<SQLUSMALLINT>(24 + i), SQL_C_DOUBLE, &appearanceColor[i],
+        SQLBindCol(statement, static_cast<SQLUSMALLINT>(11 + i), SQL_C_DOUBLE, &appearanceColor[i],
                    sizeof(appearanceColor[i]), &appearanceLength[6 + i]);
     }
     for (int i = 0; i < 3; ++i) {
-        SQLBindCol(statement, static_cast<SQLUSMALLINT>(33 + i), SQL_C_DOUBLE,
+        SQLBindCol(statement, static_cast<SQLUSMALLINT>(20 + i), SQL_C_DOUBLE,
                    &appearanceVolume[i], sizeof(appearanceVolume[i]), &appearanceLength[15 + i]);
     }
+    SQLBindCol(statement, 23, SQL_C_BINARY, dexBits, sizeof(dexBits), &dexBitsLength);
 
     while (succeeded(SQLFetch(statement))) {
         Character character;
         character.id = id;
         character.nickname = narrow(nickname, nicknameLength);
+        character.level = level;
 
         character.appearance.gender = appearanceGender;
         character.appearance.body = appearanceIndex[0];
@@ -627,35 +653,68 @@ std::vector<Character> OdbcStore::fetchCharacters(SQLHSTMT statement) {
         character.appearance.torsoVolume = static_cast<float>(appearanceVolume[1]);
         character.appearance.legVolume = static_cast<float>(appearanceVolume[2]);
 
-        // LEFT JOIN 이라 파트너가 없으면 NULL 이 온다. 004 이전에 만들어진
-        // 캐릭터가 그럴 수 있다.
-        if (speciesLength != SQL_NULL_DATA) {
-            character.hasPartner = true;
-            character.partner.speciesId = speciesId;
-            character.partner.nickname =
-                partnerNicknameLength == SQL_NULL_DATA
-                    ? std::string()
-                    : narrow(partnerNickname, partnerNicknameLength);
-            character.partner.level = partnerLevel;
-            character.partner.ivs = {iv[0], iv[1], iv[2], iv[3], iv[4], iv[5]};
-            character.partner.evs = {ev[0], ev[1], ev[2], ev[3], ev[4], ev[5]};
-
-            // 실 수치는 여기서 만든다. 저장하면 레벨업이나 노력치 변화 때마다
-            // 갱신해야 하고, 한 군데만 빠뜨려도 조용히 어긋난다.
-            if (const proto::SpeciesBase* base = proto::findSpecies(speciesId)) {
-                character.partner.stats = proto::computeStats(*base, partnerLevel,
-                                                              character.partner.ivs,
-                                                              character.partner.evs);
+        // 데리고 다니는 종족. 저장된 것은 도감번호뿐이고 능력치는 여기서 만든다.
+        // 저장해 두면 레벨이 오를 때마다 갱신해야 하고, 한 군데만 빠뜨려도
+        // 조용히 어긋난다.
+        if (activeDex != 0) {
+            if (const proto::SpeciesBase* base = proto::findSpeciesByDex(activeDex)) {
+                character.hasPartner = true;
+                character.partner.speciesId = base->id;
+                character.partner.name = std::string(base->name);
+                character.partner.stats =
+                    proto::computeStats(*base, character.level, {}, {});
             } else {
-                // 종족 표에서 사라진 id 다. 배열을 줄였을 때 생길 수 있다.
-                spdlog::warn("character {} has unknown species {}", id, speciesId);
+                // 표에서 사라진 도감번호다. 종족을 목록에서 뺐을 때 생길 수 있다.
+                spdlog::warn("character {} carries unknown dex {}", id, activeDex);
             }
         }
+
+        // 해금 목록. 1280 비트를 다 훑지 않고 종족 표 쪽에서 되묻는다 —
+        // 구현된 종족이 20 개라 그쪽이 훨씬 짧고, 표에서 빠진 도감번호가
+        // 목록에 섞여 나가지도 않는다.
+        if (dexBitsLength > 0) {
+            const std::size_t bytes =
+                std::min<std::size_t>(static_cast<std::size_t>(dexBitsLength), sizeof(dexBits));
+            for (const proto::SpeciesBase& base : proto::kSpecies) {
+                const std::size_t index = base.dex / 8;
+                if (index < bytes && (dexBits[index] & (1u << (base.dex % 8))) != 0) {
+                    character.unlocked.push_back(base.dex);
+                }
+            }
+        }
+
         characters.push_back(std::move(character));
     }
 
     SQLCloseCursor(statement);
     return characters;
+}
+
+// 캐릭터당 한 번씩 더 묻는다. 계정당 캐릭터가 셋뿐이라 조인으로 행을 부풀려
+// 중복 제거하는 것보다 이쪽이 짧고 읽기 쉽다.
+void OdbcStore::fillParties(Connection& connection, std::vector<Character>& characters) {
+    for (Character& character : characters) {
+        std::uint64_t id = character.id;
+        SQLLEN idLength = 0;
+        std::uint16_t dex = 0;
+        SQLLEN dexLength = 0;
+
+        try {
+            bindUInt64(connection.selectParty, 1, id, idLength);
+            require(SQLExecute(connection.selectParty), SQL_HANDLE_STMT, connection.selectParty,
+                    "SQLExecute(selectParty)");
+            SQLBindCol(connection.selectParty, 1, SQL_C_USHORT, &dex, sizeof(dex), &dexLength);
+            while (succeeded(SQLFetch(connection.selectParty))) {
+                character.party.push_back(dex);
+            }
+            SQLCloseCursor(connection.selectParty);
+        } catch (const std::exception& e) {
+            SQLCloseCursor(connection.selectParty);
+            // 파티를 못 읽어도 캐릭터 목록 자체는 돌려준다. 로비가 통째로
+            // 비는 것보다 파티 칸이 비는 편이 낫다.
+            spdlog::error("party lookup failed for character {}: {}", character.id, e.what());
+        }
+    }
 }
 
 std::vector<Character> OdbcStore::listByAccount(std::uint64_t accountId) {
@@ -666,7 +725,9 @@ std::vector<Character> OdbcStore::listByAccount(std::uint64_t accountId) {
         bindUInt64(connection->listCharacters, 1, accountId, accountLength);
         require(SQLExecute(connection->listCharacters), SQL_HANDLE_STMT,
                 connection->listCharacters, "SQLExecute(listCharacters)");
-        return fetchCharacters(connection->listCharacters);
+        std::vector<Character> characters = fetchCharacters(connection->listCharacters);
+        fillParties(*connection, characters);
+        return characters;
     } catch (const std::exception& e) {
         SQLCloseCursor(connection->listCharacters);
         spdlog::error("character list failed for account {}: {}", accountId, e.what());
@@ -689,6 +750,7 @@ std::optional<Character> OdbcStore::find(std::uint64_t accountId, std::uint64_t 
         if (found.empty()) {
             return std::nullopt;
         }
+        fillParties(*connection, found);
         return std::move(found.front());
     } catch (const std::exception& e) {
         SQLCloseCursor(connection->findCharacter);
@@ -711,9 +773,6 @@ CreateCharacterResult OdbcStore::create(std::uint64_t accountId, std::string_vie
     if (speciesId != 0 && species == nullptr) {
         return CreateCharacterResult::UnknownSpecies;
     }
-    // 개체값은 태어날 때 한 번 굴리고 바뀌지 않는다. 노력치는 0 에서 시작한다.
-    const proto::StatSpread ivs = species != nullptr ? rollIndividualValues()
-                                                     : proto::StatSpread{};
 
     Lease connection(*this);
 
@@ -739,10 +798,9 @@ CreateCharacterResult OdbcStore::create(std::uint64_t accountId, std::string_vie
         return CreateCharacterResult::Error;
     }
 
-    // 파트너를 같이 만들 때는 둘이 함께 생기거나 함께 실패해야 한다.
-    // 캐릭터만 남으면 유일 제약 때문에 같은 닉네임으로 다시 만들 수도 없다.
-    // 파트너 없이 만드는 경우에도 같은 경로를 쓴다 — INSERT 하나짜리 트랜잭션은
-    // 해가 없고, 분기를 두 벌로 만드는 것보다 낫다.
+    // 캐릭터, 해금 행, 스타터 해금, 파트너 지정이 함께 생기거나 함께 실패해야
+    // 한다. 캐릭터만 남으면 닉네임이 점유된 채로 못 쓰게 되고, 해금 행이 없으면
+    // 이후 모든 해금이 0행 갱신으로 조용히 실패한다.
     if (!succeeded(SQLSetConnectAttr(connection->dbc, SQL_ATTR_AUTOCOMMIT,
                                      reinterpret_cast<SQLPOINTER>(SQL_AUTOCOMMIT_OFF), 0))) {
         spdlog::error("could not begin a transaction: {}",
@@ -765,6 +823,7 @@ CreateCharacterResult OdbcStore::create(std::uint64_t accountId, std::string_vie
     std::uint64_t characterId = 0;
 
     // 바인딩은 SQLExecute 까지 주소가 살아 있어야 하므로 지역 변수로 펼친다.
+    std::uint32_t startLevel = proto::kStarterLevel;
     std::uint8_t gender = appearance.gender;
     std::int32_t indices[5] = {appearance.body, appearance.head, appearance.hair,
                                appearance.eye, appearance.equipment};
@@ -772,33 +831,30 @@ CreateCharacterResult OdbcStore::create(std::uint64_t accountId, std::string_vie
                         appearance.hairR, appearance.hairG, appearance.hairB,
                         appearance.eyeR,  appearance.eyeG,  appearance.eyeB};
     double volumes[3] = {appearance.armVolume, appearance.torsoVolume, appearance.legVolume};
-    SQLLEN appearanceLengths[18] = {};
+    SQLLEN lengths[21] = {};
 
     try {
-        SQLLEN accountLength = 0;
-        SQLLEN nicknameLength = 0;
-        bindUInt64(connection->insertCharacter, 1, accountId, accountLength);
-        bindText(connection->insertCharacter, 2, wideNickname, nicknameLength);
+        bindUInt64(connection->insertCharacter, 1, accountId, lengths[0]);
+        bindText(connection->insertCharacter, 2, wideNickname, lengths[1]);
 
-        // 3번부터 외형. 순서는 insertCharacter 의 컬럼 목록과 맞아야 한다.
-        //
-        // 길이 변수는 SQLExecute 까지 살아 있어야 한다. 블록 안의 지역 변수를
-        // 넘기면 SQLExecute 시점에는 이미 사라진 스택을 가리킨다.
-        require(SQLBindParameter(connection->insertCharacter, 3, SQL_PARAM_INPUT,
-                                 SQL_C_UTINYINT, SQL_TINYINT, 0, 0, &gender, 0,
-                                 &appearanceLengths[0]),
+        // 시작 레벨을 명시한다. 컬럼 기본값에 기대면 kStarterLevel 과 스키마가
+        // 따로 놀다가 한쪽만 바뀌었을 때 조용히 어긋난다.
+        bindUInt32(connection->insertCharacter, 3, startLevel, lengths[2]);
+
+        require(SQLBindParameter(connection->insertCharacter, 4, SQL_PARAM_INPUT,
+                                 SQL_C_UTINYINT, SQL_TINYINT, 0, 0, &gender, 0, &lengths[3]),
                 SQL_HANDLE_STMT, connection->insertCharacter, "SQLBindParameter(gender)");
         for (int i = 0; i < 5; ++i) {
-            bindInt32(connection->insertCharacter, static_cast<SQLUSMALLINT>(4 + i), indices[i],
-                      appearanceLengths[1 + i]);
+            bindInt32(connection->insertCharacter, static_cast<SQLUSMALLINT>(5 + i), indices[i],
+                      lengths[4 + i]);
         }
         for (int i = 0; i < 9; ++i) {
-            bindDouble(connection->insertCharacter, static_cast<SQLUSMALLINT>(9 + i), colors[i],
-                       appearanceLengths[6 + i]);
+            bindDouble(connection->insertCharacter, static_cast<SQLUSMALLINT>(10 + i), colors[i],
+                       lengths[9 + i]);
         }
         for (int i = 0; i < 3; ++i) {
-            bindDouble(connection->insertCharacter, static_cast<SQLUSMALLINT>(18 + i), volumes[i],
-                       appearanceLengths[15 + i]);
+            bindDouble(connection->insertCharacter, static_cast<SQLUSMALLINT>(19 + i), volumes[i],
+                       lengths[18 + i]);
         }
 
         const SQLRETURN rc = SQLExecute(connection->insertCharacter);
@@ -829,33 +885,45 @@ CreateCharacterResult OdbcStore::create(std::uint64_t accountId, std::string_vie
             return CreateCharacterResult::Error;
         }
 
-        if (species == nullptr) {
-            // 파트너 없이 시작한다. 나중에 잡으면 slot 0 에 들어간다.
-            if (!succeeded(SQLEndTran(SQL_HANDLE_DBC, connection->dbc, SQL_COMMIT))) {
-                spdlog::error("commit failed: {}",
-                              diagnostics(SQL_HANDLE_DBC, connection->dbc));
+        // 빈 비트맵을 깐다.
+        SQLLEN unlockRowLength = 0;
+        bindUInt64(connection->insertUnlockRow, 1, characterId, unlockRowLength);
+        require(SQLExecute(connection->insertUnlockRow), SQL_HANDLE_STMT,
+                connection->insertUnlockRow, "SQLExecute(insertUnlockRow)");
+        SQLCloseCursor(connection->insertUnlockRow);
+
+        if (species != nullptr) {
+            if (!setUnlockBitLocked(*connection, accountId, characterId, species->dex)) {
                 rollback();
+                spdlog::error("could not unlock the starter for character {}", characterId);
                 return CreateCharacterResult::Error;
             }
-            return CreateCharacterResult::Created;
+
+            std::uint16_t dex = species->dex;
+            std::uint64_t owner = accountId;
+
+            // 스타터는 파티 첫 칸에도 들어간다. 꺼내 놓은 것은 언제나 파티
+            // 구성원이어야 한다는 규칙이 여기서부터 지켜진다.
+            std::uint8_t slot = 0;
+            SQLLEN partyLengths[3] = {};
+            bindUInt64(connection->insertPartyMember, 1, characterId, partyLengths[0]);
+            require(SQLBindParameter(connection->insertPartyMember, 2, SQL_PARAM_INPUT,
+                                     SQL_C_UTINYINT, SQL_TINYINT, 0, 0, &slot, 0,
+                                     &partyLengths[1]),
+                    SQL_HANDLE_STMT, connection->insertPartyMember, "SQLBindParameter(slot)");
+            bindUInt16(connection->insertPartyMember, 3, dex, partyLengths[2]);
+            require(SQLExecute(connection->insertPartyMember), SQL_HANDLE_STMT,
+                    connection->insertPartyMember, "SQLExecute(insertPartyMember)");
+            SQLCloseCursor(connection->insertPartyMember);
+
+            SQLLEN activeLengths[3] = {};
+            bindUInt16(connection->setActiveDex, 1, dex, activeLengths[0]);
+            bindUInt64(connection->setActiveDex, 2, characterId, activeLengths[1]);
+            bindUInt64(connection->setActiveDex, 3, owner, activeLengths[2]);
+            require(SQLExecute(connection->setActiveDex), SQL_HANDLE_STMT,
+                    connection->setActiveDex, "SQLExecute(setActiveDex)");
+            SQLCloseCursor(connection->setActiveDex);
         }
-
-        std::uint32_t level = proto::kStarterLevel;
-        std::uint16_t speciesParam = speciesId;
-        std::uint16_t values[6] = {ivs.hp, ivs.atk, ivs.def, ivs.spAtk, ivs.spDef, ivs.speed};
-        SQLLEN lengths[9] = {};
-
-        bindUInt64(connection->insertPokemon, 1, characterId, lengths[0]);
-        bindUInt16(connection->insertPokemon, 2, speciesParam, lengths[1]);
-        bindUInt32(connection->insertPokemon, 3, level, lengths[2]);
-        for (int i = 0; i < 6; ++i) {
-            bindUInt16(connection->insertPokemon, static_cast<SQLUSMALLINT>(4 + i), values[i],
-                       lengths[3 + i]);
-        }
-
-        require(SQLExecute(connection->insertPokemon), SQL_HANDLE_STMT, connection->insertPokemon,
-                "SQLExecute(insertPokemon)");
-        SQLCloseCursor(connection->insertPokemon);
     } catch (const std::exception& e) {
         rollback();
         spdlog::error("character creation failed: {}", e.what());
@@ -868,6 +936,260 @@ CreateCharacterResult OdbcStore::create(std::uint64_t accountId, std::string_vie
         return CreateCharacterResult::Error;
     }
     return CreateCharacterResult::Created;
+}
+
+// 비트 하나를 켠다. 커넥션을 이미 빌린 쪽에서 부른다 — 여기서 다시 빌리면
+// 풀 크기만큼의 동시 생성이 서로를 기다리는 교착이 된다.
+bool OdbcStore::setUnlockBitLocked(Connection& connection, std::uint64_t accountId,
+                                   std::uint64_t characterId, std::uint16_t dex) {
+    if (dex == 0) {
+        return false;
+    }
+
+    // 비트 위치 = 도감번호. 바이트 n 의 비트 k 가 도감번호 (n * 8 + k) 다.
+    std::int32_t byteIndex = dex / 8;
+    std::int32_t mask = 1 << (dex % 8);
+    std::uint64_t character = characterId;
+    std::uint64_t owner = accountId;
+    SQLLEN lengths[6] = {};
+
+    try {
+        bindInt32(connection.setUnlockBit, 1, byteIndex, lengths[0]);
+        bindInt32(connection.setUnlockBit, 2, byteIndex, lengths[1]);
+        bindInt32(connection.setUnlockBit, 3, mask, lengths[2]);
+        bindInt32(connection.setUnlockBit, 4, byteIndex, lengths[3]);
+        bindUInt64(connection.setUnlockBit, 5, character, lengths[4]);
+        bindUInt64(connection.setUnlockBit, 6, owner, lengths[5]);
+        require(SQLExecute(connection.setUnlockBit), SQL_HANDLE_STMT, connection.setUnlockBit,
+                "SQLExecute(setUnlockBit)");
+        SQLCloseCursor(connection.setUnlockBit);
+        return true;
+    } catch (const std::exception& e) {
+        SQLCloseCursor(connection.setUnlockBit);
+        spdlog::error("unlock failed for character {} dex {}: {}", characterId, dex, e.what());
+        return false;
+    }
+}
+
+bool OdbcStore::unlockSpecies(std::uint64_t accountId, std::uint64_t characterId,
+                              std::uint16_t speciesId) {
+    if (!canWrite_) {
+        return false;
+    }
+    const proto::SpeciesBase* species = proto::findSpecies(speciesId);
+    if (species == nullptr) {
+        return false;
+    }
+
+    Lease connection(*this);
+    return setUnlockBitLocked(*connection, accountId, characterId, species->dex);
+}
+
+DeleteResult OdbcStore::setActivePartner(std::uint64_t accountId, std::uint64_t characterId,
+                                         std::uint16_t speciesId) {
+    if (!canWrite_) {
+        return DeleteResult::NotSupported;
+    }
+    const proto::SpeciesBase* species = proto::findSpecies(speciesId);
+    if (species == nullptr) {
+        return DeleteResult::NotFound;
+    }
+
+    Lease connection(*this);
+
+    std::uint64_t character = characterId;
+    std::uint64_t owner = accountId;
+
+    try {
+        // 꺼낼 수 있는 것은 파티 안에 있는 것뿐이다. 해금 여부만 보면 해금만
+        // 해 둔 아무 포켓몬이나 꺼낼 수 있다.
+        //
+        // 남의 캐릭터 번호를 넣으면 남의 파티가 조회되지만, 아래 setActiveDex 가
+        // account_id 로 걸러 0행이 되므로 아무것도 바뀌지 않는다.
+        std::uint16_t member = 0;
+        SQLLEN partyLength = 0;
+        SQLLEN memberLength = 0;
+        bool inParty = false;
+
+        bindUInt64(connection->selectParty, 1, character, partyLength);
+        require(SQLExecute(connection->selectParty), SQL_HANDLE_STMT, connection->selectParty,
+                "SQLExecute(selectParty)");
+        SQLBindCol(connection->selectParty, 1, SQL_C_USHORT, &member, sizeof(member),
+                   &memberLength);
+        while (succeeded(SQLFetch(connection->selectParty))) {
+            if (member == species->dex) {
+                inParty = true;
+            }
+        }
+        SQLCloseCursor(connection->selectParty);
+
+        if (!inParty) {
+            return DeleteResult::NotUnlocked;
+        }
+
+        std::uint16_t dex = species->dex;
+        SQLLEN setLengths[3] = {};
+        bindUInt16(connection->setActiveDex, 1, dex, setLengths[0]);
+        bindUInt64(connection->setActiveDex, 2, character, setLengths[1]);
+        bindUInt64(connection->setActiveDex, 3, owner, setLengths[2]);
+        require(SQLExecute(connection->setActiveDex), SQL_HANDLE_STMT, connection->setActiveDex,
+                "SQLExecute(setActiveDex)");
+
+        // 행 수는 보지 않는다. 이미 그 종족을 데리고 있으면 MySQL 이 0 을
+        // 돌려주는데, 그것도 성공이다. 존재 확인은 위 testUnlockBit 에서 끝났다.
+        SQLCloseCursor(connection->setActiveDex);
+        return DeleteResult::Deleted;
+    } catch (const std::exception& e) {
+        SQLCloseCursor(connection->selectParty);
+        SQLCloseCursor(connection->setActiveDex);
+        spdlog::error("set active partner failed for character {}: {}", characterId, e.what());
+        return DeleteResult::Error;
+    }
+}
+
+PartyResult OdbcStore::setParty(std::uint64_t accountId, std::uint64_t characterId,
+                                const std::vector<std::uint16_t>& dexNumbers,
+                                std::uint16_t activeDex) {
+    if (!canWrite_) {
+        return PartyResult::NotSupported;
+    }
+    if (dexNumbers.size() > kMaxPartySize) {
+        return PartyResult::TooMany;
+    }
+
+    // 클라이언트가 보낸 번호는 하나도 믿지 않는다. 표에 있는 도감번호인지,
+    // 중복은 없는지, 꺼낼 한 마리가 파티 안에 있는지 전부 여기서 본다.
+    for (std::size_t i = 0; i < dexNumbers.size(); ++i) {
+        if (proto::findSpeciesByDex(dexNumbers[i]) == nullptr) {
+            return PartyResult::NotUnlocked;
+        }
+        for (std::size_t j = i + 1; j < dexNumbers.size(); ++j) {
+            if (dexNumbers[i] == dexNumbers[j]) {
+                return PartyResult::Duplicate;
+            }
+        }
+    }
+    if (activeDex != 0 &&
+        std::find(dexNumbers.begin(), dexNumbers.end(), activeDex) == dexNumbers.end()) {
+        return PartyResult::NotInParty;
+    }
+
+    Lease connection(*this);
+
+    std::uint64_t character = characterId;
+    std::uint64_t owner = accountId;
+
+    // 해금 확인. 여기서 거르지 않으면 클라이언트가 아무 도감번호나 보내
+    // 해금하지 않은 포켓몬을 파티에 넣을 수 있다.
+    //
+    // 이 조회의 JOIN 이 캐릭터 소유까지 확인한다 — 남의 캐릭터면 0행이다.
+    // 파티를 비우는 요청(dexNumbers 가 빈 경우)에는 확인할 것이 없어서
+    // 아래 clearParty 의 행 수로 대신 본다.
+    try {
+        for (const std::uint16_t dex : dexNumbers) {
+            std::int32_t byteIndex = dex / 8;
+            std::int32_t mask = 1 << (dex % 8);
+            std::int32_t unlocked = 0;
+            SQLLEN testLengths[4] = {};
+            SQLLEN unlockedLength = 0;
+
+            bindInt32(connection->testUnlockBit, 1, byteIndex, testLengths[0]);
+            bindInt32(connection->testUnlockBit, 2, mask, testLengths[1]);
+            bindUInt64(connection->testUnlockBit, 3, character, testLengths[2]);
+            bindUInt64(connection->testUnlockBit, 4, owner, testLengths[3]);
+            require(SQLExecute(connection->testUnlockBit), SQL_HANDLE_STMT,
+                    connection->testUnlockBit, "SQLExecute(testUnlockBit)");
+            SQLBindCol(connection->testUnlockBit, 1, SQL_C_SLONG, &unlocked, sizeof(unlocked),
+                       &unlockedLength);
+            const bool found = succeeded(SQLFetch(connection->testUnlockBit));
+            SQLCloseCursor(connection->testUnlockBit);
+
+            if (!found) {
+                return PartyResult::NotFound;
+            }
+            if (unlocked == 0) {
+                return PartyResult::NotUnlocked;
+            }
+        }
+    } catch (const std::exception& e) {
+        SQLCloseCursor(connection->testUnlockBit);
+        spdlog::error("party unlock check failed for character {}: {}", characterId, e.what());
+        return PartyResult::Error;
+    }
+
+    // 비우고 다시 채우는 사이에 끊기면 파티가 사라진 채로 남는다.
+    if (!succeeded(SQLSetConnectAttr(connection->dbc, SQL_ATTR_AUTOCOMMIT,
+                                     reinterpret_cast<SQLPOINTER>(SQL_AUTOCOMMIT_OFF), 0))) {
+        spdlog::error("could not begin a transaction: {}",
+                      diagnostics(SQL_HANDLE_DBC, connection->dbc));
+        return PartyResult::Error;
+    }
+    struct RestoreAutocommit {
+        SQLHDBC dbc;
+        ~RestoreAutocommit() {
+            SQLSetConnectAttr(dbc, SQL_ATTR_AUTOCOMMIT,
+                              reinterpret_cast<SQLPOINTER>(SQL_AUTOCOMMIT_ON), 0);
+        }
+    } restoreGuard{connection->dbc};
+
+    const auto rollback = [&] {
+        SQLEndTran(SQL_HANDLE_DBC, connection->dbc, SQL_ROLLBACK);
+    };
+
+    try {
+        // 슬롯별 UPSERT 로 하지 않는 이유는, 파티가 줄어들면 남은 칸을 따로
+        // 지워야 하고 그걸 빠뜨리면 뺀 포켓몬이 그대로 남기 때문이다.
+        SQLLEN clearLengths[2] = {};
+        bindUInt64(connection->clearParty, 1, character, clearLengths[0]);
+        bindUInt64(connection->clearParty, 2, owner, clearLengths[1]);
+        require(SQLExecute(connection->clearParty), SQL_HANDLE_STMT, connection->clearParty,
+                "SQLExecute(clearParty)");
+        SQLCloseCursor(connection->clearParty);
+
+        for (std::size_t i = 0; i < dexNumbers.size(); ++i) {
+            std::uint8_t slot = static_cast<std::uint8_t>(i);
+            std::uint16_t dex = dexNumbers[i];
+            SQLLEN lengths[3] = {};
+
+            bindUInt64(connection->insertPartyMember, 1, character, lengths[0]);
+            require(SQLBindParameter(connection->insertPartyMember, 2, SQL_PARAM_INPUT,
+                                     SQL_C_UTINYINT, SQL_TINYINT, 0, 0, &slot, 0, &lengths[1]),
+                    SQL_HANDLE_STMT, connection->insertPartyMember, "SQLBindParameter(slot)");
+            bindUInt16(connection->insertPartyMember, 3, dex, lengths[2]);
+            require(SQLExecute(connection->insertPartyMember), SQL_HANDLE_STMT,
+                    connection->insertPartyMember, "SQLExecute(insertPartyMember)");
+            SQLCloseCursor(connection->insertPartyMember);
+        }
+
+        std::uint16_t active = activeDex;
+        SQLLEN activeLengths[3] = {};
+        bindUInt16(connection->setActiveDex, 1, active, activeLengths[0]);
+        bindUInt64(connection->setActiveDex, 2, character, activeLengths[1]);
+        bindUInt64(connection->setActiveDex, 3, owner, activeLengths[2]);
+        require(SQLExecute(connection->setActiveDex), SQL_HANDLE_STMT, connection->setActiveDex,
+                "SQLExecute(setActiveDex)");
+
+        // 여기 0행이면 그런 캐릭터가 없다는 뜻이다. 파티를 비우기만 하는
+        // 요청에는 위 해금 확인이 돌지 않아서, 소유 확인이 이 한 번뿐이다.
+        SQLLEN affected = 0;
+        SQLRowCount(connection->setActiveDex, &affected);
+        SQLCloseCursor(connection->setActiveDex);
+        if (affected == 0 && dexNumbers.empty() && activeDex == 0) {
+            // 이미 아무도 안 꺼낸 상태여도 0행이 나온다. 파티를 비우는 것 말고는
+            // 바뀐 것이 없으니 그대로 커밋한다.
+        }
+    } catch (const std::exception& e) {
+        rollback();
+        spdlog::error("party update failed for character {}: {}", characterId, e.what());
+        return PartyResult::Error;
+    }
+
+    if (!succeeded(SQLEndTran(SQL_HANDLE_DBC, connection->dbc, SQL_COMMIT))) {
+        spdlog::error("commit failed: {}", diagnostics(SQL_HANDLE_DBC, connection->dbc));
+        rollback();
+        return PartyResult::Error;
+    }
+    return PartyResult::Ok;
 }
 
 void OdbcStore::touchPlayed(std::uint64_t characterId) {
@@ -1007,23 +1329,29 @@ DeleteResult OdbcStore::releasePartner(std::uint64_t accountId, std::uint64_t ch
 
     Lease connection(*this);
 
+    // 0 = 아무도 데리고 다니지 않는다. 해금 비트는 건드리지 않는다 — 한 번 해금한
+    // 종족을 다시 잠그는 경로는 없다.
+    std::uint16_t none = 0;
     std::uint64_t id = characterId;
     std::uint64_t owner = accountId;
-    SQLLEN lengths[2] = {};
+    SQLLEN lengths[3] = {};
 
     try {
-        // 소유 확인이 구문의 JOIN 에 들어 있다. 남의 캐릭터면 0행이다.
-        bindUInt64(connection->deletePartner, 1, id, lengths[0]);
-        bindUInt64(connection->deletePartner, 2, owner, lengths[1]);
-        require(SQLExecute(connection->deletePartner), SQL_HANDLE_STMT, connection->deletePartner,
-                "SQLExecute(deletePartner)");
+        // 소유 확인이 구문의 WHERE 에 들어 있다. 남의 캐릭터면 0행이다.
+        bindUInt16(connection->setActiveDex, 1, none, lengths[0]);
+        bindUInt64(connection->setActiveDex, 2, id, lengths[1]);
+        bindUInt64(connection->setActiveDex, 3, owner, lengths[2]);
+        require(SQLExecute(connection->setActiveDex), SQL_HANDLE_STMT, connection->setActiveDex,
+                "SQLExecute(setActiveDex)");
 
+        // 값이 이미 0 이면 MySQL 이 바뀐 행을 세지 않으므로 0 이 나온다. 없는
+        // 캐릭터와 구분되지 않지만 둘 다 "내려놓을 것이 없다" 라 같은 답이다.
         SQLLEN affected = 0;
-        SQLRowCount(connection->deletePartner, &affected);
-        SQLCloseCursor(connection->deletePartner);
+        SQLRowCount(connection->setActiveDex, &affected);
+        SQLCloseCursor(connection->setActiveDex);
         return affected > 0 ? DeleteResult::Deleted : DeleteResult::Nothing;
     } catch (const std::exception& e) {
-        SQLCloseCursor(connection->deletePartner);
+        SQLCloseCursor(connection->setActiveDex);
         spdlog::error("partner release failed for character {}: {}", characterId, e.what());
         return DeleteResult::Error;
     }

@@ -104,6 +104,13 @@ public:
                                  const Appearance& appearance) override;
     DeleteResult remove(std::uint64_t accountId, std::uint64_t characterId,
                         std::string_view confirmNickname) override;
+    bool unlockSpecies(std::uint64_t accountId, std::uint64_t characterId,
+                       std::uint16_t speciesId) override;
+    DeleteResult setActivePartner(std::uint64_t accountId, std::uint64_t characterId,
+                                  std::uint16_t speciesId) override;
+    PartyResult setParty(std::uint64_t accountId, std::uint64_t characterId,
+                         const std::vector<std::uint16_t>& dexNumbers,
+                         std::uint16_t activeDex) override;
     DeleteResult releasePartner(std::uint64_t accountId, std::uint64_t characterId) override;
     void touchPlayed(std::uint64_t characterId) override;
     std::optional<Position> loadPosition(std::uint64_t characterId) override;
@@ -139,6 +146,13 @@ private:
 
     // 캐릭터 목록/단건 조회가 같은 컬럼 배치를 공유한다.
     static std::vector<Character> fetchCharacters(SQLHSTMT statement);
+
+    // 해금 비트 하나를 켠다. 커넥션을 이미 빌린 쪽에서 부른다.
+    bool setUnlockBitLocked(Connection& connection, std::uint64_t accountId,
+                            std::uint64_t characterId, std::uint16_t dex);
+
+    // 조회한 캐릭터들에 파티 목록을 채운다. 커넥션을 이미 빌린 쪽에서 부른다.
+    static void fillParties(Connection& connection, std::vector<Character>& characters);
 
     SQLHENV env_ = SQL_NULL_HENV;
     std::string target_;

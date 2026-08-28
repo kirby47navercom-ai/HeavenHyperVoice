@@ -140,6 +140,24 @@ namespace
 			FHHVCharacterSummary& Character = Out.AddDefaulted_GetRef();
 			Character.Id = Entry->id();
 			Character.Nickname = ReadString(Entry->nickname());
+			Character.Level = Entry->level();
+
+			if (const flatbuffers::Vector<uint16>* Party = Entry->party())
+			{
+				Character.Party.Reserve(static_cast<int32>(Party->size()));
+				for (const uint16 Dex : *Party)
+				{
+					Character.Party.Add(Dex);
+				}
+			}
+			if (const flatbuffers::Vector<uint16>* Unlocked = Entry->unlocked())
+			{
+				Character.Unlocked.Reserve(static_cast<int32>(Unlocked->size()));
+				for (const uint16 Dex : *Unlocked)
+				{
+					Character.Unlocked.Add(Dex);
+				}
+			}
 			Character.Appearance = ReadAppearance(Entry->appearance());
 
 			if (const HeavenLogin::PokemonSummary* Partner = Entry->partner())
@@ -147,20 +165,12 @@ namespace
 				Character.bHasPartner = true;
 				Character.Partner.SpeciesId = Partner->species_id();
 				Character.Partner.DexNumber = Partner->dex_number();
-				Character.Partner.Nickname = ReadString(Partner->nickname());
-				Character.Partner.Level = Partner->level();
 				Character.Partner.MaxHP = Partner->max_hp();
 				Character.Partner.Atk = Partner->atk();
 				Character.Partner.Def = Partner->def();
 				Character.Partner.SpAtk = Partner->sp_atk();
 				Character.Partner.SpDef = Partner->sp_def();
 				Character.Partner.Speed = Partner->speed();
-				Character.Partner.IvHP = Partner->iv_hp();
-				Character.Partner.IvAtk = Partner->iv_atk();
-				Character.Partner.IvDef = Partner->iv_def();
-				Character.Partner.IvSpAtk = Partner->iv_sp_atk();
-				Character.Partner.IvSpDef = Partner->iv_sp_def();
-				Character.Partner.IvSpeed = Partner->iv_speed();
 			}
 		}
 	}
@@ -285,6 +295,20 @@ void FHHVLoginConnection::SendReleasePartner(uint64 CharacterId)
 	const auto Request = HeavenLogin::CreateReleasePartnerRequest(Builder, CharacterId);
 	Builder.Finish(HeavenLogin::CreateEnvelope(
 		Builder, HeavenLogin::Payload::ReleasePartnerRequest, Request.Union()));
+
+	Enqueue(LoginFrameOf(Builder));
+}
+
+void FHHVLoginConnection::SendSetParty(uint64 CharacterId, const TArray<uint16>& DexNumbers, uint16 ActiveDex)
+{
+	flatbuffers::FlatBufferBuilder Builder(256);
+
+	// 벡터는 상위 테이블을 시작하기 전에 만들어야 한다.
+	const auto Vector = Builder.CreateVector(DexNumbers.GetData(), static_cast<size_t>(DexNumbers.Num()));
+
+	const auto Request = HeavenLogin::CreateSetPartyRequest(Builder, CharacterId, Vector, ActiveDex);
+	Builder.Finish(HeavenLogin::CreateEnvelope(
+		Builder, HeavenLogin::Payload::SetPartyRequest, Request.Union()));
 
 	Enqueue(LoginFrameOf(Builder));
 }

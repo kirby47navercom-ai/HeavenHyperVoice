@@ -35,22 +35,16 @@ struct FHHVPokemonSummary
 
 	// 도감번호. 종족 에셋을 찾는 열쇠다.
 	uint16 DexNumber = 0;
-	FString Nickname;          // 비어 있으면 클라가 종족명을 쓴다
-	uint32 Level = 0;
 
+	// 개체별 닉네임/레벨/개체값은 없어졌다. 저장하는 것은 종족뿐이고, 레벨은
+	// 캐릭터가 갖는다 (FHHVCharacterSummary::Level). 능력치는 서버가 캐릭터
+	// 레벨과 종족값으로 계산해서 보낸 결과다.
 	uint16 MaxHP = 0;
 	uint16 Atk = 0;
 	uint16 Def = 0;
 	uint16 SpAtk = 0;
 	uint16 SpDef = 0;
 	uint16 Speed = 0;
-
-	uint8 IvHP = 0;
-	uint8 IvAtk = 0;
-	uint8 IvDef = 0;
-	uint8 IvSpAtk = 0;
-	uint8 IvSpDef = 0;
-	uint8 IvSpeed = 0;
 };
 
 /** 로비에 한 줄로 그려지는 캐릭터. 로컬 슬롯을 대체한다. */
@@ -59,8 +53,18 @@ struct FHHVCharacterSummary
 	uint64 Id = 0;
 	FString Nickname;
 
+	// 캐릭터 레벨. 데리고 다니는 포켓몬의 능력치가 이 값에서 나온다.
+	uint32 Level = 1;
+
 	bool bHasPartner = false;
 	FHHVPokemonSummary Partner;
+
+	// 데리고 다니기로 고른 최대 세 마리. 도감번호이고 순서가 슬롯 번호다.
+	// Partner 는 이 중 지금 꺼내 놓은 한 마리다.
+	TArray<uint16> Party;
+
+	// 해금한 종족 전부. 도감번호. 파티를 고르는 화면의 후보 목록이다.
+	TArray<uint16> Unlocked;
 
 	// 서버가 보관하는 커마 값. 로컬 SaveGame 이 아니라 이쪽이 권위 있는 값이다.
 	FUEHHVAppearance Appearance;
@@ -140,6 +144,16 @@ public:
 		const FUEHHVAppearance& Appearance);
 	void SendDeleteCharacter(uint64 CharacterId, const FString& ConfirmNickname);
 	void SendReleasePartner(uint64 CharacterId);
+
+	/**
+	 * 파티 구성과 꺼낼 한 마리를 한 번에 보낸다.
+	 *
+	 * 둘을 나누지 않는 이유는, 파티에서 빼는 순간 꺼내 놓은 것이 파티 밖이 될 수
+	 * 있기 때문이다. DexNumbers 는 세 개 이하, 중복 없이, 전부 해금한 것이어야
+	 * 하고 ActiveDex 는 그 안에 있어야 한다 (0 이면 아무도 안 꺼낸다).
+	 * 서버가 다시 검사하므로 여기서 통과해도 거절될 수 있다.
+	 */
+	void SendSetParty(uint64 CharacterId, const TArray<uint16>& DexNumbers, uint16 ActiveDex);
 	void SendSelectCharacter(uint64 CharacterId);
 
 	/** Game thread. Drains the inbound queue and fires the callbacks. */

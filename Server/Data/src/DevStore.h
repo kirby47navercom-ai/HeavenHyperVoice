@@ -2,6 +2,7 @@
 
 #include <map>
 #include <mutex>
+#include <set>
 
 #include "AccountStore.h"
 #include "CharacterStore.h"
@@ -34,6 +35,13 @@ public:
     CreateCharacterResult create(std::uint64_t accountId, std::string_view nickname,
                                  std::uint16_t speciesId,
                                  const Appearance& appearance) override;
+    bool unlockSpecies(std::uint64_t accountId, std::uint64_t characterId,
+                       std::uint16_t speciesId) override;
+    DeleteResult setActivePartner(std::uint64_t accountId, std::uint64_t characterId,
+                                  std::uint16_t speciesId) override;
+    PartyResult setParty(std::uint64_t accountId, std::uint64_t characterId,
+                         const std::vector<std::uint16_t>& dexNumbers,
+                         std::uint16_t activeDex) override;
     DeleteResult remove(std::uint64_t accountId, std::uint64_t characterId,
                         std::string_view confirmNickname) override;
     DeleteResult releasePartner(std::uint64_t accountId, std::uint64_t characterId) override;
@@ -47,7 +55,14 @@ public:
 private:
     std::mutex mutex_;
     std::map<std::uint64_t, std::vector<Character>> characters_;
+
+    // 캐릭터 id -> 해금한 종족. 실제 저장소는 도감번호 비트맵이지만 여기서는
+    // 집합이면 충분하다.
+    std::map<std::uint64_t, std::set<std::uint16_t>> unlocks_;
     std::uint64_t nextCharacterId_ = 1;
+
+    // 잠금을 이미 쥔 쪽에서 부른다.
+    Character* findLocked(std::uint64_t accountId, std::uint64_t characterId);
 };
 
 }  // namespace heaven::data

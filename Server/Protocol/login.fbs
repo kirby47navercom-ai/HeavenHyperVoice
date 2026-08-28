@@ -30,21 +30,28 @@ table RegisterResponse {
   message:string;
 }
 
-// 종속 포켓몬. 지금은 캐릭터당 한 마리다.
+// 데리고 다니는 종족. 개체가 아니다.
 //
-// 실 수치는 서버가 계산해서 보낸다. DB 에는 입력(종족, 레벨, 개체값, 노력치)만
-// 있고 저장된 스탯은 없다 — 레벨이나 노력치가 바뀔 때마다 어긋나기 때문이다.
-// 클라이언트가 공식을 들고 있을 필요도 없어진다.
+// DB 에 저장되는 것은 "어떤 종족을 골랐는가" 뿐이고, 능력치는 캐릭터 레벨과
+// 종족값으로 서버가 계산해 보낸다. 저장해 두면 레벨이 오를 때마다 갱신해야 하고
+// 한 군데만 빠뜨려도 조용히 어긋난다.
 //
 // 현재 체력은 없다. 인스턴스 안에서만 의미가 있어서 Redis 에 있고 여기로 오지 않는다.
-// 노력치도 아직 안 보낸다. 전부 0 이고 올릴 경로가 없다.
 table PokemonSummary {
   // 서버 내부 번호. 클라이언트는 이 값으로 에셋을 찾지 않는다 — 배열 순서가
   // 밀리면 다른 종족이 된다. 표시·디버깅용으로만 남긴다.
   species_id:ushort;
-  nickname:string;      // 비어 있으면 클라가 종족명을 쓴다
-  level:uint;
 
+  // 개체별 닉네임과 레벨은 없어졌다. 저장하는 것은 종족뿐이고, 레벨은 캐릭터가
+  // 갖는다 (CharacterSummary.level).
+  //
+  // 필드를 지우지 않고 deprecated 로 두는 이유는 슬롯 번호 때문이다. 지우면
+  // 뒤 필드가 밀려서 구버전 클라가 엉뚱한 값을 읽는다. 접근자만 사라지므로
+  // 이 값을 쓰던 코드는 컴파일에서 걸린다.
+  nickname:string (deprecated);
+  level:uint (deprecated);
+
+  // 캐릭터 레벨과 종족값으로 계산한 결과. 저장된 값이 아니다.
   max_hp:ushort;
   atk:ushort;
   def:ushort;
@@ -52,13 +59,13 @@ table PokemonSummary {
   sp_def:ushort;
   speed:ushort;
 
-  // 0~31. 태어날 때 정해져 바뀌지 않는다.
-  iv_hp:ubyte;
-  iv_atk:ubyte;
-  iv_def:ubyte;
-  iv_sp_atk:ubyte;
-  iv_sp_def:ubyte;
-  iv_speed:ubyte;
+  // 개체값도 없어졌다. 같은 종족이면 모든 플레이어가 같은 능력치다.
+  iv_hp:ubyte (deprecated);
+  iv_atk:ubyte (deprecated);
+  iv_def:ubyte (deprecated);
+  iv_sp_atk:ubyte (deprecated);
+  iv_sp_def:ubyte (deprecated);
+  iv_speed:ubyte (deprecated);
 
   // 도감번호. 클라이언트가 종족 에셋을 찾는 열쇠다. 뒤에 붙였다 — 앞에 넣으면
   // 기존 슬롯 번호가 밀려 구버전 클라가 깨진다.
@@ -93,17 +100,28 @@ table Appearance {
   leg_volume:float;
 }
 
-// 캐릭터에는 레벨이 없다. 레벨을 갖는 것은 포켓몬이다.
+// 레벨을 갖는 것은 캐릭터다. 포켓몬은 종족이라 자기 레벨이 없고, 데리고 다니는
+// 캐릭터의 레벨로 능력치가 정해진다.
 table CharacterSummary {
   id:ulong;
   nickname:string;
 
-  // 파트너 없이 시작할 수 있으므로 비어 있을 수 있다.
-  // 여러 마리로 늘어나면 [PokemonSummary] 가 된다.
+  // 해금한 종족 중 지금 데리고 다니는 것. 고르지 않았으면 비어 있다.
   partner:PokemonSummary;
 
   // 뒤에 붙였다. 앞에 넣으면 기존 슬롯 번호가 밀려 구버전 클라가 깨진다.
   appearance:Appearance;
+
+  // 캐릭터 레벨. 데리고 다니는 포켓몬의 능력치가 이 값에서 나온다.
+  level:uint;
+
+  // 해금한 것 중 데리고 다니기로 고른 최대 세 마리. 도감번호이고 순서가 곧
+  // 슬롯 번호다. partner 는 이 중 지금 꺼내 놓은 한 마리다.
+  party:[ushort];
+
+  // 해금한 종족 전부. 파티를 고르는 화면이 후보를 여기서 받는다.
+  // 서버가 종족 표에 있는 것만 걸러서 보낸다.
+  unlocked:[ushort];
 }
 
 // 서버 -> 클라. 여기서는 아직 티켓이 나오지 않는다. 연결은 열린 채로 둔다.
@@ -148,9 +166,22 @@ table DeleteCharacterRequest {
   confirm_nickname:string;
 }
 
-// 클라 -> 서버. 파트너를 놓아준다. 이쪽은 행을 진짜 지운다.
+// 클라 -> 서버. 꺼내 놓은 것을 도로 넣는다. 파티와 해금은 그대로다.
 table ReleasePartnerRequest {
   character_id:ulong;
+}
+
+// 클라 -> 서버. 파티 구성과 꺼낼 한 마리를 한 번에 정한다.
+//
+// 둘을 나누지 않는 이유는, 파티에서 빼는 순간 꺼내 놓은 것이 파티 밖이 될 수
+// 있기 때문이다. 두 요청으로 쪼개면 그 사이에 모순된 상태가 실제로 존재한다.
+//
+// dex_numbers 는 해금한 종족이어야 하고, 최대 세 개이며 중복이면 거절한다.
+// active_dex 는 dex_numbers 안에 있어야 한다. 0 이면 아무도 안 꺼낸다.
+table SetPartyRequest {
+  character_id:ulong;
+  dex_numbers:[ushort];
+  active_dex:ushort;
 }
 
 // 클라 -> 서버. character_id 는 클라가 보낸 값이지만, 서버는 인증된
@@ -192,7 +223,8 @@ union Payload {
   SelectCharacterRequest,
   SelectCharacterResponse,
   DeleteCharacterRequest,
-  ReleasePartnerRequest
+  ReleasePartnerRequest,
+  SetPartyRequest
 }
 
 table Envelope {

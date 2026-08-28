@@ -29,16 +29,17 @@ inline constexpr std::size_t kMinPasswordChars = 8;
 
 // 저장소와 와이어가 같은 모양을 쓴다. 중간 변환 구조체를 두면 필드를 추가할 때
 // 세 곳을 고쳐야 한다.
+//
+// 지금 데리고 다니는 종족. 개체가 아니라 **종족**이다.
+//
+// 개체값도 포켓몬별 레벨도 없다. 능력치는 캐릭터 레벨과 종족값으로 그때그때
+// 계산하므로, 같은 종족이면 모든 플레이어가 동일하다. 저장되는 것은 "어떤
+// 종족을 골랐는가" 뿐이고 나머지는 전부 파생값이다.
 struct PartnerInfo {
-    std::uint16_t speciesId = 0;
-    std::string nickname;  // 비어 있으면 종족명을 쓴다
-    std::uint32_t level = 0;
+    std::uint16_t speciesId = 0;   // 서버 내부 번호. 와이어에는 도감번호가 나간다.
+    std::string name;              // 종족명. 저장하지 않고 표에서 온다.
 
-    // DB 에 저장되는 입력.
-    StatSpread ivs;
-    StatSpread evs;
-
-    // 위 값들로 계산한 결과. 저장소가 읽어올 때 채운다.
+    // 캐릭터 레벨과 종족값으로 계산한 결과. 저장소가 읽어올 때 채운다.
     PokemonStats stats;
 };
 
@@ -63,16 +64,26 @@ struct AppearanceInfo {
     float legVolume = 0.f;
 };
 
-// 캐릭터에는 레벨이 없다. 레벨을 갖는 것은 포켓몬이다.
+// 레벨을 갖는 것은 캐릭터다. 포켓몬은 개체가 아니라 종족이라 자기 레벨이 없고,
+// 데리고 다니는 캐릭터의 레벨로 능력치가 정해진다.
 struct CharacterInfo {
     std::uint64_t id = 0;
     std::string nickname;
 
-    // 파트너 없이 시작할 수 있다.
+    // 포켓몬 능력치의 입력이다. 레벨을 갖는 것은 캐릭터고, 포켓몬은 그 레벨을 쓴다.
+    std::uint32_t level = 1;
+
+    // 해금한 것 중 지금 데리고 다니는 종족. 고르지 않았으면 hasPartner 가 false.
     bool hasPartner = false;
     PartnerInfo partner;
 
     AppearanceInfo appearance;
+
+    // 데리고 다니기로 고른 종족들. 도감번호이고 순서가 슬롯 번호다.
+    std::vector<std::uint16_t> party;
+
+    // 해금한 종족 전부. 도감번호. 파티 후보 목록이다.
+    std::vector<std::uint16_t> unlocked;
 };
 
 // 클라이언트가 보낸 값을 그대로 저장하지 않는다. 인덱스가 음수면 배열 접근이
@@ -228,26 +239,21 @@ buildCharacters(flatbuffers::FlatBufferBuilder& fbb,
         // 문자열과 하위 테이블은 상위 테이블을 시작하기 전에 만들어야 한다.
         auto nickname = fbb.CreateString(character.nickname);
         auto appearance = buildAppearance(fbb, character.appearance);
+        auto party = fbb.CreateVector(character.party);
+        auto unlocked = fbb.CreateVector(character.unlocked);
 
         flatbuffers::Offset<HeavenLogin::PokemonSummary> partner = 0;
         if (character.hasPartner) {
-            auto partnerNickname = fbb.CreateString(character.partner.nickname);
             HeavenLogin::PokemonSummaryBuilder builder(fbb);
             builder.add_species_id(character.partner.speciesId);
-            builder.add_nickname(partnerNickname);
-            builder.add_level(character.partner.level);
+
+            // 능력치는 저장된 값이 아니라 캐릭터 레벨과 종족값으로 계산한 결과다.
             builder.add_max_hp(character.partner.stats.maxHp);
             builder.add_atk(character.partner.stats.atk);
             builder.add_def(character.partner.stats.def);
             builder.add_sp_atk(character.partner.stats.spAtk);
             builder.add_sp_def(character.partner.stats.spDef);
             builder.add_speed(character.partner.stats.speed);
-            builder.add_iv_hp(static_cast<std::uint8_t>(character.partner.ivs.hp));
-            builder.add_iv_atk(static_cast<std::uint8_t>(character.partner.ivs.atk));
-            builder.add_iv_def(static_cast<std::uint8_t>(character.partner.ivs.def));
-            builder.add_iv_sp_atk(static_cast<std::uint8_t>(character.partner.ivs.spAtk));
-            builder.add_iv_sp_def(static_cast<std::uint8_t>(character.partner.ivs.spDef));
-            builder.add_iv_speed(static_cast<std::uint8_t>(character.partner.ivs.speed));
 
             // 클라이언트는 이 번호로 종족 에셋을 찾는다. 표에 없는 종족이면 0 이
             // 나가고, 클라이언트는 파트너를 못 찾은 것으로 처리한다.
@@ -260,10 +266,13 @@ buildCharacters(flatbuffers::FlatBufferBuilder& fbb,
         HeavenLogin::CharacterSummaryBuilder builder(fbb);
         builder.add_id(character.id);
         builder.add_nickname(nickname);
+        builder.add_level(character.level);
         if (!partner.IsNull()) {
             builder.add_partner(partner);
         }
         builder.add_appearance(appearance);
+        builder.add_party(party);
+        builder.add_unlocked(unlocked);
         entries.push_back(builder.Finish());
     }
     return fbb.CreateVector(entries);

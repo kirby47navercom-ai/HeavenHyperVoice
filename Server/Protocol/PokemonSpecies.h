@@ -76,6 +76,15 @@ inline constexpr std::uint32_t kStarterLevel = 5;
 // 있다" 는 착각만 만든다. 노력치를 올리는 코드가 생길 때 그 옆에 둘 것.
 inline constexpr std::uint8_t kMaxIndividualValue = 31;
 
+// 해금 비트맵의 크기. DB 의 character_unlocks.dex_bits BINARY(160) 과 같아야 한다.
+// 1280 비트라 현재 최대 도감번호 1105 를 담고도 남는다.
+inline constexpr std::size_t kUnlockBitmapBytes = 160;
+
+// 내부 번호를 도감번호로 바꾼다. 모르는 종족이면 0.
+// 와이어에는 언제나 도감번호가 나간다 — 내부 번호는 배열 순서라서, 표에 한 줄
+// 끼워 넣으면 이미 저장된 종족이 통째로 밀린다.
+inline constexpr std::uint16_t dexOf(std::uint16_t id);
+
 // 알 수 없는 종족이면 nullptr. 클라이언트가 보낸 값은 반드시 이걸로 거른다.
 inline constexpr const SpeciesBase* findSpecies(std::uint16_t id) {
     if (id == 0 || id > kSpeciesCount) {
@@ -84,6 +93,11 @@ inline constexpr const SpeciesBase* findSpecies(std::uint16_t id) {
     // id 가 인덱스 + 1 이라는 전제. 배열을 손댈 때 어긋나면 여기서 걸린다.
     const SpeciesBase& found = kSpecies[id - 1];
     return found.id == id ? &found : nullptr;
+}
+
+inline constexpr std::uint16_t dexOf(std::uint16_t id) {
+    const SpeciesBase* species = findSpecies(id);
+    return species != nullptr ? species->dex : std::uint16_t{0};
 }
 
 // 도감번호로 찾는다. 클라이언트가 보내는 것은 이 번호다.

@@ -48,7 +48,8 @@ enum class DeleteResult {
     Deleted,
     NotFound,      // 없거나, 남의 것이거나, 이미 지워졌다
     NameMismatch,  // 확인용으로 입력한 닉네임이 다르다
-    Nothing,       // 방생할 파트너가 애초에 없다
+    Nothing,       // 데리고 다니던 것이 애초에 없다
+    NotUnlocked,   // 해금하지 않은 종족을 파트너로 세우려 했다
     NotSupported,
     Error,
 };
@@ -58,7 +59,8 @@ inline const char* describe(DeleteResult result) {
         case DeleteResult::Deleted:      return "deleted";
         case DeleteResult::NotFound:     return "not found";
         case DeleteResult::NameMismatch: return "confirmation name did not match";
-        case DeleteResult::Nothing:      return "nothing to release";
+        case DeleteResult::Nothing:      return "nothing to put away";
+        case DeleteResult::NotUnlocked:  return "species is not unlocked";
         case DeleteResult::NotSupported: return "deletion is not available";
         case DeleteResult::Error:        return "internal error";
     }
@@ -67,6 +69,34 @@ inline const char* describe(DeleteResult result) {
 
 // 계정당 캐릭터 수 상한. 없으면 무한 생성이 된다.
 inline constexpr std::size_t kMaxCharactersPerAccount = 3;
+
+// 한 캐릭터가 데리고 다닐 수 있는 마리 수. DB 의 ck_party_slot 과 같아야 한다.
+inline constexpr std::size_t kMaxPartySize = 3;
+
+enum class PartyResult {
+    Ok,
+    NotFound,      // 없거나 남의 캐릭터다
+    NotUnlocked,   // 해금하지 않은 종족을 넣으려 했다
+    TooMany,       // kMaxPartySize 를 넘겼다
+    Duplicate,     // 같은 종족을 두 칸에 넣으려 했다
+    NotInParty,    // 꺼내려는 종족이 파티에 없다
+    NotSupported,
+    Error,
+};
+
+inline const char* describe(PartyResult result) {
+    switch (result) {
+        case PartyResult::Ok:           return "party updated";
+        case PartyResult::NotFound:     return "not found";
+        case PartyResult::NotUnlocked:  return "species is not unlocked";
+        case PartyResult::TooMany:      return "too many party members";
+        case PartyResult::Duplicate:    return "the same species twice";
+        case PartyResult::NotInParty:   return "that species is not in the party";
+        case PartyResult::NotSupported: return "party editing is not available";
+        case PartyResult::Error:        return "internal error";
+    }
+    return "unknown result";
+}
 
 // 마지막으로 저장된 위치. 실시간 위치는 여기 없다 — 필드 서버 메모리와
 // Redis 에 있고, 이건 입장할 때 읽고 퇴장할 때 쓰는 값이다.
@@ -90,12 +120,37 @@ public:
     virtual std::optional<Character> find(std::uint64_t accountId,
                                           std::uint64_t characterId) = 0;
 
-    // 캐릭터와 파트너를 함께 만든다. 둘 중 하나만 생기는 상태는 없어야 한다.
+    // 캐릭터를 만들고 스타터를 해금해 파트너로 세운다. 셋이 함께 생기거나
+    // 함께 실패해야 한다 — 캐릭터만 남으면 닉네임이 점유된 채로 못 쓰게 된다.
     //
+    // speciesId 가 0 이면 파트너 없이 시작한다. 해금도 하지 않는다.
     // 외형은 호출자가 이미 sanitizeAppearance 를 통과시킨 값이어야 한다.
     virtual CreateCharacterResult create(std::uint64_t accountId, std::string_view nickname,
                                          std::uint16_t speciesId,
                                          const Appearance& appearance) = 0;
+
+    // 종족을 해금한다. 이미 해금돼 있으면 아무 일도 없다 (같은 결과를 돌려준다).
+    virtual bool unlockSpecies(std::uint64_t accountId, std::uint64_t characterId,
+                               std::uint16_t speciesId) = 0;
+
+    // 파티에 있는 것 중에서 꺼낼 한 마리를 고른다. 파티를 그대로 두고 꺼낸
+    // 것만 바꿀 때 쓴다 — 파티까지 함께 바꾸려면 setParty 를 쓴다.
+    //
+    // 파티 밖의 종족은 거절한다. 클라이언트가 보낸 번호를 그대로 믿으면 해금만
+    // 해 둔 아무 포켓몬이나 꺼내 쓸 수 있다.
+    virtual DeleteResult setActivePartner(std::uint64_t accountId, std::uint64_t characterId,
+                                          std::uint16_t speciesId) = 0;
+
+    // 파티 구성과 꺼낼 한 마리를 함께 정한다.
+    //
+    // 둘을 나누지 않는 이유는, 파티에서 빼는 순간 꺼내 놓은 것이 파티 밖이 될 수
+    // 있기 때문이다. 나누면 그 사이에 모순된 상태가 실제로 존재한다.
+    //
+    // dexNumbers 는 **도감번호**다. 전부 해금돼 있어야 하고, kMaxPartySize 이하,
+    // 중복 불가. activeDex 는 0(아무도 안 꺼냄) 이거나 dexNumbers 안에 있어야 한다.
+    virtual PartyResult setParty(std::uint64_t accountId, std::uint64_t characterId,
+                                 const std::vector<std::uint16_t>& dexNumbers,
+                                 std::uint16_t activeDex) = 0;
 
     // 소프트 삭제. 행은 남고 deleted_at 이 채워지며, 이후 조회에서 빠진다.
     // 닉네임은 계속 점유된다 (사칭 방지).
@@ -105,8 +160,8 @@ public:
     virtual DeleteResult remove(std::uint64_t accountId, std::uint64_t characterId,
                                 std::string_view confirmNickname) = 0;
 
-    // 파트너 방생. 이쪽은 행을 진짜 지운다 — 유령 행이 남으면
-    // uq_character_slot 때문에 새 파트너를 slot 0 에 넣을 수 없다.
+    // 데리고 다니던 것을 도로 넣는다. 해금은 그대로다 — 한 번 해금한 종족을
+    // 다시 잠그는 경로는 없다.
     virtual DeleteResult releasePartner(std::uint64_t accountId,
                                         std::uint64_t characterId) = 0;
 

@@ -64,6 +64,8 @@ bool LoginHandler::onFrame(TlsSession& session, const proto::Bytes& body) {
             return handleDeleteCharacter(session, *envelope->payload_as_DeleteCharacterRequest());
         case HeavenLogin::Payload::ReleasePartnerRequest:
             return handleReleasePartner(session, *envelope->payload_as_ReleasePartnerRequest());
+        case HeavenLogin::Payload::SetPartyRequest:
+            return handleSetParty(session, *envelope->payload_as_SetPartyRequest());
         default:
             spdlog::warn("{}: expected a character request", session.peer());
             fail(session, "잘못된 요청입니다");
@@ -437,6 +439,7 @@ bool LoginHandler::handleDeleteCharacter(TlsSession& session,
             case data::DeleteResult::NotFound:     message = "캐릭터를 찾을 수 없습니다"; break;
             case data::DeleteResult::NameMismatch: message = "닉네임이 일치하지 않습니다"; break;
             case data::DeleteResult::Nothing:      message = "지울 것이 없습니다"; break;
+            case data::DeleteResult::NotUnlocked:  message = "해금하지 않은 포켓몬입니다"; break;
             case data::DeleteResult::NotSupported: message = "이 서버는 삭제를 지원하지 않습니다"; break;
             case data::DeleteResult::Error:        message = "서버 오류로 삭제하지 못했습니다"; break;
         }
@@ -455,6 +458,53 @@ bool LoginHandler::handleDeleteCharacter(TlsSession& session,
 
 // ------------------------------------------------------------- 파트너 방생
 
+bool LoginHandler::handleSetParty(TlsSession& session,
+                                  const HeavenLogin::SetPartyRequest& request) {
+    std::vector<std::uint16_t> dexNumbers;
+    if (const auto* numbers = request.dex_numbers()) {
+        // 상한을 먼저 본다. 저장소도 거르지만, 그전에 임의 길이 벡터를 만들지
+        // 않는다 — 프레임 크기 제한 안이라도 굳이 받아 둘 이유가 없다.
+        if (numbers->size() > data::kMaxPartySize) {
+            resume(Stage::AwaitingSelection);
+            session.send(proto::encodeCharacterList(false, "파티는 3마리까지입니다", {}));
+            return true;
+        }
+        dexNumbers.reserve(numbers->size());
+        for (const std::uint16_t dex : *numbers) {
+            dexNumbers.push_back(dex);
+        }
+    }
+
+    const LoginContext* context = &context_;
+    const std::uint64_t accountId = accountId_;
+    const std::uint64_t characterId = request.character_id();
+    const std::uint16_t activeDex = request.active_dex();
+
+    return submitCharacterChange(session, [context, accountId, characterId, dexNumbers, activeDex] {
+        const data::PartyResult result =
+            context->characters->setParty(accountId, characterId, dexNumbers, activeDex);
+
+        const char* message = nullptr;
+        switch (result) {
+            case data::PartyResult::Ok:           message = "파티를 저장했습니다"; break;
+            case data::PartyResult::NotFound:     message = "캐릭터를 찾을 수 없습니다"; break;
+            case data::PartyResult::NotUnlocked:  message = "해금하지 않은 포켓몬입니다"; break;
+            case data::PartyResult::TooMany:      message = "파티는 3마리까지입니다"; break;
+            case data::PartyResult::Duplicate:    message = "같은 포켓몬을 두 번 넣을 수 없습니다"; break;
+            case data::PartyResult::NotInParty:   message = "파티에 없는 포켓몬은 꺼낼 수 없습니다"; break;
+            case data::PartyResult::NotSupported: message = "이 서버는 파티 편집을 지원하지 않습니다"; break;
+            case data::PartyResult::Error:        message = "서버 오류로 저장하지 못했습니다"; break;
+        }
+
+        const bool ok = result == data::PartyResult::Ok;
+        if (ok) {
+            spdlog::info("party updated: character {} ({} members, active {})", characterId,
+                         dexNumbers.size(), activeDex);
+        }
+        return std::pair{ok, message};
+    });
+}
+
 bool LoginHandler::handleReleasePartner(TlsSession& session,
                                         const HeavenLogin::ReleasePartnerRequest& request) {
     const LoginContext* context = &context_;
@@ -469,6 +519,7 @@ bool LoginHandler::handleReleasePartner(TlsSession& session,
         switch (result) {
             case data::DeleteResult::Deleted:      message = "파트너를 놓아주었습니다"; break;
             case data::DeleteResult::Nothing:      message = "놓아줄 파트너가 없습니다"; break;
+            case data::DeleteResult::NotUnlocked:  message = "해금하지 않은 포켓몬입니다"; break;
             case data::DeleteResult::NotFound:     message = "캐릭터를 찾을 수 없습니다"; break;
             case data::DeleteResult::NameMismatch: message = "확인에 실패했습니다"; break;
             case data::DeleteResult::NotSupported: message = "이 서버는 방생을 지원하지 않습니다"; break;

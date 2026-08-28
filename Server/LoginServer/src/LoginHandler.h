@@ -82,6 +82,8 @@ private:
                                const HeavenLogin::SelectCharacterRequest& request);
     bool handleDeleteCharacter(TlsSession& session,
                                const HeavenLogin::DeleteCharacterRequest& request);
+    bool handleSetParty(TlsSession& session, const HeavenLogin::SetPartyRequest& request);
+
     bool handleReleasePartner(TlsSession& session,
                               const HeavenLogin::ReleasePartnerRequest& request);
 

@@ -48,6 +48,9 @@ struct DeleteCharacterRequestBuilder;
 struct ReleasePartnerRequest;
 struct ReleasePartnerRequestBuilder;
 
+struct SetPartyRequest;
+struct SetPartyRequestBuilder;
+
 struct SelectCharacterRequest;
 struct SelectCharacterRequestBuilder;
 
@@ -72,11 +75,12 @@ enum class Payload : uint8_t {
   SelectCharacterResponse = 8,
   DeleteCharacterRequest = 9,
   ReleasePartnerRequest = 10,
+  SetPartyRequest = 11,
   MIN = NONE,
-  MAX = ReleasePartnerRequest
+  MAX = SetPartyRequest
 };
 
-inline const Payload (&EnumValuesPayload())[11] {
+inline const Payload (&EnumValuesPayload())[12] {
   static const Payload values[] = {
     Payload::NONE,
     Payload::LoginRequest,
@@ -88,13 +92,14 @@ inline const Payload (&EnumValuesPayload())[11] {
     Payload::SelectCharacterRequest,
     Payload::SelectCharacterResponse,
     Payload::DeleteCharacterRequest,
-    Payload::ReleasePartnerRequest
+    Payload::ReleasePartnerRequest,
+    Payload::SetPartyRequest
   };
   return values;
 }
 
 inline const char * const *EnumNamesPayload() {
-  static const char * const names[12] = {
+  static const char * const names[13] = {
     "NONE",
     "LoginRequest",
     "LoginResponse",
@@ -106,13 +111,14 @@ inline const char * const *EnumNamesPayload() {
     "SelectCharacterResponse",
     "DeleteCharacterRequest",
     "ReleasePartnerRequest",
+    "SetPartyRequest",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNamePayload(Payload e) {
-  if (::flatbuffers::IsOutRange(e, Payload::NONE, Payload::ReleasePartnerRequest)) return "";
+  if (::flatbuffers::IsOutRange(e, Payload::NONE, Payload::SetPartyRequest)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesPayload()[index];
 }
@@ -159,6 +165,10 @@ template<> struct PayloadTraits<HeavenLogin::DeleteCharacterRequest> {
 
 template<> struct PayloadTraits<HeavenLogin::ReleasePartnerRequest> {
   static const Payload enum_value = Payload::ReleasePartnerRequest;
+};
+
+template<> struct PayloadTraits<HeavenLogin::SetPartyRequest> {
+  static const Payload enum_value = Payload::SetPartyRequest;
 };
 
 template <bool B = false>
@@ -366,30 +376,16 @@ struct PokemonSummary FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef PokemonSummaryBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
     VT_SPECIES_ID = 4,
-    VT_NICKNAME = 6,
-    VT_LEVEL = 8,
     VT_MAX_HP = 10,
     VT_ATK = 12,
     VT_DEF = 14,
     VT_SP_ATK = 16,
     VT_SP_DEF = 18,
     VT_SPEED = 20,
-    VT_IV_HP = 22,
-    VT_IV_ATK = 24,
-    VT_IV_DEF = 26,
-    VT_IV_SP_ATK = 28,
-    VT_IV_SP_DEF = 30,
-    VT_IV_SPEED = 32,
     VT_DEX_NUMBER = 34
   };
   uint16_t species_id() const {
     return GetField<uint16_t>(VT_SPECIES_ID, 0);
-  }
-  const ::flatbuffers::String *nickname() const {
-    return GetPointer<const ::flatbuffers::String *>(VT_NICKNAME);
-  }
-  uint32_t level() const {
-    return GetField<uint32_t>(VT_LEVEL, 0);
   }
   uint16_t max_hp() const {
     return GetField<uint16_t>(VT_MAX_HP, 0);
@@ -409,24 +405,6 @@ struct PokemonSummary FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   uint16_t speed() const {
     return GetField<uint16_t>(VT_SPEED, 0);
   }
-  uint8_t iv_hp() const {
-    return GetField<uint8_t>(VT_IV_HP, 0);
-  }
-  uint8_t iv_atk() const {
-    return GetField<uint8_t>(VT_IV_ATK, 0);
-  }
-  uint8_t iv_def() const {
-    return GetField<uint8_t>(VT_IV_DEF, 0);
-  }
-  uint8_t iv_sp_atk() const {
-    return GetField<uint8_t>(VT_IV_SP_ATK, 0);
-  }
-  uint8_t iv_sp_def() const {
-    return GetField<uint8_t>(VT_IV_SP_DEF, 0);
-  }
-  uint8_t iv_speed() const {
-    return GetField<uint8_t>(VT_IV_SPEED, 0);
-  }
   uint16_t dex_number() const {
     return GetField<uint16_t>(VT_DEX_NUMBER, 0);
   }
@@ -434,21 +412,12 @@ struct PokemonSummary FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<uint16_t>(verifier, VT_SPECIES_ID, 2) &&
-           VerifyOffset(verifier, VT_NICKNAME) &&
-           verifier.VerifyString(nickname()) &&
-           VerifyField<uint32_t>(verifier, VT_LEVEL, 4) &&
            VerifyField<uint16_t>(verifier, VT_MAX_HP, 2) &&
            VerifyField<uint16_t>(verifier, VT_ATK, 2) &&
            VerifyField<uint16_t>(verifier, VT_DEF, 2) &&
            VerifyField<uint16_t>(verifier, VT_SP_ATK, 2) &&
            VerifyField<uint16_t>(verifier, VT_SP_DEF, 2) &&
            VerifyField<uint16_t>(verifier, VT_SPEED, 2) &&
-           VerifyField<uint8_t>(verifier, VT_IV_HP, 1) &&
-           VerifyField<uint8_t>(verifier, VT_IV_ATK, 1) &&
-           VerifyField<uint8_t>(verifier, VT_IV_DEF, 1) &&
-           VerifyField<uint8_t>(verifier, VT_IV_SP_ATK, 1) &&
-           VerifyField<uint8_t>(verifier, VT_IV_SP_DEF, 1) &&
-           VerifyField<uint8_t>(verifier, VT_IV_SPEED, 1) &&
            VerifyField<uint16_t>(verifier, VT_DEX_NUMBER, 2) &&
            verifier.EndTable();
   }
@@ -460,12 +429,6 @@ struct PokemonSummaryBuilder {
   ::flatbuffers::uoffset_t start_;
   void add_species_id(uint16_t species_id) {
     fbb_.AddElement<uint16_t>(PokemonSummary::VT_SPECIES_ID, species_id, 0);
-  }
-  void add_nickname(::flatbuffers::Offset<::flatbuffers::String> nickname) {
-    fbb_.AddOffset(PokemonSummary::VT_NICKNAME, nickname);
-  }
-  void add_level(uint32_t level) {
-    fbb_.AddElement<uint32_t>(PokemonSummary::VT_LEVEL, level, 0);
   }
   void add_max_hp(uint16_t max_hp) {
     fbb_.AddElement<uint16_t>(PokemonSummary::VT_MAX_HP, max_hp, 0);
@@ -485,24 +448,6 @@ struct PokemonSummaryBuilder {
   void add_speed(uint16_t speed) {
     fbb_.AddElement<uint16_t>(PokemonSummary::VT_SPEED, speed, 0);
   }
-  void add_iv_hp(uint8_t iv_hp) {
-    fbb_.AddElement<uint8_t>(PokemonSummary::VT_IV_HP, iv_hp, 0);
-  }
-  void add_iv_atk(uint8_t iv_atk) {
-    fbb_.AddElement<uint8_t>(PokemonSummary::VT_IV_ATK, iv_atk, 0);
-  }
-  void add_iv_def(uint8_t iv_def) {
-    fbb_.AddElement<uint8_t>(PokemonSummary::VT_IV_DEF, iv_def, 0);
-  }
-  void add_iv_sp_atk(uint8_t iv_sp_atk) {
-    fbb_.AddElement<uint8_t>(PokemonSummary::VT_IV_SP_ATK, iv_sp_atk, 0);
-  }
-  void add_iv_sp_def(uint8_t iv_sp_def) {
-    fbb_.AddElement<uint8_t>(PokemonSummary::VT_IV_SP_DEF, iv_sp_def, 0);
-  }
-  void add_iv_speed(uint8_t iv_speed) {
-    fbb_.AddElement<uint8_t>(PokemonSummary::VT_IV_SPEED, iv_speed, 0);
-  }
   void add_dex_number(uint16_t dex_number) {
     fbb_.AddElement<uint16_t>(PokemonSummary::VT_DEX_NUMBER, dex_number, 0);
   }
@@ -520,24 +465,14 @@ struct PokemonSummaryBuilder {
 inline ::flatbuffers::Offset<PokemonSummary> CreatePokemonSummary(
     ::flatbuffers::FlatBufferBuilder &_fbb,
     uint16_t species_id = 0,
-    ::flatbuffers::Offset<::flatbuffers::String> nickname = 0,
-    uint32_t level = 0,
     uint16_t max_hp = 0,
     uint16_t atk = 0,
     uint16_t def = 0,
     uint16_t sp_atk = 0,
     uint16_t sp_def = 0,
     uint16_t speed = 0,
-    uint8_t iv_hp = 0,
-    uint8_t iv_atk = 0,
-    uint8_t iv_def = 0,
-    uint8_t iv_sp_atk = 0,
-    uint8_t iv_sp_def = 0,
-    uint8_t iv_speed = 0,
     uint16_t dex_number = 0) {
   PokemonSummaryBuilder builder_(_fbb);
-  builder_.add_level(level);
-  builder_.add_nickname(nickname);
   builder_.add_dex_number(dex_number);
   builder_.add_speed(speed);
   builder_.add_sp_def(sp_def);
@@ -546,52 +481,7 @@ inline ::flatbuffers::Offset<PokemonSummary> CreatePokemonSummary(
   builder_.add_atk(atk);
   builder_.add_max_hp(max_hp);
   builder_.add_species_id(species_id);
-  builder_.add_iv_speed(iv_speed);
-  builder_.add_iv_sp_def(iv_sp_def);
-  builder_.add_iv_sp_atk(iv_sp_atk);
-  builder_.add_iv_def(iv_def);
-  builder_.add_iv_atk(iv_atk);
-  builder_.add_iv_hp(iv_hp);
   return builder_.Finish();
-}
-
-inline ::flatbuffers::Offset<PokemonSummary> CreatePokemonSummaryDirect(
-    ::flatbuffers::FlatBufferBuilder &_fbb,
-    uint16_t species_id = 0,
-    const char *nickname = nullptr,
-    uint32_t level = 0,
-    uint16_t max_hp = 0,
-    uint16_t atk = 0,
-    uint16_t def = 0,
-    uint16_t sp_atk = 0,
-    uint16_t sp_def = 0,
-    uint16_t speed = 0,
-    uint8_t iv_hp = 0,
-    uint8_t iv_atk = 0,
-    uint8_t iv_def = 0,
-    uint8_t iv_sp_atk = 0,
-    uint8_t iv_sp_def = 0,
-    uint8_t iv_speed = 0,
-    uint16_t dex_number = 0) {
-  auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
-  return HeavenLogin::CreatePokemonSummary(
-      _fbb,
-      species_id,
-      nickname__,
-      level,
-      max_hp,
-      atk,
-      def,
-      sp_atk,
-      sp_def,
-      speed,
-      iv_hp,
-      iv_atk,
-      iv_def,
-      iv_sp_atk,
-      iv_sp_def,
-      iv_speed,
-      dex_number);
 }
 
 struct Appearance FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -812,7 +702,10 @@ struct CharacterSummary FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_ID = 4,
     VT_NICKNAME = 6,
     VT_PARTNER = 8,
-    VT_APPEARANCE = 10
+    VT_APPEARANCE = 10,
+    VT_LEVEL = 12,
+    VT_PARTY = 14,
+    VT_UNLOCKED = 16
   };
   uint64_t id() const {
     return GetField<uint64_t>(VT_ID, 0);
@@ -826,6 +719,15 @@ struct CharacterSummary FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const HeavenLogin::Appearance *appearance() const {
     return GetPointer<const HeavenLogin::Appearance *>(VT_APPEARANCE);
   }
+  uint32_t level() const {
+    return GetField<uint32_t>(VT_LEVEL, 0);
+  }
+  const ::flatbuffers::Vector<uint16_t> *party() const {
+    return GetPointer<const ::flatbuffers::Vector<uint16_t> *>(VT_PARTY);
+  }
+  const ::flatbuffers::Vector<uint16_t> *unlocked() const {
+    return GetPointer<const ::flatbuffers::Vector<uint16_t> *>(VT_UNLOCKED);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -836,6 +738,11 @@ struct CharacterSummary FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            verifier.VerifyTable(partner()) &&
            VerifyOffset(verifier, VT_APPEARANCE) &&
            verifier.VerifyTable(appearance()) &&
+           VerifyField<uint32_t>(verifier, VT_LEVEL, 4) &&
+           VerifyOffset(verifier, VT_PARTY) &&
+           verifier.VerifyVector(party()) &&
+           VerifyOffset(verifier, VT_UNLOCKED) &&
+           verifier.VerifyVector(unlocked()) &&
            verifier.EndTable();
   }
 };
@@ -856,6 +763,15 @@ struct CharacterSummaryBuilder {
   void add_appearance(::flatbuffers::Offset<HeavenLogin::Appearance> appearance) {
     fbb_.AddOffset(CharacterSummary::VT_APPEARANCE, appearance);
   }
+  void add_level(uint32_t level) {
+    fbb_.AddElement<uint32_t>(CharacterSummary::VT_LEVEL, level, 0);
+  }
+  void add_party(::flatbuffers::Offset<::flatbuffers::Vector<uint16_t>> party) {
+    fbb_.AddOffset(CharacterSummary::VT_PARTY, party);
+  }
+  void add_unlocked(::flatbuffers::Offset<::flatbuffers::Vector<uint16_t>> unlocked) {
+    fbb_.AddOffset(CharacterSummary::VT_UNLOCKED, unlocked);
+  }
   explicit CharacterSummaryBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -872,9 +788,15 @@ inline ::flatbuffers::Offset<CharacterSummary> CreateCharacterSummary(
     uint64_t id = 0,
     ::flatbuffers::Offset<::flatbuffers::String> nickname = 0,
     ::flatbuffers::Offset<HeavenLogin::PokemonSummary> partner = 0,
-    ::flatbuffers::Offset<HeavenLogin::Appearance> appearance = 0) {
+    ::flatbuffers::Offset<HeavenLogin::Appearance> appearance = 0,
+    uint32_t level = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint16_t>> party = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint16_t>> unlocked = 0) {
   CharacterSummaryBuilder builder_(_fbb);
   builder_.add_id(id);
+  builder_.add_unlocked(unlocked);
+  builder_.add_party(party);
+  builder_.add_level(level);
   builder_.add_appearance(appearance);
   builder_.add_partner(partner);
   builder_.add_nickname(nickname);
@@ -886,14 +808,22 @@ inline ::flatbuffers::Offset<CharacterSummary> CreateCharacterSummaryDirect(
     uint64_t id = 0,
     const char *nickname = nullptr,
     ::flatbuffers::Offset<HeavenLogin::PokemonSummary> partner = 0,
-    ::flatbuffers::Offset<HeavenLogin::Appearance> appearance = 0) {
+    ::flatbuffers::Offset<HeavenLogin::Appearance> appearance = 0,
+    uint32_t level = 0,
+    const std::vector<uint16_t> *party = nullptr,
+    const std::vector<uint16_t> *unlocked = nullptr) {
   auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
+  auto party__ = party ? _fbb.CreateVector<uint16_t>(*party) : 0;
+  auto unlocked__ = unlocked ? _fbb.CreateVector<uint16_t>(*unlocked) : 0;
   return HeavenLogin::CreateCharacterSummary(
       _fbb,
       id,
       nickname__,
       partner,
-      appearance);
+      appearance,
+      level,
+      party__,
+      unlocked__);
 }
 
 struct LoginResponse FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -1261,6 +1191,82 @@ inline ::flatbuffers::Offset<ReleasePartnerRequest> CreateReleasePartnerRequest(
   return builder_.Finish();
 }
 
+struct SetPartyRequest FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef SetPartyRequestBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_CHARACTER_ID = 4,
+    VT_DEX_NUMBERS = 6,
+    VT_ACTIVE_DEX = 8
+  };
+  uint64_t character_id() const {
+    return GetField<uint64_t>(VT_CHARACTER_ID, 0);
+  }
+  const ::flatbuffers::Vector<uint16_t> *dex_numbers() const {
+    return GetPointer<const ::flatbuffers::Vector<uint16_t> *>(VT_DEX_NUMBERS);
+  }
+  uint16_t active_dex() const {
+    return GetField<uint16_t>(VT_ACTIVE_DEX, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint64_t>(verifier, VT_CHARACTER_ID, 8) &&
+           VerifyOffset(verifier, VT_DEX_NUMBERS) &&
+           verifier.VerifyVector(dex_numbers()) &&
+           VerifyField<uint16_t>(verifier, VT_ACTIVE_DEX, 2) &&
+           verifier.EndTable();
+  }
+};
+
+struct SetPartyRequestBuilder {
+  typedef SetPartyRequest Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_character_id(uint64_t character_id) {
+    fbb_.AddElement<uint64_t>(SetPartyRequest::VT_CHARACTER_ID, character_id, 0);
+  }
+  void add_dex_numbers(::flatbuffers::Offset<::flatbuffers::Vector<uint16_t>> dex_numbers) {
+    fbb_.AddOffset(SetPartyRequest::VT_DEX_NUMBERS, dex_numbers);
+  }
+  void add_active_dex(uint16_t active_dex) {
+    fbb_.AddElement<uint16_t>(SetPartyRequest::VT_ACTIVE_DEX, active_dex, 0);
+  }
+  explicit SetPartyRequestBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<SetPartyRequest> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<SetPartyRequest>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<SetPartyRequest> CreateSetPartyRequest(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint64_t character_id = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint16_t>> dex_numbers = 0,
+    uint16_t active_dex = 0) {
+  SetPartyRequestBuilder builder_(_fbb);
+  builder_.add_character_id(character_id);
+  builder_.add_dex_numbers(dex_numbers);
+  builder_.add_active_dex(active_dex);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<SetPartyRequest> CreateSetPartyRequestDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint64_t character_id = 0,
+    const std::vector<uint16_t> *dex_numbers = nullptr,
+    uint16_t active_dex = 0) {
+  auto dex_numbers__ = dex_numbers ? _fbb.CreateVector<uint16_t>(*dex_numbers) : 0;
+  return HeavenLogin::CreateSetPartyRequest(
+      _fbb,
+      character_id,
+      dex_numbers__,
+      active_dex);
+}
+
 struct SelectCharacterRequest FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef SelectCharacterRequestBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
@@ -1531,6 +1537,9 @@ struct Envelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const HeavenLogin::ReleasePartnerRequest *payload_as_ReleasePartnerRequest() const {
     return payload_type() == HeavenLogin::Payload::ReleasePartnerRequest ? static_cast<const HeavenLogin::ReleasePartnerRequest *>(payload()) : nullptr;
   }
+  const HeavenLogin::SetPartyRequest *payload_as_SetPartyRequest() const {
+    return payload_type() == HeavenLogin::Payload::SetPartyRequest ? static_cast<const HeavenLogin::SetPartyRequest *>(payload()) : nullptr;
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -1579,6 +1588,10 @@ template<> inline const HeavenLogin::DeleteCharacterRequest *Envelope::payload_a
 
 template<> inline const HeavenLogin::ReleasePartnerRequest *Envelope::payload_as<HeavenLogin::ReleasePartnerRequest>() const {
   return payload_as_ReleasePartnerRequest();
+}
+
+template<> inline const HeavenLogin::SetPartyRequest *Envelope::payload_as<HeavenLogin::SetPartyRequest>() const {
+  return payload_as_SetPartyRequest();
 }
 
 struct EnvelopeBuilder {
@@ -1656,6 +1669,10 @@ inline bool VerifyPayload(::flatbuffers::VerifierTemplate<B> &verifier, const vo
     }
     case Payload::ReleasePartnerRequest: {
       auto ptr = reinterpret_cast<const HeavenLogin::ReleasePartnerRequest *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::SetPartyRequest: {
+      auto ptr = reinterpret_cast<const HeavenLogin::SetPartyRequest *>(obj);
       return verifier.VerifyTable(ptr);
     }
     default: return true;
