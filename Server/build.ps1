@@ -1,4 +1,4 @@
-# Ninja + MSVC 빌드에는 개발자 환경(vcvars)이 필요하다.
+﻿# Ninja + MSVC 빌드에는 개발자 환경(vcvars)이 필요하다.
 # 이 스크립트는 VCPKG_ROOT 와 MSVC 환경을 자동으로 잡아준 뒤 CMake 프리셋을 실행한다.
 
 param(
@@ -20,11 +20,17 @@ if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
         throw "vswhere.exe not found at $vswhere - is Visual Studio installed?"
     }
 
-    $vsPath = & $vswhere -latest -products * `
-        -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-        -property installationPath
+    # VS2022 (v17) 로 고정한다. 최신 툴셋을 쓰면 vcpkg 베이스라인의 spdlog 가
+    # MSVC 19.51 에서 빌드되지 않는다. 여기를 풀려면 vcpkg 베이스라인부터 올릴 것.
+    # HHV_VS_PATH 로 덮어쓸 수 있다.
+    $vsPath = $env:HHV_VS_PATH
     if (-not $vsPath) {
-        throw 'No Visual Studio installation with the x64 C++ toolset was found.'
+        $vsPath = & $vswhere -latest -products * -version '[17.0,18.0)' `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+    }
+    if (-not $vsPath) {
+        throw 'No Visual Studio 2022 installation with the x64 C++ toolset was found.'
     }
 
     $vcvars = Join-Path $vsPath 'VC\Auxiliary\Build\vcvars64.bat'
