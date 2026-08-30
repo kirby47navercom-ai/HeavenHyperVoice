@@ -534,17 +534,6 @@ public:
 
 
 	// ========================================================================
-	// Collision
-	// ========================================================================
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Collision")
-	float CapsuleRadius = 34.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Collision")
-	float CapsuleHalfHeight = 88.0f;
-
-
-	// ========================================================================
 	// Movement
 	// ========================================================================
 

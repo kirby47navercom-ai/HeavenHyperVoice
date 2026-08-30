@@ -205,12 +205,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Stats", meta = (ClampMin = "1.0"))
 	float MaxHP = 5000.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Collision", meta = (ClampMin = "1.0"))
-	float CapsuleRadius = 120.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Collision", meta = (ClampMin = "1.0"))
-	float CapsuleHalfHeight = 160.0f;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Boss|Movement", meta = (ClampMin = "0.0"))
 	float MoveSpeed = 180.0f;
 

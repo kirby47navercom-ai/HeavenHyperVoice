@@ -2,7 +2,6 @@
 
 #include "../Data/UEPokemonBossData.h"
 #include "Animation/AnimInstance.h"
-#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
@@ -36,11 +35,6 @@ void AUEPokemonBossCharacter::ApplyBossData()
 	if (!Form)
 	{
 		return;
-	}
-
-	if (UCapsuleComponent* Capsule = GetCapsuleComponent())
-	{
-		Capsule->SetCapsuleSize(BossData->CapsuleRadius, BossData->CapsuleHalfHeight, true);
 	}
 
 	if (USkeletalMeshComponent* MeshComponent = GetMesh())

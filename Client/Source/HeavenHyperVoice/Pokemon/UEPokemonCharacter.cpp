@@ -8,7 +8,6 @@
 #include "UEPokemonSpeciesData.h"
 #include "UEPokemonSpeciesCatalog.h"
 
-#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
@@ -146,7 +145,7 @@ void AUEPokemonCharacter::SetWildSpecies(int32 SpeciesNumber)
 		// 야생 포켓몬이 다른 종족으로 바뀌지 않는다.
 		if (UUEPokemonSpeciesData* Data = PokemonSpeciesCatalog->FindByDex(SpeciesNumber))
 		{
-			// SetPokemonSpeciesData 가 메시·캡슐·애니메이션까지 다 적용하고
+			// SetPokemonSpeciesData 가 메시·애니메이션까지 다 적용하고
 			// ServerSpeciesId 를 데이터 쪽 이름으로 덮는다. 착색은 그 안에서
 			// 알아서 빠진다 (SkeletalMesh 가 있으면 큐브를 안 건드린다).
 			SetPokemonSpeciesData(Data);
@@ -349,11 +348,6 @@ void AUEPokemonCharacter::ApplyPokemonSpeciesData()
 	if (!PokemonSpeciesData)
 	{
 		return;
-	}
-
-	if (UCapsuleComponent* LocalCapsuleComponent = GetCapsuleComponent())
-	{
-		LocalCapsuleComponent->SetCapsuleSize(PokemonSpeciesData->CapsuleRadius, PokemonSpeciesData->CapsuleHalfHeight, true);
 	}
 
 	if (USkeletalMeshComponent* MeshComponent = GetMesh())

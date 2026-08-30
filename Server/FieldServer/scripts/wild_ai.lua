@@ -1,13 +1,11 @@
--- 야생 포켓몬 행동 트리.
+-- 야생 포켓몬 Lua actions.
 --
--- 서버(C++)가 20Hz 로 wild_tick(id, species, x, y, dt) 을 부른다.
--- 목표점으로 걷고 싶으면 (target_x, target_y) 를 반환하고, 제자리에 있고
--- 싶으면 아무것도 반환하지 않는다. 서버가 속도 상한과 벽 충돌을 마지막에
--- 강제하므로, 여기서는 "어디로 가고 싶은가" 만 정하면 된다.
+-- 서버(C++)가 야생 포켓몬 FSM을 소유한다. 이 파일은 FSM이 새 행동 결정을
+-- 필요로 할 때만 호출되는 action 함수들을 제공한다. 매 서버 틱마다 Lua를
+-- 호출하지 않는다.
 --
--- 트리는 매 틱 root 를 평가한다. 노드는 running/success 를 돌려주고, 이동을
--- 원하는 노드만 intent 에 목표를 채운다. 새 행동을 넣으려면 노드 함수를
--- 하나 만들어 selector 에 끼우면 되고 C++ 은 건드리지 않는다.
+-- 현재는 wander 하나만 있다. 새 행동을 넣을 때는 wild_actions.<name> 함수를
+-- 추가하고, C++ FSM 쪽에서 그 action을 호출하면 된다.
 
 -- 야생이 돌아다니는 구역. 월드 전체가 아니라 중앙의 정사각형으로 묶어 둔다.
 -- 클라이언트는 원점이 월드 중앙이므로(WorldOriginOffset), 언리얼 좌표로는
@@ -22,24 +20,7 @@ local ARRIVE_RADIUS    = 80.0      -- 이보다 가까우면 도착으로 본다
 local REST_MIN         = 1.5       -- 목표 사이 쉬는 시간(초) 범위
 local REST_MAX         = 4.0
 
-local RUNNING, SUCCESS = "running", "success"
-
--- 포켓몬별 상태(블랙보드). id 로 찾는다.
---
--- ponytail: 항목이 쌓이기만 하고 지워지지 않는다. 지금은 야생이 기동 때 한 번
---           생기고 사라지지 않아 새지 않지만, despawn/리스폰이 들어오는 순간
---           샌다. 그때 C++ 이 despawn 시 board_forget(id) 를 부르게 할 것 —
---           Lua 안에서 마지막 tick 시각을 재는 것보다 정확하고 짧다.
-local boards = {}
-
-local function board_of(id, x, y)
-    local b = boards[id]
-    if not b then
-        b = { rest = 0.0, tx = x, ty = y, has_target = false }
-        boards[id] = b
-    end
-    return b
-end
+wild_actions = wild_actions or {}
 
 local function clamp_area(v)
     local lo = AREA_CENTER - AREA_HALF_EXTENT
@@ -49,64 +30,29 @@ local function clamp_area(v)
     return v
 end
 
-local function dist2(ax, ay, bx, by)
-    local dx, dy = ax - bx, ay - by
-    return dx * dx + dy * dy
+local function random_range(min_value, max_value)
+    return min_value + math.random() * (max_value - min_value)
 end
 
--- --- 노드 -----------------------------------------------------------------
-
--- 쉬는 중이면 타이머를 깎고 제자리에 선다.
-local function node_rest(bb, dt)
-    if bb.rest <= 0.0 then
-        return SUCCESS
-    end
-    bb.rest = bb.rest - dt
-    return RUNNING  -- intent 를 채우지 않음 = 제자리
-end
-
--- 목표가 없으면 현재 위치 주변에서 하나 고른다.
-local function node_pick_target(bb, x, y)
-    if bb.has_target then
-        return SUCCESS
-    end
+-- wander action: 지금 위치 주변에서 다음 산책 목표 하나를 고른다.
+--
+-- ctx:
+--   id, species, x, y, home_x, home_y
+--
+-- return:
+--   target_x / target_y: 이번 산책 목표
+--   acceptance_radius: 이 거리 안에 들면 C++ FSM 이 목표 달성으로 본다
+--   rest_seconds: 목표 달성 뒤 C++ FSM 이 Lua 호출 없이 쉬게 할 시간
+function wild_actions.wander(ctx)
     local angle = math.random() * math.pi * 2.0
     local radius = math.random() * WANDER_RADIUS
-    bb.tx = clamp_area(x + math.cos(angle) * radius)
-    bb.ty = clamp_area(y + math.sin(angle) * radius)
-    bb.has_target = true
-    return SUCCESS
+
+    local x = ctx.x or AREA_CENTER
+    local y = ctx.y or AREA_CENTER
+    return {
+        target_x = clamp_area(x + math.cos(angle) * radius),
+        target_y = clamp_area(y + math.sin(angle) * radius),
+        acceptance_radius = ARRIVE_RADIUS,
+        rest_seconds = random_range(REST_MIN, REST_MAX)
+    }
 end
-
--- 목표에 도착했으면 잠시 쉬기로 하고, 아니면 그쪽으로 걷는다.
-local function node_move_to_target(bb, x, y, intent)
-    if dist2(x, y, bb.tx, bb.ty) <= ARRIVE_RADIUS * ARRIVE_RADIUS then
-        bb.has_target = false
-        bb.rest = REST_MIN + math.random() * (REST_MAX - REST_MIN)
-        return SUCCESS
-    end
-    intent.x, intent.y = bb.tx, bb.ty
-    return RUNNING
-end
-
--- selector: 쉬는 중이면 거기서 멈추고, 아니면 목표를 골라 걷는다.
-local function tick_tree(bb, x, y, dt, intent)
-    if node_rest(bb, dt) == RUNNING then
-        return
-    end
-    node_pick_target(bb, x, y)
-    node_move_to_target(bb, x, y, intent)
-end
-
--- --- C++ 진입점 -----------------------------------------------------------
-
-function wild_tick(id, species, x, y, dt)
-    local bb = board_of(id, x, y)
-    local intent = {}
-    tick_tree(bb, x, y, dt, intent)
-    if intent.x then
-        return intent.x, intent.y
-    end
-    -- 반환 없음 = 제자리
-end
-

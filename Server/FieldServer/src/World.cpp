@@ -190,64 +190,72 @@ void World::advanceWild(float dt, WildAi& ai) {
         return;
     }
 
-    // 2) Lua 는 락 밖에서 돌린다. 안에서 돌리면 야생 마릿수만큼 플레이어
-    //    이동이 월드 락 뒤에 줄을 선다.
+    // 2) AI FSM 은 락 밖에서 돌린다. 대부분의 틱은 Lua 를 부르지 않고 현재
+    //    목표만 돌려준다. action 전환이 필요할 때만 Lua 를 부른다.
     for (Pending& p : pending) {
         p.intent = ai.decide(p.id, p.species, p.x, p.y, dt);
     }
 
     // 3) 속도와 벽은 서버가 강제한다. Lua 는 목표만 정했다.
-    std::lock_guard<std::mutex> lock(mutex_);
-    for (const Pending& p : pending) {
-        if (!p.intent.moving) {
-            continue;
-        }
-        const auto it = entities_.find(p.id);
-        if (it == entities_.end()) {
-            continue;
-        }
-        Entity& entity = it->second;
-
-        const float dx = p.intent.targetX - entity.position.x;
-        const float dy = p.intent.targetY - entity.position.y;
-        const float distance = std::sqrt(dx * dx + dy * dy);
-        if (distance < 1e-3f) {
-            continue;
-        }
-
-        // 서버 틱의 dt를 곱하므로 서버 부하나 클라이언트 FPS가 달라도
-        // 초당 이동 거리는 같고, 종별 애니메이션 보폭과도 일치한다.
-        const float step = wildMoveSpeed(entity.species) * dt;
-        const float ratio = step >= distance ? 1.f : step / distance;
-        const float nx = proto::clampToWorld(entity.position.x + dx * ratio);
-        const float ny = proto::clampToWorld(entity.position.y + dy * ratio);
-
-        // 벽에 막히면 이번 목표는 포기하고 제자리에 선다. 밀어내기(슬라이딩)는
-        // 하지 않는다 — 야생은 다음 틱에 AI 가 새 목표를 고른다.
-        // ponytail: 막힌 목표를 계속 고르면 벽 앞에서 잠깐 서성인다. 신경 쓰이면
-        //           blockedAlong 결과를 Lua 로 돌려주고 목표를 바꾸게 하면 된다.
-        if (collision_ != nullptr) {
-            const Vec3 from{entity.position.x, entity.position.y, kAgent.capsuleHalfHeight};
-            const Vec3 to{nx, ny, kAgent.capsuleHalfHeight};
-            if (collision_->blockedAlong(from, to, kAgent)) {
+    std::vector<std::uint64_t> blocked;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const Pending& p : pending) {
+            if (!p.intent.moving) {
                 continue;
             }
+            const auto it = entities_.find(p.id);
+            if (it == entities_.end()) {
+                continue;
+            }
+            Entity& entity = it->second;
+
+            const float dx = p.intent.targetX - entity.position.x;
+            const float dy = p.intent.targetY - entity.position.y;
+            const float distance = std::sqrt(dx * dx + dy * dy);
+            if (distance < 1e-3f) {
+                continue;
+            }
+
+            // 서버 틱의 dt를 곱하므로 서버 부하나 클라이언트 FPS가 달라도
+            // 초당 이동 거리는 같고, 종별 애니메이션 보폭과도 일치한다.
+            const float step = wildMoveSpeed(entity.species) * dt;
+            const float ratio = step >= distance ? 1.f : step / distance;
+            const float nx = proto::clampToWorld(entity.position.x + dx * ratio);
+            const float ny = proto::clampToWorld(entity.position.y + dy * ratio);
+
+            // 벽에 막히면 이번 목표는 포기하고 제자리에 선다. 밀어내기(슬라이딩)는
+            // 하지 않는다 — FSM 이 짧게 쉰 뒤 새 wander action 을 뽑는다.
+            // ponytail: 막힌 목표를 계속 고르면 벽 앞에서 잠깐 서성인다. 신경 쓰이면
+            //           blockedAlong 결과를 Lua 로 돌려주고 목표를 바꾸게 하면 된다.
+            if (collision_ != nullptr) {
+                const Vec3 from{entity.position.x, entity.position.y, kAgent.capsuleHalfHeight};
+                const Vec3 to{nx, ny, kAgent.capsuleHalfHeight};
+                if (collision_->blockedAlong(from, to, kAgent)) {
+                    blocked.push_back(p.id);
+                    continue;
+                }
+            }
+
+            entity.position.facing = std::atan2(dy, dx) * 180.f / 3.14159265f;
+            entity.position.x = nx;
+            entity.position.y = ny;
+            entity.lastMoveAt = std::chrono::steady_clock::now();
+            entity.movedThisTick = true;
+
+            const int sector = proto::sectorIndex(nx, ny);
+            if (sector != entity.sector) {
+                sectors_[static_cast<std::size_t>(entity.sector)].erase(p.id);
+                sectors_[static_cast<std::size_t>(sector)].insert(p.id);
+                entity.sector = sector;
+            }
+
+            updateVisibility(entity);
         }
+    }
 
-        entity.position.facing = std::atan2(dy, dx) * 180.f / 3.14159265f;
-        entity.position.x = nx;
-        entity.position.y = ny;
-        entity.lastMoveAt = std::chrono::steady_clock::now();
-        entity.movedThisTick = true;
-
-        const int sector = proto::sectorIndex(nx, ny);
-        if (sector != entity.sector) {
-            sectors_[static_cast<std::size_t>(entity.sector)].erase(p.id);
-            sectors_[static_cast<std::size_t>(sector)].insert(p.id);
-            entity.sector = sector;
-        }
-
-        updateVisibility(entity);
+    for (const std::uint64_t blockedId : blocked) {
+        ai.notifyMoveBlocked(blockedId);
     }
 }
 
