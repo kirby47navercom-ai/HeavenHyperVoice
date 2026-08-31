@@ -15,7 +15,7 @@
 #include <thread>
 
 #include "FieldHandler.h"
-#include "MapCollision.h"
+#include "Map.h"
 #include "OdbcStore.h"
 #include "PokemonSpecies.h"
 #include "RedisClient.h"
@@ -37,7 +37,7 @@ struct Options {
     // 입장/퇴장에서만 DB 를 쓴다. 로그인 서버만큼 필요하지 않다.
     unsigned dbThreads = 2;
 
-    // 벽 충돌 맵. 없으면 검사하지 않는다.
+    // 서버 이동 맵. 없으면 검사하지 않는다.
     std::string mapFile;
 
     // 야생 포켓몬. count 가 0 이면 스폰하지 않는다.
@@ -71,8 +71,8 @@ void printUsage() {
                  "  --threads <n>       IOCP worker threads (default: hardware concurrency)\n"
                  "  --db-threads <n>    threads for position load/save (default 2; entering\n"
                  "                      and leaving only, so fewer than the login server)\n"
-                 "  --map <path>        wall collision map. Without it the server does\n"
-                 "                      not check walls at all.\n"
+                 "  --map <path>        server nav map. Without it the server does\n"
+                 "                      not check map walkability or walls.\n"
                  "  --wild-count <n>    wild pokemon to spawn (default 12; 0 disables them\n"
                  "                      and the Lua script is not loaded at all)\n"
                  "  --wild-script <p>   Lua behaviour tree (default scripts/wild_ai.lua)\n"
@@ -226,15 +226,17 @@ int main(int argc, char** argv) {
         heaven::net::WorkQueue dbQueue(options.dbThreads);
         heaven::field::World world;
 
-        // 벽 충돌 맵. 경로를 줬는데 못 읽으면 기동을 멈춘다 — 검사가 켜진 줄
+        // 서버 이동 맵. 경로를 줬는데 못 읽으면 기동을 멈춘다 — 검사가 켜진 줄
         // 알고 운영하는 것이 제일 나쁘다. 아예 안 주면 검사 없이 뜬다.
-        heaven::field::MapCollision collision;
+        heaven::field::Map map;
+        std::string loadedMapFile;
         if (!options.mapFile.empty()) {
+            loadedMapFile = heaven::net::resolveResourcePath(options.mapFile, "field map");
             std::string mapError;
-            if (!collision.loadFromFile(options.mapFile, mapError)) {
+            if (!map.loadFromFile(loadedMapFile, mapError)) {
                 throw std::runtime_error("map: " + mapError);
             }
-            world.setCollision(&collision);
+            world.setMap(&map);
         }
 
         // 야생 포켓몬 AI. 스크립트를 못 읽으면 기동을 멈춘다 — 돌아다녀야 할
@@ -244,6 +246,7 @@ int main(int argc, char** argv) {
             const std::string script =
                 heaven::net::resolveResourcePath(options.wildScript, "wild AI script");
             wildAi = std::make_unique<heaven::field::WildAi>(script);
+            wildAi->setMap(map.loaded() ? &map : nullptr);
 
             // 스폰 좌표(C++)와 배회 경로(Lua)는 난수원이 따로다. 둘 다 심어야
             // --wild-seed 가 같은 판을 실제로 재현한다.
@@ -260,27 +263,26 @@ int main(int argc, char** argv) {
             std::uniform_int_distribution<int> species(1, static_cast<int>(
                                                               heaven::proto::kSpeciesCount));
 
-            // 벽 안에 뜬 야생은 영원히 얼어붙는다 — blockedAlong 이 출발점부터
-            // 훑으므로 어느 방향으로 가려 해도 첫 샘플에서 막힌다. 자리를 몇 번
-            // 다시 굴려보고, 그래도 막히면 그 마리는 건너뛴다.
-            const heaven::field::AgentSettings agent{};
-            const auto insideWall = [&](float x, float y) {
-                if (!collision.loaded()) {
+            // navmesh 밖에 뜬 야생은 이동을 시작하지 못한다. 자리를 몇 번 다시
+            // 굴려보고, 그래도 서 있을 수 없으면 그 마리는 건너뛴다.
+            const heaven::field::nav::Agent defaultAgent{};
+            const heaven::field::nav::Agent& agent = map.loaded() ? map.agent() : defaultAgent;
+            const auto blockedSpawn = [&](float x, float y) {
+                if (!map.loaded()) {
                     return false;
                 }
-                const heaven::field::Vec3 point{x, y, agent.capsuleHalfHeight};
-                return collision.blockedAlong(point, point, agent);
+                return !map.canStandAt(x, y, agent);
             };
 
             int spawned = 0;
             for (int i = 0; i < options.wildCount; ++i) {
                 float x = coord(rng);
                 float y = coord(rng);
-                for (int attempt = 0; attempt < 16 && insideWall(x, y); ++attempt) {
+                for (int attempt = 0; attempt < 16 && blockedSpawn(x, y); ++attempt) {
                     x = coord(rng);
                     y = coord(rng);
                 }
-                if (insideWall(x, y)) {
+                if (blockedSpawn(x, y)) {
                     continue;
                 }
                 world.enterWild(heaven::field::kWildIdBase + static_cast<std::uint64_t>(i),
@@ -324,10 +326,12 @@ int main(int argc, char** argv) {
                      characters ? characters->describe() : "disabled (--dev-no-auth)",
                      options.dbThreads);
         spdlog::info("position cache: {}", redis ? redis->target() : "disabled");
-        if (collision.loaded()) {
-            spdlog::info("wall collision: {} ({} walls)", options.mapFile, collision.wallCount());
+        if (map.loaded()) {
+            spdlog::info("field map: {} ({} ground triangles, {} wall triangles, {} walkable polys)",
+                         loadedMapFile, map.groundCount(), map.wallCount(),
+                         map.walkablePolyCount());
         } else {
-            spdlog::warn("wall collision: disabled (--map). Players can walk through anything.");
+            spdlog::warn("field map: disabled (--map). Players can walk through anything.");
         }
         if (options.devNoAuth) {
             spdlog::warn("--dev-no-auth: ANY client may enter with a name of its choosing.");

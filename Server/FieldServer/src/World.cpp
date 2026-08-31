@@ -40,10 +40,6 @@ float wildMoveSpeed(std::uint16_t species) {
     }
 }
 
-// 캡슐 크기는 클라이언트 기본값과 같아야 예측이 어긋나지 않는다. 서버가
-// 뜬 뒤로 바뀌지 않으므로 상수로 둔다.
-constexpr AgentSettings kAgent{};
-
 }  // namespace
 
 proto::EntityView World::viewOf(const Entity& entity, bool withIdentity) {
@@ -196,7 +192,7 @@ void World::advanceWild(float dt, WildAi& ai) {
         p.intent = ai.decide(p.id, p.species, p.x, p.y, dt);
     }
 
-    // 3) 속도와 벽은 서버가 강제한다. Lua 는 목표만 정했다.
+    // 3) 속도와 navmesh 이동 가능성은 서버가 강제한다. Lua 는 목표만 정했다.
     std::vector<std::uint64_t> blocked;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -224,14 +220,14 @@ void World::advanceWild(float dt, WildAi& ai) {
             const float nx = proto::clampToWorld(entity.position.x + dx * ratio);
             const float ny = proto::clampToWorld(entity.position.y + dy * ratio);
 
-            // 벽에 막히면 이번 목표는 포기하고 제자리에 선다. 밀어내기(슬라이딩)는
-            // 하지 않는다 — FSM 이 짧게 쉰 뒤 새 wander action 을 뽑는다.
-            // ponytail: 막힌 목표를 계속 고르면 벽 앞에서 잠깐 서성인다. 신경 쓰이면
-            //           blockedAlong 결과를 Lua 로 돌려주고 목표를 바꾸게 하면 된다.
-            if (collision_ != nullptr) {
-                const Vec3 from{entity.position.x, entity.position.y, kAgent.capsuleHalfHeight};
-                const Vec3 to{nx, ny, kAgent.capsuleHalfHeight};
-                if (collision_->blockedAlong(from, to, kAgent)) {
+            // navmesh 로 이어지지 않으면 이번 목표는 포기하고 제자리에 선다.
+            // 밀어내기(슬라이딩)는 하지 않는다. FSM 이 짧게 쉰 뒤 새 wander
+            // action 을 뽑는다.
+            if (map_ != nullptr && map_->loaded()) {
+                const nav::Agent& agent = map_->agent();
+                const nav::Vec3 from{entity.position.x, entity.position.y, agent.halfHeight};
+                const nav::Vec3 to{nx, ny, agent.halfHeight};
+                if (map_->blockedAlong(from, to, agent)) {
                     blocked.push_back(p.id);
                     continue;
                 }
@@ -423,23 +419,21 @@ void World::move(std::uint64_t characterId, float x, float y, float facing,
         self.slack -= std::max(0.f, distance - straight);
     }
 
-    // 벽 검사. 도착점만 보면 한 틱에 캡슐 지름보다 멀리 움직일 때 얇은 벽을
-    // 그냥 지나간다. 출발점부터 훑는다.
+    // navmesh 검사. 도착점만 보면 한 틱에 캡슐 지름보다 멀리 움직일 때 좁은
+    // 막힘을 지나칠 수 있으므로 Detour raycast 로 두 점 사이를 확인한다.
     bool corrected = tooFar;
-    if (collision_ != nullptr) {
-        // 바닥이 아직 없어서 캡슐 높이를 고정으로 둔다. 하이트맵이 들어오면
-        // 여기가 floor.z + halfHeight 가 된다.
-        const float z = kAgent.capsuleHalfHeight;
-        const Vec3 from{self.position.x, self.position.y, z};
-        const Vec3 to{x, y, z};
+    if (map_ != nullptr && map_->loaded()) {
+        const nav::Agent& agent = map_->agent();
+        const nav::Vec3 from{self.position.x, self.position.y, agent.halfHeight};
+        const nav::Vec3 to{x, y, agent.halfHeight};
 
-        if (collision_->blockedAlong(from, to, kAgent)) {
+        if (map_->blockedAlong(from, to, agent)) {
             // 통과시키지 않고 제자리에 둔다. 밀어내기(슬라이딩)는 클라이언트
             // 물리가 이미 하므로, 서버는 "거기 못 간다" 만 말하면 된다.
             x = self.position.x;
             y = self.position.y;
             corrected = true;
-            spdlog::debug("{} blocked by wall at ({:.0f}, {:.0f})", self.nickname, to.x, to.y);
+            spdlog::debug("{} blocked by navmesh at ({:.0f}, {:.0f})", self.nickname, to.x, to.y);
         }
     }
 

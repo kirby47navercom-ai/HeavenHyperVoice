@@ -13,7 +13,8 @@
     },
     "hiredis",
     "lua",
-    "sol2"
+    "sol2",
+    "recastnavigation"
   ],
   "builtin-baseline": "86dc619bd8d9697405ae5c944b474117ea9457ce"
 }

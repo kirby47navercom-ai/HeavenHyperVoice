@@ -1,12 +1,14 @@
 find_package(Lua REQUIRED)
 find_package(sol2 CONFIG REQUIRED)
+find_package(recastnavigation CONFIG REQUIRED)
 
 add_executable(FieldServer
     src/main.cpp
     src/FieldHandler.cpp
     src/World.cpp
     src/WildAi.cpp
-    src/MapCollision.cpp
+    src/Map.cpp
+    src/Path.cpp
 )
 
 target_include_directories(FieldServer PRIVATE src)
@@ -17,6 +19,8 @@ target_link_libraries(FieldServer PRIVATE
     Net
     Data
     sol2::sol2
+    RecastNavigation::Recast
+    RecastNavigation::Detour
     ${LUA_LIBRARIES}
 )
 target_include_directories(FieldServer PRIVATE ${LUA_INCLUDE_DIR})
@@ -33,4 +37,11 @@ add_custom_command(TARGET FieldServer POST_BUILD
         "${CMAKE_CURRENT_SOURCE_DIR}/scripts"
         "$<TARGET_FILE_DIR:FieldServer>/scripts"
     COMMENT "Copying wild AI scripts next to FieldServer"
+)
+
+add_custom_command(TARGET FieldServer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${PROJECT_SOURCE_DIR}/maps"
+        "$<TARGET_FILE_DIR:FieldServer>/maps"
+    COMMENT "Copying field maps next to FieldServer"
 )

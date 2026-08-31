@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <utility>
 
 namespace heaven::field {
 
@@ -57,8 +58,10 @@ void WildAi::notifyMoveBlocked(std::uint64_t entityId) {
         return;
     }
 
-    // 막힌 목표를 계속 붙잡으면 벽 앞에서 매 틱 같은 이동을 시도한다.
+    // 막힌 목표를 계속 붙잡으면 매 틱 같은 이동을 시도한다.
     // 짧게 쉰 뒤 새 wander action 을 뽑는다.
+    it->second.path.clear();
+    it->second.pathIndex = 0;
     beginRest(it->second, 0.25f);
 }
 
@@ -76,13 +79,11 @@ WildIntent WildAi::tickWander(std::uint64_t entityId, std::uint16_t species, flo
     const float safeDt = std::max(dt, 0.f);
 
     if (brain.phase == WildPhase::Moving) {
-        if (distanceSquared(x, y, brain.targetX, brain.targetY) <=
-            brain.acceptanceRadius * brain.acceptanceRadius) {
+        WildIntent intent = followWanderPath(x, y, brain);
+        if (!intent.moving) {
             beginRest(brain, brain.restAfterArriveSeconds);
-            return {};
         }
-
-        return WildIntent{brain.targetX, brain.targetY, brain.acceptanceRadius, true};
+        return intent;
     }
 
     if (brain.phase == WildPhase::Resting) {
@@ -98,15 +99,83 @@ WildIntent WildAi::tickWander(std::uint64_t entityId, std::uint16_t species, flo
         return {};
     }
 
+    if (!beginWanderMove(x, y, action, brain)) {
+        beginRest(brain, 0.75f);
+        return {};
+    }
+
+    brain.phase = WildPhase::Moving;
+    WildIntent intent = followWanderPath(x, y, brain);
+    if (!intent.moving) {
+        beginRest(brain, brain.restAfterArriveSeconds);
+    }
+    return intent;
+}
+
+bool WildAi::beginWanderMove(float x, float y, const WanderActionResult& action,
+                             WildBrain& brain) {
     brain.targetX = action.targetX;
     brain.targetY = action.targetY;
     brain.acceptanceRadius = std::max(action.acceptanceRadius, 1.f);
     brain.restAfterArriveSeconds = std::max(action.restAfterArriveSeconds, 0.f);
-    brain.phase = WildPhase::Moving;
+    brain.path.clear();
+    brain.pathIndex = 0;
 
     if (distanceSquared(x, y, brain.targetX, brain.targetY) <=
         brain.acceptanceRadius * brain.acceptanceRadius) {
-        beginRest(brain, brain.restAfterArriveSeconds);
+        return true;
+    }
+
+    if (map_ != nullptr && map_->loaded()) {
+        nav::Vec3 goal{brain.targetX, brain.targetY, agent_.halfHeight};
+        nav::Vec3 groundedGoal;
+        if (map_->canStandAt(goal.x, goal.y, agent_, &groundedGoal)) {
+            goal = groundedGoal;
+        } else if (map_->nearestStandable(
+                       goal.x,
+                       goal.y,
+                       std::max(brain.acceptanceRadius, agent_.radius * 4.f),
+                       agent_,
+                       groundedGoal)) {
+            goal = groundedGoal;
+        } else {
+            return false;
+        }
+
+        PathResult path = pathfinder_.find(
+            *map_,
+            nav::Vec3{x, y, agent_.halfHeight},
+            goal,
+            agent_);
+        if (!path.found || path.points.empty()) {
+            return false;
+        }
+
+        brain.targetX = goal.x;
+        brain.targetY = goal.y;
+        brain.path = std::move(path.points);
+    }
+
+    return true;
+}
+
+WildIntent WildAi::followWanderPath(float x, float y, WildBrain& brain) {
+    constexpr float kWaypointRadius = 35.f;
+    const float waypointRadiusSquared = kWaypointRadius * kWaypointRadius;
+
+    while (brain.pathIndex < brain.path.size() &&
+           distanceSquared(x, y, brain.path[brain.pathIndex].x, brain.path[brain.pathIndex].y) <=
+               waypointRadiusSquared) {
+        ++brain.pathIndex;
+    }
+
+    if (brain.pathIndex < brain.path.size()) {
+        const nav::Vec3& waypoint = brain.path[brain.pathIndex];
+        return WildIntent{waypoint.x, waypoint.y, brain.acceptanceRadius, true};
+    }
+
+    if (distanceSquared(x, y, brain.targetX, brain.targetY) <=
+        brain.acceptanceRadius * brain.acceptanceRadius) {
         return {};
     }
 

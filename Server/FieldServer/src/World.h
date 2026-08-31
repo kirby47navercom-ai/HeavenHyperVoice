@@ -21,7 +21,7 @@
 #include <vector>
 
 #include "CharacterStore.h"
-#include "MapCollision.h"
+#include "Map.h"
 #include "FieldCodec.h"
 #include "FieldGeometry.h"
 #include "TlsSession.h"
@@ -104,7 +104,7 @@ public:
     void enterWild(std::uint64_t entityId, std::uint16_t species, const Position& position);
 
     // 모든 야생 포켓몬을 한 틱 전진시킨다. AI FSM 이 목표를 유지하고 서버가
-    // 속도와 벽을 강제한다. 틱 스레드에서만 부를 것 (WildAi 는 스레드 안전하지 않다).
+    // 속도와 navmesh 이동 가능성을 강제한다. 틱 스레드에서만 부를 것.
     //
     // Lua action 호출은 FSM 전환 때만, 월드 락 **밖에서** 한다. 안에서 돌리면
     // 야생 마릿수만큼 플레이어 이동이 뒤에 밀린다.
@@ -120,9 +120,9 @@ public:
     void move(std::uint64_t characterId, float x, float y, float facing,
               std::uint32_t sequence);
 
-    // 벽 충돌 판정. nullptr 이면 검사하지 않는다 (맵 없이 띄우는 경우).
+    // 서버 이동 맵. nullptr 이면 검사하지 않는다 (맵 없이 띄우는 경우).
     // 서버가 뜬 뒤로는 바뀌지 않으므로 락 없이 읽는다.
-    void setCollision(const MapCollision* collision) { collision_ = collision; }
+    void setMap(const Map* map) { map_ = map; }
 
     // 20Hz. 이번 주기에 움직인 것들을 뷰어별로 묶어 보낸다.
     void tick();
@@ -148,7 +148,7 @@ private:
     std::unordered_map<std::uint64_t, Entity> entities_;
     std::unordered_map<std::uint64_t, std::uint64_t> byAccount_;
 
-    const MapCollision* collision_ = nullptr;
+    const Map* map_ = nullptr;
 
     // 후보 추출 전용 공간 인덱스. 시야 판정에는 쓰이지 않는다.
     std::array<std::unordered_set<std::uint64_t>, proto::kSectorCount> sectors_;

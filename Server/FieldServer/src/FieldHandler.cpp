@@ -26,7 +26,7 @@ std::optional<data::Position> readRedisPosition(net::RedisClient& redis,
     }
 
     // 구분자만 공백으로 바꾸면 스트림 추출이 그대로 파서가 된다
-    // (MapCollision::loadFromFile 과 같은 방식).
+    // (Map::loadFromFile 과 같은 방식).
     std::string text = *raw;
     std::replace(text.begin(), text.end(), '|', ' ');
 
