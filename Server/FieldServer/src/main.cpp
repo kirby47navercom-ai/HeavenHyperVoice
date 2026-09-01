@@ -42,7 +42,6 @@ struct Options {
 
     // 야생 포켓몬. count 가 0 이면 스폰하지 않는다.
     int wildCount = 12;
-    std::string wildScript = "scripts/wild_ai.lua";
     unsigned wildSeed = 0;  // 0 이면 매 실행 다르게
 
     std::string redisHost = "127.0.0.1";
@@ -73,9 +72,7 @@ void printUsage() {
                  "                      and leaving only, so fewer than the login server)\n"
                  "  --map <path>        server nav map. Without it the server does\n"
                  "                      not check map walkability or walls.\n"
-                 "  --wild-count <n>    wild pokemon to spawn (default 12; 0 disables them\n"
-                 "                      and the Lua script is not loaded at all)\n"
-                 "  --wild-script <p>   Lua behaviour tree (default scripts/wild_ai.lua)\n"
+                 "  --wild-count <n>    wild pokemon to spawn (default 12; 0 disables them)\n"
                  "  --wild-seed <n>     fix spawn points and wander paths (default: random)\n"
                  "  --redis-host <h>    default 127.0.0.1\n"
                  "  --redis-port <n>    default 6379\n"
@@ -131,8 +128,6 @@ Options parseArgs(int argc, char** argv) {
             options.mapFile = next("--map");
         } else if (arg == "--wild-count") {
             options.wildCount = std::stoi(next("--wild-count"));
-        } else if (arg == "--wild-script") {
-            options.wildScript = next("--wild-script");
         } else if (arg == "--wild-seed") {
             options.wildSeed = static_cast<unsigned>(std::stoul(next("--wild-seed")));
         } else if (arg == "--redis-host") {
@@ -239,22 +234,20 @@ int main(int argc, char** argv) {
             world.setMap(&map);
         }
 
-        // 야생 포켓몬 AI. 스크립트를 못 읽으면 기동을 멈춘다 — 돌아다녀야 할
-        // 야생이 조용히 얼어붙는 것보다 낫다. count 가 0 이면 아예 만들지 않는다.
+        // 야생 포켓몬 AI. 현재 wander 는 C++ 에서 직접 처리한다. count 가 0 이면
+        // 아예 만들지 않는다.
         std::unique_ptr<heaven::field::WildAi> wildAi;
         if (options.wildCount > 0) {
-            const std::string script =
-                heaven::net::resolveResourcePath(options.wildScript, "wild AI script");
-            wildAi = std::make_unique<heaven::field::WildAi>(script);
+            wildAi = std::make_unique<heaven::field::WildAi>();
             wildAi->setMap(map.loaded() ? &map : nullptr);
 
-            // 스폰 좌표(C++)와 배회 경로(Lua)는 난수원이 따로다. 둘 다 심어야
-            // --wild-seed 가 같은 판을 실제로 재현한다.
+            // 스폰 좌표와 배회 경로는 난수원이 따로다. 둘 다 심어야 --wild-seed 가
+            // 같은 판을 실제로 재현한다.
             wildAi->seed(options.wildSeed);
             std::mt19937 rng(options.wildSeed != 0 ? options.wildSeed : std::random_device{}());
 
             // 월드 전체에 흩뿌리지 않고 중앙 8000x8000 안에만 넣는다. 배회 구역도
-            // 같은 상자다 (scripts/wild_ai.lua 의 AREA_*). 두 값이 어긋나면 스폰된
+            // 같은 상자다 (WildAi.cpp 의 kAreaHalfExtent). 두 값이 어긋나면 스폰된
             // 자리에서 구역 안으로 걸어 들어가느라 처음 몇 초가 어색해진다.
             constexpr float kWildAreaHalfExtent = 4000.f;
             std::uniform_real_distribution<float> coord(
@@ -294,7 +287,7 @@ int main(int argc, char** argv) {
                 spdlog::warn("{} wild pokemon skipped: no clear spawn point found",
                              options.wildCount - spawned);
             }
-            spdlog::info("wild pokemon: {} spawned via {}", spawned, script);
+            spdlog::info("wild pokemon: {} spawned (C++ wander)", spawned);
         }
 
         heaven::field::FieldContext context;

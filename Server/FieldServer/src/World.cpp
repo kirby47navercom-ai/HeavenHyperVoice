@@ -186,13 +186,13 @@ void World::advanceWild(float dt, WildAi& ai) {
         return;
     }
 
-    // 2) AI FSM 은 락 밖에서 돌린다. 대부분의 틱은 Lua 를 부르지 않고 현재
-    //    목표만 돌려준다. action 전환이 필요할 때만 Lua 를 부른다.
+    // 2) AI FSM 은 락 밖에서 돌린다. 대부분의 틱은 현재 목표만 돌려주고,
+    //    action 전환이 필요할 때만 C++ 에서 새 wander 목표를 뽑는다.
     for (Pending& p : pending) {
         p.intent = ai.decide(p.id, p.species, p.x, p.y, dt);
     }
 
-    // 3) 속도와 navmesh 이동 가능성은 서버가 강제한다. Lua 는 목표만 정했다.
+    // 3) 속도와 navmesh 이동 가능성은 서버가 강제한다.
     std::vector<std::uint64_t> blocked;
     {
         std::lock_guard<std::mutex> lock(mutex_);
