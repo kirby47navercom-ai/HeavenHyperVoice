@@ -258,6 +258,22 @@ bool UUEGameInstance::GetFieldEndpoint(FString& OutHost, int32& OutPort,
 	return false;
 }
 
+bool UUEGameInstance::GetChatEndpoint(FString& OutHost, int32& OutPort,
+	TArray<uint8>& OutTicket) const
+{
+	for (const FHHVServiceEndpoint& Endpoint : ServiceEndpoints)
+	{
+		if (Endpoint.Service == TEXT("chat"))
+		{
+			OutHost = Endpoint.Host;
+			OutPort = Endpoint.Port;
+			OutTicket = Endpoint.Ticket;
+			return true;
+		}
+	}
+	return false;
+}
+
 void UUEGameInstance::ApplyServerCharacters(const TArray<FHHVCharacterSummary>& Characters)
 {
 	ServerCharacters = Characters;

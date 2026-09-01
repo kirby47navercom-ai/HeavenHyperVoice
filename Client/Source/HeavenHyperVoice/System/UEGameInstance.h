@@ -142,6 +142,9 @@ public:
 	/** 티켓을 받은 뒤에만 채워진다. 필드 접속에 그대로 쓴다. */
 	bool GetFieldEndpoint(FString& OutHost, int32& OutPort, TArray<uint8>& OutTicket) const;
 
+	/** 티켓을 받은 뒤에만 채워진다. 플레이 HUD의 채팅 연결에 쓴다. */
+	bool GetChatEndpoint(FString& OutHost, int32& OutPort, TArray<uint8>& OutTicket) const;
+
 	UPROPERTY(BlueprintAssignable, Category = "HHV|Server")
 	FUEServerResultSignature OnLoginCompleted;
 

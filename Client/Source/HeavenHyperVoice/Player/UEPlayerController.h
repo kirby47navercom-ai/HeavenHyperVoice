@@ -3,11 +3,17 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Components/EditableTextBox.h"
 #include "GameFramework/PlayerController.h"
 #include "InputActionValue.h"
+#include "../Net/HHVChatConnection.h"
+#include <memory>
 #include "UEPlayerController.generated.h"
 
 class AUEPlayerCharacter;
+class UScrollBox;
+class UUserWidget;
+class UVerticalBox;
 class UUEDataAsset;
 class UUEPokemonPartyWidget;
 
@@ -19,6 +25,11 @@ class HEAVENHYPERVOICE_API AUEPlayerController : public APlayerController
 
 public:
 	AUEPlayerController();
+	virtual void Tick(float DeltaSeconds) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	void OpenChatInput();
+	void CloseChatInput();
 
 	// WBP 클래스가 지정된 경우에만 HUD를 만든다. 에셋 경로는 코드에서 찾지 않는다.
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|UI")
@@ -48,7 +59,26 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|UI")
 	int32 PokemonPartyWidgetZOrder = 10;
 
+	/** 실제 채팅 배치와 스타일은 이 UMG 에셋들에서 수정한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Chat|UI")
+	TSubclassOf<UUserWidget> ChatWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Chat|UI")
+	TSubclassOf<UUserWidget> ChatLineWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Chat|UI")
+	TSubclassOf<UUserWidget> ChatSystemLineWidgetClass;
+
 private:
+	void CreateChatWidget();
+	void StartChat();
+	bool SubmitChatText(const FString& Text);
+	void AddChatLine(const FString& Nickname, const FString& Text, bool bSystem);
+	void AddSystemMessage(const FString& Text);
+
+	UFUNCTION()
+	void HandleChatTextCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+
 	void AddDefaultMappingContext() const;
 	void BindGameplayInput();
 	void BindMoveInput(class UEnhancedInputComponent* EnhancedInputComponent);
@@ -91,4 +121,21 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUEPokemonPartyWidget> PokemonPartyWidget = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> ChatWidget = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UEditableTextBox> ChatInput = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UScrollBox> ChatMessageScroll = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UVerticalBox> ChatMessageList = nullptr;
+
+	std::unique_ptr<FHHVChatConnection> ChatConnection;
+	bool bChatInputOpen = false;
+	int32 ChatMessageCount = 0;
+	static constexpr int32 MaxVisibleChatMessages = 80;
 };
