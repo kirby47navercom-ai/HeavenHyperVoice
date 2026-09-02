@@ -507,12 +507,13 @@ void UUEFieldServerBridgeComponent::HandleFieldPartnerChanged(uint64 EntityId, u
 
 void UUEFieldServerBridgeComponent::TogglePartyWidget()
 {
-	if (PartyWidget)
+	if (PartyWidget && PartyWidget->IsInViewport())
 	{
 		PartyWidget->RemoveFromParent();
 		PartyWidget = nullptr;
 		return;
 	}
+	PartyWidget = nullptr;
 
 	if (!PartyWidgetClass)
 	{

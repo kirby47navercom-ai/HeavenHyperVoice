@@ -14,6 +14,7 @@ class AUEPlayerCharacter;
 class UScrollBox;
 class UUserWidget;
 class UVerticalBox;
+class UWidget;
 class UUEDataAsset;
 class UUEPokemonPartyWidget;
 
@@ -101,9 +102,11 @@ private:
 	void BindJumpInput(UEnhancedInputComponent* EnhancedInputComponent);
 	void BindRollInput(UEnhancedInputComponent* EnhancedInputComponent);
 	void BindPokemonAttackInput(UEnhancedInputComponent* EnhancedInputComponent);
+	void BindMouseViewInput(UEnhancedInputComponent* EnhancedInputComponent);
 	AUEPlayerCharacter* GetControlledPlayerCharacter() const;
 	bool HasPendingHHVAppearance() const;
 	void PushMovementInputToCharacter();
+	void UpdateChatMouseInteraction();
 
 	void HandleMove(const FInputActionValue& Value);
 	void HandleMoveStopped(const FInputActionValue& Value);
@@ -127,6 +130,8 @@ private:
 	void HandlePokemonAttack3(const FInputActionValue& Value);
 	void HandlePokemonAttack4(const FInputActionValue& Value);
 	void HandlePokemonAttackSlot(int32 AttackSlot);
+	void HandleMouseViewStarted(const FInputActionValue& Value);
+	void HandleMouseViewStopped(const FInputActionValue& Value);
 
 	FVector2D PendingMovementInput = FVector2D::ZeroVector;
 	float MaxWalkSpeed = 260.0f;
@@ -147,8 +152,17 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UVerticalBox> ChatMessageList = nullptr;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UWidget> ChatMovablePanel = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UWidget> ChatDragHandle = nullptr;
+
 	std::unique_ptr<FHHVChatConnection> ChatConnection;
 	bool bChatInputOpen = false;
+	bool bMouseViewHeld = false;
+	bool bDraggingChat = false;
+	FVector2D LastChatDragMousePosition = FVector2D::ZeroVector;
 	int32 ChatMessageCount = 0;
 	static constexpr int32 MaxVisibleChatMessages = 80;
 };
