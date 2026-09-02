@@ -37,6 +37,7 @@ inline std::int64_t nowUnix() {
 // 채팅 서버에, 채팅 티켓을 음성 서버에 재사용할 수 있다.
 inline constexpr std::string_view kAudienceChat = "chat";
 inline constexpr std::string_view kAudienceField = "field";
+inline constexpr std::string_view kAudienceInstance = "instance";
 
 struct TicketClaims {
     std::string issuer;

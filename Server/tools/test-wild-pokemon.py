@@ -35,7 +35,7 @@ generate_bindings()
 import flatbuffers
 from HeavenField import Envelope, Enter, Snapshot, EntityState, Payload
 
-HOST, PORT = "127.0.0.1", 9200
+HOST, PORT = "127.0.0.1", 9300
 
 
 def build_enter():
@@ -43,6 +43,7 @@ def build_enter():
     name = b.CreateString("wildtester")
     Enter.Start(b)
     Enter.AddDevName(b, name)
+    Enter.AddInstanceType(b, 1)
     Enter.AddDevCharacterId(b, 123456789)  # dev 모드라 아무 값
     Enter.AddDevPartnerSpecies(b, 0)
     enter = Enter.End(b)
@@ -127,7 +128,7 @@ for eid, (fx, fy) in wild_first.items():
     if abs(lx - fx) > 1.0 or abs(ly - fy) > 1.0:
         moved += 1
 
-print(f"entered field         : {entered}")
+print(f"entered instance         : {entered}")
 print(f"wild seen (species!=0): {len(wild_first)}")
 print(f"wild that moved        : {moved}")
 assert entered, "did not receive EnterAck"

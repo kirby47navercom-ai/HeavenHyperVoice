@@ -21,11 +21,12 @@ struct Options {
     std::uint16_t loginPort = 9100;
     std::uint16_t chatPort = 9000;
     std::uint16_t fieldPort = 9200;
-    // 채팅과 필드가 같은 머신에서 뜨므로 주소도 하나다. 나뉘면 그때 쪼갠다.
+    std::uint16_t instancePort = 9300;
+    // 셋 다 같은 머신에서 뜨므로 주소도 하나다. 나뉘면 그때 쪼갠다.
     std::string host = "127.0.0.1";
 
-    // 필드에 뿌릴 야생 포켓몬 수. FieldServer 의 기본값(12)보다 많이 둔다 —
-    // 배회 구역이 월드 중앙 8000x8000 으로 좁아져서 그 정도면 시야에 잘 안 든다.
+    // 인스턴스 방 하나에 뿌릴 야생 포켓몬 수. 야생은 필드에서 인스턴스로
+    // 옮겨갔다. 배회 구역이 월드 중앙 8000x8000 이라 기본값보다 넉넉히 둔다.
     int wildCount = 50;
 
     bool verbose = false;
@@ -71,11 +72,12 @@ void printUsage() {
                  "  --login-port <n>  login server port (default 9100)\n"
                  "  --chat-port <n>   chat server port (default 9000)\n"
                  "  --field-port <n>  field server port (default 9200)\n"
-                 "  --host <h>        host advertised to clients for chat and field\n"
-                 "                    (default 127.0.0.1)\n"
-                 "  --wild-count <n>  wild pokemon the field server spawns (default 50;\n"
-                 "                    higher than the field server's own default because\n"
-                 "                    they roam only the middle 8000x8000 of the world)\n"
+                 "  --instance-port <n>  instance server port (default 9300)\n"
+                 "  --host <h>        host advertised to clients for chat, field and\n"
+                 "                    instances (default 127.0.0.1)\n"
+                 "  --wild-count <n>  wild pokemon per instance room (default 50; higher\n"
+                 "                    than the instance server's own default because they\n"
+                 "                    roam only the middle 8000x8000 of the room)\n"
                  "  --verbose         pass --verbose to the servers\n"
                  "  --help            show this message\n"
                  "\n"
@@ -100,6 +102,9 @@ Options parseArgs(int argc, char** argv) {
             options.chatPort = static_cast<std::uint16_t>(std::stoi(next("--chat-port")));
         } else if (arg == "--field-port") {
             options.fieldPort = static_cast<std::uint16_t>(std::stoi(next("--field-port")));
+        } else if (arg == "--instance-port") {
+            options.instancePort =
+                static_cast<std::uint16_t>(std::stoi(next("--instance-port")));
         } else if (arg == "--host") {
             options.host = next("--host");
         } else if (arg == "--wild-count") {
@@ -206,23 +211,33 @@ int main(int argc, char** argv) {
                                       " --chat-host " + options.host + " --chat-port " +
                                       std::to_string(options.chatPort) + " --field-host " +
                                       options.host + " --field-port " +
-                                      std::to_string(options.fieldPort) + verbose;
+                                      std::to_string(options.fieldPort) + " --instance-host " +
+                                      options.host + " --instance-port " +
+                                      std::to_string(options.instancePort) + verbose;
 
         const std::filesystem::path chatExe = dir / "ChatServer.exe";
         const std::string chatArgs =
             "ChatServer --port " + std::to_string(options.chatPort) + verbose;
 
+        // 야생은 여기 없다. 필드는 플레이어와 파트너만 있고 전투도 없다.
         const std::filesystem::path fieldExe = dir / "FieldServer.exe";
-        const std::string fieldArgs = "FieldServer --port " +
-                                      std::to_string(options.fieldPort) + " --wild-count " +
-                                      std::to_string(options.wildCount) + verbose;
+        const std::string fieldArgs =
+            "FieldServer --port " + std::to_string(options.fieldPort) + verbose;
+
+        const std::filesystem::path instanceExe = dir / "InstanceServer.exe";
+        const std::string instanceArgs = "InstanceServer --port " +
+                                         std::to_string(options.instancePort) +
+                                         " --wild-per-room " +
+                                         std::to_string(options.wildCount) + verbose;
 
         children.push_back(startServer(loginExe, loginArgs, "LoginServer"));
         children.push_back(startServer(chatExe, chatArgs, "ChatServer"));
         children.push_back(startServer(fieldExe, fieldArgs, "FieldServer"));
+        children.push_back(startServer(instanceExe, instanceArgs, "InstanceServer"));
 
         std::cout << "[launcher] login on " << options.loginPort << ", chat on "
                   << options.chatPort << ", field on " << options.fieldPort
+                  << ", instances on " << options.instancePort
                   << ". Ctrl+C to stop all." << std::endl;
 
         // 아무 자식이나 죽으면 나머지도 정리한다. 반쪽만 살아있는 상태를 만들지 않는다.

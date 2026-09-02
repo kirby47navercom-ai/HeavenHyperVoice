@@ -7,7 +7,9 @@
 #include <cmath>
 #include <stdexcept>
 
-namespace heaven::field {
+#include "InstanceGeometry.h"
+
+namespace heaven::instance {
 
 WildAi::WildAi(const std::string& scriptPath) : lua_(std::make_unique<sol::state>()) {
     lua_->open_libraries(sol::lib::base, sol::lib::math, sol::lib::table);
@@ -41,14 +43,7 @@ WildIntent WildAi::decide(std::uint64_t entityId, std::uint16_t species, float x
         brain.hasHome = true;
     }
 
-    switch (brain.mode) {
-        case WildMode::Wander:
-            return tickWander(entityId, species, x, y, dt, brain);
-        case WildMode::Combat:
-        case WildMode::Downed:
-        default:
-            return {};
-    }
+    return tickWander(entityId, species, x, y, dt, brain);
 }
 
 void WildAi::notifyMoveBlocked(std::uint64_t entityId) {
@@ -82,7 +77,7 @@ WildIntent WildAi::tickWander(std::uint64_t entityId, std::uint16_t species, flo
             return {};
         }
 
-        return WildIntent{brain.targetX, brain.targetY, brain.acceptanceRadius, true};
+        return WildIntent{brain.targetX, brain.targetY, true};
     }
 
     if (brain.phase == WildPhase::Resting) {
@@ -110,7 +105,7 @@ WildIntent WildAi::tickWander(std::uint64_t entityId, std::uint16_t species, flo
         return {};
     }
 
-    return WildIntent{brain.targetX, brain.targetY, brain.acceptanceRadius, true};
+    return WildIntent{brain.targetX, brain.targetY, true};
 }
 
 WildAi::WanderActionResult WildAi::callWanderAction(std::uint64_t entityId,
@@ -119,13 +114,19 @@ WildAi::WanderActionResult WildAi::callWanderAction(std::uint64_t entityId,
     sol::table actions = (*lua_)["wild_actions"];
     sol::protected_function wander = actions["wander"];
 
+    // 구역은 C++ 이 정한다 (맵의 경계 구에서 나온다). Lua 에 상수로 두면
+    // 맵이 바뀔 때마다 스크립트를 같이 고쳐야 하고, 빠뜨리면 야생이 맵 밖
+    // 경계에 몰려 선다.
     sol::table context = lua_->create_table_with(
         "id", entityId,
         "species", species,
         "x", x,
         "y", y,
         "home_x", brain.homeX,
-        "home_y", brain.homeY);
+        "home_y", brain.homeY,
+        "area_center_x", area_.centerX,
+        "area_center_y", area_.centerY,
+        "area_half_extent", area_.halfExtent);
 
     const sol::protected_function_result result = wander(context);
     if (!result.valid()) {
@@ -134,56 +135,26 @@ WildAi::WanderActionResult WildAi::callWanderAction(std::uint64_t entityId,
         return {};
     }
 
-    WanderActionResult action;
     const sol::object first = result.get<sol::object>(0);
-    if (first.is<sol::table>()) {
-        const sol::table table = first.as<sol::table>();
+    if (!first.is<sol::table>()) {
+        return {};
+    }
+    const sol::table table = first.as<sol::table>();
 
-        sol::optional<float> targetX = table["target_x"];
-        if (!targetX) {
-            targetX = table["targetX"];
-        }
-        if (!targetX) {
-            targetX = table["x"];
-        }
+    const sol::optional<float> targetX = table["target_x"];
+    const sol::optional<float> targetY = table["target_y"];
+    if (!targetX || !targetY) {
+        return {};
+    }
 
-        sol::optional<float> targetY = table["target_y"];
-        if (!targetY) {
-            targetY = table["targetY"];
-        }
-        if (!targetY) {
-            targetY = table["y"];
-        }
-
-        if (!targetX || !targetY) {
-            return {};
-        }
-
-        action.targetX = *targetX;
-        action.targetY = *targetY;
-
-        if (const sol::optional<float> acceptance = table["acceptance_radius"]) {
-            action.acceptanceRadius = *acceptance;
-        } else if (const sol::optional<float> camelAcceptance = table["acceptanceRadius"]) {
-            action.acceptanceRadius = *camelAcceptance;
-        }
-
-        if (const sol::optional<float> rest = table["rest_seconds"]) {
-            action.restAfterArriveSeconds = *rest;
-        } else if (const sol::optional<float> camelRest = table["restSeconds"]) {
-            action.restAfterArriveSeconds = *camelRest;
-        } else if (const sol::optional<float> shortRest = table["rest"]) {
-            action.restAfterArriveSeconds = *shortRest;
-        }
-    } else {
-        // 간단한 action 은 예전 wild_tick 처럼 (x, y) 만 돌려줘도 된다.
-        const sol::optional<float> targetX = result.get<sol::optional<float>>(0);
-        const sol::optional<float> targetY = result.get<sol::optional<float>>(1);
-        if (!targetX || !targetY) {
-            return {};
-        }
-        action.targetX = *targetX;
-        action.targetY = *targetY;
+    WanderActionResult action;
+    action.targetX = *targetX;
+    action.targetY = *targetY;
+    if (const sol::optional<float> acceptance = table["acceptance_radius"]) {
+        action.acceptanceRadius = *acceptance;
+    }
+    if (const sol::optional<float> rest = table["rest_seconds"]) {
+        action.restAfterArriveSeconds = *rest;
     }
 
     action.valid =
@@ -199,10 +170,4 @@ void WildAi::beginRest(WildBrain& brain, float seconds) {
     brain.restRemainingSeconds = std::max(seconds, 0.f);
 }
 
-float WildAi::distanceSquared(float ax, float ay, float bx, float by) {
-    const float dx = ax - bx;
-    const float dy = ay - by;
-    return dx * dx + dy * dy;
-}
-
-}  // namespace heaven::field
+}  // namespace heaven::instance

@@ -29,7 +29,19 @@ struct Options {
     std::uint16_t chatPort = 9000;
     std::string fieldHost = "127.0.0.1";
     std::uint16_t fieldPort = 9200;
-    std::int64_t ticketTtl = 60;
+    std::string instanceHost = "127.0.0.1";
+    std::uint16_t instancePort = 9300;
+
+    // 티켓 수명. 캐릭터를 고를 때 한 번 발급하고 접속 내내 그것만 쓴다.
+    //
+    // 짧으면 안 되는 이유는 인스턴스 때문이다. 필드에서 인스턴스로 갈 때 연결을
+    // 갈아타고, 나올 때 필드 티켓으로 다시 붙는다. 접속 20분 뒤에 던전을 나왔는데
+    // 티켓이 만료돼 있으면 필드로 돌아갈 방법이 없다.
+    //
+    // 갱신 경로는 없다. 필요해지면 아직 안 만료된 티켓을 제출해 새것을 받는
+    // RenewTicketRequest 를 여기 붙이면 된다 — issued_unix 를 원본 그대로 두면
+    // 스키마 변경 없이 절대 상한이 생긴다.
+    std::int64_t ticketTtl = 12 * 60 * 60;
     unsigned threads = 0;
     unsigned authThreads = 4;
     bool verbose = false;
@@ -61,7 +73,11 @@ void printUsage() {
                  "  --field-port <n>   field port handed to clients (default 9200)\n"
                  "  --chat-host <h>    chat host handed to clients (default 127.0.0.1)\n"
                  "  --chat-port <n>    chat port handed to clients (default 9000)\n"
-                 "  --ticket-ttl <s>   ticket lifetime in seconds (default 60)\n"
+                 "  --instance-host <h>  instance host handed to clients (default 127.0.0.1)\n"
+                 "  --instance-port <n>  instance port handed to clients (default 9300)\n"
+                 "  --ticket-ttl <s>   ticket lifetime in seconds (default 43200 = 12h).\n"
+                 "                     Clients reuse these for the whole session,\n"
+                 "                     including re-entering the field after an instance.\n"
                  "  --threads <n>      IOCP worker threads (default: hardware concurrency)\n"
                  "  --auth-threads <n> threads for DB lookup and password verification\n"
                  "                     (default 4; these must never run on IOCP workers)\n"
@@ -123,6 +139,11 @@ Options parseArgs(int argc, char** argv) {
             options.chatHost = next("--chat-host");
         } else if (arg == "--chat-port") {
             options.chatPort = static_cast<std::uint16_t>(std::stoi(next("--chat-port")));
+        } else if (arg == "--instance-host") {
+            options.instanceHost = next("--instance-host");
+        } else if (arg == "--instance-port") {
+            options.instancePort =
+                static_cast<std::uint16_t>(std::stoi(next("--instance-port")));
         } else if (arg == "--ticket-ttl") {
             options.ticketTtl = std::stoll(next("--ticket-ttl"));
         } else if (arg == "--threads") {
@@ -264,6 +285,8 @@ int main(int argc, char** argv) {
         context.targets = {
             {std::string(heaven::proto::kAudienceField), options.fieldHost, options.fieldPort},
             {std::string(heaven::proto::kAudienceChat), options.chatHost, options.chatPort},
+            {std::string(heaven::proto::kAudienceInstance), options.instanceHost,
+             options.instancePort},
         };
         context.ticketTtlSeconds = options.ticketTtl;
         context.issuer = options.issuer;

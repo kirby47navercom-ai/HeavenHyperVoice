@@ -660,7 +660,6 @@ std::vector<Character> OdbcStore::fetchCharacters(SQLHSTMT statement) {
             if (const proto::SpeciesBase* base = proto::findSpeciesByDex(activeDex)) {
                 character.hasPartner = true;
                 character.partner.speciesId = base->id;
-                character.partner.name = std::string(base->name);
                 character.partner.stats =
                     proto::computeStats(*base, character.level, {}, {});
             } else {
@@ -971,82 +970,6 @@ bool OdbcStore::setUnlockBitLocked(Connection& connection, std::uint64_t account
     }
 }
 
-bool OdbcStore::unlockSpecies(std::uint64_t accountId, std::uint64_t characterId,
-                              std::uint16_t speciesId) {
-    if (!canWrite_) {
-        return false;
-    }
-    const proto::SpeciesBase* species = proto::findSpecies(speciesId);
-    if (species == nullptr) {
-        return false;
-    }
-
-    Lease connection(*this);
-    return setUnlockBitLocked(*connection, accountId, characterId, species->dex);
-}
-
-DeleteResult OdbcStore::setActivePartner(std::uint64_t accountId, std::uint64_t characterId,
-                                         std::uint16_t speciesId) {
-    if (!canWrite_) {
-        return DeleteResult::NotSupported;
-    }
-    const proto::SpeciesBase* species = proto::findSpecies(speciesId);
-    if (species == nullptr) {
-        return DeleteResult::NotFound;
-    }
-
-    Lease connection(*this);
-
-    std::uint64_t character = characterId;
-    std::uint64_t owner = accountId;
-
-    try {
-        // 꺼낼 수 있는 것은 파티 안에 있는 것뿐이다. 해금 여부만 보면 해금만
-        // 해 둔 아무 포켓몬이나 꺼낼 수 있다.
-        //
-        // 남의 캐릭터 번호를 넣으면 남의 파티가 조회되지만, 아래 setActiveDex 가
-        // account_id 로 걸러 0행이 되므로 아무것도 바뀌지 않는다.
-        std::uint16_t member = 0;
-        SQLLEN partyLength = 0;
-        SQLLEN memberLength = 0;
-        bool inParty = false;
-
-        bindUInt64(connection->selectParty, 1, character, partyLength);
-        require(SQLExecute(connection->selectParty), SQL_HANDLE_STMT, connection->selectParty,
-                "SQLExecute(selectParty)");
-        SQLBindCol(connection->selectParty, 1, SQL_C_USHORT, &member, sizeof(member),
-                   &memberLength);
-        while (succeeded(SQLFetch(connection->selectParty))) {
-            if (member == species->dex) {
-                inParty = true;
-            }
-        }
-        SQLCloseCursor(connection->selectParty);
-
-        if (!inParty) {
-            return DeleteResult::NotUnlocked;
-        }
-
-        std::uint16_t dex = species->dex;
-        SQLLEN setLengths[3] = {};
-        bindUInt16(connection->setActiveDex, 1, dex, setLengths[0]);
-        bindUInt64(connection->setActiveDex, 2, character, setLengths[1]);
-        bindUInt64(connection->setActiveDex, 3, owner, setLengths[2]);
-        require(SQLExecute(connection->setActiveDex), SQL_HANDLE_STMT, connection->setActiveDex,
-                "SQLExecute(setActiveDex)");
-
-        // 행 수는 보지 않는다. 이미 그 종족을 데리고 있으면 MySQL 이 0 을
-        // 돌려주는데, 그것도 성공이다. 존재 확인은 위 testUnlockBit 에서 끝났다.
-        SQLCloseCursor(connection->setActiveDex);
-        return DeleteResult::Deleted;
-    } catch (const std::exception& e) {
-        SQLCloseCursor(connection->selectParty);
-        SQLCloseCursor(connection->setActiveDex);
-        spdlog::error("set active partner failed for character {}: {}", characterId, e.what());
-        return DeleteResult::Error;
-    }
-}
-
 PartyResult OdbcStore::setParty(std::uint64_t accountId, std::uint64_t characterId,
                                 const std::vector<std::uint16_t>& dexNumbers,
                                 std::uint16_t activeDex) {
@@ -1168,16 +1091,7 @@ PartyResult OdbcStore::setParty(std::uint64_t accountId, std::uint64_t character
         bindUInt64(connection->setActiveDex, 3, owner, activeLengths[2]);
         require(SQLExecute(connection->setActiveDex), SQL_HANDLE_STMT, connection->setActiveDex,
                 "SQLExecute(setActiveDex)");
-
-        // 여기 0행이면 그런 캐릭터가 없다는 뜻이다. 파티를 비우기만 하는
-        // 요청에는 위 해금 확인이 돌지 않아서, 소유 확인이 이 한 번뿐이다.
-        SQLLEN affected = 0;
-        SQLRowCount(connection->setActiveDex, &affected);
         SQLCloseCursor(connection->setActiveDex);
-        if (affected == 0 && dexNumbers.empty() && activeDex == 0) {
-            // 이미 아무도 안 꺼낸 상태여도 0행이 나온다. 파티를 비우는 것 말고는
-            // 바뀐 것이 없으니 그대로 커밋한다.
-        }
     } catch (const std::exception& e) {
         rollback();
         spdlog::error("party update failed for character {}: {}", characterId, e.what());

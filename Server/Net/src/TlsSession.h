@@ -90,8 +90,13 @@ private:
     std::mutex mutex_;
     TlsChannel tls_;
     std::vector<unsigned char> plainAccum_;  // 아직 프레임이 안 된 평문
-    std::vector<char> sendBuffer_;           // 보낼 암호문
-    std::size_t sendOffset_ = 0;
+
+    // 보낼 암호문을 두 벌로 나눈다. WSASend 가 떠 있는 동안 커널이 inFlight_ 를
+    // 비동기로 읽으므로 그 벡터는 절대 건드리면 안 된다 — 한 벌만 쓰면 다음 send 의
+    // drainEncrypted 가 append 하다 재할당해서 커널이 해제된 메모리를 읽는다.
+    std::vector<char> pending_;   // 쌓이는 쪽. 전송 중이 아니다.
+    std::vector<char> inFlight_;  // WSASend 에 넘긴 쪽. 완료까지 고정.
+    std::size_t sendOffset_ = 0;  // inFlight_ 안에서 이미 나간 바이트
     bool sendInFlight_ = false;
 
     std::atomic<bool> authenticated_{false};

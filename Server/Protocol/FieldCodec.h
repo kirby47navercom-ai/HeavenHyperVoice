@@ -72,10 +72,14 @@ inline Bytes wrapField(flatbuffers::FlatBufferBuilder& fbb, HeavenField::Payload
 // Enter 와 Move 를 만드는 코드는 여기 없다. 서버는 그 둘을 받기만 하고,
 // 보내는 쪽은 클라이언트가 자기 인코더를 들고 있다.
 
+// originOffset 은 클라가 좌표를 옮길 때 쓴다 (서버 = 언리얼 + offset).
+// roomId 는 인스턴스 서버만 채운다. 필드는 0 이다.
 inline Bytes encodeEnterAck(std::uint64_t entityId, float x, float y, float facing,
-                            std::uint32_t mapId) {
+                            std::uint32_t mapId, float originOffset,
+                            std::uint32_t roomId = 0) {
     flatbuffers::FlatBufferBuilder fbb;
-    auto ack = HeavenField::CreateEnterAck(fbb, entityId, x, y, facing, mapId);
+    auto ack = HeavenField::CreateEnterAck(fbb, entityId, x, y, facing, mapId, roomId,
+                                           originOffset);
     return detail::wrapField(fbb, HeavenField::Payload::EnterAck, ack.Union());
 }
 

@@ -1,10 +1,13 @@
 #pragma once
 
-// 필드의 엔티티와 시야.
+// 인스턴스 방 하나의 엔티티와 시야.
 //
-// 야생 포켓몬은 여기 없다. 필드는 플레이어와 그 파트너만 있고 전투도 없다.
-// 야생과 전투는 InstanceServer 가 자기 World 사본으로 따로 돌린다 — 전투가
-// 붙으면서 갈라질 코드라 한 벌로 묶지 않았다.
+// FieldServer/src/World.* 에서 갈라져 나온 사본이다. 필드 쪽은 야생도 전투도
+// 없어서 이 파일의 야생 부분이 통째로 빠져 있다. 전투가 붙을 곳이 여기라
+// 한 벌로 묶지 않았다 — 대신 이동 검증·시야 판정처럼 양쪽에 다 있는 부분을
+// 고칠 때는 반대쪽도 같이 봐야 한다.
+//
+// 방 하나 = 이 객체 하나다. RoomManager 가 종류별로 여러 개를 들고 있다.
 //
 // 섹터 격자는 **후보를 추리는 broad phase** 일 뿐이다. "누가 보이는가" 는 전적으로
 // 엔티티마다 들고 있는 뷰 리스트가 답한다. 덕분에 시야가 사각형이 아니라 원형이고,
@@ -27,10 +30,12 @@
 #include "CharacterStore.h"
 #include "MapCollision.h"
 #include "FieldCodec.h"
-#include "FieldGeometry.h"
+#include "InstanceGeometry.h"
 #include "TlsSession.h"
 
-namespace heaven::field {
+namespace heaven::instance {
+
+class WildAi;
 
 using net::TlsSession;
 
@@ -49,6 +54,10 @@ struct Entity {
     // 후보를 추린 뒤 이 값으로 한 번 더 거른다.
     std::uint32_t mapId = 0;
 
+    // 야생 포켓몬이면 true. 세션이 없고 AI 가 움직인다. species 는 자기 종족.
+    bool isWild = false;
+    std::uint16_t species = 0;
+
     Position position;
     int sector = 0;
 
@@ -59,11 +68,14 @@ struct Entity {
     std::chrono::steady_clock::time_point lastMoveAt;
 
     // 남은 지터 예산. 메시지마다 kSpeedSlack 을 새로 주면 자주 보내는 것만으로
-    // 상한을 몇십 배 넘길 수 있다 (FieldGeometry.h 참고).
-    float slack = proto::kSpeedSlack;
+    // 상한을 몇십 배 넘길 수 있다 (InstanceGeometry.h 참고).
+    float slack = kSpeedSlack;
 
     bool movedThisTick = false;
 };
+
+// 야생 번호는 캐릭터 번호(작은 BIGINT)와 겹치지 않게 높은 범위를 쓴다.
+inline constexpr std::uint64_t kWildIdBase = 1ull << 52;
 
 // 입장하면서 밀려난 기존 접속. 새 접속이 그 자리를 빼앗으므로, 밀려난 쪽은
 // leave() 를 타지 못한다 — 그쪽 onClosed 가 도착할 때는 이미 월드에 없다.
@@ -94,6 +106,17 @@ public:
     // 주인이 다르면 아무것도 하지 않고 nullopt 를 돌려준다.
     std::optional<Position> leave(std::uint64_t characterId, const TlsSession* session);
 
+    // 야생 포켓몬을 월드에 넣는다. 세션이 없어 아무에게도 전송하지 않지만,
+    // 근처 플레이어에게는 spawn 으로 나타난다. entityId 는 kWildIdBase 부터 쓴다.
+    void enterWild(std::uint64_t entityId, std::uint16_t species, const Position& position);
+
+    // 모든 야생 포켓몬을 한 틱 전진시킨다. AI FSM 이 목표를 유지하고 서버가
+    // 속도와 벽을 강제한다. 틱 스레드에서만 부를 것 (WildAi 는 스레드 안전하지 않다).
+    //
+    // Lua action 호출은 FSM 전환 때만, 월드 락 **밖에서** 한다. 안에서 돌리면
+    // 야생 마릿수만큼 플레이어 이동이 뒤에 밀린다.
+    void advanceWild(float dt, WildAi& ai);
+
     // 꺼내 놓은 포켓몬을 바꾼다. 나를 보고 있는 사람 전부에게 알린다.
     //
     // Snapshot 의 partner_species 는 spawned 에만 실려서, 이미 보고 있는 상대는
@@ -111,7 +134,7 @@ public:
     // 20Hz. 이번 주기에 움직인 것들을 뷰어별로 묶어 보낸다.
     void tick();
 
-    // 주기적 저장용 스냅샷.
+    // 주기적 저장용 스냅샷. 야생은 저장할 것이 없어 빠진다.
     std::vector<std::pair<std::uint64_t, Position>> positions();
 
     std::size_t size();
@@ -135,7 +158,7 @@ private:
     const MapCollision* collision_ = nullptr;
 
     // 후보 추출 전용 공간 인덱스. 시야 판정에는 쓰이지 않는다.
-    std::array<std::unordered_set<std::uint64_t>, proto::kSectorCount> sectors_;
+    std::array<std::unordered_set<std::uint64_t>, kSectorCount> sectors_;
 };
 
-}  // namespace heaven::field
+}  // namespace heaven::instance

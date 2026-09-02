@@ -221,7 +221,8 @@ bool FieldHandler::enterWithoutAuth(TlsSession& session, const HeavenField::Ente
 
         // EnterAck 이 Spawn 보다 먼저 나가야 한다.
         self->send(
-            proto::encodeEnterAck(characterId, start.x, start.y, start.facing, start.mapId));
+            proto::encodeEnterAck(characterId, start.x, start.y, start.facing, start.mapId,
+                                  proto::kWorldSize / 2.f));
 
         displaced = context_.world->enter(characterId, characterId, nickname_,
                                           request.dev_partner_species(), start, self);
@@ -323,7 +324,7 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
             // EnterAck 이 Spawn 보다 먼저 나가야 한다. 클라가 자기 번호를 알기 전에
             // 남의 Spawn 을 받으면 어느 것이 자기인지 모른다.
             self->send(proto::encodeEnterAck(characterId, start.x, start.y, start.facing,
-                                             start.mapId));
+                                             start.mapId, proto::kWorldSize / 2.f));
 
             displaced = context->world->enter(characterId, accountId, character->nickname,
                                               partner, start, self);

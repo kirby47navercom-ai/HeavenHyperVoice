@@ -48,11 +48,11 @@ inline constexpr SpeciesBase kSpecies[] = {
     {2,  487, "기라티나",  150, 100, 120, 100, 120,  90},
     {3,  403, "꼬링크",     45,  65,  34,  40,  34,  45},
     {4,    7, "꼬부기",     44,  48,  65,  50,  64,  43},
-    {5,  749, "꽁어름",     70,  80,  70,  80,  70,  70},
+    {5,  712, "꽁어름",     70,  80,  70,  80,  70,  70},
     {6,  483, "디아루가",  100, 120, 120, 150, 100,  90},
     {7,  280, "랄토스",     28,  25,  25,  45,  35,  40},
     {8,  387, "모부기",     55,  68,  64,  45,  55,  31},
-    {9, 1105, "벼리짱",     70,  80,  70,  80,  70,  70},
+    {9,  958, "벼리짱",     70,  80,  70,  80,  70,  70},
     {10,  390, "불꽃숭이",   44,  58,  44,  58,  44,  61},
     {11,  493, "아르세우스",120, 120, 120, 120, 120, 120},
     {12,  133, "이브이",     55,  55,  50,  45,  65,  55},
@@ -91,15 +91,37 @@ inline constexpr bool isStarterDex(std::uint16_t dex) {
     return false;
 }
 
-// 개체값은 스탯당 0~31 이고 태어날 때 정해져 바뀌지 않는다.
+// 보스 인스턴스(레이드) 전용 종족. **도감번호**다.
 //
-// 노력치 상한(스탯당 252, 합계 510)과 레벨 상한(100)은 여기 두지 않는다.
-// 올릴 경로가 아직 없어 강제할 곳도 없었고, 쓰이지 않는 상수는 "검사하고
-// 있다" 는 착각만 만든다. 노력치를 올리는 코드가 생길 때 그 옆에 둘 것.
-inline constexpr std::uint8_t kMaxIndividualValue = 31;
+// 이 종족은 사냥터에 야생으로 나오면 안 된다. 레이드에서만 만나는 것이 그 종족의
+// 값어치인데, 들판에서 배회하고 있으면 그게 사라진다.
+//
+// 목록을 여기 두는 이유는 걸러야 할 곳이 두 군데이기 때문이다 — 맵에 적힌 출현
+// 목록과, 맵이 아무것도 안 적었을 때 쓰는 종족표 전체. 한쪽만 막으면 나머지로
+// 새어 나온다.
+inline constexpr std::uint16_t kBossDex[] = {
+    483,  // 디아루가
+    484,  // 펄기아
+    487,  // 기라티나
+    493,  // 아르세우스
+};
+
+inline constexpr bool isBossDex(std::uint16_t dex) {
+    for (const std::uint16_t boss : kBossDex) {
+        if (boss == dex) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// 사냥터에 야생으로 낼 수 있는 종족인가. 표에 없는 번호는 애초에 false 다.
+inline constexpr bool isWildSpawnable(std::uint16_t dex) {
+    return dex != 0 && !isBossDex(dex);
+}
 
 // 해금 비트맵의 크기. DB 의 character_unlocks.dex_bits BINARY(160) 과 같아야 한다.
-// 1280 비트라 현재 최대 도감번호 1105 를 담고도 남는다.
+// 1280 비트라 현재 최대 도감번호 958 을 담고도 남는다.
 inline constexpr std::size_t kUnlockBitmapBytes = 160;
 
 // 내부 번호를 도감번호로 바꾼다. 모르는 종족이면 0.
@@ -248,6 +270,28 @@ inline constexpr bool startersExist() {
     return true;
 }
 static_assert(startersExist(), "스타터 도감번호가 종족 표에 없다");
+
+// 보스도 표에 있어야 레이드에서 능력치를 계산할 수 있다.
+inline constexpr bool bossesExist() {
+    for (const std::uint16_t dex : kBossDex) {
+        if (findSpeciesByDex(dex) == nullptr) {
+            return false;
+        }
+    }
+    return true;
+}
+static_assert(bossesExist(), "보스 도감번호가 종족 표에 없다");
+
+// 겹치면 캐릭터 생성만으로 보스를 손에 넣는다.
+inline constexpr bool startersAreNotBosses() {
+    for (const std::uint16_t dex : kStarterDex) {
+        if (isBossDex(dex)) {
+            return false;
+        }
+    }
+    return true;
+}
+static_assert(startersAreNotBosses(), "스타터와 보스가 겹친다");
 }  // namespace detail
 
 }  // namespace heaven::proto

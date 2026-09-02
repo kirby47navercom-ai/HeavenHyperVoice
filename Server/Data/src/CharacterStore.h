@@ -131,18 +131,6 @@ public:
                                          std::uint16_t speciesId,
                                          const Appearance& appearance) = 0;
 
-    // 종족을 해금한다. 이미 해금돼 있으면 아무 일도 없다 (같은 결과를 돌려준다).
-    virtual bool unlockSpecies(std::uint64_t accountId, std::uint64_t characterId,
-                               std::uint16_t speciesId) = 0;
-
-    // 파티에 있는 것 중에서 꺼낼 한 마리를 고른다. 파티를 그대로 두고 꺼낸
-    // 것만 바꿀 때 쓴다 — 파티까지 함께 바꾸려면 setParty 를 쓴다.
-    //
-    // 파티 밖의 종족은 거절한다. 클라이언트가 보낸 번호를 그대로 믿으면 해금만
-    // 해 둔 아무 포켓몬이나 꺼내 쓸 수 있다.
-    virtual DeleteResult setActivePartner(std::uint64_t accountId, std::uint64_t characterId,
-                                          std::uint16_t speciesId) = 0;
-
     // 파티 구성과 꺼낼 한 마리를 함께 정한다.
     //
     // 둘을 나누지 않는 이유는, 파티에서 빼는 순간 꺼내 놓은 것이 파티 밖이 될 수

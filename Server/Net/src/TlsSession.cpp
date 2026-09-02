@@ -40,7 +40,7 @@ void TlsSession::closeAfterFlush() {
     bool drained = false;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        drained = !sendInFlight_ && sendOffset_ >= sendBuffer_.size();
+        drained = !sendInFlight_ && pending_.empty();
     }
     if (drained) {
         closeSocket();
@@ -137,18 +137,8 @@ void TlsSession::onSendComplete(DWORD bytes, bool ok) {
         sendInFlight_ = false;
         sendOffset_ += bytes;
 
-        if (sendOffset_ >= sendBuffer_.size()) {
-            sendBuffer_.clear();
-            sendOffset_ = 0;
-        } else if (sendOffset_ > sendBuffer_.size() / 2) {
-            // 앞부분이 절반 넘게 소비되면 압축한다. 매번 erase 하면 O(n^2) 이 된다.
-            sendBuffer_.erase(sendBuffer_.begin(),
-                              sendBuffer_.begin() + static_cast<std::ptrdiff_t>(sendOffset_));
-            sendOffset_ = 0;
-        }
-
         flushLocked();
-        drained = !sendInFlight_ && sendOffset_ >= sendBuffer_.size();
+        drained = !sendInFlight_ && pending_.empty();
     }
 
     if (drained && closeAfterFlush_.load(std::memory_order_acquire)) {
@@ -166,7 +156,7 @@ void TlsSession::send(const proto::Bytes& frame) {
     bool overflow = false;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        if (sendBuffer_.size() - sendOffset_ >= kMaxSendQueueBytes) {
+        if (pending_.size() + (inFlight_.size() - sendOffset_) >= kMaxSendQueueBytes) {
             overflow = true;
         } else if (!tls_.writePlain(frame.data(), frame.size())) {
             spdlog::warn("{}: {}", peer_, tls_.lastError());
@@ -186,21 +176,31 @@ void TlsSession::send(const proto::Bytes& frame) {
 }
 
 void TlsSession::flushLocked() {
-    tls_.drainEncrypted(sendBuffer_);
+    // 쌓기는 언제나 pending_ 으로. inFlight_ 는 WSASend 가 끝날 때까지 고정이다.
+    tls_.drainEncrypted(pending_);
 
     if (sendInFlight_ || closed_.load(std::memory_order_acquire)) {
         return;
     }
-    if (sendOffset_ >= sendBuffer_.size()) {
-        return;
+
+    if (sendOffset_ >= inFlight_.size()) {
+        // 앞 묶음은 다 나갔다. 다음 묶음을 통째로 넘겨받는다 (버퍼를 맞바꿔
+        // 재할당 없이 돌려 쓴다).
+        if (pending_.empty()) {
+            return;
+        }
+        inFlight_.clear();
+        inFlight_.swap(pending_);
+        sendOffset_ = 0;
     }
+    // 부분 전송이면 남은 뒷부분을 이어서 보낸다.
 
     sendRef_ = shared_from_this();
     ZeroMemory(static_cast<OVERLAPPED*>(&sendOp_), sizeof(OVERLAPPED));
 
     WSABUF buffer;
-    buffer.buf = sendBuffer_.data() + sendOffset_;
-    buffer.len = static_cast<ULONG>(sendBuffer_.size() - sendOffset_);
+    buffer.buf = inFlight_.data() + sendOffset_;
+    buffer.len = static_cast<ULONG>(inFlight_.size() - sendOffset_);
 
     sendInFlight_ = true;
     pendingOps_.fetch_add(1, std::memory_order_acq_rel);

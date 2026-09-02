@@ -46,5 +46,6 @@ add_subdirectory(Data)
 add_subdirectory(LoginServer)
 add_subdirectory(ChatServer)
 add_subdirectory(FieldServer)
+add_subdirectory(InstanceServer)
 add_subdirectory(Launcher)
 

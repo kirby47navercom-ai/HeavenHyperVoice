@@ -468,7 +468,7 @@ bool LoginHandler::handleDeleteCharacter(TlsSession& session,
     });
 }
 
-// ------------------------------------------------------------- 파트너 방생
+// --------------------------------------------------------------- 파티 편집
 
 bool LoginHandler::handleSetParty(TlsSession& session,
                                   const HeavenLogin::SetPartyRequest& request) {
@@ -516,6 +516,8 @@ bool LoginHandler::handleSetParty(TlsSession& session,
         return std::pair{ok, message};
     });
 }
+
+// ------------------------------------------------------------- 파트너 방생
 
 bool LoginHandler::handleReleasePartner(TlsSession& session,
                                         const HeavenLogin::ReleasePartnerRequest& request) {

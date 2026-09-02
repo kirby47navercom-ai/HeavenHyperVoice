@@ -37,7 +37,6 @@ inline constexpr std::size_t kMinPasswordChars = 8;
 // 종족을 골랐는가" 뿐이고 나머지는 전부 파생값이다.
 struct PartnerInfo {
     std::uint16_t speciesId = 0;   // 서버 내부 번호. 와이어에는 도감번호가 나간다.
-    std::string name;              // 종족명. 저장하지 않고 표에서 온다.
 
     // 캐릭터 레벨과 종족값으로 계산한 결과. 저장소가 읽어올 때 채운다.
     PokemonStats stats;

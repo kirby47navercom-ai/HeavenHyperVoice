@@ -18,13 +18,20 @@
 
 namespace sol { class state; }
 
-namespace heaven::field {
+namespace heaven::instance {
+
+// 야생이 돌아다니는 구역. 방마다 다르다 — 맵의 경계 구를 따라간다.
+// Lua 는 이 상자 안에서만 목표를 고른다.
+struct WildArea {
+    float centerX = 0.f;
+    float centerY = 0.f;
+    float halfExtent = 4000.f;
+};
 
 // 이번 틱에 이 포켓몬이 향할 목표점. moving 이 false 면 제자리다.
 struct WildIntent {
     float targetX = 0.f;
     float targetY = 0.f;
-    float acceptanceRadius = 80.f;
     bool moving = false;
 };
 
@@ -49,13 +56,11 @@ public:
     // 시딩을 그대로 둔다). 기동 시 한 번만 부를 것.
     void seed(unsigned value);
 
-private:
-    enum class WildMode : std::uint8_t {
-        Wander,
-        Combat,
-        Downed
-    };
+    // 돌아다닐 구역. 방을 만들 때 한 번만 부를 것.
+    // 안 부르면 기본 상자(원점 둘레 4000uu)라 맵과 어긋난다.
+    void setArea(const WildArea& area) { area_ = area; }
 
+private:
     enum class WildPhase : std::uint8_t {
         NeedAction,
         Moving,
@@ -63,7 +68,6 @@ private:
     };
 
     struct WildBrain {
-        WildMode mode = WildMode::Wander;
         WildPhase phase = WildPhase::NeedAction;
         float homeX = 0.f;
         float homeY = 0.f;
@@ -88,10 +92,10 @@ private:
     WanderActionResult callWanderAction(std::uint64_t entityId, std::uint16_t species,
                                         float x, float y, const WildBrain& brain);
     void beginRest(WildBrain& brain, float seconds);
-    static float distanceSquared(float ax, float ay, float bx, float by);
 
     std::unique_ptr<sol::state> lua_;
+    WildArea area_;
     std::unordered_map<std::uint64_t, WildBrain> brains_;
 };
 
-}  // namespace heaven::field
+}  // namespace heaven::instance

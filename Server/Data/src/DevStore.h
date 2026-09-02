@@ -35,10 +35,6 @@ public:
     CreateCharacterResult create(std::uint64_t accountId, std::string_view nickname,
                                  std::uint16_t speciesId,
                                  const Appearance& appearance) override;
-    bool unlockSpecies(std::uint64_t accountId, std::uint64_t characterId,
-                       std::uint16_t speciesId) override;
-    DeleteResult setActivePartner(std::uint64_t accountId, std::uint64_t characterId,
-                                  std::uint16_t speciesId) override;
     PartyResult setParty(std::uint64_t accountId, std::uint64_t characterId,
                          const std::vector<std::uint16_t>& dexNumbers,
                          std::uint16_t activeDex) override;
