@@ -7,7 +7,7 @@
 #include <array>
 #include <vector>
 
-namespace heaven::field {
+namespace heaven {
 
 namespace {
 
@@ -87,4 +87,4 @@ PathResult Pathfinder::find(const Map& map, const nav::Vec3& start, const nav::V
     return result;
 }
 
-}  // namespace heaven::field
+}  // namespace heaven

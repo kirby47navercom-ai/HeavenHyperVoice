@@ -8,8 +8,8 @@
 // 정원으로 묶인다.
 //
 // 틱은 방마다 스레드를 띄우지 않는다. 스레드 N 개가 방을 `id % N` 으로 나눠
-// 맡는다. 한 방은 언제나 같은 스레드가 돌리므로 WildAi 의 Lua VM 이 두
-// 스레드에서 동시에 불릴 일이 없다.
+// 맡는다. 한 방은 언제나 같은 스레드가 돌리므로 WildAi 가 두 스레드에서
+// 동시에 불릴 일이 없다 (스레드 안전하지 않다).
 
 #include <chrono>
 #include <cstdint>
@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-#include "MapCollision.h"
+#include "Map.h"
 #include "WildAi.h"
 #include "World.h"
 
@@ -41,9 +41,6 @@ struct RoomSettings {
     // 잠깐 나갔다 오는 사람이 매번 새 방을 만들지 않게 여유를 준다.
     std::chrono::seconds emptyLinger{60};
 
-    // Lua 행동 스크립트. 방마다 자기 VM 을 하나씩 만든다.
-    std::string wildScript;
-
     // 0 이면 매번 다르게. 지정하면 방 번호와 섞어 방마다 다른, 그러나
     // 재현 가능한 배치를 만든다.
     unsigned wildSeed = 0;
@@ -58,7 +55,7 @@ struct Room {
     std::uint32_t type = 0;
 
     World world;
-    std::unique_ptr<WildAi> ai;  // 스크립트를 못 읽으면 비어 있다 (야생 없는 방)
+    std::unique_ptr<WildAi> ai;  // 야생 없는 방이면 비어 있다
 
     // 아래 둘은 RoomManager::mutex_ 를 쥔 채로만 만진다.
     int players = 0;
@@ -68,13 +65,12 @@ struct Room {
 // 종류 하나의 설정. main 이 소유하고 서버보다 오래 산다.
 //
 // 종류마다 맵이 다르다 (1 번은 들판, 나중에 동굴 등이 붙는다). 맵이 없는
-// 종류는 collision 이 nullptr 이고 지형 검사를 하지 않는다.
+// 종류는 map 이 nullptr 이고 지형 검사를 하지 않는다.
 struct InstanceType {
-    const MapCollision* collision = nullptr;
+    const Map* map = nullptr;
 
-    // 여기 나올 야생 종족. **서버 내부 번호**다 (맵 파일은 도감번호로 적고
-    // 읽을 때 바꾼다). 비어 있으면 종족 표 전체에서 고른다 — 전설까지 나오므로
-    // 맵마다 적어 주는 편이 낫다.
+    // 여기 나올 야생 종족. **서버 내부 번호**다 (옵션은 도감번호로 받고
+    // 읽을 때 바꾼다). 비어 있으면 종족 표에서 보스만 뺀 전체를 쓴다.
     std::vector<std::uint16_t> wildSpecies;
 };
 

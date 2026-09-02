@@ -40,9 +40,9 @@ float wildMoveSpeed(std::uint16_t species) {
     }
 }
 
-// 캡슐 크기는 클라이언트 기본값과 같아야 예측이 어긋나지 않는다. 서버가
-// 뜬 뒤로 바뀌지 않으므로 상수로 둔다.
-constexpr AgentSettings kAgent{};
+// 맵이 없을 때 쓰는 캡슐 기본값. 맵이 있으면 그쪽 값을 쓴다 — 지형을 만든
+// 설정과 판정에 쓰는 캡슐이 다르면 navmesh 밖으로 새거나 못 지나간다.
+constexpr nav::Agent kDefaultAgent{};
 
 }  // namespace
 
@@ -228,10 +228,14 @@ void World::advanceWild(float dt, WildAi& ai) {
             // 하지 않는다 — FSM 이 짧게 쉰 뒤 새 wander action 을 뽑는다.
             // ponytail: 막힌 목표를 계속 고르면 벽 앞에서 잠깐 서성인다. 신경 쓰이면
             //           blockedAlong 결과를 Lua 로 돌려주고 목표를 바꾸게 하면 된다.
-            if (collision_ != nullptr &&
-                collision_->blockedAlong(entity.position.x, entity.position.y, nx, ny, kAgent)) {
-                blocked.push_back(p.id);
-                continue;
+            if (map_ != nullptr && map_->loaded()) {
+                const nav::Agent& agent = map_->agent();
+                const nav::Vec3 from{entity.position.x, entity.position.y, agent.halfHeight};
+                const nav::Vec3 to{nx, ny, agent.halfHeight};
+                if (map_->blockedAlong(from, to, agent)) {
+                    blocked.push_back(p.id);
+                    continue;
+                }
             }
 
             entity.position.facing = std::atan2(dy, dx) * 180.f / 3.14159265f;
@@ -426,8 +430,14 @@ void World::move(std::uint64_t characterId, float x, float y, float facing,
     // 벽·바닥·경계를 한 번에 본다. 캡슐 높이는 표본마다 그 자리 지형에서 다시
     // 잡으므로, 언덕 위의 벽도 제 높이에서 판정된다.
     bool corrected = tooFar;
-    if (collision_ != nullptr &&
-        collision_->blockedAlong(self.position.x, self.position.y, x, y, kAgent)) {
+    bool blockedByTerrain = false;
+    if (map_ != nullptr && map_->loaded()) {
+        const nav::Agent& agent = map_->agent();
+        const nav::Vec3 from{self.position.x, self.position.y, agent.halfHeight};
+        const nav::Vec3 to{x, y, agent.halfHeight};
+        blockedByTerrain = map_->blockedAlong(from, to, agent);
+    }
+    if (blockedByTerrain) {
         // 통과시키지 않고 제자리에 둔다. 밀어내기(슬라이딩)는 클라이언트
         // 물리가 이미 하므로, 서버는 "거기 못 간다" 만 말하면 된다.
         spdlog::debug("{} blocked at ({:.0f}, {:.0f})", self.nickname, x, y);

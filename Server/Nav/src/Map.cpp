@@ -13,7 +13,7 @@
 #include <sstream>
 #include <string>
 
-namespace heaven::field {
+namespace heaven {
 
 namespace {
 
@@ -607,4 +607,4 @@ bool Map::nearestStandable(float x, float y, float radius, const nav::Agent& age
     return found;
 }
 
-}  // namespace heaven::field
+}  // namespace heaven

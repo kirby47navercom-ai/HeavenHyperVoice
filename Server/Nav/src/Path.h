@@ -4,7 +4,7 @@
 
 #include "Map.h"
 
-namespace heaven::field {
+namespace heaven {
 
 struct PathResult {
     bool found = false;
@@ -17,4 +17,4 @@ public:
                     const nav::Agent& agent) const;
 };
 
-}  // namespace heaven::field
+}  // namespace heaven

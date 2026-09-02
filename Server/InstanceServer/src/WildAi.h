@@ -16,7 +16,15 @@
 #include "Map.h"
 #include "Path.h"
 
-namespace heaven::field {
+namespace heaven::instance {
+
+// 야생이 돌아다니는 구역. 방마다 다르다 — 맵 경계에서 뽑아 넣는다.
+// 인스턴스는 필드와 월드 크기도 스폰 지점도 달라서 상수로 둘 수 없다.
+struct WildArea {
+    float centerX = 0.f;
+    float centerY = 0.f;
+    float halfExtent = 4000.f;
+};
 
 // 이번 틱에 이 포켓몬이 향할 목표점. moving 이 false 면 제자리다.
 struct WildIntent {
@@ -37,6 +45,9 @@ public:
     // 전진하고, 새 wander action 이 필요할 때만 C++ 에서 목표를 뽑는다.
     WildIntent decide(std::uint64_t entityId, std::uint16_t species, float x, float y,
                       float dt);
+
+    // 돌아다닐 구역. 방을 만들 때 한 번만 부를 것.
+    void setArea(const WildArea& area) { area_ = area; }
 
     // 서버 맵. nullptr 이면 목표점으로 직선 이동한다.
     void setMap(const Map* map) {
@@ -97,10 +108,11 @@ private:
     static float distanceSquared(float ax, float ay, float bx, float by);
 
     std::mt19937 rng_;
+    WildArea area_;
     const Map* map_ = nullptr;
     Pathfinder pathfinder_;
     nav::Agent agent_;
     std::unordered_map<std::uint64_t, WildBrain> brains_;
 };
 
-}  // namespace heaven::field
+}  // namespace heaven::instance

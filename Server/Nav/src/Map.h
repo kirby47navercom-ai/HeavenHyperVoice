@@ -10,7 +10,7 @@ class dtNavMesh;
 class dtNavMeshQuery;
 class dtQueryFilter;
 
-namespace heaven::field {
+namespace heaven {
 
 namespace nav {
 
@@ -129,4 +129,4 @@ private:
     std::unique_ptr<dtQueryFilter, QueryFilterDeleter> filter_;
 };
 
-}  // namespace heaven::field
+}  // namespace heaven

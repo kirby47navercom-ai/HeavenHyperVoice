@@ -1,23 +1,20 @@
-find_package(recastnavigation CONFIG REQUIRED)
-
 add_executable(FieldServer
     src/main.cpp
     src/FieldHandler.cpp
     src/World.cpp
-    src/WildAi.cpp
-    src/Map.cpp
-    src/Path.cpp
 )
 
 target_include_directories(FieldServer PRIVATE src)
 
+# 야생 포켓몬과 그 AI 는 InstanceServer 로 갔다. 필드는 플레이어와 파트너만
+# 있고 전투도 없다. 지형(Nav)은 두 서버가 같이 쓴다.
+#
 # DB 비밀번호는 LoginServer 와 같은 자격증명에서 읽으므로 추가 설정이 없다.
 # 그 API(advapi32)는 Net 이 들고 온다.
 target_link_libraries(FieldServer PRIVATE
     Net
     Data
-    RecastNavigation::Recast
-    RecastNavigation::Detour
+    Nav
 )
 
 target_compile_definitions(FieldServer PRIVATE

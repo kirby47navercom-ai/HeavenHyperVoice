@@ -19,7 +19,7 @@
 #include "InstanceGeometry.h"
 #include "InstanceHandler.h"
 #include "PokemonSpecies.h"
-#include "MapCollision.h"
+#include "Map.h"
 #include "OdbcStore.h"
 #include "RoomManager.h"
 #include "ServerMain.h"
@@ -50,6 +50,9 @@ struct Options {
     // 종류마다 다른 지형. --instance-map <type>=<path> 로 하나씩 붙인다.
     std::map<std::uint32_t, std::string> maps;
 
+    // 종류마다 나올 야생 종족. --instance-species <type>=<dex,dex,...>
+    std::map<std::uint32_t, std::string> species;
+
     heaven::data::OdbcSettings db;
 
     bool devNoAuth = false;
@@ -70,6 +73,10 @@ void printUsage() {
                  "  --db-threads <n>      threads for the character lookup on entry (default 2)\n"
                  "  --tick-threads <n>    threads that advance rooms (default: half the cores).\n"
                  "                        A room is always advanced by the same thread.\n"
+                 "  --instance-species <t=l>  wild species for one type, repeatable.\n"
+                 "                        e.g. --instance-species 1=401,403,387,390,393\n"
+                 "                        Dex numbers. Raid bosses are refused. Without it\n"
+                 "                        every non-boss species in the table can spawn.\n"
                  "  --instance-map <t=p>  terrain for one instance type, repeatable.\n"
                  "                        e.g. --instance-map 1=maps/instance-1.txt\n"
                  "                        Listing a type here is enough to accept it.\n"
@@ -82,7 +89,6 @@ void printUsage() {
                  "  --room-idle <n>       seconds an empty room is kept before it closes\n"
                  "                        (default 60)\n"
                  "  --wild-per-room <n>   wild pokemon spawned when a room opens (default 12)\n"
-                 "  --wild-script <p>     Lua actions (default scripts/wild_ai.lua)\n"
                  "  --wild-seed <n>       fix spawns and wander paths (default: random)\n"
                  "  --db-driver <name>    ODBC driver name (default: auto-detected)\n"
                  "  --db-host <h>         database host (default 127.0.0.1)\n"
@@ -112,96 +118,51 @@ std::vector<std::uint32_t> parseTypes(const std::string& list) {
 
 // 맵이 조용히 아무 일도 안 하는 흔한 두 경우를 기동 때 잡는다.
 // 둘 다 문법은 멀쩡해서 로드는 성공하고, 그래서 알아채기 어렵다.
-// 맵 파일에서 wild_species 줄만 읽는다. 도감번호로 적고 내부 번호로 돌려준다.
+// "401,403,387" 같은 도감번호 목록을 서버 내부 번호로 바꾼다.
 //
-// 지형(MapCollision)이 같은 파일을 따로 읽는다. 한 줄 때문에 지형 파서에 종족
-// 목록을 끼워 넣지 않았다 — 그쪽은 이름 그대로 충돌 판정만 안다.
-//
-// 표에 없는 도감번호는 기동에서 막는다. 조용히 넘기면 "적었는데 안 나온다" 가
-// 되고, 그건 오타 하나를 찾느라 한참 헤매는 종류의 버그다.
-std::vector<std::uint16_t> readWildSpecies(const std::string& path) {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        throw std::runtime_error("cannot open " + path);
-    }
-
+// 맵 파일이 아니라 옵션으로 받는다. .hhvmap 은 지형 전용이고 모르는 줄을
+// 거부하므로, 게임 규칙을 거기 끼워 넣으면 Nav 가 종족을 알아야 한다.
+std::vector<std::uint16_t> parseWildSpecies(const std::string& list) {
     std::vector<std::uint16_t> out;
-    std::string line;
-    int lineNumber = 0;
-    while (std::getline(file, line)) {
-        ++lineNumber;
-        if (line.empty() || line[0] == '#') {
+    std::istringstream stream(list);
+    std::string item;
+    while (std::getline(stream, item, ',')) {
+        if (item.empty()) {
             continue;
         }
-        std::istringstream stream(line);
-        std::string type;
-        stream >> type;
-        if (type != "wild_species") {
-            continue;
+        const int dex = std::stoi(item);
+        const heaven::proto::SpeciesBase* species =
+            heaven::proto::findSpeciesByDex(static_cast<std::uint16_t>(dex));
+        if (species == nullptr) {
+            throw std::runtime_error("unknown dex " + std::to_string(dex) +
+                                     " in --instance-species");
         }
-
-        int dex = 0;
-        while (stream >> dex) {
-            const heaven::proto::SpeciesBase* species =
-                heaven::proto::findSpeciesByDex(static_cast<std::uint16_t>(dex));
-            if (species == nullptr) {
-                throw std::runtime_error("unknown dex " + std::to_string(dex) + " in " + path +
-                                         " line " + std::to_string(lineNumber));
-            }
-            // 보스는 레이드에서만 만나야 한다. 사냥터에 적어 두면 기동에서 막는다.
-            if (!heaven::proto::isWildSpawnable(static_cast<std::uint16_t>(dex))) {
-                throw std::runtime_error("dex " + std::to_string(dex) + " (" +
-                                         std::string(species->name) +
-                                         ") is a raid boss and cannot spawn in the wild: " +
-                                         path + " line " + std::to_string(lineNumber));
-            }
-            out.push_back(species->id);
+        // 보스는 레이드에서만 만나야 한다.
+        if (!heaven::proto::isWildSpawnable(static_cast<std::uint16_t>(dex))) {
+            throw std::runtime_error("dex " + std::to_string(dex) + " (" +
+                                     std::string(species->name) +
+                                     ") is a raid boss and cannot spawn in the wild");
         }
-        if (!stream.eof()) {
-            throw std::runtime_error("malformed wild_species in " + path + " line " +
-                                     std::to_string(lineNumber));
-        }
+        out.push_back(species->id);
     }
     return out;
 }
 
-void warnIfUseless(std::uint32_t type, const heaven::instance::MapCollision& collision) {
-    // 스폰이 격자 밖이면 첫 표본부터 막혀서 그 방은 아무도 못 움직인다.
-    if (collision.hasFloor()) {
-        float floorZ = 0.f;
-        if (!collision.floorAt(heaven::instance::kSpawnX, heaven::instance::kSpawnY, floorZ)) {
-            spdlog::warn("instance type {}: heightmap does not cover the spawn point "
-                         "({:.0f}, {:.0f}); nobody will be able to move",
-                         type, heaven::instance::kSpawnX, heaven::instance::kSpawnY);
-        }
-    }
-
-    // 구가 월드 정사각형을 통째로 삼키면 경계가 영영 안 걸린다.
-    const heaven::instance::BoundsSphere& bounds = collision.bounds();
-    if (!bounds.active()) {
+// 스폰이 navmesh 밖이면 그 방은 아무도 못 움직인다. 기동 때 잡는다.
+void warnIfSpawnUnreachable(std::uint32_t type, const heaven::Map& map) {
+    if (!map.loaded() || !map.hasNavMesh()) {
         return;
     }
-    float farthest = 0.f;
-    for (const float cx : {0.f, heaven::instance::kWorldSize}) {
-        for (const float cy : {0.f, heaven::instance::kWorldSize}) {
-            const float dx = cx - bounds.center.x;
-            const float dy = cy - bounds.center.y;
-            farthest = std::max(farthest, std::sqrt(dx * dx + dy * dy));
-        }
-    }
-    if (bounds.radius >= farthest) {
-        spdlog::warn("instance type {}: bounds_sphere r={:.0f} at ({:.0f}, {:.0f}) already "
-                     "contains the whole {:.0f}uu world (corner is {:.0f}uu away); "
-                     "the boundary will never block anything",
-                     type, bounds.radius, bounds.center.x, bounds.center.y,
-                     heaven::instance::kWorldSize, farthest);
+    if (!map.canStandAt(heaven::instance::kSpawnX, heaven::instance::kSpawnY, map.agent(),
+                        nullptr)) {
+        spdlog::warn("instance type {}: spawn point ({:.0f}, {:.0f}) is not on the navmesh; "
+                     "nobody will be able to move",
+                     type, heaven::instance::kSpawnX, heaven::instance::kSpawnY);
     }
 }
 
 Options parseArgs(int argc, char** argv) {
     Options options;
-    options.rooms.wildScript = "scripts/wild_ai.lua";
-
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
         const auto next = [&](const char* name) -> std::string {
@@ -237,10 +198,17 @@ Options parseArgs(int argc, char** argv) {
             options.rooms.emptyLinger = std::chrono::seconds(std::stoi(next("--room-idle")));
         } else if (arg == "--wild-per-room") {
             options.rooms.wildPerRoom = std::stoi(next("--wild-per-room"));
-        } else if (arg == "--wild-script") {
-            options.rooms.wildScript = next("--wild-script");
         } else if (arg == "--wild-seed") {
             options.rooms.wildSeed = static_cast<unsigned>(std::stoul(next("--wild-seed")));
+        } else if (arg == "--instance-species") {
+            const std::string pair = next("--instance-species");
+            const std::size_t equals = pair.find('=');
+            if (equals == 0 || equals == std::string::npos || equals + 1 >= pair.size()) {
+                throw std::runtime_error("--instance-species wants <type>=<dex,dex,...>, got " +
+                                         pair);
+            }
+            options.species[static_cast<std::uint32_t>(std::stoul(pair.substr(0, equals)))] =
+                pair.substr(equals + 1);
         } else if (arg == "--instance-map") {
             const std::string pair = next("--instance-map");
             const std::size_t equals = pair.find('=');
@@ -282,17 +250,6 @@ int main(int argc, char** argv) {
         heaven::proto::PublicKeyRing keys;
         keys.add(options.keyId, files.ticketKey);
 
-        // 스크립트를 여기서 한 번 읽어 본다. 방을 만들 때마다 실패하는 것보다
-        // 기동에서 멈추는 편이 낫다 — 야생이 조용히 안 나오는 서버가 제일 나쁘다.
-        if (options.rooms.wildPerRoom > 0) {
-            options.rooms.wildScript =
-                heaven::net::resolveResourcePath(options.rooms.wildScript, "wild AI script");
-            heaven::instance::WildAi probe(options.rooms.wildScript);
-            (void)probe;
-        } else {
-            options.rooms.wildScript.clear();
-        }
-
         // 개발 모드에서는 저장소를 아예 열지 않는다.
         std::unique_ptr<heaven::data::OdbcStore> characters;
         if (!options.devNoAuth) {
@@ -312,27 +269,29 @@ int main(int argc, char** argv) {
         // 종류별 지형. 경로를 줬는데 못 읽으면 기동을 멈춘다 — 검사가 켜진 줄
         // 알고 운영하는 것이 제일 나쁘다.
         //
-        // MapCollision 은 복사가 안 되고 주소가 고정이어야 한다 (RoomManager 가
-        // 포인터로 들고 방마다 넘긴다). unique_ptr 로 담는 이유다.
-        std::map<std::uint32_t, std::unique_ptr<heaven::instance::MapCollision>> terrain;
+        // Map 은 복사가 안 되고 주소가 고정이어야 한다 (RoomManager 가 포인터로
+        // 들고 방마다 넘긴다). unique_ptr 로 담는 이유다.
+        std::map<std::uint32_t, std::unique_ptr<heaven::Map>> terrain;
         std::map<std::uint32_t, heaven::instance::InstanceType> types;
 
         for (const auto& [type, path] : options.maps) {
-            auto collision = std::make_unique<heaven::instance::MapCollision>();
+            auto collision = std::make_unique<heaven::Map>();
             std::string mapError;
             const std::string resolved =
                 heaven::net::resolveResourcePath(path, "instance map");
             if (!collision->loadFromFile(resolved, mapError)) {
                 throw std::runtime_error("instance " + std::to_string(type) + " map: " + mapError);
             }
-            spdlog::info("instance type {}: {} ({})", type, resolved, collision->describe());
-            warnIfUseless(type, *collision);
+            spdlog::info("instance type {}: {} (ground {}, wall {}, walkable polys {})",
+                         type, resolved, collision->groundCount(), collision->wallCount(),
+                         collision->walkablePolyCount());
+            warnIfSpawnUnreachable(type, *collision);
 
-            types[type].collision = collision.get();
-            types[type].wildSpecies = readWildSpecies(resolved);
+            types[type].map = collision.get();
+            types[type].wildSpecies = parseWildSpecies(options.species[type]);
             if (types[type].wildSpecies.empty()) {
-                spdlog::warn("instance type {}: no wild_species line; every non-boss species "
-                             "in the table can spawn", type);
+                spdlog::warn("instance type {}: no --instance-species; every non-boss "
+                             "species in the table can spawn", type);
             } else {
                 std::string names;
                 for (const std::uint16_t id : types[type].wildSpecies) {
@@ -349,7 +308,7 @@ int main(int argc, char** argv) {
         // 지형 없이 받아줄 종류. 이미 맵이 붙은 종류를 또 적으면 무시된다.
         for (const std::uint32_t type : parseTypes(options.types)) {
             if (types.count(type) == 0) {
-                types[type];  // collision == nullptr, 지형 검사 없음
+                types[type].wildSpecies = parseWildSpecies(options.species[type]);
                 spdlog::warn("instance type {}: no terrain, nothing blocks movement", type);
             }
         }
@@ -399,7 +358,7 @@ int main(int argc, char** argv) {
                     list += ", ";
                 }
                 list += std::to_string(type);
-                list += entry.collision != nullptr ? " (terrain)" : " (no terrain)";
+                list += entry.map != nullptr ? " (terrain)" : " (no terrain)";
             }
             spdlog::info("instance types: {}", list);
         }

@@ -28,7 +28,7 @@
 #include <vector>
 
 #include "CharacterStore.h"
-#include "MapCollision.h"
+#include "Map.h"
 #include "FieldCodec.h"
 #include "InstanceGeometry.h"
 #include "TlsSession.h"
@@ -127,9 +127,9 @@ public:
     void move(std::uint64_t characterId, float x, float y, float facing,
               std::uint32_t sequence);
 
-    // 벽 충돌 판정. nullptr 이면 검사하지 않는다 (맵 없이 띄우는 경우).
+    // 지형. nullptr 이면 검사하지 않는다 (맵 없이 띄우는 경우).
     // 서버가 뜬 뒤로는 바뀌지 않으므로 락 없이 읽는다.
-    void setCollision(const MapCollision* collision) { collision_ = collision; }
+    void setMap(const Map* map) { map_ = map; }
 
     // 20Hz. 이번 주기에 움직인 것들을 뷰어별로 묶어 보낸다.
     void tick();
@@ -155,7 +155,7 @@ private:
     std::unordered_map<std::uint64_t, Entity> entities_;
     std::unordered_map<std::uint64_t, std::uint64_t> byAccount_;
 
-    const MapCollision* collision_ = nullptr;
+    const Map* map_ = nullptr;
 
     // 후보 추출 전용 공간 인덱스. 시야 판정에는 쓰이지 않는다.
     std::array<std::unordered_set<std::uint64_t>, kSectorCount> sectors_;

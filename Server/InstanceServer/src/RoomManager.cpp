@@ -14,22 +14,24 @@ namespace heaven::instance {
 
 namespace {
 
-// 맵에 경계 구가 없을 때 야생을 뿌릴 상자의 반폭.
+// 맵이 없을 때 야생을 뿌릴 상자의 반폭.
 constexpr float kDefaultWildHalfExtent = 4000.f;
 
-// 경계 구 안에 들어가는 정사각형의 반폭 비율. 정확히는 1/sqrt(2) = 0.707 인데,
-// 구 가장자리에 딱 붙여 뿌리면 첫 배회에서 바로 경계에 막히므로 조금 안쪽으로.
-constexpr float kWildAreaFraction = 0.6f;
+// 맵 경계에 딱 붙여 뿌리면 첫 배회에서 바로 지형 밖을 노리게 되므로 안쪽으로 민다.
+constexpr float kWildAreaFraction = 0.8f;
 
-// 야생을 뿌리고 배회시킬 구역. 맵의 경계 구를 따라간다 — 스폰 상자와 Lua 의
-// 배회 상자가 어긋나면 스폰된 자리에서 구역 안으로 걸어 들어가느라 처음 몇 초가
-// 어색해지고, 맵과도 안 맞으면 아예 지형 밖에 뜬다.
-WildArea wildAreaFor(const MapCollision* collision) {
+// 야생을 뿌리고 배회시킬 구역. 맵 경계를 따라간다 — 스폰 상자와 배회 상자가
+// 어긋나면 스폰된 자리에서 구역 안으로 걸어 들어가느라 처음 몇 초가 어색해지고,
+// 맵과도 안 맞으면 아예 지형 밖에 뜬다.
+WildArea wildAreaFor(const Map* map) {
     WildArea area;
-    if (collision != nullptr && collision->bounds().active()) {
-        area.centerX = collision->bounds().center.x;
-        area.centerY = collision->bounds().center.y;
-        area.halfExtent = collision->bounds().radius * kWildAreaFraction;
+    if (map != nullptr && map->loaded() && map->bounds().valid) {
+        const nav::Aabb& box = map->bounds();
+        area.centerX = (box.min.x + box.max.x) * 0.5f;
+        area.centerY = (box.min.y + box.max.y) * 0.5f;
+        const float halfX = (box.max.x - box.min.x) * 0.5f;
+        const float halfY = (box.max.y - box.min.y) * 0.5f;
+        area.halfExtent = std::min(halfX, halfY) * kWildAreaFraction;
         return area;
     }
     area.centerX = kSpawnX;
@@ -41,8 +43,6 @@ WildArea wildAreaFor(const MapCollision* collision) {
 // 벽 안에 뜬 야생은 영원히 얼어붙는다. blockedAlong 이 출발점부터 훑으므로
 // 어느 방향으로 가려 해도 첫 샘플에서 막힌다. 자리를 몇 번 다시 굴려 본다.
 constexpr int kSpawnAttempts = 16;
-
-constexpr AgentSettings kAgent{};
 
 }  // namespace
 
@@ -69,29 +69,24 @@ bool RoomManager::isKnownType(std::uint32_t type) const {
 Room* RoomManager::createRoomLocked(std::uint32_t type) {
     // isKnownType 을 통과한 뒤에만 불린다.
     const InstanceType& config = types_.at(type);
-    const MapCollision* collision = config.collision;
+    const Map* map = config.map;
 
     auto room = std::make_unique<Room>();
     room->id = nextRoomId_++;
     room->type = type;
-    room->world.setCollision(collision);
+    room->world.setMap(map);
 
     // 스폰 좌표(C++)와 배회 경로(Lua)는 난수원이 따로다. 둘 다 심어야 재현된다.
     // 방 번호를 섞어서 같은 씨앗으로 띄워도 방마다 배치가 다르게 나온다.
     const unsigned seed = settings_.wildSeed != 0 ? settings_.wildSeed + room->id : 0;
 
-    const WildArea area = wildAreaFor(collision);
+    const WildArea area = wildAreaFor(map);
 
-    if (settings_.wildPerRoom > 0 && !settings_.wildScript.empty()) {
-        try {
-            room->ai = std::make_unique<WildAi>(settings_.wildScript);
-            room->ai->seed(seed);
-            room->ai->setArea(area);
-        } catch (const std::exception& e) {
-            // 기동 때 이미 한 번 읽어 봤으므로 여기까지 오는 일은 드물다.
-            // 방 하나 때문에 서버를 세우지는 않는다 — 야생 없는 방이 된다.
-            spdlog::error("room {}: wild AI unavailable: {}", room->id, e.what());
-        }
+    if (settings_.wildPerRoom > 0) {
+        room->ai = std::make_unique<WildAi>();
+        room->ai->seed(seed);
+        room->ai->setArea(area);
+        room->ai->setMap(map);
     }
 
     if (room->ai != nullptr) {
@@ -117,9 +112,12 @@ Room* RoomManager::createRoomLocked(std::uint32_t type) {
             return pool.empty() ? std::uint16_t{0} : pool[fromPool(gen)];
         };
 
-        // 벽 안이거나, 지형 밖이거나, 경계 구 밖이면 설 자리가 아니다.
-        const auto unusable = [collision](float x, float y) {
-            return collision != nullptr && collision->blockedAt(x, y, kAgent);
+        // 지형이 있으면 navmesh 위에 설 수 있는 자리만 쓴다.
+        const auto unusable = [map](float x, float y) {
+            if (map == nullptr || !map->loaded()) {
+                return false;
+            }
+            return !map->canStandAt(x, y, map->agent(), nullptr);
         };
 
         int spawned = 0;

@@ -2,6 +2,9 @@
 
 // 필드의 엔티티와 시야.
 //
+// 야생 포켓몬은 여기 없다. 필드는 플레이어와 그 파트너만 있고 전투도 없다.
+// 야생과 전투는 InstanceServer 가 자기 World 로 따로 돌린다.
+//
 // 섹터 격자는 **후보를 추리는 broad phase** 일 뿐이다. "누가 보이는가" 는 전적으로
 // 엔티티마다 들고 있는 뷰 리스트가 답한다. 덕분에 시야가 사각형이 아니라 원형이고,
 // 나중에 은신·차단·진영 필터를 넣을 자리가 생긴다.
@@ -28,7 +31,6 @@
 
 namespace heaven::field {
 
-class WildAi;
 
 using net::TlsSession;
 
@@ -47,9 +49,6 @@ struct Entity {
     // 후보를 추린 뒤 이 값으로 한 번 더 거른다.
     std::uint32_t mapId = 0;
 
-    // 야생 포켓몬이면 true. 세션이 없고 AI 가 움직인다. species 는 자기 종족.
-    bool isWild = false;
-    std::uint16_t species = 0;
 
     Position position;
     int sector = 0;
@@ -67,8 +66,6 @@ struct Entity {
     bool movedThisTick = false;
 };
 
-// 야생 번호는 캐릭터 번호(작은 BIGINT)와 겹치지 않게 높은 범위를 쓴다.
-inline constexpr std::uint64_t kWildIdBase = 1ull << 52;
 
 // 입장하면서 밀려난 기존 접속. 새 접속이 그 자리를 빼앗으므로, 밀려난 쪽은
 // leave() 를 타지 못한다 — 그쪽 onClosed 가 도착할 때는 이미 월드에 없다.
@@ -98,17 +95,6 @@ public:
     // 이 자리를 차지한 뒤라, 번호만 보고 지우면 살아 있는 쪽을 끊어 버린다.
     // 주인이 다르면 아무것도 하지 않고 nullopt 를 돌려준다.
     std::optional<Position> leave(std::uint64_t characterId, const TlsSession* session);
-
-    // 야생 포켓몬을 월드에 넣는다. 세션이 없어 아무에게도 전송하지 않지만,
-    // 근처 플레이어에게는 spawn 으로 나타난다. entityId 는 kWildIdBase 부터 쓴다.
-    void enterWild(std::uint64_t entityId, std::uint16_t species, const Position& position);
-
-    // 모든 야생 포켓몬을 한 틱 전진시킨다. AI FSM 이 목표를 유지하고 서버가
-    // 속도와 navmesh 이동 가능성을 강제한다. 틱 스레드에서만 부를 것.
-    //
-    // AI 결정은 월드 락 **밖에서** 한다. 안에서 돌리면 야생 마릿수만큼 플레이어
-    // 이동이 뒤에 밀린다.
-    void advanceWild(float dt, WildAi& ai);
 
     // 꺼내 놓은 포켓몬을 바꾼다. 나를 보고 있는 사람 전부에게 알린다.
     //

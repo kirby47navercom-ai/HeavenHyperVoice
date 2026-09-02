@@ -7,27 +7,23 @@
 
 #include "FieldGeometry.h"
 
-namespace heaven::field {
+namespace heaven::instance {
 
 namespace {
 
-constexpr float kAreaHalfExtent = 4000.f;
 constexpr float kWanderRadius = 1500.f;
 constexpr float kArriveRadius = 80.f;
 constexpr float kRestMinSeconds = 1.5f;
 constexpr float kRestMaxSeconds = 4.f;
 constexpr float kPi = 3.14159265358979323846f;
 
-float clampAreaX(float value) {
-    return std::clamp(value,
-                      proto::kSpawnX - kAreaHalfExtent,
-                      proto::kSpawnX + kAreaHalfExtent);
+// 배회 구역은 방마다 다르다 (맵 경계에서 나온다). 상수로 둘 수 없어 인자로 받는다.
+float clampAreaX(float value, const WildArea& area) {
+    return std::clamp(value, area.centerX - area.halfExtent, area.centerX + area.halfExtent);
 }
 
-float clampAreaY(float value) {
-    return std::clamp(value,
-                      proto::kSpawnY - kAreaHalfExtent,
-                      proto::kSpawnY + kAreaHalfExtent);
+float clampAreaY(float value, const WildArea& area) {
+    return std::clamp(value, area.centerY - area.halfExtent, area.centerY + area.halfExtent);
 }
 
 }  // namespace
@@ -190,8 +186,8 @@ WildAi::WanderActionResult WildAi::makeWanderAction(float x, float y) {
     const float radius = unit(rng_) * kWanderRadius;
 
     WanderActionResult action;
-    action.targetX = clampAreaX(x + std::cos(angle) * radius);
-    action.targetY = clampAreaY(y + std::sin(angle) * radius);
+    action.targetX = clampAreaX(x + std::cos(angle) * radius, area_);
+    action.targetY = clampAreaY(y + std::sin(angle) * radius, area_);
     action.acceptanceRadius = kArriveRadius;
     action.restAfterArriveSeconds = rest(rng_);
     action.valid =
@@ -213,4 +209,4 @@ float WildAi::distanceSquared(float ax, float ay, float bx, float by) {
     return dx * dx + dy * dy;
 }
 
-}  // namespace heaven::field
+}  // namespace heaven::instance
