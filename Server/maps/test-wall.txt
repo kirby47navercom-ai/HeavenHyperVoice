@@ -1,6 +1,0 @@
-# 시험용 벽. 팀원 exporter 와 같은 형식이다.
-# wall_obb <profile> cx cy cz  hx hy hz  axisX(3) axisY(3) axisZ(3)
-#
-# 스폰 (25600, 25600) 동쪽 1000uu 에 남북으로 긴 벽.
-# 두께 50, 길이 4000, 높이 400.
-wall_obb  TestWall  26600 25600 200   25 2000 200   1 0 0   0 1 0   0 0 1

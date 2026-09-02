@@ -1,10 +1,12 @@
-# 야생 포켓몬과 그 Lua AI 는 InstanceServer 로 갔다. 필드는 플레이어와
-# 파트너만 있고 전투도 없어서 Lua 를 링크하지 않는다.
+find_package(recastnavigation CONFIG REQUIRED)
+
 add_executable(FieldServer
     src/main.cpp
     src/FieldHandler.cpp
     src/World.cpp
-    src/MapCollision.cpp
+    src/WildAi.cpp
+    src/Map.cpp
+    src/Path.cpp
 )
 
 target_include_directories(FieldServer PRIVATE src)
@@ -14,9 +16,18 @@ target_include_directories(FieldServer PRIVATE src)
 target_link_libraries(FieldServer PRIVATE
     Net
     Data
+    RecastNavigation::Recast
+    RecastNavigation::Detour
 )
 
 target_compile_definitions(FieldServer PRIVATE
     # 개발용 인증서/키를 찾기 위한 폴백 경로. Debug 에만 넣는다.
     $<$<CONFIG:Debug>:HHV_DEV_ROOT="${PROJECT_SOURCE_DIR}">
+)
+
+add_custom_command(TARGET FieldServer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${PROJECT_SOURCE_DIR}/maps"
+        "$<TARGET_FILE_DIR:FieldServer>/maps"
+    COMMENT "Copying field maps next to FieldServer"
 )

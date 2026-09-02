@@ -8,16 +8,19 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
 
 #include "FieldHandler.h"
-#include "MapCollision.h"
+#include "Map.h"
 #include "OdbcStore.h"
+#include "PokemonSpecies.h"
 #include "RedisClient.h"
 #include "ServerMain.h"
+#include "WildAi.h"
 #include "World.h"
 
 namespace {
@@ -34,8 +37,12 @@ struct Options {
     // 입장/퇴장에서만 DB 를 쓴다. 로그인 서버만큼 필요하지 않다.
     unsigned dbThreads = 2;
 
-    // 벽 충돌 맵. 없으면 검사하지 않는다.
+    // 서버 이동 맵. 없으면 검사하지 않는다.
     std::string mapFile;
+
+    // 야생 포켓몬. count 가 0 이면 스폰하지 않는다.
+    int wildCount = 12;
+    unsigned wildSeed = 0;  // 0 이면 매 실행 다르게
 
     std::string redisHost = "127.0.0.1";
     std::uint16_t redisPort = 6379;
@@ -63,8 +70,10 @@ void printUsage() {
                  "  --threads <n>       IOCP worker threads (default: hardware concurrency)\n"
                  "  --db-threads <n>    threads for position load/save (default 2; entering\n"
                  "                      and leaving only, so fewer than the login server)\n"
-                 "  --map <path>        wall collision map. Without it the server does\n"
-                 "                      not check walls at all.\n"
+                 "  --map <path>        server nav map. Without it the server does\n"
+                 "                      not check map walkability or walls.\n"
+                 "  --wild-count <n>    wild pokemon to spawn (default 12; 0 disables them)\n"
+                 "  --wild-seed <n>     fix spawn points and wander paths (default: random)\n"
                  "  --redis-host <h>    default 127.0.0.1\n"
                  "  --redis-port <n>    default 6379\n"
                  "  --no-redis          skip the position cache; load and save via the DB only\n"
@@ -117,6 +126,10 @@ Options parseArgs(int argc, char** argv) {
             options.dbThreads = static_cast<unsigned>(std::stoi(next("--db-threads")));
         } else if (arg == "--map") {
             options.mapFile = next("--map");
+        } else if (arg == "--wild-count") {
+            options.wildCount = std::stoi(next("--wild-count"));
+        } else if (arg == "--wild-seed") {
+            options.wildSeed = static_cast<unsigned>(std::stoul(next("--wild-seed")));
         } else if (arg == "--redis-host") {
             options.redisHost = next("--redis-host");
         } else if (arg == "--redis-port") {
@@ -208,15 +221,73 @@ int main(int argc, char** argv) {
         heaven::net::WorkQueue dbQueue(options.dbThreads);
         heaven::field::World world;
 
-        // 벽 충돌 맵. 경로를 줬는데 못 읽으면 기동을 멈춘다 — 검사가 켜진 줄
+        // 서버 이동 맵. 경로를 줬는데 못 읽으면 기동을 멈춘다 — 검사가 켜진 줄
         // 알고 운영하는 것이 제일 나쁘다. 아예 안 주면 검사 없이 뜬다.
-        heaven::field::MapCollision collision;
+        heaven::field::Map map;
+        std::string loadedMapFile;
         if (!options.mapFile.empty()) {
+            loadedMapFile = heaven::net::resolveResourcePath(options.mapFile, "field map");
             std::string mapError;
-            if (!collision.loadFromFile(options.mapFile, mapError)) {
+            if (!map.loadFromFile(loadedMapFile, mapError)) {
                 throw std::runtime_error("map: " + mapError);
             }
-            world.setCollision(&collision);
+            world.setMap(&map);
+        }
+
+        // 야생 포켓몬 AI. 현재 wander 는 C++ 에서 직접 처리한다. count 가 0 이면
+        // 아예 만들지 않는다.
+        std::unique_ptr<heaven::field::WildAi> wildAi;
+        if (options.wildCount > 0) {
+            wildAi = std::make_unique<heaven::field::WildAi>();
+            wildAi->setMap(map.loaded() ? &map : nullptr);
+
+            // 스폰 좌표와 배회 경로는 난수원이 따로다. 둘 다 심어야 --wild-seed 가
+            // 같은 판을 실제로 재현한다.
+            wildAi->seed(options.wildSeed);
+            std::mt19937 rng(options.wildSeed != 0 ? options.wildSeed : std::random_device{}());
+
+            // 월드 전체에 흩뿌리지 않고 중앙 8000x8000 안에만 넣는다. 배회 구역도
+            // 같은 상자다 (WildAi.cpp 의 kAreaHalfExtent). 두 값이 어긋나면 스폰된
+            // 자리에서 구역 안으로 걸어 들어가느라 처음 몇 초가 어색해진다.
+            constexpr float kWildAreaHalfExtent = 4000.f;
+            std::uniform_real_distribution<float> coord(
+                heaven::proto::kSpawnX - kWildAreaHalfExtent,
+                heaven::proto::kSpawnX + kWildAreaHalfExtent);
+            std::uniform_int_distribution<int> species(1, static_cast<int>(
+                                                              heaven::proto::kSpeciesCount));
+
+            // navmesh 밖에 뜬 야생은 이동을 시작하지 못한다. 자리를 몇 번 다시
+            // 굴려보고, 그래도 서 있을 수 없으면 그 마리는 건너뛴다.
+            const heaven::field::nav::Agent defaultAgent{};
+            const heaven::field::nav::Agent& agent = map.loaded() ? map.agent() : defaultAgent;
+            const auto blockedSpawn = [&](float x, float y) {
+                if (!map.loaded()) {
+                    return false;
+                }
+                return !map.canStandAt(x, y, agent);
+            };
+
+            int spawned = 0;
+            for (int i = 0; i < options.wildCount; ++i) {
+                float x = coord(rng);
+                float y = coord(rng);
+                for (int attempt = 0; attempt < 16 && blockedSpawn(x, y); ++attempt) {
+                    x = coord(rng);
+                    y = coord(rng);
+                }
+                if (blockedSpawn(x, y)) {
+                    continue;
+                }
+                world.enterWild(heaven::field::kWildIdBase + static_cast<std::uint64_t>(i),
+                                static_cast<std::uint16_t>(species(rng)),
+                                heaven::data::Position{0, x, y, 0.f});
+                ++spawned;
+            }
+            if (spawned < options.wildCount) {
+                spdlog::warn("{} wild pokemon skipped: no clear spawn point found",
+                             options.wildCount - spawned);
+            }
+            spdlog::info("wild pokemon: {} spawned (C++ wander)", spawned);
         }
 
         heaven::field::FieldContext context;
@@ -248,10 +319,12 @@ int main(int argc, char** argv) {
                      characters ? characters->describe() : "disabled (--dev-no-auth)",
                      options.dbThreads);
         spdlog::info("position cache: {}", redis ? redis->target() : "disabled");
-        if (collision.loaded()) {
-            spdlog::info("wall collision: {} ({} walls)", options.mapFile, collision.wallCount());
+        if (map.loaded()) {
+            spdlog::info("field map: {} ({} ground triangles, {} wall triangles, {} walkable polys)",
+                         loadedMapFile, map.groundCount(), map.wallCount(),
+                         map.walkablePolyCount());
         } else {
-            spdlog::warn("wall collision: disabled (--map). Players can walk through anything.");
+            spdlog::warn("field map: disabled (--map). Players can walk through anything.");
         }
         if (options.devNoAuth) {
             spdlog::warn("--dev-no-auth: ANY client may enter with a name of its choosing.");
@@ -263,8 +336,12 @@ int main(int argc, char** argv) {
         // 20Hz 틱. 이번 주기에 움직인 것만 뷰어별로 묶어 내보낸다.
         std::thread ticker([&] {
             const auto period = std::chrono::milliseconds(1000 / heaven::proto::kTickHz);
+            const float dt = 1.f / static_cast<float>(heaven::proto::kTickHz);
             while (running.load(std::memory_order_acquire)) {
                 const auto deadline = std::chrono::steady_clock::now() + period;
+                if (wildAi) {
+                    world.advanceWild(dt, *wildAi);
+                }
                 world.tick();
                 std::this_thread::sleep_until(deadline);
             }

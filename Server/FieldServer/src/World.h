@@ -2,10 +2,6 @@
 
 // 필드의 엔티티와 시야.
 //
-// 야생 포켓몬은 여기 없다. 필드는 플레이어와 그 파트너만 있고 전투도 없다.
-// 야생과 전투는 InstanceServer 가 자기 World 사본으로 따로 돌린다 — 전투가
-// 붙으면서 갈라질 코드라 한 벌로 묶지 않았다.
-//
 // 섹터 격자는 **후보를 추리는 broad phase** 일 뿐이다. "누가 보이는가" 는 전적으로
 // 엔티티마다 들고 있는 뷰 리스트가 답한다. 덕분에 시야가 사각형이 아니라 원형이고,
 // 나중에 은신·차단·진영 필터를 넣을 자리가 생긴다.
@@ -25,12 +21,14 @@
 #include <vector>
 
 #include "CharacterStore.h"
-#include "MapCollision.h"
+#include "Map.h"
 #include "FieldCodec.h"
 #include "FieldGeometry.h"
 #include "TlsSession.h"
 
 namespace heaven::field {
+
+class WildAi;
 
 using net::TlsSession;
 
@@ -49,6 +47,10 @@ struct Entity {
     // 후보를 추린 뒤 이 값으로 한 번 더 거른다.
     std::uint32_t mapId = 0;
 
+    // 야생 포켓몬이면 true. 세션이 없고 AI 가 움직인다. species 는 자기 종족.
+    bool isWild = false;
+    std::uint16_t species = 0;
+
     Position position;
     int sector = 0;
 
@@ -64,6 +66,9 @@ struct Entity {
 
     bool movedThisTick = false;
 };
+
+// 야생 번호는 캐릭터 번호(작은 BIGINT)와 겹치지 않게 높은 범위를 쓴다.
+inline constexpr std::uint64_t kWildIdBase = 1ull << 52;
 
 // 입장하면서 밀려난 기존 접속. 새 접속이 그 자리를 빼앗으므로, 밀려난 쪽은
 // leave() 를 타지 못한다 — 그쪽 onClosed 가 도착할 때는 이미 월드에 없다.
@@ -94,6 +99,17 @@ public:
     // 주인이 다르면 아무것도 하지 않고 nullopt 를 돌려준다.
     std::optional<Position> leave(std::uint64_t characterId, const TlsSession* session);
 
+    // 야생 포켓몬을 월드에 넣는다. 세션이 없어 아무에게도 전송하지 않지만,
+    // 근처 플레이어에게는 spawn 으로 나타난다. entityId 는 kWildIdBase 부터 쓴다.
+    void enterWild(std::uint64_t entityId, std::uint16_t species, const Position& position);
+
+    // 모든 야생 포켓몬을 한 틱 전진시킨다. AI FSM 이 목표를 유지하고 서버가
+    // 속도와 navmesh 이동 가능성을 강제한다. 틱 스레드에서만 부를 것.
+    //
+    // AI 결정은 월드 락 **밖에서** 한다. 안에서 돌리면 야생 마릿수만큼 플레이어
+    // 이동이 뒤에 밀린다.
+    void advanceWild(float dt, WildAi& ai);
+
     // 꺼내 놓은 포켓몬을 바꾼다. 나를 보고 있는 사람 전부에게 알린다.
     //
     // Snapshot 의 partner_species 는 spawned 에만 실려서, 이미 보고 있는 상대는
@@ -104,14 +120,14 @@ public:
     void move(std::uint64_t characterId, float x, float y, float facing,
               std::uint32_t sequence);
 
-    // 벽 충돌 판정. nullptr 이면 검사하지 않는다 (맵 없이 띄우는 경우).
+    // 서버 이동 맵. nullptr 이면 검사하지 않는다 (맵 없이 띄우는 경우).
     // 서버가 뜬 뒤로는 바뀌지 않으므로 락 없이 읽는다.
-    void setCollision(const MapCollision* collision) { collision_ = collision; }
+    void setMap(const Map* map) { map_ = map; }
 
     // 20Hz. 이번 주기에 움직인 것들을 뷰어별로 묶어 보낸다.
     void tick();
 
-    // 주기적 저장용 스냅샷.
+    // 주기적 저장용 스냅샷. 야생은 저장할 것이 없어 빠진다.
     std::vector<std::pair<std::uint64_t, Position>> positions();
 
     std::size_t size();
@@ -132,7 +148,7 @@ private:
     std::unordered_map<std::uint64_t, Entity> entities_;
     std::unordered_map<std::uint64_t, std::uint64_t> byAccount_;
 
-    const MapCollision* collision_ = nullptr;
+    const Map* map_ = nullptr;
 
     // 후보 추출 전용 공간 인덱스. 시야 판정에는 쓰이지 않는다.
     std::array<std::unordered_set<std::uint64_t>, proto::kSectorCount> sectors_;

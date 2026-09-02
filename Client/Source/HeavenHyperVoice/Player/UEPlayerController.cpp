@@ -3,20 +3,38 @@
 #include "../Character/UEPlayerCharacter.h"
 #include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
 #include "../Data/UEDataAsset.h"
+#include "../Net/HHVChatConnection.h"
 #include "../Server/UEFieldClientSubsystem.h"
 #include "../System/UEGameInstance.h"
 #include "../UI/PokemonParty/UEPokemonPartyWidget.h"
 #include "../UEGameplayTags.h"
 
+#include "Blueprint/UserWidget.h"
+#include "Components/ScrollBox.h"
+#include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "InputAction.h"
+#include "InputCoreTypes.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "UObject/ConstructorHelpers.h"
 
 AUEPlayerController::AUEPlayerController()
 {
+	PrimaryActorTick.bCanEverTick = true;
 	bShowMouseCursor = false;
+
+	static ConstructorHelpers::FClassFinder<UUserWidget> ChatWidgetFinder(
+		TEXT("/Game/UI/Chat/WBP_GameChat"));
+	static ConstructorHelpers::FClassFinder<UUserWidget> ChatLineFinder(
+		TEXT("/Game/UI/Chat/WBP_ChatLine"));
+	static ConstructorHelpers::FClassFinder<UUserWidget> ChatSystemLineFinder(
+		TEXT("/Game/UI/Chat/WBP_ChatSystemLine"));
+	ChatWidgetClass = ChatWidgetFinder.Class;
+	ChatLineWidgetClass = ChatLineFinder.Class;
+	ChatSystemLineWidgetClass = ChatSystemLineFinder.Class;
 }
 
 void AUEPlayerController::BeginPlay()
@@ -31,11 +49,35 @@ void AUEPlayerController::BeginPlay()
 		FieldClientSubsystem->RegisterPlayerController(this);
 	}
 	ShowPokemonPartyWidget();
+	if (IsLocalController())
+	{
+		CreateChatWidget();
+		StartChat();
+	}
 	
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
 		MaxWalkSpeed = PlayerCharacter->GetCharacterMovement()->MaxWalkSpeed;
 	}
+}
+
+void AUEPlayerController::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (ChatConnection)
+	{
+		ChatConnection->Poll();
+	}
+}
+
+void AUEPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (ChatInput)
+	{
+		ChatInput->OnTextCommitted.RemoveDynamic(this, &ThisClass::HandleChatTextCommitted);
+	}
+	ChatConnection.reset();
+	Super::EndPlay(EndPlayReason);
 }
 
 void AUEPlayerController::OnPossess(APawn* InPawn)
@@ -120,6 +162,202 @@ void AUEPlayerController::SetupInputComponent()
 	Super::SetupInputComponent();
 
 	BindGameplayInput();
+	InputComponent->BindKey(EKeys::Enter, IE_Pressed, this, &ThisClass::OpenChatInput);
+	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ThisClass::CloseChatInput);
+}
+
+void AUEPlayerController::CreateChatWidget()
+{
+	if (!IsLocalController() || ChatWidget || !ChatWidgetClass)
+	{
+		return;
+	}
+
+	ChatWidget = CreateWidget<UUserWidget>(this, ChatWidgetClass);
+	if (!ChatWidget)
+	{
+		return;
+	}
+
+	ChatInput = Cast<UEditableTextBox>(ChatWidget->GetWidgetFromName(TEXT("ChatInput")));
+	ChatMessageScroll = Cast<UScrollBox>(ChatWidget->GetWidgetFromName(TEXT("MessageScroll")));
+	ChatMessageList = Cast<UVerticalBox>(ChatWidget->GetWidgetFromName(TEXT("MessageList")));
+	if (!ChatInput || !ChatMessageScroll || !ChatMessageList)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("WBP_GameChat needs ChatInput, MessageScroll, and MessageList widgets"));
+		ChatWidget = nullptr;
+		return;
+	}
+
+	ChatInput->SetIsReadOnly(true);
+	ChatInput->SetClearKeyboardFocusOnCommit(false);
+	ChatInput->SetRevertTextOnEscape(false);
+	ChatInput->OnTextCommitted.AddDynamic(this, &ThisClass::HandleChatTextCommitted);
+	ChatWidget->AddToViewport(20);
+}
+
+void AUEPlayerController::StartChat()
+{
+	if (!ChatWidget || ChatConnection)
+	{
+		return;
+	}
+
+	const UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	FHHVChatSettings Settings;
+	if (!GameInstance ||
+		!GameInstance->GetChatEndpoint(Settings.Host, Settings.Port, Settings.Ticket) ||
+		Settings.Ticket.IsEmpty())
+	{
+		AddSystemMessage(TEXT("채팅 서버 정보를 찾을 수 없습니다"));
+		return;
+	}
+
+	ChatConnection = std::make_unique<FHHVChatConnection>();
+	ChatConnection->OnNotice = [this](const FString& Text)
+	{
+		AddSystemMessage(Text);
+	};
+	ChatConnection->OnMessage = [this](const FString& Nickname, const FString& Text)
+	{
+		AddChatLine(Nickname, Text, false);
+	};
+	ChatConnection->OnDisconnected = [this](const FString& Reason)
+	{
+		if (Reason != TEXT("closed"))
+		{
+			AddSystemMessage(Reason);
+		}
+	};
+	ChatConnection->Start(Settings);
+}
+
+void AUEPlayerController::OpenChatInput()
+{
+	if (!ChatWidget || !ChatInput || bChatInputOpen)
+	{
+		return;
+	}
+
+	PendingMovementInput = FVector2D::ZeroVector;
+	PushMovementInputToCharacter();
+	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
+	{
+		PlayerCharacter->SetRunning(false);
+	}
+
+	SetIgnoreMoveInput(true);
+	SetIgnoreLookInput(true);
+	FInputModeGameAndUI InputMode;
+	InputMode.SetWidgetToFocus(ChatInput->TakeWidget());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
+	SetInputMode(InputMode);
+	bChatInputOpen = true;
+	ChatInput->SetIsReadOnly(false);
+	ChatInput->SetHintText(FText::FromString(TEXT("메시지를 입력하고 Enter")));
+	ChatInput->SetKeyboardFocus();
+}
+
+void AUEPlayerController::CloseChatInput()
+{
+	if (!ChatWidget || !ChatInput || !bChatInputOpen)
+	{
+		return;
+	}
+
+	bChatInputOpen = false;
+	ChatInput->SetText(FText::GetEmpty());
+	ChatInput->SetIsReadOnly(true);
+	ChatInput->SetHintText(FText::FromString(TEXT("Enter 키를 눌러 채팅")));
+	SetIgnoreMoveInput(false);
+	SetIgnoreLookInput(false);
+	SetInputMode(FInputModeGameOnly());
+}
+
+bool AUEPlayerController::SubmitChatText(const FString& Text)
+{
+	if (!ChatConnection)
+	{
+		AddSystemMessage(TEXT("채팅 서버에 연결되어 있지 않습니다"));
+		return false;
+	}
+
+	FString Error;
+	if (!ChatConnection->SendSay(Text, Error))
+	{
+		AddSystemMessage(Error);
+		return false;
+	}
+	return true;
+}
+
+void AUEPlayerController::HandleChatTextCommitted(
+	const FText& Text, ETextCommit::Type CommitMethod)
+{
+	if (CommitMethod != ETextCommit::OnEnter)
+	{
+		return;
+	}
+
+	const FString Message = Text.ToString().TrimStartAndEnd();
+	if (Message.IsEmpty() || SubmitChatText(Message))
+	{
+		CloseChatInput();
+	}
+	else if (ChatInput)
+	{
+		ChatInput->SetKeyboardFocus();
+	}
+}
+
+void AUEPlayerController::AddSystemMessage(const FString& Text)
+{
+	AddChatLine(TEXT("시스템"), Text, true);
+}
+
+void AUEPlayerController::AddChatLine(
+	const FString& Nickname, const FString& Text, bool bSystem)
+{
+	if (!ChatMessageList || Text.IsEmpty())
+	{
+		return;
+	}
+
+	const TSubclassOf<UUserWidget> LineClass =
+		bSystem ? ChatSystemLineWidgetClass : ChatLineWidgetClass;
+	if (!LineClass)
+	{
+		return;
+	}
+
+	while (ChatMessageCount >= MaxVisibleChatMessages &&
+		ChatMessageList->GetChildrenCount() > 0)
+	{
+		ChatMessageList->RemoveChildAt(0);
+		--ChatMessageCount;
+	}
+
+	UUserWidget* Line = CreateWidget<UUserWidget>(this, LineClass);
+	UTextBlock* NameText = Line
+		? Cast<UTextBlock>(Line->GetWidgetFromName(TEXT("NameText")))
+		: nullptr;
+	UTextBlock* BodyText = Line
+		? Cast<UTextBlock>(Line->GetWidgetFromName(TEXT("BodyText")))
+		: nullptr;
+	if (!Line || !NameText || !BodyText)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("Chat line WBP needs NameText and BodyText widgets"));
+		return;
+	}
+
+	NameText->SetText(FText::FromString(FString::Printf(TEXT("[%s] "), *Nickname)));
+	BodyText->SetText(FText::FromString(Text));
+	ChatMessageList->AddChild(Line);
+	++ChatMessageCount;
+	ChatMessageScroll->ScrollToEnd();
 }
 
 void AUEPlayerController::AddDefaultMappingContext() const

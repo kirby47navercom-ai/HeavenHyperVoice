@@ -29,6 +29,7 @@ public class HeavenHyperVoice : ModuleRules
 		{
 			"Slate",
 			"SlateCore",
+			"Landscape",
 
 			// Field server transport. The engine ships OpenSSL 1.1.1t, which is
 			// enough for TLS 1.3 with X25519 -- the field server sets no group or
