@@ -13,7 +13,7 @@
 | 경로 | 역할 |
 |---|---|
 | `Client/` | Unreal 클라이언트 프로젝트. 실제 게임 코드, 블루프린트, 맵, 입력, 커마, 포켓몬 관련 에셋이 들어 있다. |
-| `Server/` | 별도 C++ 서버 프로젝트. LoginServer, FieldServer, ChatServer, Launcher, 공용 Net/Protocol/Data 라이브러리로 나뉜다. |
+| `Server/` | 별도 C++ 서버 프로젝트. LoginServer, FieldServer, InstanceServer, ChatServer, Launcher, 공용 Net/Protocol/Data 라이브러리로 나뉜다. |
 | `Docs/` | 작업 문서와 세부 분석 문서. Palworld 커마 세부 구조 문서도 여기에 있다. |
 | `Tools/VRoidPresetExporter/` | 이전 VRoid 프리셋 추출용 도구. 현재 Palworld 커마 구조와는 별도 흐름이다. |
 | `UI/Images/` | UI 이미지 참고 자료 또는 생성 리소스 보관 영역이다. |
@@ -371,7 +371,7 @@ flowchart LR
 
 빌드 관련:
 
-- `Server/CMakeLists.txt`: Protocol, Net, Data, LoginServer, ChatServer, FieldServer, Launcher 하위 프로젝트를 추가한다.
+- `Server/CMakeLists.txt`: Protocol, Net, Data, LoginServer, ChatServer, FieldServer, InstanceServer, Launcher 하위 프로젝트를 추가한다.
 - `Server/CMakePresets.json`: `windows-x64` preset. Ninja Multi-Config와 `x64-windows` vcpkg triplet 사용.
 - `Server/vcpkg.json`: `openssl`, `flatbuffers`, `spdlog`, `argon2[hwopt]`, `hiredis` 의존성.
 - `Server/build.ps1`: MSVC 환경과 vcpkg를 찾고 CMake configure/build를 실행한다.
@@ -384,7 +384,8 @@ flowchart LR
 | `Net/` | IOCP/TLS 기반 서버 공통 코드. `TlsServer`, `TlsSession`, `FrameHandler`, `WorkQueue`, `RedisClient`, 인증서/자격증명 로딩. |
 | `Data/` | 계정/캐릭터 저장소 인터페이스와 구현. `DevStore`, `OdbcStore`, `PasswordHash`. |
 | `LoginServer/` | 로그인, 회원가입, 캐릭터 생성/삭제/선택, 서비스 ticket 발급. |
-| `FieldServer/` | 필드 입장, 이동 처리, 월드 엔티티/시야 관리, Redis 위치 캐시 연동. |
+| `FieldServer/` | 필드 입장, 이동 처리, 월드 엔티티/시야 관리, Redis 위치 캐시 연동. 야생 포켓몬과 전투는 없다. |
+| `InstanceServer/` | 인스턴스 방 배정, 야생 포켓몬과 Lua AI. 전투가 붙을 자리. 방마다 자기 World 를 갖는다. |
 | `ChatServer/` | 채팅방, Hello ticket 검증, 메시지 송수신. |
 | `Launcher/` | 여러 서버 프로세스를 한 번에 띄우는 실행기. |
 | `DataBase/` | DB 마이그레이션 SQL. |
@@ -516,7 +517,11 @@ flowchart TD
     LoginServer --> Ticket["AuthTicket"]
     Ticket --> FieldServer
     Ticket --> ChatServer["ChatServer"]
+    Ticket --> InstanceServer["InstanceServer"]
     ChatServer --> Room["Room broadcast"]
+    InstanceServer --> Rooms["RoomManager: type별 방 N개"]
+    Rooms --> Wild["야생 포켓몬 + Lua AI"]
+    InstanceServer --> DataStore
 ```
 
 중요한 구분:
