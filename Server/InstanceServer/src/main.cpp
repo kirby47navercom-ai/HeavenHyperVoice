@@ -53,6 +53,8 @@ struct Options {
     // 종류마다 나올 야생 종족. --instance-species <type>=<dex,dex,...>
     std::map<std::uint32_t, std::string> species;
 
+    std::string wildAiScript = "scripts/wild_ai.lua";
+
     heaven::data::OdbcSettings db;
 
     bool devNoAuth = false;
@@ -89,6 +91,7 @@ void printUsage() {
                  "  --room-idle <n>       seconds an empty room is kept before it closes\n"
                  "                        (default 60)\n"
                  "  --wild-per-room <n>   wild pokemon spawned when a room opens (default 12)\n"
+                 "  --wild-ai-script <p>  Lua wild pokemon behaviour tree (default scripts/wild_ai.lua)\n"
                  "  --wild-seed <n>       fix spawns and wander paths (default: random)\n"
                  "  --db-driver <name>    ODBC driver name (default: auto-detected)\n"
                  "  --db-host <h>         database host (default 127.0.0.1)\n"
@@ -198,6 +201,8 @@ Options parseArgs(int argc, char** argv) {
             options.rooms.emptyLinger = std::chrono::seconds(std::stoi(next("--room-idle")));
         } else if (arg == "--wild-per-room") {
             options.rooms.wildPerRoom = std::stoi(next("--wild-per-room"));
+        } else if (arg == "--wild-ai-script") {
+            options.wildAiScript = next("--wild-ai-script");
         } else if (arg == "--wild-seed") {
             options.rooms.wildSeed = static_cast<unsigned>(std::stoul(next("--wild-seed")));
         } else if (arg == "--instance-species") {
@@ -320,6 +325,11 @@ int main(int argc, char** argv) {
             spdlog::warn("no --instance-map or --instance-types; opening type 1 with no terrain");
         }
 
+        if (options.rooms.wildPerRoom > 0) {
+            options.rooms.wildAiScript =
+                heaven::net::resolveResourcePath(options.wildAiScript, "wild AI script");
+        }
+
         heaven::net::WorkQueue dbQueue(options.dbThreads);
         heaven::instance::RoomManager rooms(options.rooms, types);
 
@@ -368,7 +378,9 @@ int main(int argc, char** argv) {
                          ? std::string("unlimited")
                          : std::to_string(options.rooms.maxRoomsPerType),
                      options.rooms.emptyLinger.count());
-        spdlog::info("wild pokemon: {} per room, {} tick thread(s)", options.rooms.wildPerRoom,
+        spdlog::info("wild pokemon: {} per room, Lua BT {}, {} tick thread(s)",
+                     options.rooms.wildPerRoom,
+                     options.rooms.wildPerRoom > 0 ? options.rooms.wildAiScript : "disabled",
                      tickThreads);
         spdlog::info("characters: {} ({} db threads)",
                      characters ? characters->describe() : "disabled (--dev-no-auth)",
