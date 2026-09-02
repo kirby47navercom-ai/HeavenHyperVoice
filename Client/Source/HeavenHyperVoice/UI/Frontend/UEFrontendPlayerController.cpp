@@ -146,7 +146,7 @@ void AUEFrontendPlayerController::ApplyFrontendInputMode(UUserWidget* FocusWidge
 {
 	FInputModeUIOnly InputMode;
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	if (FocusWidget)
+	if (FocusWidget && FocusWidget->IsFocusable())
 	{
 		InputMode.SetWidgetToFocus(FocusWidget->TakeWidget());
 	}

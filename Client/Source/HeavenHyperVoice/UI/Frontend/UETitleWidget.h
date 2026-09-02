@@ -23,8 +23,9 @@ protected:
 	virtual void NativeDestruct() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
-	// 버튼의 모양과 위치는 WBP_Title에서만 편집한다.
-	UPROPERTY(meta = (BindWidget))
+	// Enter 입력만 쓰는 화면에서는 버튼이 없어도 된다.
+	// 버튼을 추가할 경우 모양과 위치는 WBP_Title에서만 편집한다.
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> ContinueButton = nullptr;
 
 private:
