@@ -29,6 +29,8 @@ public class HeavenHyperVoice : ModuleRules
 		{
 			"Slate",
 			"SlateCore",
+			"MoviePlayer",
+			"DeveloperSettings",
 			"Landscape",
 
 			// Field server transport. The engine ships OpenSSL 1.1.1t, which is

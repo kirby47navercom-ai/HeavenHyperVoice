@@ -7,7 +7,6 @@
 #include "../../CharacterSelection/UI/UECharacterSelectionWidget.h"
 #include "../../System/UEGameInstance.h"
 
-#include "Kismet/GameplayStatics.h"
 
 void AUEFrontendPlayerController::BeginPlay()
 {
@@ -208,7 +207,7 @@ void AUEFrontendPlayerController::HandleCharacterNameConfirmed(const FString& Ch
 	}
 
 	GameInstance->SetPendingCharacterName(CharacterName);
-	UGameplayStatics::OpenLevelBySoftObjectPtr(this, CustomizationLevel);
+	GameInstance->OpenLevelWithLoadingScreen(CustomizationLevel);
 }
 
 void AUEFrontendPlayerController::HandleCharacterNameBackRequested()

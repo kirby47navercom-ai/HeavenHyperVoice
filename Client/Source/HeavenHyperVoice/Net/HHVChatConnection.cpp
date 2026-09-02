@@ -24,7 +24,7 @@ THIRD_PARTY_INCLUDES_END
 
 DEFINE_LOG_CATEGORY_STATIC(LogHHVChat, Log, All);
 
-namespace
+namespace HHVChatConnectionPrivate
 {
 	constexpr int32 MaxFrameBytes = 64 * 1024;
 	constexpr int32 MaxChatTextBytes = 1024;
@@ -56,6 +56,8 @@ namespace
 		return Frame;
 	}
 }
+
+using namespace HHVChatConnectionPrivate;
 
 FHHVChatConnection::~FHHVChatConnection()
 {

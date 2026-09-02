@@ -19,22 +19,11 @@
 #include "InputAction.h"
 #include "InputCoreTypes.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "UObject/ConstructorHelpers.h"
 
 AUEPlayerController::AUEPlayerController()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	bShowMouseCursor = false;
-
-	static ConstructorHelpers::FClassFinder<UUserWidget> ChatWidgetFinder(
-		TEXT("/Game/UI/Chat/WBP_GameChat"));
-	static ConstructorHelpers::FClassFinder<UUserWidget> ChatLineFinder(
-		TEXT("/Game/UI/Chat/WBP_ChatLine"));
-	static ConstructorHelpers::FClassFinder<UUserWidget> ChatSystemLineFinder(
-		TEXT("/Game/UI/Chat/WBP_ChatSystemLine"));
-	ChatWidgetClass = ChatWidgetFinder.Class;
-	ChatLineWidgetClass = ChatLineFinder.Class;
-	ChatSystemLineWidgetClass = ChatSystemLineFinder.Class;
 }
 
 void AUEPlayerController::BeginPlay()

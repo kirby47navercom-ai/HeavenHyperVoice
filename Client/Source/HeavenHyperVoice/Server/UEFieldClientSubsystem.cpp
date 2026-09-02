@@ -2,13 +2,13 @@
 
 #include "../Character/UEPlayerCharacter.h"
 #include "../Player/UEPlayerController.h"
+#include "../System/UEGameInstance.h"
 
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "GameFramework/GameModeBase.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
-#include "Kismet/GameplayStatics.h"
 
 namespace
 {
@@ -156,7 +156,10 @@ void UUEFieldClientSubsystem::TravelTo(const TSoftObjectPtr<UWorld>& Level)
 
 	UE_LOG(LogTemp, Display, TEXT("FieldClient: travelling to %s (instance type %d)"),
 		*Level.ToString(), PendingInstanceType);
-	UGameplayStatics::OpenLevelBySoftObjectPtr(World, Level, true, Options);
+	if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(World->GetGameInstance()))
+	{
+		GameInstance->OpenLevelWithLoadingScreen(Level, true, Options);
+	}
 }
 
 bool UUEFieldClientSubsystem::SendPokemonToggleRequest()

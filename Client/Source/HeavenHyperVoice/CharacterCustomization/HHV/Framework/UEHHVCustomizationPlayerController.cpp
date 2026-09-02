@@ -6,7 +6,6 @@
 #include "../../../System/UEGameInstance.h"
 
 #include "EngineUtils.h"
-#include "Kismet/GameplayStatics.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogUEHHVCustomization, Log, All);
 
@@ -135,7 +134,10 @@ void AUEHHVCustomizationPlayerController::ReturnToLobby()
 			TEXT("로비 레벨이 BP_HHVCustomizationPlayerController 기본값에 지정되지 않았습니다."));
 		return;
 	}
-	UGameplayStatics::OpenLevelBySoftObjectPtr(this, LobbyLevel);
+	if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance()))
+	{
+		GameInstance->OpenLevelWithLoadingScreen(LobbyLevel);
+	}
 }
 
 void AUEHHVCustomizationPlayerController::HandleCustomizationConfirmed()
