@@ -27,6 +27,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pokemon|UI")
 	UUEPokemonPartyWidget* GetPokemonPartyWidget() const { return PokemonPartyWidget; }
 
+	// --- 콘솔 명령 (~ 로 열어서 입력) ---
+	//
+	// 인스턴스 입구 액터가 나오기 전까지 들어가고 나오는 유일한 길이다.
+	// 입력 액션과 태그를 만들면 그쪽에서 같은 함수를 부르면 된다.
+
+	/** 인스턴스로 들어간다. 레벨과 접속 서버가 함께 바뀐다. */
+	UFUNCTION(Exec)
+	void HHVEnterInstance(int32 InstanceType = 1);
+
+	/** 인스턴스에서 나와 필드로 돌아간다. */
+	UFUNCTION(Exec)
+	void HHVLeaveInstance();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;

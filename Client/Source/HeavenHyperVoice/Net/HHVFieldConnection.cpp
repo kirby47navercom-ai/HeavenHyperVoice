@@ -176,16 +176,17 @@ uint32 FHHVFieldConnection::Run()
 		if (Settings.Ticket.Num() > 0)
 		{
 			const auto Blob = Builder.CreateVector(Settings.Ticket.GetData(), Settings.Ticket.Num());
-			const auto Enter = HeavenField::CreateEnter(Builder, Blob);
+			const auto Enter = HeavenField::CreateEnter(Builder, Blob, /*dev_name=*/0,
+				/*dev_character_id=*/0, /*dev_partner_species=*/0, Settings.InstanceType);
 			Builder.Finish(HeavenField::CreateEnvelope(Builder, HeavenField::Payload::Enter, Enter.Union()));
-			UE_LOG(LogHHVField, Display, TEXT("entering with a %d byte ticket"),
-				Settings.Ticket.Num());
+			UE_LOG(LogHHVField, Display, TEXT("entering with a %d byte ticket (instance type %u)"),
+				Settings.Ticket.Num(), Settings.InstanceType);
 		}
 		else
 		{
 			const auto Name = Builder.CreateString(TCHAR_TO_UTF8(*Settings.DevName));
 			const auto Enter = HeavenField::CreateEnter(Builder, /*ticket=*/0, Name,
-				Settings.DevCharacterId, Settings.DevPartnerSpecies);
+				Settings.DevCharacterId, Settings.DevPartnerSpecies, Settings.InstanceType);
 			Builder.Finish(HeavenField::CreateEnvelope(Builder, HeavenField::Payload::Enter, Enter.Union()));
 			UE_LOG(LogHHVField, Warning,
 				TEXT("no ticket; entering as dev '%s' (server needs --dev-no-auth)"),
@@ -419,6 +420,8 @@ void FHHVFieldConnection::DispatchFrame(const uint8* Data, int32 Size)
 		Event.X = Ack->x();
 		Event.Y = Ack->y();
 		Event.Facing = Ack->facing();
+		Event.RoomId = Ack->room_id();
+		Event.OriginOffset = Ack->world_origin_offset();
 		break;
 	}
 
@@ -535,7 +538,8 @@ void FHHVFieldConnection::Poll()
 			bInField = true;
 			if (OnEnterAck)
 			{
-				OnEnterAck(Event.EntityId, Event.X, Event.Y, Event.Facing);
+				OnEnterAck(Event.EntityId, Event.X, Event.Y, Event.Facing, Event.RoomId,
+					Event.OriginOffset);
 			}
 			break;
 

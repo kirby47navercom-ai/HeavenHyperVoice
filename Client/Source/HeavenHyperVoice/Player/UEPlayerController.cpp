@@ -71,6 +71,22 @@ void AUEPlayerController::OnPossess(APawn* InPawn)
 	}
 }
 
+void AUEPlayerController::HHVEnterInstance(int32 InstanceType)
+{
+	if (UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
+	{
+		FieldClientSubsystem->EnterInstance(InstanceType);
+	}
+}
+
+void AUEPlayerController::HHVLeaveInstance()
+{
+	if (UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
+	{
+		FieldClientSubsystem->LeaveInstance();
+	}
+}
+
 void AUEPlayerController::ShowPokemonPartyWidget()
 {
 	if (!IsLocalController() || PokemonPartyWidget || !PokemonPartyWidgetClass)

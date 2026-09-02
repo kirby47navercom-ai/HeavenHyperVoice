@@ -125,6 +125,24 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Field Server|Party")
 	void TogglePartyWidget();
 
+	/**
+	 * 다음에 붙을 곳. 0 이면 필드, 그 외에는 그 번호의 인스턴스다.
+	 *
+	 * 들어가고 나오는 것 자체는 UUEFieldClientSubsystem 이 주도한다 — 레벨이
+	 * 갈리면서 이 컴포넌트가 통째로 사라지기 때문에, 목적지를 기억하는 것은
+	 * 레벨을 넘어 사는 쪽이어야 한다. 여기서는 받아 적기만 한다.
+	 *
+	 * AttachToPlayer **전에** 불러야 한다. 붙는 그 자리에서 접속을 시작한다.
+	 */
+	void SetConnectionTarget(int32 InstanceType) { TargetInstanceType = InstanceType; }
+
+	UFUNCTION(BlueprintPure, Category = "Field Server|Instance")
+	bool IsInInstance() const { return bInInstance; }
+
+	/** 배정받은 방 번호. 필드에서는 0 이다. 로그와 디버깅용. */
+	UFUNCTION(BlueprintPure, Category = "Field Server|Instance")
+	int32 GetRoomId() const { return static_cast<int32>(CurrentRoomId); }
+
 	// 파티 화면. 없으면 키를 눌러도 아무 일도 없다.
 	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server|Party")
 	TSubclassOf<UUEFieldPartyWidget> PartyWidgetClass;
@@ -142,6 +160,11 @@ protected:
 
 	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server", meta = (ClampMin = "1", ClampMax = "65535"))
 	int32 FieldServerPort = 0;
+
+	// 티켓이 없는 개발 접속에서만 쓴다. 티켓이 있으면 로그인 서버가 알려준
+	// 주소를 쓰므로 이 값은 무시된다.
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server", meta = (ClampMin = "1", ClampMax = "65535"))
+	int32 InstanceServerPort = 9300;
 
 	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server")
 	FString DevCharacterName;
@@ -165,10 +188,21 @@ protected:
 
 private:
 	void ResolveSyncComponents();
-	void StartFieldConnection();
+
+	// Service 는 "field" 또는 "instance". 티켓이 있으면 로그인 서버가 준 주소로,
+	// 없으면 설정에 박힌 개발용 주소로 붙는다.
+	void StartConnection(const FString& Service, uint32 InstanceType);
+
+	// SetConnectionTarget 이 정해 둔 곳으로 붙는다.
+	void StartFieldConnection()
+	{
+		StartConnection(TargetInstanceType > 0 ? TEXT("instance") : TEXT("field"),
+			static_cast<uint32>(FMath::Max(TargetInstanceType, 0)));
+	}
 	void StopFieldConnection();
 	void DestroyPresentationActors();
-	void HandleFieldEnterAck(uint64 EntityId, float ServerX, float ServerY, float Facing);
+	void HandleFieldEnterAck(uint64 EntityId, float ServerX, float ServerY, float Facing,
+		uint32 RoomId, float OriginOffset);
 	void HandleFieldCorrection(uint32 Sequence, float ServerX, float ServerY, float Facing);
 	void HandleFieldSnapshot(const FHHVFieldSnapshot& Snapshot);
 	void HandleFieldDisconnected(const FString& Reason);
@@ -191,6 +225,14 @@ private:
 
 	// 내 엔티티 번호. PartnerChanged 가 나에게 온 것인지 가리는 데 쓴다.
 	uint64 LocalEntityId = 0;
+
+	// 지금 인스턴스에 붙어 있는가. 위 TargetInstanceType 이 "가려는 곳" 이라면
+	// 이쪽은 "실제로 붙은 곳" 이다.
+	bool bInInstance = false;
+	uint32 CurrentRoomId = 0;
+
+	// 서브시스템이 알려준 목적지. 0 이면 필드.
+	int32 TargetInstanceType = 0;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUEFieldPartyWidget> PartyWidget = nullptr;

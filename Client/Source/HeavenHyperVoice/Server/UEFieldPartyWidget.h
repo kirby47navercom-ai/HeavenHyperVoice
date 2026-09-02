@@ -6,19 +6,22 @@
 // 응답 직후 서버가 닫으므로 로비에서는 말할 상대가 없다. 필드 연결은 접속 내내
 // 열려 있고, 파티를 바꾸면 그 자리에서 파트너가 바뀌는 것도 보인다.
 //
+// 목록은 하나다. 카탈로그의 모든 종족을 도감번호 순으로 늘어놓고, 해금하지 않은
+// 것은 회색으로 눌리지 않게 둔다. 파티에 넣은 것은 노란 테두리와 모서리 번호로
+// 표시한다 — 파티만 따로 떼어 놓으면 같은 포켓몬이 화면에 두 번 나온다.
+//
 // WBP 없이도 뜬다. 자식 위젯이 하나도 없으면 RebuildWidget 이 기본 배치를
 // 만든다 — DefaultGame.ini 에 이 C++ 클래스를 그대로 지정해도 동작한다.
 // 나중에 WBP 를 만들어 아래 BindWidgetOptional 이름들을 맞춰 두면 그쪽이 쓰인다.
-//
-// 목록에 TileView 를 쓰지 않는다. 후보가 구현된 종족 수(스무 남짓)뿐이라
-// 가상화가 이득이 없고, 패널에 직접 붙이면 항목 클래스 배선이 사라진다.
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 
 #include "UEFieldPartyWidget.generated.h"
 
+class UBorder;
 class UButton;
+class UImage;
 class UPanelWidget;
 class UTextBlock;
 class UWidget;
@@ -27,7 +30,7 @@ class UUEFieldServerBridgeComponent;
 class UUEPokemonSpeciesCatalog;
 class UUEPokemonSpeciesData;
 
-/** 목록 한 칸의 데이터. 해금 목록과 파티 목록이 같은 타입을 쓴다. */
+/** 목록 한 칸의 데이터. */
 UCLASS(BlueprintType)
 class HEAVENHYPERVOICE_API UUEFieldPartyEntryData : public UObject
 {
@@ -45,17 +48,17 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Field Party")
 	TObjectPtr<UUEPokemonSpeciesData> Species = nullptr;
 
-	// 해금 목록에서만 의미가 있다. 이미 파티에 들어간 종족이다.
+	// 해금하지 않았다. 회색으로 보이고 눌리지 않는다.
 	UPROPERTY(BlueprintReadOnly, Category = "Field Party")
-	bool bInParty = false;
+	bool bLocked = false;
 
-	// 파티 목록에서만 의미가 있다. 지금 꺼내 놓은 한 마리다.
+	// 파티에서의 자리. 1, 2, 3 이고 0 이면 파티에 없다. 모서리에 이 번호가 뜬다.
+	UPROPERTY(BlueprintReadOnly, Category = "Field Party")
+	int32 PartySlot = 0;
+
+	// 지금 꺼내 놓은 한 마리다.
 	UPROPERTY(BlueprintReadOnly, Category = "Field Party")
 	bool bActive = false;
-
-	// 파티 목록에서의 칸 번호. 해금 목록이면 INDEX_NONE.
-	UPROPERTY(BlueprintReadOnly, Category = "Field Party")
-	int32 SlotIndex = INDEX_NONE;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Field Party")
 	TObjectPtr<UUEFieldPartyWidget> Owner = nullptr;
@@ -64,8 +67,7 @@ public:
 /**
  * 목록 한 칸.
  *
- * 누르면 무엇을 할지는 여기서 정한다 — 해금 목록이면 파티에 넣고 빼고,
- * 파티 목록이면 그 한 마리를 꺼낸다.
+ * 누르면 파티에 넣고, 다시 누르면 뺀다. 어느 것을 꺼낼지는 1/2/3 키로 정한다.
  */
 UCLASS(Blueprintable)
 class HEAVENHYPERVOICE_API UUEFieldPartyEntryWidget : public UUserWidget
@@ -87,10 +89,20 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> LabelText = nullptr;
 
-	// 파티에 들어 있거나(해금 목록) 꺼내 놓았을 때(파티 목록) 보인다.
-	// 기본 배치에는 없다 — 버튼 색으로 대신한다.
+	// 종족 데이터의 ProfileIcon. 없는 종족은 이름만 뜬다.
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UWidget> SelectedMarker = nullptr;
+	TObjectPtr<UImage> IconImage = nullptr;
+
+	// 파티에 들어 있으면 노랗게, 꺼내 놓았으면 더 밝게 칠한다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> SelectionBorder = nullptr;
+
+	// 모서리의 1/2/3. 파티에 없으면 접힌다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UBorder> SlotBadge = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> SlotBadgeText = nullptr;
 
 private:
 	UFUNCTION()
@@ -108,13 +120,18 @@ class HEAVENHYPERVOICE_API UUEFieldPartyWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	/** 해금 목록에서 눌렀을 때. 들어 있으면 빼고, 없으면 넣는다. */
+	/** 한 칸을 눌렀을 때. 파티에 없으면 넣고, 있으면 뺀다. */
 	UFUNCTION(BlueprintCallable, Category = "Field Party")
 	void ToggleMember(int32 DexNumber);
 
-	/** 파티 목록에서 눌렀을 때. 그 한 마리를 꺼낸다. 이미 꺼낸 것이면 도로 넣는다. */
+	/**
+	 * 파티 몇 번째를 꺼낼지 고른다. SlotNumber 는 화면의 배지와 같은 1, 2, 3 이다.
+	 *
+	 * 이미 그 포켓몬이 나와 있으면 도로 집어넣는다 — 같은 키가 꺼내기와
+	 * 집어넣기를 겸한다.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Field Party")
-	void SetActiveMember(int32 DexNumber);
+	void SetActiveSlot(int32 SlotNumber);
 
 	/** 서버에 보낸다. 응답이 오면 화면이 서버 상태로 다시 그려진다. */
 	UFUNCTION(BlueprintCallable, Category = "Field Party")
@@ -136,13 +153,9 @@ protected:
 	virtual void NativeDestruct() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent) override;
 
-	// 해금한 종족 후보가 들어간다.
+	// 모든 종족이 도감번호 순으로 들어간다.
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UPanelWidget> UnlockedList = nullptr;
-
-	// 편집 중인 파티 세 칸.
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UPanelWidget> PartyList = nullptr;
+	TObjectPtr<UPanelWidget> PokemonList = nullptr;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> ConfirmButton = nullptr;
@@ -153,8 +166,8 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> StatusText = nullptr;
 
-	// 도감번호를 이름으로 바꾼다. AUEPokemonCharacter 가 쓰는 것과 같은 에셋이다.
-	// 비어 있으면 ini 의 SpeciesCatalog 를 쓰고, 그것도 없으면 번호만 표시한다.
+	// 화면에 늘어놓을 종족 표. 도감번호를 이름·초상화로 바꾸는 데도 쓴다.
+	// 비어 있으면 ini 의 SpeciesCatalog 를 빌린다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field Party")
 	TObjectPtr<UUEPokemonSpeciesCatalog> SpeciesCatalog = nullptr;
 
@@ -175,7 +188,7 @@ private:
 	UFUNCTION()
 	void HandlePartyStateChanged();
 
-	void RebuildLists();
+	void RebuildList();
 	void SetStatus(const FText& Message);
 	UUEFieldServerBridgeComponent* FindBridge() const;
 	UUEPokemonSpeciesCatalog* ResolveCatalog() const;

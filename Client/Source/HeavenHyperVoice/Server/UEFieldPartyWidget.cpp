@@ -12,6 +12,9 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
+#include "Components/Image.h"
+#include "Components/Overlay.h"
+#include "Components/OverlaySlot.h"
 #include "Components/PanelWidget.h"
 #include "Components/ScrollBox.h"
 #include "Components/SizeBox.h"
@@ -25,13 +28,26 @@
 namespace
 {
 // 기본 배치에서만 쓰는 값들. WBP 를 만들면 전부 그쪽 것이 된다.
+//
+// 스무 종이 일곱 칸씩 세 줄에 다 들어가게 잡았다. 종족이 늘면 스크롤이 생긴다.
 constexpr float kEntryWidth = 150.0f;
-constexpr float kEntryHeight = 44.0f;
+constexpr float kEntryHeight = 158.0f;
+constexpr float kIconSize = 102.0f;
+constexpr float kBorderThickness = 3.0f;
+constexpr float kBadgeSize = 28.0f;
 
-const FLinearColor kPanelColor(0.02f, 0.02f, 0.04f, 0.92f);
-const FLinearColor kIdleEntryColor(0.14f, 0.14f, 0.18f, 1.0f);
-const FLinearColor kInPartyColor(0.16f, 0.34f, 0.52f, 1.0f);
-const FLinearColor kActiveColor(0.86f, 0.62f, 0.16f, 1.0f);
+constexpr float kPanelWidth = 1240.0f;
+constexpr float kPanelHeight = 900.0f;
+
+const FLinearColor kPanelColor(0.02f, 0.02f, 0.04f, 0.94f);
+const FLinearColor kEntryColor(0.14f, 0.14f, 0.18f, 1.0f);
+const FLinearColor kLockedColor(0.09f, 0.09f, 0.11f, 1.0f);
+const FLinearColor kLockedTint(0.30f, 0.30f, 0.34f, 1.0f);
+
+// 파티에 든 것은 노란 테두리, 그중 꺼내 놓은 한 마리는 더 밝게.
+const FLinearColor kPartyBorder(0.86f, 0.62f, 0.16f, 1.0f);
+const FLinearColor kActiveBorder(1.0f, 0.85f, 0.35f, 1.0f);
+const FLinearColor kNoBorder(0.0f, 0.0f, 0.0f, 0.0f);
 
 UTextBlock* MakeLabel(UWidgetTree& Tree, const FText& Text)
 {
@@ -53,14 +69,64 @@ TSharedRef<SWidget> UUEFieldPartyEntryWidget::RebuildWidget()
 		Sizer->SetHeightOverride(kEntryHeight);
 		WidgetTree->RootWidget = Sizer;
 
+		// 테두리를 버튼 바깥에 두른다. 버튼 색으로 표시하면 눌린 상태와 선택
+		// 상태가 같은 색을 두고 다툰다.
+		SelectionBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(),
+			TEXT("SelectionBorder"));
+		SelectionBorder->SetPadding(FMargin(kBorderThickness));
+		Sizer->AddChild(SelectionBorder);
+
+		UOverlay* Stack = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass());
+		SelectionBorder->AddChild(Stack);
+
 		UButton* Button =
 			WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("SelectButton"));
 		SelectButton = Button;
-		Sizer->AddChild(Button);
+		if (UOverlaySlot* ButtonSlot = Cast<UOverlaySlot>(Stack->AddChild(Button)))
+		{
+			ButtonSlot->SetHorizontalAlignment(HAlign_Fill);
+			ButtonSlot->SetVerticalAlignment(VAlign_Fill);
+		}
+
+		// 초상화 위에 이름. 버튼은 자식 하나만 받으므로 세로 상자를 끼운다.
+		UVerticalBox* Column =
+			WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+		Button->AddChild(Column);
+
+		USizeBox* IconBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		IconBox->SetWidthOverride(kIconSize);
+		IconBox->SetHeightOverride(kIconSize);
+		if (UVerticalBoxSlot* IconSlot = Cast<UVerticalBoxSlot>(Column->AddChild(IconBox)))
+		{
+			IconSlot->SetHorizontalAlignment(HAlign_Center);
+		}
+
+		IconImage = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("IconImage"));
+		IconBox->AddChild(IconImage);
 
 		LabelText = MakeLabel(*WidgetTree, FText::GetEmpty());
 		LabelText->SetJustification(ETextJustify::Center);
-		Button->AddChild(LabelText);
+		if (UVerticalBoxSlot* LabelSlot = Cast<UVerticalBoxSlot>(Column->AddChild(LabelText)))
+		{
+			LabelSlot->SetHorizontalAlignment(HAlign_Center);
+		}
+
+		// 파티 번호는 칸 위에 겹쳐 띄운다. 흐름에 넣으면 파티에 든 칸만 키가 달라진다.
+		USizeBox* BadgeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		BadgeBox->SetWidthOverride(kBadgeSize);
+		BadgeBox->SetHeightOverride(kBadgeSize);
+		if (UOverlaySlot* BadgeSlot = Cast<UOverlaySlot>(Stack->AddChild(BadgeBox)))
+		{
+			BadgeSlot->SetHorizontalAlignment(HAlign_Left);
+			BadgeSlot->SetVerticalAlignment(VAlign_Top);
+		}
+
+		SlotBadge = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SlotBadge"));
+		BadgeBox->AddChild(SlotBadge);
+
+		SlotBadgeText = MakeLabel(*WidgetTree, FText::GetEmpty());
+		SlotBadgeText->SetJustification(ETextJustify::Center);
+		SlotBadge->AddChild(SlotBadgeText);
 	}
 
 	return Super::RebuildWidget();
@@ -101,41 +167,64 @@ void UUEFieldPartyEntryWidget::ApplyEntryData()
 	if (LabelText)
 	{
 		LabelText->SetText(EntryData->Label);
+		LabelText->SetColorAndOpacity(
+			EntryData->bLocked ? FSlateColor(kLockedTint) : FSlateColor(FLinearColor::White));
 	}
 
-	// 해금 목록에서는 "파티에 들어 있음", 파티 목록에서는 "꺼내 놓음" 이다.
-	const bool bMarked =
-		EntryData->SlotIndex == INDEX_NONE ? EntryData->bInParty : EntryData->bActive;
+	if (IconImage)
+	{
+		UTexture2D* Portrait = EntryData->Species ? EntryData->Species->ProfileIcon : nullptr;
+		if (Portrait)
+		{
+			// 크기는 SizeBox 가 정한다. 텍스처 크기를 따라가면 칸마다 들쭉날쭉해진다.
+			IconImage->SetBrushFromTexture(Portrait, /*bMatchSize=*/false);
+			IconImage->SetVisibility(ESlateVisibility::HitTestInvisible);
 
-	if (SelectedMarker)
-	{
-		SelectedMarker->SetVisibility(
-			bMarked ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+			// 해금 전에는 회색으로 죽인다. 무엇이 있는지는 보이되 고를 수 없다.
+			IconImage->SetColorAndOpacity(EntryData->bLocked ? kLockedTint : FLinearColor::White);
+		}
+		else
+		{
+			// 초상화가 없는 종족. 빈 브러시를 그리면 흰 사각형이 남는다.
+			IconImage->SetVisibility(ESlateVisibility::Collapsed);
+		}
 	}
-	else if (SelectButton)
+
+	if (SelectButton)
 	{
-		// 표식 위젯이 없으면 버튼 색으로 대신한다. 기본 배치가 이 경로다.
-		const FLinearColor Color = bMarked
-			? (EntryData->SlotIndex == INDEX_NONE ? kInPartyColor : kActiveColor)
-			: kIdleEntryColor;
-		SelectButton->SetBackgroundColor(Color);
+		SelectButton->SetBackgroundColor(EntryData->bLocked ? kLockedColor : kEntryColor);
+
+		// 해금하지 않은 칸은 눌리지 않는다. 눌러 봐야 서버가 거절할 뿐이다.
+		SelectButton->SetIsEnabled(!EntryData->bLocked);
+	}
+
+	if (SelectionBorder)
+	{
+		const FLinearColor Border = EntryData->bActive
+			? kActiveBorder
+			: (EntryData->PartySlot > 0 ? kPartyBorder : kNoBorder);
+		SelectionBorder->SetBrushColor(Border);
+	}
+
+	if (SlotBadge)
+	{
+		SlotBadge->SetVisibility(EntryData->PartySlot > 0
+			? ESlateVisibility::HitTestInvisible
+			: ESlateVisibility::Collapsed);
+		SlotBadge->SetBrushColor(EntryData->bActive ? kActiveBorder : kPartyBorder);
+	}
+	if (SlotBadgeText && EntryData->PartySlot > 0)
+	{
+		SlotBadgeText->SetText(FText::AsNumber(EntryData->PartySlot));
+		SlotBadgeText->SetColorAndOpacity(FSlateColor(FLinearColor::Black));
 	}
 }
 
 void UUEFieldPartyEntryWidget::HandleClicked()
 {
-	if (!EntryData || !EntryData->Owner)
-	{
-		return;
-	}
-
-	if (EntryData->SlotIndex == INDEX_NONE)
+	if (EntryData && EntryData->Owner)
 	{
 		EntryData->Owner->ToggleMember(EntryData->DexNumber);
-	}
-	else
-	{
-		EntryData->Owner->SetActiveMember(EntryData->DexNumber);
 	}
 }
 
@@ -158,36 +247,28 @@ TSharedRef<SWidget> UUEFieldPartyWidget::RebuildWidget()
 			// 화면 한가운데. 해상도가 달라져도 자리가 유지된다.
 			PanelSlot->SetAnchors(FAnchors(0.5f, 0.5f));
 			PanelSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-			PanelSlot->SetSize(FVector2D(900.0f, 640.0f));
+			PanelSlot->SetSize(FVector2D(kPanelWidth, kPanelHeight));
 		}
 
 		UVerticalBox* Column =
 			WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
 		Panel->AddChild(Column);
 
-		Column->AddChild(MakeLabel(*WidgetTree, NSLOCTEXT("HHV", "PartyTitle", "파티")));
-		Column->AddChild(MakeLabel(*WidgetTree,
-			NSLOCTEXT("HHV", "PartyMembers", "데리고 다닐 포켓몬 (최대 3마리, 눌러서 꺼내기)")));
+		Column->AddChild(MakeLabel(*WidgetTree, NSLOCTEXT("HHV", "PartyTitle", "모든 포켓몬")));
+		Column->AddChild(MakeLabel(*WidgetTree, NSLOCTEXT("HHV", "PartyHint",
+			"눌러서 파티에 넣고 빼기 (최대 3마리) · 1 2 3 키로 꺼내고 집어넣기")));
 
-		UWrapBox* Party =
-			WidgetTree->ConstructWidget<UWrapBox>(UWrapBox::StaticClass(), TEXT("PartyList"));
-		PartyList = Party;
-		Column->AddChild(Party);
-
-		Column->AddChild(MakeLabel(*WidgetTree,
-			NSLOCTEXT("HHV", "PartyUnlocked", "해금한 포켓몬 (눌러서 넣고 빼기)")));
-
-		// 해금이 늘어나면 화면 밖으로 넘친다. 목록만 스크롤한다.
+		// 종족이 늘어나면 화면 밖으로 넘친다. 목록만 스크롤한다.
 		UScrollBox* Scroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass());
 		if (UVerticalBoxSlot* ScrollSlot = Cast<UVerticalBoxSlot>(Column->AddChild(Scroll)))
 		{
 			ScrollSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 		}
 
-		UWrapBox* Unlocked =
-			WidgetTree->ConstructWidget<UWrapBox>(UWrapBox::StaticClass(), TEXT("UnlockedList"));
-		UnlockedList = Unlocked;
-		Scroll->AddChild(Unlocked);
+		UWrapBox* Grid =
+			WidgetTree->ConstructWidget<UWrapBox>(UWrapBox::StaticClass(), TEXT("PokemonList"));
+		PokemonList = Grid;
+		Scroll->AddChild(Grid);
 
 		StatusText = MakeLabel(*WidgetTree, FText::GetEmpty());
 		Column->AddChild(StatusText);
@@ -253,6 +334,25 @@ FReply UUEFieldPartyWidget::NativeOnKeyDown(const FGeometry& Geometry, const FKe
 		Close();
 		return FReply::Handled();
 	}
+
+	// 파티 자리 번호로 꺼낸다. 화면의 배지 번호와 같은 키다.
+	const FKey Key = KeyEvent.GetKey();
+	if (Key == EKeys::One || Key == EKeys::NumPadOne)
+	{
+		SetActiveSlot(1);
+		return FReply::Handled();
+	}
+	if (Key == EKeys::Two || Key == EKeys::NumPadTwo)
+	{
+		SetActiveSlot(2);
+		return FReply::Handled();
+	}
+	if (Key == EKeys::Three || Key == EKeys::NumPadThree)
+	{
+		SetActiveSlot(3);
+		return FReply::Handled();
+	}
+
 	return Super::NativeOnKeyDown(Geometry, KeyEvent);
 }
 
@@ -322,14 +422,18 @@ void UUEFieldPartyWidget::ToggleMember(int32 DexNumber)
 		return;
 	}
 
-	if (PendingParty.Remove(DexNumber) > 0)
+	const int32 Index = PendingParty.Find(DexNumber);
+	if (Index != INDEX_NONE)
 	{
-		// 뺀 것을 꺼내 놓은 상태로 둘 수 없다. 서버도 같은 이유로 거절한다.
+		PendingParty.RemoveAt(Index);
+
+		// 꺼내 놓은 것을 뺐으면 나와 있는 것이 없어진다. 남은 것으로 멋대로
+		// 옮기지 않는다 — 무엇이 나올지는 1/2/3 키로 사용자가 정한다.
 		if (PendingActive == DexNumber)
 		{
-			PendingActive = PendingParty.IsEmpty() ? 0 : PendingParty[0];
+			PendingActive = 0;
 		}
-		RebuildLists();
+		RebuildList();
 		return;
 	}
 
@@ -341,23 +445,28 @@ void UUEFieldPartyWidget::ToggleMember(int32 DexNumber)
 
 	PendingParty.Add(DexNumber);
 
-	// 첫 마리는 자동으로 꺼낸다. 파티만 채우고 아무도 안 꺼낸 채 확인을 누르면
-	// 파트너가 사라져서 실수처럼 보인다.
+	// 첫 마리는 자동으로 꺼낸다. 파티만 채우고 아무도 안 꺼낸 채 확인을
+	// 누르면 파트너가 사라져서 실수처럼 보인다.
 	if (PendingActive == 0)
 	{
 		PendingActive = DexNumber;
 	}
-	RebuildLists();
+	RebuildList();
 }
 
-void UUEFieldPartyWidget::SetActiveMember(int32 DexNumber)
+void UUEFieldPartyWidget::SetActiveSlot(int32 SlotNumber)
 {
-	if (DexNumber <= 0 || !PendingParty.Contains(DexNumber))
+	if (!PendingParty.IsValidIndex(SlotNumber - 1))
 	{
+		SetStatus(NSLOCTEXT("HHV", "PartySlotEmpty", "그 자리에 포켓몬이 없습니다"));
 		return;
 	}
+
+	const int32 DexNumber = PendingParty[SlotNumber - 1];
+
+	// 이미 나와 있으면 도로 집어넣는다. 같은 키가 꺼내기와 집어넣기를 겸한다.
 	PendingActive = PendingActive == DexNumber ? 0 : DexNumber;
-	RebuildLists();
+	RebuildList();
 }
 
 void UUEFieldPartyWidget::Confirm()
@@ -402,79 +511,80 @@ void UUEFieldPartyWidget::HandlePartyStateChanged()
 	{
 		SetStatus(FText::FromString(State.Message));
 	}
-	RebuildLists();
+	RebuildList();
 }
 
-void UUEFieldPartyWidget::RebuildLists()
+void UUEFieldPartyWidget::RebuildList()
 {
 	const UUEFieldServerBridgeComponent* Bridge = FindBridge();
-	if (!Bridge)
+	if (!Bridge || !PokemonList)
 	{
 		return;
 	}
 
 	UUEPokemonSpeciesCatalog* Catalog = ResolveCatalog();
+	if (!Catalog)
+	{
+		SetStatus(NSLOCTEXT("HHV", "PartyNoCatalog",
+			"종족 카탈로그가 지정되지 않았습니다 (DefaultGame.ini 의 SpeciesCatalog)"));
+		return;
+	}
 
-	const auto AddEntry = [this, Catalog](UPanelWidget* Panel, int32 DexNumber, int32 SlotIndex)
+	// 도감번호 순으로 늘어놓는다. 카탈로그 배열은 등록한 차례라 뒤죽박죽이고,
+	// 그 순서를 바꾸면 배열 위치를 종족 id 로 쓰는 옛 경로가 밀린다.
+	TArray<UUEPokemonSpeciesData*> Ordered;
+	Ordered.Reserve(Catalog->Species.Num());
+	for (UUEPokemonSpeciesData* Entry : Catalog->Species)
+	{
+		if (Entry && Entry->DexNumber > 0)
+		{
+			Ordered.Add(Entry);
+		}
+	}
+	Ordered.Sort([](const UUEPokemonSpeciesData& Left, const UUEPokemonSpeciesData& Right)
+	{
+		return Left.DexNumber < Right.DexNumber;
+	});
+
+	// 서버가 모르는 종족이 카탈로그에 들어 있으면 영영 잠긴 칸으로 보인다.
+	// 잘못 눌러도 서버가 거절하므로 조용히 그대로 둔다.
+	const TArray<int32>& Unlocked = Bridge->GetPartyState().Unlocked;
+
+	PokemonList->ClearChildren();
+	for (UUEPokemonSpeciesData* Species : Ordered)
 	{
 		UUEFieldPartyEntryData* Entry = NewObject<UUEFieldPartyEntryData>(this);
-		Entry->DexNumber = DexNumber;
+		Entry->DexNumber = Species->DexNumber;
+		Entry->Species = Species;
 		Entry->Owner = this;
-		Entry->SlotIndex = SlotIndex;
-		Entry->bInParty = PendingParty.Contains(DexNumber);
-		Entry->bActive = PendingActive == DexNumber;
+		Entry->bLocked = !Unlocked.Contains(Species->DexNumber);
+		Entry->PartySlot = PendingParty.Find(Species->DexNumber) + 1;  // 못 찾으면 0
+		Entry->bActive = PendingActive == Species->DexNumber;
 
-		if (Catalog)
+		// 종족 데이터가 표시 이름을 들고 있으면 그것을 쓴다. 비어 있으면
+		// 에셋 이름에서 접두사만 떼어 쓴다 — 이름을 코드에 박지 않는다.
+		if (!Species->DisplayName.IsEmpty())
 		{
-			Entry->Species = Catalog->FindByDex(DexNumber);
-		}
-		if (Entry->Species)
-		{
-			// 에셋 이름에서 접두사만 떼어 쓴다. 표시 이름을 코드에 박지 않는다.
-			FString DisplayName = Entry->Species->GetName();
-			DisplayName.RemoveFromStart(TEXT("DA_"));
-			Entry->Label = FText::FromString(DisplayName);
+			Entry->Label = Species->DisplayName;
 		}
 		else
 		{
-			// 카탈로그에 없는 도감번호. 해금은 됐는데 에셋이 아직 없는 경우다.
-			Entry->Label = FText::AsNumber(DexNumber);
+			FString DisplayName = Species->GetName();
+			DisplayName.RemoveFromStart(TEXT("DA_"));
+			Entry->Label = FText::FromString(DisplayName);
 		}
 
 		UUEFieldPartyEntryWidget* EntryWidget =
 			CreateWidget<UUEFieldPartyEntryWidget>(this, UUEFieldPartyEntryWidget::StaticClass());
 		if (!EntryWidget)
 		{
-			return;
+			continue;
 		}
 		EntryWidget->Setup(Entry);
 
-		if (UWrapBoxSlot* WrapSlot = Cast<UWrapBoxSlot>(Panel->AddChild(EntryWidget)))
+		if (UWrapBoxSlot* WrapSlot = Cast<UWrapBoxSlot>(PokemonList->AddChild(EntryWidget)))
 		{
 			WrapSlot->SetPadding(FMargin(4.0f));
-		}
-	};
-
-	const TArray<int32>& Unlocked = Bridge->GetPartyState().Unlocked;
-	if (UnlockedList)
-	{
-		UnlockedList->ClearChildren();
-		for (const int32 Dex : Unlocked)
-		{
-			AddEntry(UnlockedList, Dex, INDEX_NONE);
-		}
-	}
-	if (Unlocked.IsEmpty() && StatusText && StatusText->GetText().IsEmpty())
-	{
-		SetStatus(NSLOCTEXT("HHV", "PartyNoUnlocked", "해금한 포켓몬이 없습니다"));
-	}
-
-	if (PartyList)
-	{
-		PartyList->ClearChildren();
-		for (int32 Index = 0; Index < PendingParty.Num(); ++Index)
-		{
-			AddEntry(PartyList, PendingParty[Index], Index);
 		}
 	}
 }

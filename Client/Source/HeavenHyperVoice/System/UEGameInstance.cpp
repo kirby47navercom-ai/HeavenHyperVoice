@@ -242,12 +242,12 @@ void UUEGameInstance::RequestSelectCharacter(int32 SlotIndex)
 	LoginConnection->SendSelectCharacter(ServerCharacters[SlotIndex].Id);
 }
 
-bool UUEGameInstance::GetFieldEndpoint(FString& OutHost, int32& OutPort,
-	TArray<uint8>& OutTicket) const
+bool UUEGameInstance::GetServiceEndpoint(const FString& Service, FString& OutHost,
+	int32& OutPort, TArray<uint8>& OutTicket) const
 {
 	for (const FHHVServiceEndpoint& Endpoint : ServiceEndpoints)
 	{
-		if (Endpoint.Service == TEXT("field"))
+		if (Endpoint.Service == Service)
 		{
 			OutHost = Endpoint.Host;
 			OutPort = Endpoint.Port;

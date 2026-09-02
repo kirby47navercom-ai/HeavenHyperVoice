@@ -149,7 +149,7 @@ void UUEFieldServerBridgeComponent::ResolveSyncComponents()
 	}
 }
 
-void UUEFieldServerBridgeComponent::StartFieldConnection()
+void UUEFieldServerBridgeComponent::StartConnection(const FString& Service, uint32 InstanceType)
 {
 	if (FieldConnection)
 	{
@@ -194,9 +194,10 @@ void UUEFieldServerBridgeComponent::StartFieldConnection()
 	}
 
 	FieldConnection = std::make_unique<FHHVFieldConnection>();
-	FieldConnection->OnEnterAck = [this](uint64 EntityId, float ServerX, float ServerY, float Facing)
+	FieldConnection->OnEnterAck = [this](uint64 EntityId, float ServerX, float ServerY,
+		float Facing, uint32 RoomId, float OriginOffset)
 	{
-		HandleFieldEnterAck(EntityId, ServerX, ServerY, Facing);
+		HandleFieldEnterAck(EntityId, ServerX, ServerY, Facing, RoomId, OriginOffset);
 	};
 	FieldConnection->OnCorrection = [this](uint32 Sequence, float ServerX, float ServerY, float Facing)
 	{
@@ -242,11 +243,15 @@ void UUEFieldServerBridgeComponent::StartFieldConnection()
 		ResolvedName = FString::Printf(TEXT("UEClient-%llu"), ResolvedCharacterId);
 	}
 
+	const bool bInstance = Service == TEXT("instance");
+
 	FHHVFieldSettings Settings;
+	// 티켓이 없는 개발 접속용 기본값. 아래에서 티켓을 찾으면 덮어쓴다.
 	Settings.Host = FieldServerHost;
-	Settings.Port = FieldServerPort;
+	Settings.Port = bInstance ? InstanceServerPort : FieldServerPort;
 	Settings.DevName = ResolvedName;
 	Settings.DevCharacterId = ResolvedCharacterId;
+	Settings.InstanceType = InstanceType;
 
 	if (const UWorld* World = GetWorld())
 	{
@@ -255,7 +260,10 @@ void UUEFieldServerBridgeComponent::StartFieldConnection()
 			FString TicketHost;
 			int32 TicketPort = 0;
 			TArray<uint8> Ticket;
-			if (GameInstance->GetFieldEndpoint(TicketHost, TicketPort, Ticket) && Ticket.Num() > 0)
+			// 서비스마다 티켓이 따로 서명돼 있다. 필드 티켓으로 인스턴스에
+			// 들어가려 하면 서버가 audience 불일치로 거절한다.
+			if (GameInstance->GetServiceEndpoint(Service, TicketHost, TicketPort, Ticket)
+				&& Ticket.Num() > 0)
 			{
 				Settings.Host = TicketHost;
 				Settings.Port = TicketPort;
@@ -264,10 +272,12 @@ void UUEFieldServerBridgeComponent::StartFieldConnection()
 		}
 	}
 
+	bInInstance = bInstance;
+	CurrentRoomId = 0;
 	FieldConnection->Start(Settings);
 
-	UE_LOG(LogTemp, Display, TEXT("FieldServerBridge: connecting to %s:%d as %s (id %llu)"),
-		*Settings.Host, Settings.Port, *Settings.DevName, Settings.DevCharacterId);
+	UE_LOG(LogTemp, Display, TEXT("FieldServerBridge: connecting to %s %s:%d as %s (id %llu)"),
+		*Service, *Settings.Host, Settings.Port, *Settings.DevName, Settings.DevCharacterId);
 
 	SetComponentTickEnabled(true);
 }
@@ -275,6 +285,7 @@ void UUEFieldServerBridgeComponent::StartFieldConnection()
 void UUEFieldServerBridgeComponent::StopFieldConnection()
 {
 	FieldConnection.reset();
+	CurrentRoomId = 0;
 	SetComponentTickEnabled(false);
 }
 
@@ -303,9 +314,22 @@ void UUEFieldServerBridgeComponent::HandleFieldEnterAck(
 	uint64 EntityId,
 	float ServerX,
 	float ServerY,
-	float Facing)
+	float Facing,
+	uint32 RoomId,
+	float OriginOffset)
 {
 	LocalEntityId = EntityId;
+	CurrentRoomId = RoomId;
+
+	// 좌표 변환 기준은 서버가 알려준 값을 쓴다. 필드와 인스턴스는 월드 크기가
+	// 달라 오프셋도 다른데, ini 로 양쪽을 맞추면 언젠가 어긋나고 그때는 전원이
+	// 엉뚱한 자리에 서는 것으로만 드러난다. 아래 좌표 계산이 전부 이 값을 쓴다.
+	//
+	// 이 값보다 먼저 오는 좌표는 없다 — 서버가 EnterAck 을 Spawn 보다 앞세운다.
+	if (OriginOffset != 0.0f)
+	{
+		WorldOriginOffset = OriginOffset;
+	}
 
 	if (!MovementSyncComponent.IsValid())
 	{
@@ -425,7 +449,8 @@ void UUEFieldServerBridgeComponent::HandleFieldSnapshot(const FHHVFieldSnapshot&
 
 void UUEFieldServerBridgeComponent::HandleFieldDisconnected(const FString& Reason)
 {
-	UE_LOG(LogTemp, Warning, TEXT("FieldServerBridge: disconnected: %s"), *Reason);
+	UE_LOG(LogTemp, Warning, TEXT("FieldServerBridge: disconnected from %s: %s"),
+		bInInstance ? TEXT("instance") : TEXT("field"), *Reason);
 }
 
 void UUEFieldServerBridgeComponent::HandleFieldPartyState(const FHHVFieldPartyState& State)

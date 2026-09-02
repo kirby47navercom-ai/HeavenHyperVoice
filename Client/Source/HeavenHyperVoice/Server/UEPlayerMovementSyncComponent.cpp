@@ -12,10 +12,6 @@ void UUEPlayerMovementSyncComponent::BeginPlay()
 	Super::BeginPlay();
 
 	CachedPlayerCharacter = Cast<AUEPlayerCharacter>(GetOwner());
-	if (AUEPlayerCharacter* PlayerCharacter = CachedPlayerCharacter.Get())
-	{
-		SaveLastValidatedServerState(PlayerCharacter->GetActorLocation(), PlayerCharacter->GetActorRotation());
-	}
 }
 
 void UUEPlayerMovementSyncComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -28,10 +24,22 @@ void UUEPlayerMovementSyncComponent::EndPlay(const EEndPlayReason::Type EndPlayR
 
 FUEPlayerMovementPacket UUEPlayerMovementSyncComponent::CaptureMovementPacket()
 {
-	const FUEPlayerMovementPacket MovementPacket = BuildMovementPacket();
-	if (MovementPacket.Sequence != 0)
+	FUEPlayerMovementPacket MovementPacket;
+
+	AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter();
+	if (!PlayerCharacter)
 	{
-		RecordMovementPacket(MovementPacket);
+		return MovementPacket;
+	}
+
+	MovementPacket.Sequence = NextMoveSequence++;
+	MovementPacket.ClientPosition = PlayerCharacter->GetActorLocation();
+	MovementPacket.ActorRotation = PlayerCharacter->GetActorRotation();
+
+	MoveHistory.Add(MovementPacket);
+	while (MoveHistory.Num() > MaxMoveHistoryEntries)
+	{
+		MoveHistory.RemoveAt(0, 1, EAllowShrinking::No);
 	}
 	return MovementPacket;
 }
@@ -52,7 +60,6 @@ void UUEPlayerMovementSyncComponent::HandleServerEnterAck(
 		FVector::ZeroVector,
 		ServerRotation,
 		/*bUseHardCorrection=*/true);
-	SaveLastValidatedServerState(ServerPosition, ServerRotation);
 
 	UE_LOG(LogTemp, Display,
 		TEXT("PlayerMovementSync: entered field as entity %llu at (%.0f, %.0f)"),
@@ -66,105 +73,48 @@ void UUEPlayerMovementSyncComponent::HandleServerCorrection(
 	const FVector2D& ServerPositionXY,
 	float ServerFacing)
 {
+	AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter();
+	if (!PlayerCharacter)
+	{
+		return;
+	}
+
+	// 서버는 고친 좌표만 보낸다. 높이는 그 Sequence 를 보낼 때 내가 있던 높이다.
 	const int32 HistoryIndex = FindMoveHistoryIndex(Sequence);
 	if (HistoryIndex == INDEX_NONE)
 	{
 		return;
 	}
+	const FUEPlayerMovementPacket& Sent = MoveHistory[HistoryIndex];
 
-	const FUEPlayerMovementHistoryEntry& HistoryEntry = MoveHistory[HistoryIndex];
-
-	FVector ServerPosition = HistoryEntry.ReportedPosition;
+	FVector ServerPosition = Sent.ClientPosition;
 	ServerPosition.X = ServerPositionXY.X;
 	ServerPosition.Y = ServerPositionXY.Y;
 
-	FRotator ServerRotation = HistoryEntry.ReportedRotation;
+	FRotator ServerRotation = Sent.ActorRotation;
 	ServerRotation.Yaw = ServerFacing;
 
-	HandleServerMovementResult(Sequence, ServerPosition, FVector::ZeroVector, ServerRotation);
-}
+	// 확인된 것까지는 다시 볼 일이 없다.
+	const float CorrectionDistance = FVector::Dist(Sent.ClientPosition, ServerPosition);
+	MoveHistory.RemoveAt(0, HistoryIndex + 1, EAllowShrinking::No);
 
-void UUEPlayerMovementSyncComponent::HandleServerMovementResult(
-	uint32 AckSequence,
-	const FVector& ServerPosition,
-	const FVector& ServerVelocity,
-	const FRotator& ServerRotation)
-{
-	AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter();
-	if (!PlayerCharacter)
-	{
-		return;
-	}
-
-	const int32 HistoryIndex = FindMoveHistoryIndex(AckSequence);
-	if (HistoryIndex == INDEX_NONE)
-	{
-		return;
-	}
-
-	const FUEPlayerMovementHistoryEntry& HistoryEntry = MoveHistory[HistoryIndex];
-	const float CorrectionDistance = FVector::Dist(HistoryEntry.ReportedPosition, ServerPosition);
 	if (CorrectionDistance <= ServerCorrectionTolerance)
 	{
-		PruneMoveHistory(HistoryIndex);
-		SaveLastValidatedServerState(ServerPosition, ServerRotation);
 		return;
 	}
 
-	const bool bUseHardCorrection = CorrectionDistance >= HardCorrectionDistance;
 	PlayerCharacter->ApplyServerMovementCorrection(
 		ServerPosition,
-		ServerVelocity,
+		FVector::ZeroVector,
 		ServerRotation,
-		bUseHardCorrection);
-	PruneMoveHistory(HistoryIndex);
-	SaveLastValidatedServerState(ServerPosition, ServerRotation);
-}
-
-FUEPlayerMovementPacket UUEPlayerMovementSyncComponent::BuildMovementPacket()
-{
-	FUEPlayerMovementPacket MovementPacket;
-
-	AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter();
-	if (!PlayerCharacter)
-	{
-		return MovementPacket;
-	}
-
-	MovementPacket.Sequence = NextMoveSequence++;
-	MovementPacket.ClientPosition = PlayerCharacter->GetActorLocation();
-	MovementPacket.ClientVelocity = PlayerCharacter->GetVelocity();
-	MovementPacket.ActorRotation = PlayerCharacter->GetActorRotation();
-	return MovementPacket;
-}
-
-void UUEPlayerMovementSyncComponent::RecordMovementPacket(const FUEPlayerMovementPacket& MovementPacket)
-{
-	FUEPlayerMovementHistoryEntry HistoryEntry;
-	HistoryEntry.Packet = MovementPacket;
-	HistoryEntry.ReportedPosition = MovementPacket.ClientPosition;
-	HistoryEntry.ReportedRotation = MovementPacket.ActorRotation;
-	MoveHistory.Add(MoveTemp(HistoryEntry));
-
-	while (MoveHistory.Num() > MaxMoveHistoryEntries)
-	{
-		MoveHistory.RemoveAt(0, 1, EAllowShrinking::No);
-	}
-}
-
-void UUEPlayerMovementSyncComponent::PruneMoveHistory(int32 LastConfirmedIndex)
-{
-	if (LastConfirmedIndex >= 0)
-	{
-		MoveHistory.RemoveAt(0, LastConfirmedIndex + 1, EAllowShrinking::No);
-	}
+		/*bUseHardCorrection=*/CorrectionDistance >= HardCorrectionDistance);
 }
 
 int32 UUEPlayerMovementSyncComponent::FindMoveHistoryIndex(uint32 Sequence) const
 {
 	for (int32 Index = 0; Index < MoveHistory.Num(); ++Index)
 	{
-		if (MoveHistory[Index].Packet.Sequence == Sequence)
+		if (MoveHistory[Index].Sequence == Sequence)
 		{
 			return Index;
 		}
@@ -183,11 +133,3 @@ AUEPlayerCharacter* UUEPlayerMovementSyncComponent::GetPlayerCharacter() const
 	return Cast<AUEPlayerCharacter>(GetOwner());
 }
 
-void UUEPlayerMovementSyncComponent::SaveLastValidatedServerState(
-	const FVector& ServerPosition,
-	const FRotator& ServerRotation)
-{
-	LastValidatedServerPosition = ServerPosition;
-	LastValidatedServerRotation = ServerRotation;
-	bLastValidatedServerStateValid = true;
-}

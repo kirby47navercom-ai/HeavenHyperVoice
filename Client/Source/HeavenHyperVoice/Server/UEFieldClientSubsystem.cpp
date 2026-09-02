@@ -5,8 +5,10 @@
 
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
+#include "GameFramework/GameModeBase.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "Kismet/GameplayStatics.h"
 
 namespace
 {
@@ -88,8 +90,73 @@ void UUEFieldClientSubsystem::AttachPlayerCharacter(AUEPlayerCharacter* PlayerCh
 
 	if (UUEFieldServerBridgeComponent* Bridge = EnsureFieldServerBridge())
 	{
+		// 붙이기 **전에** 목적지를 알려준다. AttachToPlayer 가 그 자리에서
+		// 접속을 시작하므로, 뒤에 주면 필드로 한 번 붙었다가 갈아타게 된다.
+		Bridge->SetConnectionTarget(PendingInstanceType);
 		Bridge->AttachToPlayer(PlayerCharacter);
 	}
+}
+
+void UUEFieldClientSubsystem::EnterInstance(int32 InstanceType)
+{
+	if (InstanceType <= 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("FieldClient: instance type must be positive."));
+		return;
+	}
+	if (PendingInstanceType != 0)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("FieldClient: already in instance %d."), PendingInstanceType);
+		return;
+	}
+	if (InstanceLevel.IsNull())
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("FieldClient: InstanceLevel is not set (DefaultGame.ini 의 UEFieldClientSubsystem)."));
+		return;
+	}
+
+	PendingInstanceType = InstanceType;
+	TravelTo(InstanceLevel);
+}
+
+void UUEFieldClientSubsystem::LeaveInstance()
+{
+	if (PendingInstanceType == 0)
+	{
+		return;
+	}
+	if (FieldLevel.IsNull())
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("FieldClient: FieldLevel is not set; 인스턴스에서 나갈 곳이 없다."));
+		return;
+	}
+
+	PendingInstanceType = 0;
+	TravelTo(FieldLevel);
+}
+
+void UUEFieldClientSubsystem::TravelTo(const TSoftObjectPtr<UWorld>& Level)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 게임 모드는 지금 쓰고 있는 것을 그대로 물려준다. 여기서 클래스를 고르면
+	// 캐릭터 선택 화면이 지정한 것과 조용히 어긋나서, 인스턴스에만 폰이나
+	// 컨트롤러가 다른 상태가 된다.
+	FString Options;
+	if (const AGameModeBase* GameMode = World->GetAuthGameMode())
+	{
+		Options = FString::Printf(TEXT("?game=%s"), *GameMode->GetClass()->GetPathName());
+	}
+
+	UE_LOG(LogTemp, Display, TEXT("FieldClient: travelling to %s (instance type %d)"),
+		*Level.ToString(), PendingInstanceType);
+	UGameplayStatics::OpenLevelBySoftObjectPtr(World, Level, true, Options);
 }
 
 bool UUEFieldClientSubsystem::SendPokemonToggleRequest()

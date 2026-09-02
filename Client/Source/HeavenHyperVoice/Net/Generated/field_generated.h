@@ -153,7 +153,8 @@ struct Enter FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_TICKET = 4,
     VT_DEV_NAME = 6,
     VT_DEV_CHARACTER_ID = 8,
-    VT_DEV_PARTNER_SPECIES = 10
+    VT_DEV_PARTNER_SPECIES = 10,
+    VT_INSTANCE_TYPE = 12
   };
   const ::flatbuffers::Vector<uint8_t> *ticket() const {
     return GetPointer<const ::flatbuffers::Vector<uint8_t> *>(VT_TICKET);
@@ -167,6 +168,9 @@ struct Enter FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   uint16_t dev_partner_species() const {
     return GetField<uint16_t>(VT_DEV_PARTNER_SPECIES, 0);
   }
+  uint32_t instance_type() const {
+    return GetField<uint32_t>(VT_INSTANCE_TYPE, 0);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -176,6 +180,7 @@ struct Enter FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            verifier.VerifyString(dev_name()) &&
            VerifyField<uint64_t>(verifier, VT_DEV_CHARACTER_ID, 8) &&
            VerifyField<uint16_t>(verifier, VT_DEV_PARTNER_SPECIES, 2) &&
+           VerifyField<uint32_t>(verifier, VT_INSTANCE_TYPE, 4) &&
            verifier.EndTable();
   }
 };
@@ -196,6 +201,9 @@ struct EnterBuilder {
   void add_dev_partner_species(uint16_t dev_partner_species) {
     fbb_.AddElement<uint16_t>(Enter::VT_DEV_PARTNER_SPECIES, dev_partner_species, 0);
   }
+  void add_instance_type(uint32_t instance_type) {
+    fbb_.AddElement<uint32_t>(Enter::VT_INSTANCE_TYPE, instance_type, 0);
+  }
   explicit EnterBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -212,9 +220,11 @@ inline ::flatbuffers::Offset<Enter> CreateEnter(
     ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> ticket = 0,
     ::flatbuffers::Offset<::flatbuffers::String> dev_name = 0,
     uint64_t dev_character_id = 0,
-    uint16_t dev_partner_species = 0) {
+    uint16_t dev_partner_species = 0,
+    uint32_t instance_type = 0) {
   EnterBuilder builder_(_fbb);
   builder_.add_dev_character_id(dev_character_id);
+  builder_.add_instance_type(instance_type);
   builder_.add_dev_name(dev_name);
   builder_.add_ticket(ticket);
   builder_.add_dev_partner_species(dev_partner_species);
@@ -226,7 +236,8 @@ inline ::flatbuffers::Offset<Enter> CreateEnterDirect(
     const std::vector<uint8_t> *ticket = nullptr,
     const char *dev_name = nullptr,
     uint64_t dev_character_id = 0,
-    uint16_t dev_partner_species = 0) {
+    uint16_t dev_partner_species = 0,
+    uint32_t instance_type = 0) {
   auto ticket__ = ticket ? _fbb.CreateVector<uint8_t>(*ticket) : 0;
   auto dev_name__ = dev_name ? _fbb.CreateString(dev_name) : 0;
   return HeavenField::CreateEnter(
@@ -234,7 +245,8 @@ inline ::flatbuffers::Offset<Enter> CreateEnterDirect(
       ticket__,
       dev_name__,
       dev_character_id,
-      dev_partner_species);
+      dev_partner_species,
+      instance_type);
 }
 
 struct EnterAck FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -244,7 +256,9 @@ struct EnterAck FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_X = 6,
     VT_Y = 8,
     VT_FACING = 10,
-    VT_MAP_ID = 12
+    VT_MAP_ID = 12,
+    VT_ROOM_ID = 14,
+    VT_WORLD_ORIGIN_OFFSET = 16
   };
   uint64_t entity_id() const {
     return GetField<uint64_t>(VT_ENTITY_ID, 0);
@@ -261,6 +275,12 @@ struct EnterAck FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   uint32_t map_id() const {
     return GetField<uint32_t>(VT_MAP_ID, 0);
   }
+  uint32_t room_id() const {
+    return GetField<uint32_t>(VT_ROOM_ID, 0);
+  }
+  float world_origin_offset() const {
+    return GetField<float>(VT_WORLD_ORIGIN_OFFSET, 0.0f);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -269,6 +289,8 @@ struct EnterAck FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<float>(verifier, VT_Y, 4) &&
            VerifyField<float>(verifier, VT_FACING, 4) &&
            VerifyField<uint32_t>(verifier, VT_MAP_ID, 4) &&
+           VerifyField<uint32_t>(verifier, VT_ROOM_ID, 4) &&
+           VerifyField<float>(verifier, VT_WORLD_ORIGIN_OFFSET, 4) &&
            verifier.EndTable();
   }
 };
@@ -292,6 +314,12 @@ struct EnterAckBuilder {
   void add_map_id(uint32_t map_id) {
     fbb_.AddElement<uint32_t>(EnterAck::VT_MAP_ID, map_id, 0);
   }
+  void add_room_id(uint32_t room_id) {
+    fbb_.AddElement<uint32_t>(EnterAck::VT_ROOM_ID, room_id, 0);
+  }
+  void add_world_origin_offset(float world_origin_offset) {
+    fbb_.AddElement<float>(EnterAck::VT_WORLD_ORIGIN_OFFSET, world_origin_offset, 0.0f);
+  }
   explicit EnterAckBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -309,9 +337,13 @@ inline ::flatbuffers::Offset<EnterAck> CreateEnterAck(
     float x = 0.0f,
     float y = 0.0f,
     float facing = 0.0f,
-    uint32_t map_id = 0) {
+    uint32_t map_id = 0,
+    uint32_t room_id = 0,
+    float world_origin_offset = 0.0f) {
   EnterAckBuilder builder_(_fbb);
   builder_.add_entity_id(entity_id);
+  builder_.add_world_origin_offset(world_origin_offset);
+  builder_.add_room_id(room_id);
   builder_.add_map_id(map_id);
   builder_.add_facing(facing);
   builder_.add_y(y);

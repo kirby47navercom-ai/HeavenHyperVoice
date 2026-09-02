@@ -10,15 +10,7 @@ struct FUEPlayerMovementPacket
 {
 	uint32 Sequence = 0;
 	FVector ClientPosition = FVector::ZeroVector;
-	FVector ClientVelocity = FVector::ZeroVector;
 	FRotator ActorRotation = FRotator::ZeroRotator;
-};
-
-struct FUEPlayerMovementHistoryEntry
-{
-	FUEPlayerMovementPacket Packet;
-	FVector ReportedPosition = FVector::ZeroVector;
-	FRotator ReportedRotation = FRotator::ZeroRotator;
 };
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
@@ -32,7 +24,6 @@ public:
 	FUEPlayerMovementPacket CaptureMovementPacket();
 	void HandleServerEnterAck(uint64 EntityId, const FVector& ServerPosition, const FRotator& ServerRotation);
 	void HandleServerCorrection(uint32 Sequence, const FVector2D& ServerPositionXY, float ServerFacing);
-	void HandleServerMovementResult(uint32 AckSequence, const FVector& ServerPosition, const FVector& ServerVelocity, const FRotator& ServerRotation);
 
 protected:
 	virtual void BeginPlay() override;
@@ -48,17 +39,12 @@ protected:
 	int32 MaxMoveHistoryEntries = 180;
 
 private:
-	FUEPlayerMovementPacket BuildMovementPacket();
-	void RecordMovementPacket(const FUEPlayerMovementPacket& MovementPacket);
-	void PruneMoveHistory(int32 LastConfirmedIndex);
 	int32 FindMoveHistoryIndex(uint32 Sequence) const;
 	AUEPlayerCharacter* GetPlayerCharacter() const;
-	void SaveLastValidatedServerState(const FVector& ServerPosition, const FRotator& ServerRotation);
 
 	TWeakObjectPtr<AUEPlayerCharacter> CachedPlayerCharacter;
 	uint32 NextMoveSequence = 1;
-	TArray<FUEPlayerMovementHistoryEntry> MoveHistory;
-	bool bLastValidatedServerStateValid = false;
-	FVector LastValidatedServerPosition = FVector::ZeroVector;
-	FRotator LastValidatedServerRotation = FRotator::ZeroRotator;
+
+	// 서버가 보정을 보낼 때 그 Sequence 시점에 내가 어디였는지 되짚는 데 쓴다.
+	TArray<FUEPlayerMovementPacket> MoveHistory;
 };

@@ -65,6 +65,11 @@ struct FHHVFieldEventData
 {
 	EHHVFieldEvent Type = EHHVFieldEvent::Disconnected;
 	uint64 EntityId = 0;
+	uint32 RoomId = 0;
+
+	// EnterAck 에서만 쓴다. 언리얼 원점이 서버 좌표 어디에 오는가
+	// (서버 = 언리얼 + offset). 필드와 인스턴스는 월드 크기가 달라 값이 다르다.
+	float OriginOffset = 0.0f;
 	uint32 Sequence = 0;
 	float X = 0.0f;
 	float Y = 0.0f;
@@ -92,6 +97,12 @@ struct FHHVFieldSettings
 	FString DevName;
 	uint64 DevCharacterId = 0;
 	uint16 DevPartnerSpecies = 0;
+
+	/**
+	 * 인스턴스 서버에 붙을 때 들어갈 인스턴스 종류. 필드 서버는 읽지 않으므로
+	 * 0 으로 두면 된다. 어느 방에 들어갔는지는 EnterAck 의 RoomId 로 온다.
+	 */
+	uint32 InstanceType = 0;
 };
 
 /**
@@ -129,7 +140,8 @@ public:
 	/** Game thread. Drains the inbound queue and fires the callbacks. */
 	void Poll();
 
-	TFunction<void(uint64 EntityId, float X, float Y, float Facing)> OnEnterAck;
+	TFunction<void(uint64 EntityId, float X, float Y, float Facing, uint32 RoomId,
+		float OriginOffset)> OnEnterAck;
 	TFunction<void(uint32 Sequence, float X, float Y, float Facing)> OnCorrection;
 	TFunction<void(const FHHVFieldSnapshot& Snapshot)> OnSnapshot;
 	TFunction<void(const FString& Text)> OnNotice;

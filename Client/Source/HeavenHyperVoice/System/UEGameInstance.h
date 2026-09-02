@@ -139,8 +139,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "HHV|Server")
 	void RequestSelectCharacter(int32 SlotIndex);
 
-	/** 티켓을 받은 뒤에만 채워진다. 필드 접속에 그대로 쓴다. */
-	bool GetFieldEndpoint(FString& OutHost, int32& OutPort, TArray<uint8>& OutTicket) const;
+	/**
+	 * 티켓을 받은 뒤에만 채워진다. Service 는 "field" / "chat" / "instance" 다.
+	 *
+	 * 접속 내내 이 티켓들을 다시 쓴다 — 인스턴스에 들어갔다 나오면 필드에 다시
+	 * 붙어야 하고, 그때 쓸 것이 여기 말고는 없다. 서버가 티켓 수명을 넉넉히
+	 * 잡는 이유이기도 하다.
+	 */
+	bool GetServiceEndpoint(const FString& Service, FString& OutHost, int32& OutPort,
+		TArray<uint8>& OutTicket) const;
 
 	UPROPERTY(BlueprintAssignable, Category = "HHV|Server")
 	FUEServerResultSignature OnLoginCompleted;
