@@ -7,7 +7,6 @@
 #include "../../CharacterSelection/UI/UECharacterSelectionWidget.h"
 #include "../../System/UEGameInstance.h"
 
-#include "Kismet/GameplayStatics.h"
 
 void AUEFrontendPlayerController::BeginPlay()
 {
@@ -147,7 +146,7 @@ void AUEFrontendPlayerController::ApplyFrontendInputMode(UUserWidget* FocusWidge
 {
 	FInputModeUIOnly InputMode;
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	if (FocusWidget)
+	if (FocusWidget && FocusWidget->IsFocusable())
 	{
 		InputMode.SetWidgetToFocus(FocusWidget->TakeWidget());
 	}
@@ -208,7 +207,7 @@ void AUEFrontendPlayerController::HandleCharacterNameConfirmed(const FString& Ch
 	}
 
 	GameInstance->SetPendingCharacterName(CharacterName);
-	UGameplayStatics::OpenLevelBySoftObjectPtr(this, CustomizationLevel);
+	GameInstance->OpenLevelWithLoadingScreen(CustomizationLevel);
 }
 
 void AUEFrontendPlayerController::HandleCharacterNameBackRequested()

@@ -9,6 +9,7 @@
 
 #include "InstanceGeometry.h"
 #include "PokemonSpecies.h"
+#include "WildBt.h"
 
 namespace heaven::instance {
 
@@ -76,14 +77,16 @@ Room* RoomManager::createRoomLocked(std::uint32_t type) {
     room->type = type;
     room->world.setMap(map);
 
-    // 스폰 좌표(C++)와 배회 경로(Lua)는 난수원이 따로다. 둘 다 심어야 재현된다.
-    // 방 번호를 섞어서 같은 씨앗으로 띄워도 방마다 배치가 다르게 나온다.
+    // 스폰 좌표와 배회 목표는 C++ 난수원을 쓴다. Lua BT 도 나중에 난수를
+    // 쓸 수 있으므로 같은 seed 를 심어 둔다. 방 번호를 섞어서 같은 씨앗으로
+    // 띄워도 방마다 배치가 다르게 나온다.
     const unsigned seed = settings_.wildSeed != 0 ? settings_.wildSeed + room->id : 0;
 
     const WildArea area = wildAreaFor(map);
 
     if (settings_.wildPerRoom > 0) {
-        room->ai = std::make_unique<WildAi>();
+        auto behavior = std::make_unique<WildBt>(settings_.wildAiScript);
+        room->ai = std::make_unique<WildAi>(std::move(behavior));
         room->ai->seed(seed);
         room->ai->setArea(area);
         room->ai->setMap(map);

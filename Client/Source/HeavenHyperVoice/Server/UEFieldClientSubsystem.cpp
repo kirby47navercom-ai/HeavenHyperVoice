@@ -2,13 +2,12 @@
 
 #include "../Character/UEPlayerCharacter.h"
 #include "../Player/UEPlayerController.h"
+#include "../System/UEGameInstance.h"
 
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
-#include "GameFramework/GameModeBase.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
-#include "Kismet/GameplayStatics.h"
 
 namespace
 {
@@ -164,7 +163,11 @@ void UUEFieldClientSubsystem::TravelTo(const TSoftObjectPtr<UWorld>& Level)
 	// (BP_FrontendGameMode) 으로 떨어져 폰이 안 뜬다.
 	UE_LOG(LogTemp, Display, TEXT("FieldClient: travelling to %s (instance type %d)"),
 		*Level.ToString(), PendingInstanceType);
-	UGameplayStatics::OpenLevelBySoftObjectPtr(World, Level, /*bAbsolute=*/true, FString());
+	// 로딩 화면을 거쳐 연다. 옵션은 비운다 — 위 주석 참고.
+	if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(World->GetGameInstance()))
+	{
+		GameInstance->OpenLevelWithLoadingScreen(Level, /*bAbsolute=*/true, FString());
+	}
 }
 
 bool UUEFieldClientSubsystem::SendPokemonToggleRequest()

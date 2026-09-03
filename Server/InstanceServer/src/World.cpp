@@ -169,20 +169,25 @@ void World::enterWild(std::uint64_t entityId, std::uint16_t species, const Posit
 }
 
 void World::advanceWild(float dt, WildAi& ai) {
-    // 1) 락 안에서 좌표만 뜬다.
+    // 1) 락 안에서 AI 판단에 필요한 좌표만 뜬다.
     struct Pending {
         std::uint64_t id;
         std::uint16_t species;
+        std::uint32_t mapId;
         float x;
         float y;
         WildIntent intent;
     };
     std::vector<Pending> pending;
+    std::vector<ObservedPlayer> players;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         for (const auto& [id, entity] : entities_) {
             if (entity.isWild) {
-                pending.push_back({id, entity.species, entity.position.x, entity.position.y, {}});
+                pending.push_back({id, entity.species, entity.mapId,
+                                   entity.position.x, entity.position.y, {}});
+            } else {
+                players.push_back({id, entity.mapId, entity.position.x, entity.position.y});
             }
         }
     }
@@ -190,13 +195,13 @@ void World::advanceWild(float dt, WildAi& ai) {
         return;
     }
 
-    // 2) AI FSM 은 락 밖에서 돌린다. 대부분의 틱은 Lua 를 부르지 않고 현재
-    //    목표만 돌려준다. action 전환이 필요할 때만 Lua 를 부른다.
+    // 2) AI 실행기는 락 밖에서 돌린다. 대부분의 틱은 현재 목표만 돌려주고,
+    //    새 action 선택이 필요할 때만 Lua BT 를 호출한다.
     for (Pending& p : pending) {
-        p.intent = ai.decide(p.id, p.species, p.x, p.y, dt);
+        p.intent = ai.decide(p.id, p.species, p.mapId, p.x, p.y, dt, players);
     }
 
-    // 3) 속도와 벽은 서버가 강제한다. Lua 는 목표만 정했다.
+    // 3) 속도와 벽은 서버가 강제한다. Lua 는 action intent 만 정했다.
     std::vector<std::uint64_t> blocked;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -225,7 +230,7 @@ void World::advanceWild(float dt, WildAi& ai) {
             const float ny = clampToWorld(entity.position.y + dy * ratio);
 
             // 벽에 막히면 이번 목표는 포기하고 제자리에 선다. 밀어내기(슬라이딩)는
-            // 하지 않는다 — FSM 이 짧게 쉰 뒤 새 wander action 을 뽑는다.
+            // 하지 않는다 — AI 실행기가 짧게 쉰 뒤 Lua BT 에 새 action 을 묻는다.
             // ponytail: 막힌 목표를 계속 고르면 벽 앞에서 잠깐 서성인다. 신경 쓰이면
             //           blockedAlong 결과를 Lua 로 돌려주고 목표를 바꾸게 하면 된다.
             if (map_ != nullptr && map_->loaded()) {

@@ -10,6 +10,8 @@
 #include "../UEGameplayTags.h"
 
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
@@ -17,24 +19,14 @@
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
 #include "InputAction.h"
+#include "InputMappingContext.h"
 #include "InputCoreTypes.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "UObject/ConstructorHelpers.h"
 
 AUEPlayerController::AUEPlayerController()
 {
 	PrimaryActorTick.bCanEverTick = true;
 	bShowMouseCursor = false;
-
-	static ConstructorHelpers::FClassFinder<UUserWidget> ChatWidgetFinder(
-		TEXT("/Game/UI/Chat/WBP_GameChat"));
-	static ConstructorHelpers::FClassFinder<UUserWidget> ChatLineFinder(
-		TEXT("/Game/UI/Chat/WBP_ChatLine"));
-	static ConstructorHelpers::FClassFinder<UUserWidget> ChatSystemLineFinder(
-		TEXT("/Game/UI/Chat/WBP_ChatSystemLine"));
-	ChatWidgetClass = ChatWidgetFinder.Class;
-	ChatLineWidgetClass = ChatLineFinder.Class;
-	ChatSystemLineWidgetClass = ChatSystemLineFinder.Class;
 }
 
 void AUEPlayerController::BeginPlay()
@@ -64,6 +56,7 @@ void AUEPlayerController::BeginPlay()
 void AUEPlayerController::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	UpdateChatMouseInteraction();
 	if (ChatConnection)
 	{
 		ChatConnection->Poll();
@@ -191,9 +184,27 @@ void AUEPlayerController::CreateChatWidget()
 	}
 
 	ChatInput->SetIsReadOnly(true);
+	ChatInput->SetForegroundColor(FLinearColor::White);
 	ChatInput->SetClearKeyboardFocusOnCommit(false);
 	ChatInput->SetRevertTextOnEscape(false);
 	ChatInput->OnTextCommitted.AddDynamic(this, &ThisClass::HandleChatTextCommitted);
+
+	static const FName MovablePanelNames[] = {
+		TEXT("ChatPanelSize"), TEXT("ChatLayout"), TEXT("ChatBackground")};
+	for (const FName PanelName : MovablePanelNames)
+	{
+		UWidget* Candidate = ChatWidget->GetWidgetFromName(PanelName);
+		if (Candidate && UWidgetLayoutLibrary::SlotAsCanvasSlot(Candidate))
+		{
+			ChatMovablePanel = Candidate;
+			break;
+		}
+	}
+	ChatDragHandle = ChatWidget->GetWidgetFromName(TEXT("ChannelHeader"));
+	if (!ChatDragHandle)
+	{
+		ChatDragHandle = ChatMovablePanel;
+	}
 	ChatWidget->AddToViewport(20);
 }
 
@@ -254,6 +265,7 @@ void AUEPlayerController::OpenChatInput()
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 	InputMode.SetHideCursorDuringCapture(false);
 	SetInputMode(InputMode);
+	bShowMouseCursor = bMouseViewHeld;
 	bChatInputOpen = true;
 	ChatInput->SetIsReadOnly(false);
 	ChatInput->SetHintText(FText::FromString(TEXT("메시지를 입력하고 Enter")));
@@ -272,8 +284,21 @@ void AUEPlayerController::CloseChatInput()
 	ChatInput->SetIsReadOnly(true);
 	ChatInput->SetHintText(FText::FromString(TEXT("Enter 키를 눌러 채팅")));
 	SetIgnoreMoveInput(false);
-	SetIgnoreLookInput(false);
-	SetInputMode(FInputModeGameOnly());
+	if (bMouseViewHeld)
+	{
+		SetIgnoreLookInput(true);
+		FInputModeGameAndUI InputMode;
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		InputMode.SetHideCursorDuringCapture(false);
+		SetInputMode(InputMode);
+		bShowMouseCursor = true;
+	}
+	else
+	{
+		SetIgnoreLookInput(false);
+		SetInputMode(FInputModeGameOnly());
+		bShowMouseCursor = false;
+	}
 }
 
 bool AUEPlayerController::SubmitChatText(const FString& Text)
@@ -355,6 +380,7 @@ void AUEPlayerController::AddChatLine(
 
 	NameText->SetText(FText::FromString(FString::Printf(TEXT("[%s] "), *Nickname)));
 	BodyText->SetText(FText::FromString(Text));
+	BodyText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
 	ChatMessageList->AddChild(Line);
 	++ChatMessageCount;
 	ChatMessageScroll->ScrollToEnd();
@@ -395,6 +421,119 @@ void AUEPlayerController::BindGameplayInput()
 	BindJumpInput(EnhancedInputComponent);
 	BindRollInput(EnhancedInputComponent);
 	BindPokemonAttackInput(EnhancedInputComponent);
+	BindMouseViewInput(EnhancedInputComponent);
+}
+
+void AUEPlayerController::BindMouseViewInput(UEnhancedInputComponent* EnhancedInputComponent)
+{
+	if (!InputData || !InputData->InputMappingContext)
+	{
+		return;
+	}
+
+	const UInputAction* MouseViewAction = nullptr;
+	for (const FEnhancedActionKeyMapping& Mapping : InputData->InputMappingContext->GetMappings())
+	{
+		if (Mapping.Action && Mapping.Action->GetFName() == TEXT("IA_MouseView"))
+		{
+			MouseViewAction = Mapping.Action;
+			break;
+		}
+	}
+	if (!MouseViewAction)
+	{
+		return;
+	}
+
+	EnhancedInputComponent->BindAction(
+		MouseViewAction, ETriggerEvent::Started, this, &ThisClass::HandleMouseViewStarted);
+	EnhancedInputComponent->BindAction(
+		MouseViewAction, ETriggerEvent::Completed, this, &ThisClass::HandleMouseViewStopped);
+	EnhancedInputComponent->BindAction(
+		MouseViewAction, ETriggerEvent::Canceled, this, &ThisClass::HandleMouseViewStopped);
+}
+
+void AUEPlayerController::HandleMouseViewStarted(const FInputActionValue& Value)
+{
+	bMouseViewHeld = true;
+	bShowMouseCursor = true;
+	SetIgnoreLookInput(true);
+
+	FInputModeGameAndUI InputMode;
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
+	if (bChatInputOpen && ChatInput)
+	{
+		InputMode.SetWidgetToFocus(ChatInput->TakeWidget());
+	}
+	SetInputMode(InputMode);
+}
+
+void AUEPlayerController::HandleMouseViewStopped(const FInputActionValue& Value)
+{
+	bMouseViewHeld = false;
+	bDraggingChat = false;
+	bShowMouseCursor = false;
+
+	if (bChatInputOpen && ChatInput)
+	{
+		FInputModeGameAndUI InputMode;
+		InputMode.SetWidgetToFocus(ChatInput->TakeWidget());
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		InputMode.SetHideCursorDuringCapture(false);
+		SetInputMode(InputMode);
+		ChatInput->SetKeyboardFocus();
+		return;
+	}
+
+	SetIgnoreLookInput(false);
+	SetInputMode(FInputModeGameOnly());
+}
+
+void AUEPlayerController::UpdateChatMouseInteraction()
+{
+	if (!bMouseViewHeld || !ChatWidget)
+	{
+		bDraggingChat = false;
+		return;
+	}
+
+	float MouseX = 0.0f;
+	float MouseY = 0.0f;
+	if (!GetMousePosition(MouseX, MouseY))
+	{
+		return;
+	}
+	const FVector2D MousePosition(MouseX, MouseY);
+
+	if (WasInputKeyJustPressed(EKeys::LeftMouseButton))
+	{
+		if (ChatInput && ChatInput->IsHovered())
+		{
+			OpenChatInput();
+			return;
+		}
+
+		bDraggingChat = ChatDragHandle && ChatDragHandle->IsHovered();
+		LastChatDragMousePosition = MousePosition;
+	}
+
+	if (!IsInputKeyDown(EKeys::LeftMouseButton))
+	{
+		bDraggingChat = false;
+		return;
+	}
+	if (!bDraggingChat || !ChatMovablePanel)
+	{
+		return;
+	}
+
+	const FVector2D Delta = MousePosition - LastChatDragMousePosition;
+	LastChatDragMousePosition = MousePosition;
+	if (UCanvasPanelSlot* PanelSlot = UWidgetLayoutLibrary::SlotAsCanvasSlot(ChatMovablePanel))
+	{
+		PanelSlot->SetPosition(PanelSlot->GetPosition() + Delta);
+	}
 }
 
 void AUEPlayerController::BindMoveInput(UEnhancedInputComponent* EnhancedInputComponent)

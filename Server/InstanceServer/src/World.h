@@ -110,10 +110,10 @@ public:
     // 근처 플레이어에게는 spawn 으로 나타난다. entityId 는 kWildIdBase 부터 쓴다.
     void enterWild(std::uint64_t entityId, std::uint16_t species, const Position& position);
 
-    // 모든 야생 포켓몬을 한 틱 전진시킨다. AI FSM 이 목표를 유지하고 서버가
+    // 모든 야생 포켓몬을 한 틱 전진시킨다. AI 실행기가 목표를 유지하고 서버가
     // 속도와 벽을 강제한다. 틱 스레드에서만 부를 것 (WildAi 는 스레드 안전하지 않다).
     //
-    // Lua action 호출은 FSM 전환 때만, 월드 락 **밖에서** 한다. 안에서 돌리면
+    // Lua BT 호출은 action 전환 때만, 월드 락 **밖에서** 한다. 안에서 돌리면
     // 야생 마릿수만큼 플레이어 이동이 뒤에 밀린다.
     void advanceWild(float dt, WildAi& ai);
 

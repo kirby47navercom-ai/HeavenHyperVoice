@@ -5,7 +5,6 @@
 
 #include "Components/TextBlock.h"
 #include "GameFramework/GameModeBase.h"
-#include "Kismet/GameplayStatics.h"
 
 void UUECharacterSelectionWidget::NativeConstruct()
 {
@@ -226,7 +225,7 @@ void UUECharacterSelectionWidget::EnterSelectedCharacter()
 
 	// 맵 경로를 문자열로 만들지 않고 블루프린트가 참조한 소프트 오브젝트를 사용한다.
 	const FString TravelOptions = FString::Printf(TEXT("?game=%s"), *GameplayGameModeClass->GetPathName());
-	UGameplayStatics::OpenLevelBySoftObjectPtr(this, GameplayLevel, true, TravelOptions);
+	GameInstance->OpenLevelWithLoadingScreen(GameplayLevel, true, TravelOptions);
 }
 
 TArray<UUECharacterLobbySlotWidget*> UUECharacterSelectionWidget::GetLobbySlots() const

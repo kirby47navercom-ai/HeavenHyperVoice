@@ -7,7 +7,10 @@ void UUETitleWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	SetIsFocusable(true);
-	ContinueButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleContinueClicked);
+	if (ContinueButton)
+	{
+		ContinueButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleContinueClicked);
+	}
 	SetKeyboardFocus();
 }
 

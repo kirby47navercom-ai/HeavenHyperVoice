@@ -15,6 +15,9 @@
 class UUECharacterSlotSaveGame;
 class UUEPokemonSpeciesData;
 class UUEPokemonSpeciesCatalog;
+class UUserWidget;
+class UWorld;
+class SWidget;
 
 /** 서버 요청 하나가 끝났다. bOk 가 false 면 Message 가 사용자에게 보여줄 사유다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FUEServerResultSignature, bool, bOk, const FString&, Message);
@@ -207,10 +210,25 @@ public:
 	UFUNCTION(BlueprintPure, Category = "HHV|Server")
 	FString GetServerAddress() const { return SelectedServerAddress; }
 
+	/**
+	 * 로딩 화면을 먼저 한 프레임 표시한 뒤 선택한 레벨을 연다.
+	 * 문자열이나 코드 경로가 아니라 Blueprint의 World Asset 선택 칸을 사용한다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "HHV|Loading")
+	void OpenLevelWithLoadingScreen(TSoftObjectPtr<UWorld> TargetLevel,
+		bool bAbsolute = true, const FString& Options = FString());
+
 	// 서버 연결을 편다. GameInstance 는 Tick 이 없어서 엔진 티커로 돈다.
 	void PollServer();
 
 private:
+	void ShowLoadingScreen();
+	void HandlePreLoadMap(const FString& MapName);
+	void HandlePostLoadMap(UWorld* LoadedWorld);
+	bool BeginPendingLevelTravel(float DeltaSeconds);
+	bool FinishLoadingScreen(float DeltaSeconds);
+	void HideLoadingScreen();
+
 	void LoadCharacterSlots();
 	bool SaveCharacterSlots() const;
 	bool IsValidCharacterSlot(int32 SlotIndex) const;
@@ -285,4 +303,21 @@ private:
 	// 접속 화면에서 입력한 주소. 비어 있으면 LoginServerHost 를 쓴다.
 	UPROPERTY(Transient)
 	FString SelectedServerAddress;
+
+	// 월드와 함께 없어지지 않도록 GameInstance가 로딩 화면을 소유한다.
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> LoadingScreenWidget = nullptr;
+
+	TSharedPtr<SWidget> LoadingScreenSlateWidget;
+	TWeakObjectPtr<UWorld> LoadedWorldForLoadingScreen;
+	FDelegateHandle PreLoadMapHandle;
+	FDelegateHandle PostLoadMapHandle;
+	FTSTicker::FDelegateHandle PendingTravelHandle;
+	FTSTicker::FDelegateHandle LoadingFinishHandle;
+	TSoftObjectPtr<UWorld> PendingTravelLevel;
+	FString PendingTravelOptions;
+	double LoadingScreenStartedAtSeconds = 0.0;
+	bool bPendingTravelAbsolute = true;
+	bool bLoadingScreenInViewport = false;
+	bool bPostLoadAssetsReady = false;
 };

@@ -329,9 +329,16 @@ FReply UUEFieldPartyWidget::NativeOnKeyDown(const FGeometry& Geometry, const FKe
 {
 	// UI 가 입력을 독점하는 동안에는 열 때 쓴 키가 안 먹는다. 나갈 길을 하나
 	// 더 둔다 — 닫기 버튼을 못 찾으면 갇힌 것처럼 보인다.
-	if (KeyEvent.GetKey() == EKeys::Escape)
+	if (KeyEvent.GetKey() == EKeys::Escape || KeyEvent.GetKey() == EKeys::R)
 	{
-		Close();
+		if (UUEFieldServerBridgeComponent* Bridge = FindBridge())
+		{
+			Bridge->TogglePartyWidget();
+		}
+		else
+		{
+			Close();
+		}
 		return FReply::Handled();
 	}
 

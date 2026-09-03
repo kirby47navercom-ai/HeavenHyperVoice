@@ -44,6 +44,9 @@ struct RoomSettings {
     // 0 이면 매번 다르게. 지정하면 방 번호와 섞어 방마다 다른, 그러나
     // 재현 가능한 배치를 만든다.
     unsigned wildSeed = 0;
+
+    // 야생 포켓몬 행동 선택용 Lua BT. main 에서 절대 경로로 풀어 넣는다.
+    std::string wildAiScript = "scripts/wild_ai.lua";
 };
 
 // 방 하나. World 와 WildAi 를 함께 소유한다.

@@ -3,13 +3,20 @@
 
 #include "UEGameInstance.h"
 #include "../System/UEAssetManager.h"
+#include "../UI/Loading/HHVLoadingScreenSettings.h"
 #include "CharacterSelection/UECharacterSlotSaveGame.h"
 #include "../Pokemon/UEPokemonSpeciesData.h"
 #include "../Pokemon/UEPokemonSpeciesCatalog.h"
 
+#include "AssetCompilingManager.h"
+#include "Blueprint/UserWidget.h"
+#include "ContentStreaming.h"
+#include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
+#include "MoviePlayer.h"
 #include "TimerManager.h"
+#include "UObject/UObjectGlobals.h"
 
 namespace
 {
@@ -27,16 +34,206 @@ void UUEGameInstance::Init()
 {
 	Super::Init();
 
+	PreLoadMapHandle = FCoreUObjectDelegates::PreLoadMap.AddUObject(
+		this, &ThisClass::HandlePreLoadMap);
+	PostLoadMapHandle = FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(
+		this, &ThisClass::HandlePostLoadMap);
+
+	// 화면 에셋은 첫 이동 직전에 동기 로드하지 않도록 게임 시작 때 준비한다.
+	GetDefault<UHHVLoadingScreenSettings>()->LoadingScreenWidgetClass.LoadSynchronous();
+
 	UUEAssetManager::Initialize();
 	LoadCharacterSlots();
 }
 
 void UUEGameInstance::Shutdown()
 {
+	FCoreUObjectDelegates::PreLoadMap.Remove(PreLoadMapHandle);
+	FCoreUObjectDelegates::PostLoadMapWithWorld.Remove(PostLoadMapHandle);
+	if (PendingTravelHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(PendingTravelHandle);
+		PendingTravelHandle.Reset();
+	}
+	if (LoadingFinishHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(LoadingFinishHandle);
+		LoadingFinishHandle.Reset();
+	}
+	HideLoadingScreen();
+
 	// 워커 스레드를 조인한다. 콜백이 매달린 참조가 되기 전에 먼저 정리한다.
 	DisconnectFromServer();
 
 	Super::Shutdown();
+}
+
+void UUEGameInstance::HandlePreLoadMap(const FString& MapName)
+{
+	(void)MapName;
+	ShowLoadingScreen();
+}
+
+void UUEGameInstance::ShowLoadingScreen()
+{
+	if (IsRunningDedicatedServer())
+	{
+		return;
+	}
+	if (LoadingScreenSlateWidget.IsValid())
+	{
+		return;
+	}
+
+	const UHHVLoadingScreenSettings* Settings = GetDefault<UHHVLoadingScreenSettings>();
+	UClass* WidgetClass = Settings->LoadingScreenWidgetClass.LoadSynchronous();
+	if (!WidgetClass)
+	{
+		return;
+	}
+
+	if (!LoadingScreenWidget)
+	{
+		LoadingScreenWidget = CreateWidget<UUserWidget>(this, WidgetClass);
+	}
+	if (!LoadingScreenWidget)
+	{
+		return;
+	}
+
+	LoadingScreenSlateWidget = LoadingScreenWidget->TakeWidget();
+	LoadingScreenStartedAtSeconds = FPlatformTime::Seconds();
+	bPostLoadAssetsReady = false;
+
+	if (IsMoviePlayerEnabled())
+	{
+		FLoadingScreenAttributes Attributes;
+		Attributes.WidgetLoadingScreen = LoadingScreenSlateWidget;
+		Attributes.bAutoCompleteWhenLoadingCompletes = false;
+		Attributes.bWaitForManualStop = true;
+		Attributes.bMoviesAreSkippable = false;
+		GetMoviePlayer()->SetupLoadingScreen(Attributes);
+		GetMoviePlayer()->PlayMovie();
+	}
+	else if (GEngine && GEngine->GameViewport && !bLoadingScreenInViewport)
+	{
+		GEngine->GameViewport->AddViewportWidgetContent(LoadingScreenSlateWidget.ToSharedRef(), 10000);
+		bLoadingScreenInViewport = true;
+	}
+}
+
+void UUEGameInstance::OpenLevelWithLoadingScreen(TSoftObjectPtr<UWorld> TargetLevel,
+	const bool bAbsolute, const FString& Options)
+{
+	if (TargetLevel.IsNull())
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("HHV: OpenLevelWithLoadingScreen needs a World Asset in the editor."));
+		return;
+	}
+
+	if (PendingTravelHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(PendingTravelHandle);
+	}
+
+	PendingTravelLevel = TargetLevel;
+	PendingTravelOptions = Options;
+	bPendingTravelAbsolute = bAbsolute;
+	ShowLoadingScreen();
+
+	// PIE에서도 로딩 화면이 실제로 그려진 뒤 OpenLevel의 동기 로딩을 시작한다.
+	PendingTravelHandle = FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateUObject(this, &ThisClass::BeginPendingLevelTravel), 0.05f);
+}
+
+bool UUEGameInstance::BeginPendingLevelTravel(float DeltaSeconds)
+{
+	(void)DeltaSeconds;
+	const TSoftObjectPtr<UWorld> TargetLevel = PendingTravelLevel;
+	const FString Options = MoveTemp(PendingTravelOptions);
+	const bool bAbsolute = bPendingTravelAbsolute;
+
+	PendingTravelHandle.Reset();
+	PendingTravelLevel.Reset();
+	PendingTravelOptions.Reset();
+
+	UGameplayStatics::OpenLevelBySoftObjectPtr(this, TargetLevel, bAbsolute, Options);
+	return false;
+}
+
+void UUEGameInstance::HandlePostLoadMap(UWorld* LoadedWorld)
+{
+	if (!LoadingScreenSlateWidget.IsValid())
+	{
+		return;
+	}
+
+	LoadedWorldForLoadingScreen = LoadedWorld;
+	if (LoadingFinishHandle.IsValid())
+	{
+		FTSTicker::GetCoreTicker().RemoveTicker(LoadingFinishHandle);
+	}
+	LoadingFinishHandle = FTSTicker::GetCoreTicker().AddTicker(
+		FTickerDelegate::CreateUObject(this, &ThisClass::FinishLoadingScreen));
+}
+
+bool UUEGameInstance::FinishLoadingScreen(float DeltaSeconds)
+{
+	(void)DeltaSeconds;
+	const UHHVLoadingScreenSettings* Settings = GetDefault<UHHVLoadingScreenSettings>();
+
+	if (!bPostLoadAssetsReady)
+	{
+		if (UWorld* LoadedWorld = LoadedWorldForLoadingScreen.Get())
+		{
+			LoadedWorld->BlockTillLevelStreamingCompleted();
+		}
+
+		FlushAsyncLoading();
+		FAssetCompilingManager::Get().FinishAllCompilation();
+
+		if (Settings->bWaitForAssetStreaming)
+		{
+			IStreamingManager::Get().NotifyLevelChange();
+			if (IStreamingManager::Get().StreamAllResources() > 0)
+			{
+				return true;
+			}
+		}
+
+		bPostLoadAssetsReady = true;
+	}
+
+	if (FPlatformTime::Seconds() - LoadingScreenStartedAtSeconds
+		< Settings->MinimumDisplaySeconds)
+	{
+		return true;
+	}
+
+	HideLoadingScreen();
+	LoadingFinishHandle.Reset();
+	return false;
+}
+
+void UUEGameInstance::HideLoadingScreen()
+{
+	if (IsMoviePlayerEnabled() && GetMoviePlayer()->IsMovieCurrentlyPlaying())
+	{
+		GetMoviePlayer()->StopMovie();
+		GetMoviePlayer()->WaitForMovieToFinish();
+	}
+
+	if (bLoadingScreenInViewport && LoadingScreenSlateWidget.IsValid()
+		&& GEngine && GEngine->GameViewport)
+	{
+		GEngine->GameViewport->RemoveViewportWidgetContent(LoadingScreenSlateWidget.ToSharedRef());
+	}
+
+	bLoadingScreenInViewport = false;
+	LoadedWorldForLoadingScreen.Reset();
+	LoadingScreenSlateWidget.Reset();
+	LoadingScreenWidget = nullptr;
 }
 
 // ---------------------------------------------------------------- 로그인 서버
