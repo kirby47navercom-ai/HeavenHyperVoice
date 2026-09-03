@@ -122,6 +122,15 @@ public:
 	bool IsServerRequestPending() const;
 
 	/**
+	 * 닉네임을 쓸 수 있는지 서버에 묻는다. 답은 OnNicknameChecked 로 온다.
+	 *
+	 * 통과해도 생성 때 서버가 다시 본다 — 그 사이에 남이 같은 이름을 가져갈 수
+	 * 있고, 마지막 심판은 DB 의 유니크 키다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "HHV|Server")
+	void RequestCheckNickname(const FString& Nickname);
+
+	/**
 	 * 커마에서 만든 캐릭터를 서버에 만든다. 성공하면 목록이 갱신된다.
 	 *
 	 * 외형은 여기서 한 번만 저장된다. 만든 뒤에 바꾸는 경로는 없다 —
@@ -160,6 +169,10 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "HHV|Server")
 	FUEServerResultSignature OnCharacterChangeCompleted;
+
+	// 이름 화면이 커마로 넘어가기 전에 묻는 것에 대한 답이다.
+	UPROPERTY(BlueprintAssignable, Category = "HHV|Server")
+	FUEServerResultSignature OnNicknameChecked;
 
 	UPROPERTY(BlueprintAssignable, Category = "HHV|Server")
 	FUECharacterListChangedSignature OnCharacterListChanged;

@@ -85,6 +85,7 @@ enum class EHHVLoginEvent : uint8
 	RegisterResponse,
 	CharacterList,
 	SelectResponse,
+	CheckNicknameResponse,
 	Disconnected
 };
 
@@ -140,6 +141,14 @@ public:
 
 	void SendLogin(const FString& UserId, const FString& Password);
 	void SendRegister(const FString& UserId, const FString& Password);
+	/**
+	 * 이 닉네임을 쓸 수 있는지만 묻는다. 아무것도 만들지 않는다.
+	 *
+	 * 캐릭터 생성은 이름 -> 커마 -> 스타터 순서라, 중복을 생성 시점에 알면
+	 * 커마를 통째로 다시 거쳐야 한다. 그래서 이름 화면에서 미리 묻는다.
+	 * 통과해도 생성 때 서버가 다시 본다.
+	 */
+	void SendCheckNickname(const FString& Nickname);
 	void SendCreateCharacter(const FString& Nickname, uint16 DexNumber,
 		const FUEHHVAppearance& Appearance);
 	void SendDeleteCharacter(uint64 CharacterId, const FString& ConfirmNickname);
@@ -161,6 +170,7 @@ public:
 
 	TFunction<void(bool bOk, const FString& Message, const TArray<FHHVCharacterSummary>& Characters, int32 MaxSlots)> OnLoginResponse;
 	TFunction<void(bool bOk, const FString& Message)> OnRegisterResponse;
+	TFunction<void(bool bOk, const FString& Message)> OnCheckNicknameResponse;
 	TFunction<void(bool bOk, const FString& Message, const TArray<FHHVCharacterSummary>& Characters)> OnCharacterList;
 	TFunction<void(bool bOk, const FString& Message, const TArray<FHHVServiceEndpoint>& Endpoints, const FString& Nickname)> OnSelectResponse;
 	TFunction<void(const FString& Reason)> OnDisconnected;

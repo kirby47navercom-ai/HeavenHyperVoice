@@ -108,6 +108,7 @@ public:
                          const std::vector<std::uint16_t>& dexNumbers,
                          std::uint16_t activeDex) override;
     DeleteResult releasePartner(std::uint64_t accountId, std::uint64_t characterId) override;
+    bool isNicknameTaken(std::string_view nickname) override;
     void touchPlayed(std::uint64_t characterId) override;
     std::optional<Position> loadPosition(std::uint64_t characterId) override;
     void savePosition(std::uint64_t characterId, const Position& position) override;

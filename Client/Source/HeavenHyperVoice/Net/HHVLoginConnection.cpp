@@ -260,6 +260,17 @@ void FHHVLoginConnection::SendRegister(const FString& UserId, const FString& Pas
 	Enqueue(LoginFrameOf(Builder));
 }
 
+void FHHVLoginConnection::SendCheckNickname(const FString& Nickname)
+{
+	flatbuffers::FlatBufferBuilder Builder(256);
+	const auto Nick = Builder.CreateString(TCHAR_TO_UTF8(*Nickname));
+	const auto Request = HeavenLogin::CreateCheckNicknameRequest(Builder, Nick);
+	Builder.Finish(HeavenLogin::CreateEnvelope(
+		Builder, HeavenLogin::Payload::CheckNicknameRequest, Request.Union()));
+
+	Enqueue(LoginFrameOf(Builder));
+}
+
 void FHHVLoginConnection::SendCreateCharacter(const FString& Nickname, uint16 DexNumber,
 	const FUEHHVAppearance& Appearance)
 {
@@ -565,6 +576,16 @@ void FHHVLoginConnection::DispatchFrame(const uint8* Data, int32 Size)
 		break;
 	}
 
+	case HeavenLogin::Payload::CheckNicknameResponse:
+	{
+		const HeavenLogin::CheckNicknameResponse* Response =
+			Envelope->payload_as_CheckNicknameResponse();
+		Event.Type = EHHVLoginEvent::CheckNicknameResponse;
+		Event.bOk = Response->ok();
+		Event.Message = ReadString(Response->message());
+		break;
+	}
+
 	case HeavenLogin::Payload::CharacterListResponse:
 	{
 		const HeavenLogin::CharacterListResponse* Response =
@@ -661,6 +682,13 @@ void FHHVLoginConnection::Poll()
 			}
 			break;
 
+		case EHHVLoginEvent::CheckNicknameResponse:
+			if (OnCheckNicknameResponse)
+			{
+				OnCheckNicknameResponse(Event.bOk, Event.Message);
+			}
+			break;
+
 		case EHHVLoginEvent::CharacterList:
 			if (OnCharacterList)
 			{
@@ -677,12 +705,15 @@ void FHHVLoginConnection::Poll()
 
 		case EHHVLoginEvent::Disconnected:
 			bAuthenticated = false;
-			bRequestInFlight = false;
 			UE_LOG(LogHHVLogin, Warning, TEXT("disconnected: %s"), *Event.Message);
 			if (OnDisconnected)
 			{
 				OnDisconnected(Event.Message);
 			}
+			// 위와 달리 콜백보다 **나중에** 푼다. 서버는 마지막 응답을 보낸 뒤에
+			// 연결을 닫으므로(LoginHandler::finish), 끊김이 정상 종료인지 사고인지는
+			// "기다리던 요청이 있었나" 로 갈린다. 콜백이 IsBusy() 로 그걸 본다.
+			bRequestInFlight = false;
 			break;
 		}
 	}

@@ -172,10 +172,17 @@ private:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> SubtitleBlock = nullptr;
 
-	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UEditableTextBox> NicknameInputBox = nullptr;
-
-	UPROPERTY(meta = (BindWidget))
+	/**
+	 * 가입 화면의 닉네임 칸. 항상 접어 둔다.
+	 *
+	 * 계정과 캐릭터가 갈리면서 닉네임은 캐릭터 속성이 됐다. 가입은 아이디와
+	 * 비밀번호만 보내고 (RegisterRequest 에 닉네임 필드가 없다), 이름은 캐릭터를
+	 * 만들 때 받는다.
+	 *
+	 * BindWidgetOptional 이라 WBP 에서 이 칸을 통째로 지워도 된다. 지우기
+	 * 전까지는 여기서 접는다.
+	 */
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<USizeBox> NicknameRow = nullptr;
 
 	UPROPERTY(meta = (BindWidget))

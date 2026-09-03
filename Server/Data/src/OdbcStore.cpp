@@ -239,6 +239,7 @@ struct OdbcStore::Connection {
     SQLHSTMT lastInsertId = SQL_NULL_HSTMT;
     SQLHSTMT touchPlayed = SQL_NULL_HSTMT;
     SQLHSTMT selectPosition = SQL_NULL_HSTMT;
+    SQLHSTMT findNickname = SQL_NULL_HSTMT;
     SQLHSTMT softDelete = SQL_NULL_HSTMT;
     SQLHSTMT updatePosition = SQL_NULL_HSTMT;
 
@@ -256,6 +257,7 @@ struct OdbcStore::Connection {
         return {&selectAccount,   &touchLogin,       &insertAccount,  &listCharacters,
                 &findCharacter,   &countCharacters,  &insertCharacter, &lastInsertId,
                 &touchPlayed,     &selectPosition,   &updatePosition, &softDelete,
+                &findNickname,
                 &insertUnlockRow, &setUnlockBit,     &testUnlockBit,  &setActiveDex,
                 &selectParty,     &clearParty,       &insertPartyMember};
     }
@@ -341,6 +343,12 @@ OdbcStore::OdbcStore(const OdbcSettings& settings) {
                 "SELECT map_id, pos_x, pos_y, facing FROM characters "
                 "WHERE id = ? AND deleted_at IS NULL",
                 "SQLPrepare(selectPosition)");
+        // 여기만 deleted_at 을 보지 않는다. 지운 캐릭터도 닉네임은 계속
+        // 점유하므로(007_character_delete.sql), 걸러내면 못 쓸 이름을
+        // 쓸 수 있다고 답하게 된다.
+        prepare(connection->findNickname,
+                "SELECT 1 FROM characters WHERE nickname = ? LIMIT 1",
+                "SQLPrepare(findNickname)");
 
         // 쓰기 경로. 권한이 없는 배포도 있을 수 있으므로 실패해도 죽지 않는다.
         // 로그인과 캐릭터 조회는 SELECT/UPDATE 만으로 동작한다.
@@ -1122,6 +1130,28 @@ void OdbcStore::touchPlayed(std::uint64_t characterId) {
     } catch (const std::exception& e) {
         SQLCloseCursor(connection->touchPlayed);
         spdlog::warn("could not update last_played_at: {}", e.what());
+    }
+}
+
+bool OdbcStore::isNicknameTaken(std::string_view nickname) {
+    Lease connection(*this);
+
+    std::wstring wide = widen(nickname);
+    SQLLEN length = 0;
+
+    try {
+        bindText(connection->findNickname, 1, wide, length);
+        require(SQLExecute(connection->findNickname), SQL_HANDLE_STMT, connection->findNickname,
+                "SQLExecute(findNickname)");
+        const bool found = succeeded(SQLFetch(connection->findNickname));
+        SQLCloseCursor(connection->findNickname);
+        return found;
+    } catch (const std::exception& e) {
+        SQLCloseCursor(connection->findNickname);
+        // 못 읽었으면 "비어 있다" 고 답하지 않는다. 통과시켜 봐야 커마를 다
+        // 끝낸 뒤 생성에서 막히고, 그게 이 검사가 없애려던 그 왕복이다.
+        spdlog::error("nickname lookup failed: {}", e.what());
+        return true;
     }
 }
 

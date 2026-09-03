@@ -325,6 +325,21 @@ inline Bytes encodeRegisterResult(bool ok, std::string_view message) {
     return detail::wrap(fbb, HeavenLogin::Payload::RegisterResponse, builder.Finish().Union());
 }
 
+// --------------------------------------------------------- 닉네임 사용 가능
+
+// 이름 화면이 커마로 넘어가기 전에 묻는 것에 대한 답이다. 여기서 통과해도
+// 생성 때 다시 검사한다 — 그 사이에 남이 같은 이름을 가져갈 수 있다.
+inline Bytes encodeCheckNicknameResult(bool ok, std::string_view message) {
+    flatbuffers::FlatBufferBuilder fbb;
+    auto text = fbb.CreateString(message.data(), message.size());
+
+    HeavenLogin::CheckNicknameResponseBuilder builder(fbb);
+    builder.add_ok(ok);
+    builder.add_message(text);
+    return detail::wrap(fbb, HeavenLogin::Payload::CheckNicknameResponse,
+                        builder.Finish().Union());
+}
+
 // ------------------------------------------------------------- 캐릭터 생성
 
 // 생성/삭제/방생이 모두 이 응답을 쓴다. 셋 다 목록이 바뀌는 일이다.

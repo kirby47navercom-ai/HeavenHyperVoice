@@ -66,6 +66,8 @@ bool LoginHandler::onFrame(TlsSession& session, const proto::Bytes& body) {
             return handleReleasePartner(session, *envelope->payload_as_ReleasePartnerRequest());
         case HeavenLogin::Payload::SetPartyRequest:
             return handleSetParty(session, *envelope->payload_as_SetPartyRequest());
+        case HeavenLogin::Payload::CheckNicknameRequest:
+            return handleCheckNickname(session, *envelope->payload_as_CheckNicknameRequest());
         default:
             spdlog::warn("{}: expected a character request", session.peer());
             fail(session, "잘못된 요청입니다");
@@ -267,6 +269,56 @@ bool LoginHandler::handleLogin(TlsSession& session, const HeavenLogin::LoginRequ
     if (!queued) {
         spdlog::warn("{}: auth queue full, refusing login", session.peer());
         fail(session, "서버가 혼잡합니다. 잠시 후 다시 시도해 주세요");
+    }
+    return true;
+}
+
+// ------------------------------------------------------------- 캐릭터 생성
+
+// --------------------------------------------------------- 닉네임 사용 가능
+
+// 캐릭터를 만들지 않는다. 이름이 비어 있는지만 답하고 선택 단계로 돌아간다.
+//
+// 이 검사가 있는 이유는 순서 때문이다. 생성은 이름 -> 커마 -> 스타터 순인데,
+// 중복을 마지막에 알리면 커마를 통째로 다시 거쳐야 한다.
+bool LoginHandler::handleCheckNickname(TlsSession& session,
+                                       const HeavenLogin::CheckNicknameRequest& request) {
+    const auto* nickname = request.nickname();
+    if (nickname == nullptr || nickname->size() > proto::kMaxNicknameBytes) {
+        resume(Stage::AwaitingSelection);
+        session.send(proto::encodeCheckNicknameResult(false, "닉네임이 올바르지 않습니다"));
+        return true;
+    }
+
+    const std::string nick = nickname->str();
+    if (const char* problem = proto::validateNickname(nick)) {
+        resume(Stage::AwaitingSelection);
+        session.send(proto::encodeCheckNicknameResult(false, problem));
+        return true;
+    }
+
+    if (context_.characters == nullptr) {
+        resume(Stage::AwaitingSelection);
+        session.send(proto::encodeCheckNicknameResult(true, ""));
+        return true;
+    }
+
+    auto self = session.shared_from_this();
+    const LoginContext* context = &context_;
+    LoginHandler* handler = this;
+
+    // DB 왕복이라 IOCP 워커에서 하지 않는다.
+    const bool queued = context_.authQueue->submit([self, context, handler, nick] {
+        const bool taken = context->characters->isNicknameTaken(nick);
+        handler->resume(Stage::AwaitingSelection);
+        self->send(taken ? proto::encodeCheckNicknameResult(false, "이미 사용 중인 닉네임입니다")
+                         : proto::encodeCheckNicknameResult(true, "사용할 수 있는 닉네임입니다"));
+    });
+
+    if (!queued) {
+        spdlog::warn("{}: auth queue full, refusing nickname check", session.peer());
+        resume(Stage::AwaitingSelection);
+        session.send(proto::encodeCheckNicknameResult(false, "서버가 혼잡합니다"));
     }
     return true;
 }

@@ -91,7 +91,11 @@ void UUELoginWidget::RefreshScreenMode()
 {
 	const bool bIsRegisterMode = ScreenMode == EUELoginScreenMode::Register;
 	SubtitleBlock->SetText(bIsRegisterMode ? RegisterSubtitleText : LoginSubtitleText);
-	NicknameRow->SetVisibility(bIsRegisterMode ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+	if (NicknameRow)
+	{
+		// 닉네임은 캐릭터 속성이라 가입에 싣지 않는다. WBP 에서 지울 때까지 접어 둔다.
+		NicknameRow->SetVisibility(ESlateVisibility::Collapsed);
+	}
 	DuplicateCheckButton->SetVisibility(bIsRegisterMode ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	ConfirmPasswordRow->SetVisibility(bIsRegisterMode ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	RegisterTabButton->SetVisibility(bIsRegisterMode ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
@@ -255,7 +259,6 @@ void UUELoginWidget::HandleServerRegisterCompleted(bool bOk, const FString& Mess
 	OnAccountRegistered.Broadcast(PendingUserId, FString());
 	PasswordInputBox->SetText(FText::GetEmpty());
 	ConfirmPasswordInputBox->SetText(FText::GetEmpty());
-	NicknameInputBox->SetText(FText::GetEmpty());
 	ScreenMode = EUELoginScreenMode::Login;
 	ResetDuplicateCheck();
 	RefreshScreenMode();

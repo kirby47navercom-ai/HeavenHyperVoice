@@ -114,6 +114,11 @@ void UUEGameInstance::BindServerCallbacks()
 		OnRegisterCompleted.Broadcast(bOk, Message);
 	};
 
+	LoginConnection->OnCheckNicknameResponse = [this](bool bOk, const FString& Message)
+	{
+		OnNicknameChecked.Broadcast(bOk, Message);
+	};
+
 	LoginConnection->OnCharacterList =
 		[this](bool bOk, const FString& Message, const TArray<FHHVCharacterSummary>& Characters)
 	{
@@ -143,10 +148,14 @@ void UUEGameInstance::BindServerCallbacks()
 
 	LoginConnection->OnDisconnected = [this](const FString& Reason)
 	{
-		// 캐릭터를 고른 뒤에는 서버가 정상적으로 끊는다. 티켓을 이미 받았으면
-		// 실패로 알리지 않는다 — 필드로 넘어가는 정상 경로다.
-		const bool bExpected = ServiceEndpoints.Num() > 0;
-		if (!bExpected)
+		// 서버는 마지막 응답을 보낸 뒤에 연결을 닫는다 (LoginHandler::finish).
+		// 가입도, 로그인 거절도, 캐릭터 선택도 전부 그렇다. 그 끊김까지 실패로
+		// 알리면 방금 띄운 응답 문구를 끊김 사유가 덮어써서, 가입에 성공하고도
+		// 화면에는 "recv failed: ..." 가 남는다.
+		//
+		// 기다리던 요청이 남아 있을 때만 사고다. 응답이 왔으면 그 응답이 이미
+		// 결과를 알렸다.
+		if (LoginConnection && LoginConnection->IsBusy())
 		{
 			OnServerDisconnected.Broadcast(false, Reason);
 		}
@@ -192,6 +201,19 @@ bool UUEGameInstance::IsLoggedInToServer() const
 bool UUEGameInstance::IsServerRequestPending() const
 {
 	return LoginConnection && LoginConnection->IsBusy();
+}
+
+void UUEGameInstance::RequestCheckNickname(const FString& Nickname)
+{
+	// 로그인 뒤 캐릭터 선택 단계에서만 답할 수 있는 질문이다. 연결이 없으면
+	// 새로 붙어 봐야 인증이 없어 거절당하므로 여기서 끊는다.
+	if (!IsLoggedInToServer())
+	{
+		OnNicknameChecked.Broadcast(false, TEXT("서버에 연결되어 있지 않습니다"));
+		return;
+	}
+
+	LoginConnection->SendCheckNickname(Nickname);
 }
 
 void UUEGameInstance::RequestCreateCharacter(const FString& Nickname,

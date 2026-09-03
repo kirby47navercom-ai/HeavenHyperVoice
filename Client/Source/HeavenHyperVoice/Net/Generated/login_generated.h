@@ -60,6 +60,12 @@ struct ServiceEndpointBuilder;
 struct SelectCharacterResponse;
 struct SelectCharacterResponseBuilder;
 
+struct CheckNicknameRequest;
+struct CheckNicknameRequestBuilder;
+
+struct CheckNicknameResponse;
+struct CheckNicknameResponseBuilder;
+
 struct Envelope;
 struct EnvelopeBuilder;
 
@@ -76,11 +82,13 @@ enum class Payload : uint8_t {
   DeleteCharacterRequest = 9,
   ReleasePartnerRequest = 10,
   SetPartyRequest = 11,
+  CheckNicknameRequest = 12,
+  CheckNicknameResponse = 13,
   MIN = NONE,
-  MAX = SetPartyRequest
+  MAX = CheckNicknameResponse
 };
 
-inline const Payload (&EnumValuesPayload())[12] {
+inline const Payload (&EnumValuesPayload())[14] {
   static const Payload values[] = {
     Payload::NONE,
     Payload::LoginRequest,
@@ -93,13 +101,15 @@ inline const Payload (&EnumValuesPayload())[12] {
     Payload::SelectCharacterResponse,
     Payload::DeleteCharacterRequest,
     Payload::ReleasePartnerRequest,
-    Payload::SetPartyRequest
+    Payload::SetPartyRequest,
+    Payload::CheckNicknameRequest,
+    Payload::CheckNicknameResponse
   };
   return values;
 }
 
 inline const char * const *EnumNamesPayload() {
-  static const char * const names[13] = {
+  static const char * const names[15] = {
     "NONE",
     "LoginRequest",
     "LoginResponse",
@@ -112,13 +122,15 @@ inline const char * const *EnumNamesPayload() {
     "DeleteCharacterRequest",
     "ReleasePartnerRequest",
     "SetPartyRequest",
+    "CheckNicknameRequest",
+    "CheckNicknameResponse",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNamePayload(Payload e) {
-  if (::flatbuffers::IsOutRange(e, Payload::NONE, Payload::SetPartyRequest)) return "";
+  if (::flatbuffers::IsOutRange(e, Payload::NONE, Payload::CheckNicknameResponse)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesPayload()[index];
 }
@@ -169,6 +181,14 @@ template<> struct PayloadTraits<HeavenLogin::ReleasePartnerRequest> {
 
 template<> struct PayloadTraits<HeavenLogin::SetPartyRequest> {
   static const Payload enum_value = Payload::SetPartyRequest;
+};
+
+template<> struct PayloadTraits<HeavenLogin::CheckNicknameRequest> {
+  static const Payload enum_value = Payload::CheckNicknameRequest;
+};
+
+template<> struct PayloadTraits<HeavenLogin::CheckNicknameResponse> {
+  static const Payload enum_value = Payload::CheckNicknameResponse;
 };
 
 template <bool B = false>
@@ -1494,6 +1514,122 @@ inline ::flatbuffers::Offset<SelectCharacterResponse> CreateSelectCharacterRespo
       nickname__);
 }
 
+struct CheckNicknameRequest FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef CheckNicknameRequestBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_NICKNAME = 4
+  };
+  const ::flatbuffers::String *nickname() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_NICKNAME);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_NICKNAME) &&
+           verifier.VerifyString(nickname()) &&
+           verifier.EndTable();
+  }
+};
+
+struct CheckNicknameRequestBuilder {
+  typedef CheckNicknameRequest Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_nickname(::flatbuffers::Offset<::flatbuffers::String> nickname) {
+    fbb_.AddOffset(CheckNicknameRequest::VT_NICKNAME, nickname);
+  }
+  explicit CheckNicknameRequestBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<CheckNicknameRequest> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<CheckNicknameRequest>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<CheckNicknameRequest> CreateCheckNicknameRequest(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ::flatbuffers::Offset<::flatbuffers::String> nickname = 0) {
+  CheckNicknameRequestBuilder builder_(_fbb);
+  builder_.add_nickname(nickname);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<CheckNicknameRequest> CreateCheckNicknameRequestDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const char *nickname = nullptr) {
+  auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
+  return HeavenLogin::CreateCheckNicknameRequest(
+      _fbb,
+      nickname__);
+}
+
+struct CheckNicknameResponse FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef CheckNicknameResponseBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_OK = 4,
+    VT_MESSAGE = 6
+  };
+  bool ok() const {
+    return GetField<uint8_t>(VT_OK, 0) != 0;
+  }
+  const ::flatbuffers::String *message() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_MESSAGE);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint8_t>(verifier, VT_OK, 1) &&
+           VerifyOffset(verifier, VT_MESSAGE) &&
+           verifier.VerifyString(message()) &&
+           verifier.EndTable();
+  }
+};
+
+struct CheckNicknameResponseBuilder {
+  typedef CheckNicknameResponse Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_ok(bool ok) {
+    fbb_.AddElement<uint8_t>(CheckNicknameResponse::VT_OK, static_cast<uint8_t>(ok), 0);
+  }
+  void add_message(::flatbuffers::Offset<::flatbuffers::String> message) {
+    fbb_.AddOffset(CheckNicknameResponse::VT_MESSAGE, message);
+  }
+  explicit CheckNicknameResponseBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<CheckNicknameResponse> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<CheckNicknameResponse>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<CheckNicknameResponse> CreateCheckNicknameResponse(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    bool ok = false,
+    ::flatbuffers::Offset<::flatbuffers::String> message = 0) {
+  CheckNicknameResponseBuilder builder_(_fbb);
+  builder_.add_message(message);
+  builder_.add_ok(ok);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<CheckNicknameResponse> CreateCheckNicknameResponseDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    bool ok = false,
+    const char *message = nullptr) {
+  auto message__ = message ? _fbb.CreateString(message) : 0;
+  return HeavenLogin::CreateCheckNicknameResponse(
+      _fbb,
+      ok,
+      message__);
+}
+
 struct Envelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef EnvelopeBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
@@ -1539,6 +1675,12 @@ struct Envelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   }
   const HeavenLogin::SetPartyRequest *payload_as_SetPartyRequest() const {
     return payload_type() == HeavenLogin::Payload::SetPartyRequest ? static_cast<const HeavenLogin::SetPartyRequest *>(payload()) : nullptr;
+  }
+  const HeavenLogin::CheckNicknameRequest *payload_as_CheckNicknameRequest() const {
+    return payload_type() == HeavenLogin::Payload::CheckNicknameRequest ? static_cast<const HeavenLogin::CheckNicknameRequest *>(payload()) : nullptr;
+  }
+  const HeavenLogin::CheckNicknameResponse *payload_as_CheckNicknameResponse() const {
+    return payload_type() == HeavenLogin::Payload::CheckNicknameResponse ? static_cast<const HeavenLogin::CheckNicknameResponse *>(payload()) : nullptr;
   }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
@@ -1592,6 +1734,14 @@ template<> inline const HeavenLogin::ReleasePartnerRequest *Envelope::payload_as
 
 template<> inline const HeavenLogin::SetPartyRequest *Envelope::payload_as<HeavenLogin::SetPartyRequest>() const {
   return payload_as_SetPartyRequest();
+}
+
+template<> inline const HeavenLogin::CheckNicknameRequest *Envelope::payload_as<HeavenLogin::CheckNicknameRequest>() const {
+  return payload_as_CheckNicknameRequest();
+}
+
+template<> inline const HeavenLogin::CheckNicknameResponse *Envelope::payload_as<HeavenLogin::CheckNicknameResponse>() const {
+  return payload_as_CheckNicknameResponse();
 }
 
 struct EnvelopeBuilder {
@@ -1673,6 +1823,14 @@ inline bool VerifyPayload(::flatbuffers::VerifierTemplate<B> &verifier, const vo
     }
     case Payload::SetPartyRequest: {
       auto ptr = reinterpret_cast<const HeavenLogin::SetPartyRequest *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::CheckNicknameRequest: {
+      auto ptr = reinterpret_cast<const HeavenLogin::CheckNicknameRequest *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::CheckNicknameResponse: {
+      auto ptr = reinterpret_cast<const HeavenLogin::CheckNicknameResponse *>(obj);
       return verifier.VerifyTable(ptr);
     }
     default: return true;

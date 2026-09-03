@@ -155,6 +155,14 @@ public:
     virtual DeleteResult releasePartner(std::uint64_t accountId,
                                         std::uint64_t characterId) = 0;
 
+    // 이 닉네임이 이미 점유돼 있는가. 삭제된 캐릭터의 이름도 점유로 센다
+    // (uq_nickname 이 삭제 행에도 걸린다).
+    //
+    // 이름 화면이 커마로 넘어가기 전에 묻는 용도다. 여기서 false 여도 create 는
+    // 다시 검사한다 — 그 사이에 남이 같은 이름을 가져갈 수 있고, 진짜 심판은
+    // 유니크 키다. 조회에 실패하면 true 를 돌려 통과시키지 않는다.
+    virtual bool isNicknameTaken(std::string_view nickname) = 0;
+
     // 마지막 플레이 시각. 실패해도 입장은 막지 않는다.
     virtual void touchPlayed(std::uint64_t characterId) = 0;
 

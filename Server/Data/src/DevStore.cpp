@@ -46,6 +46,20 @@ std::optional<Character> DevStore::find(std::uint64_t accountId, std::uint64_t c
     return found == it->second.end() ? std::nullopt : std::optional<Character>(*found);
 }
 
+bool DevStore::isNicknameTaken(std::string_view nickname) {
+    // create 와 같은 범위로 본다. 실제 DB 는 전역 유일이지만 여기는 계정 구분
+    // 없이 들고 있는 것 전부를 훑으면 그게 곧 전역이다.
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& [accountId, owned] : characters_) {
+        for (const Character& character : owned) {
+            if (character.nickname == nickname) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 CreateCharacterResult DevStore::create(std::uint64_t accountId, std::string_view nickname,
                                        std::uint16_t speciesId,
                                        const Appearance& appearance) {

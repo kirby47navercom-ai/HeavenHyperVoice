@@ -80,6 +80,8 @@ private:
                                const HeavenLogin::CreateCharacterRequest& request);
     bool handleSelectCharacter(TlsSession& session,
                                const HeavenLogin::SelectCharacterRequest& request);
+    bool handleCheckNickname(TlsSession& session,
+                             const HeavenLogin::CheckNicknameRequest& request);
     bool handleDeleteCharacter(TlsSession& session,
                                const HeavenLogin::DeleteCharacterRequest& request);
     bool handleSetParty(TlsSession& session, const HeavenLogin::SetPartyRequest& request);

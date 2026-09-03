@@ -213,6 +213,24 @@ table SelectCharacterResponse {
   nickname:string;
 }
 
+// 클라 -> 서버. 이 닉네임을 쓸 수 있는지만 묻는다. 아무것도 만들지 않는다.
+//
+// 캐릭터 생성은 이름 -> 커마 -> 스타터 순서라, 중복을 생성 시점에 알려주면
+// 커마를 다 끝낸 뒤에 이름 화면으로 되돌아가야 한다. 그래서 이름 화면에서
+// 미리 묻는다.
+//
+// 여기서 통과해도 생성 때 다시 본다. 그 사이에 남이 같은 이름을 가져갈 수
+// 있고, 어차피 uq_nickname 이 마지막 심판이다.
+table CheckNicknameRequest {
+  nickname:string;
+}
+
+// 서버 -> 클라. ok 면 그 순간 비어 있었다는 뜻이다. 연결은 유지된다.
+table CheckNicknameResponse {
+  ok:bool;
+  message:string;
+}
+
 union Payload {
   LoginRequest,
   LoginResponse,
@@ -224,7 +242,12 @@ union Payload {
   SelectCharacterResponse,
   DeleteCharacterRequest,
   ReleasePartnerRequest,
-  SetPartyRequest
+  SetPartyRequest,
+
+  // 새 항목은 언제나 뒤에. 중간에 끼우면 슬롯 번호가 밀려 구버전 클라가
+  // 다른 메시지로 읽는다.
+  CheckNicknameRequest,
+  CheckNicknameResponse
 }
 
 table Envelope {
