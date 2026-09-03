@@ -11,7 +11,10 @@
 #include "UEPlayerController.generated.h"
 
 class AUEPlayerCharacter;
+class UBorder;
 class UScrollBox;
+class USizeBox;
+class UTextBlock;
 class UUserWidget;
 class UVerticalBox;
 class UWidget;
@@ -89,6 +92,7 @@ private:
 	bool SubmitChatText(const FString& Text);
 	void AddChatLine(const FString& Nickname, const FString& Text, bool bSystem);
 	void AddSystemMessage(const FString& Text);
+	void SetChatCollapsed(bool bCollapsed);
 
 	UFUNCTION()
 	void HandleChatTextCommitted(const FText& Text, ETextCommit::Type CommitMethod);
@@ -103,10 +107,10 @@ private:
 	void BindRollInput(UEnhancedInputComponent* EnhancedInputComponent);
 	void BindPokemonAttackInput(UEnhancedInputComponent* EnhancedInputComponent);
 	void BindMouseViewInput(UEnhancedInputComponent* EnhancedInputComponent);
+	void BindChatInput(UEnhancedInputComponent* EnhancedInputComponent);
 	AUEPlayerCharacter* GetControlledPlayerCharacter() const;
 	bool HasPendingHHVAppearance() const;
 	void PushMovementInputToCharacter();
-	void UpdateChatMouseInteraction();
 
 	void HandleMove(const FInputActionValue& Value);
 	void HandleMoveStopped(const FInputActionValue& Value);
@@ -132,6 +136,35 @@ private:
 	void HandlePokemonAttackSlot(int32 AttackSlot);
 	void HandleMouseViewStarted(const FInputActionValue& Value);
 	void HandleMouseViewStopped(const FInputActionValue& Value);
+	void HandleChatInputAction(const FInputActionValue& Value);
+	void SelectChatChannel(int32 ChannelIndex);
+
+	UFUNCTION()
+	FEventReply HandleChannelTab0MouseButtonDown(FGeometry MyGeometry, const FPointerEvent& MouseEvent);
+
+	UFUNCTION()
+	FEventReply HandleChannelTab1MouseButtonDown(FGeometry MyGeometry, const FPointerEvent& MouseEvent);
+
+	UFUNCTION()
+	FEventReply HandleChannelTab2MouseButtonDown(FGeometry MyGeometry, const FPointerEvent& MouseEvent);
+
+	UFUNCTION()
+	FEventReply HandleChannelTab3MouseButtonDown(FGeometry MyGeometry, const FPointerEvent& MouseEvent);
+
+	UFUNCTION()
+	FEventReply HandleChatInputMouseButtonDown(FGeometry MyGeometry, const FPointerEvent& MouseEvent);
+
+	UFUNCTION()
+	FEventReply HandleChatHeaderMouseButtonDown(FGeometry MyGeometry, const FPointerEvent& MouseEvent);
+
+	UFUNCTION()
+	FEventReply HandleChatHeaderMouseButtonUp(FGeometry MyGeometry, const FPointerEvent& MouseEvent);
+
+	UFUNCTION()
+	FEventReply HandleChatHeaderMouseMove(FGeometry MyGeometry, const FPointerEvent& MouseEvent);
+
+	UFUNCTION()
+	FEventReply HandleChatHeaderMouseDoubleClick(FGeometry MyGeometry, const FPointerEvent& MouseEvent);
 
 	FVector2D PendingMovementInput = FVector2D::ZeroVector;
 	float MaxWalkSpeed = 260.0f;
@@ -156,13 +189,33 @@ private:
 	TObjectPtr<UWidget> ChatMovablePanel = nullptr;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UWidget> ChatDragHandle = nullptr;
+	TObjectPtr<USizeBox> ChatSizeBox = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UWidget> ChatInputContainer = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> ChatDragHandle = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UBorder> ChatInputBackground = nullptr;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UBorder>> ChatChannelTabs;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextBlock> ChatInputChannelText = nullptr;
 
 	std::unique_ptr<FHHVChatConnection> ChatConnection;
 	bool bChatInputOpen = false;
 	bool bMouseViewHeld = false;
 	bool bDraggingChat = false;
+	bool bChatCollapsed = false;
+	bool bChatHadHeightOverride = false;
+	float ExpandedChatHeightOverride = 0.0f;
 	FVector2D LastChatDragMousePosition = FVector2D::ZeroVector;
+	FLinearColor SelectedChatTabColor = FLinearColor::White;
+	FLinearColor NormalChatTabColor = FLinearColor::White;
 	int32 ChatMessageCount = 0;
 	static constexpr int32 MaxVisibleChatMessages = 80;
 };
