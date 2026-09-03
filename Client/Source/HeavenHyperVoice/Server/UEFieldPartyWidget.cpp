@@ -312,14 +312,15 @@ void UUEFieldPartyWidget::NativeConstruct()
 	// 열 때는 서버가 마지막으로 알려준 상태에서 시작한다.
 	HandlePartyStateChanged();
 
-	// 커서만 켜면 마우스가 그대로 게임으로도 간다 — 목록을 고르는 동안 뒤에서
-	// 카메라가 같이 돈다. 창이 떠 있는 동안은 입력을 UI 가 독점한다.
+	// UI가 먼저 키를 처리하고, 처리하지 않은 입력은 Enhanced Input으로 넘긴다.
+	// 따라서 파티 토글은 DataAsset의 Input.Action.SpawnPokemon 하나로 열고 닫는다.
 	SetIsFocusable(true);
 	if (APlayerController* Controller = GetOwningPlayer())
 	{
-		FInputModeUIOnly Mode;
+		FInputModeGameAndUI Mode;
 		Mode.SetWidgetToFocus(TakeWidget());
 		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		Mode.SetHideCursorDuringCapture(false);
 		Controller->SetInputMode(Mode);
 		Controller->SetShowMouseCursor(true);
 	}
@@ -327,9 +328,7 @@ void UUEFieldPartyWidget::NativeConstruct()
 
 FReply UUEFieldPartyWidget::NativeOnKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent)
 {
-	// UI 가 입력을 독점하는 동안에는 열 때 쓴 키가 안 먹는다. 나갈 길을 하나
-	// 더 둔다 — 닫기 버튼을 못 찾으면 갇힌 것처럼 보인다.
-	if (KeyEvent.GetKey() == EKeys::Escape || KeyEvent.GetKey() == EKeys::R)
+	if (KeyEvent.GetKey() == EKeys::Escape)
 	{
 		if (UUEFieldServerBridgeComponent* Bridge = FindBridge())
 		{
