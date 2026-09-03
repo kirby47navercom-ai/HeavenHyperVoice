@@ -26,11 +26,15 @@ DEFINE_LOG_CATEGORY_STATIC(LogHHVChat, Log, All);
 
 namespace
 {
-	constexpr int32 MaxFrameBytes = 64 * 1024;
-	constexpr int32 MaxChatTextBytes = 1024;
-	constexpr float IdleSleepSeconds = 0.005f;
+	// 이름에 Chat 을 붙이는 이유는 언리얼 유니티 빌드 때문이다. 여러 .cpp 가 한
+	// 번역 단위로 합쳐지면 익명 네임스페이스라도 같은 이름끼리 충돌한다
+	// (HHVFieldConnection.cpp 와 HHVLoginConnection.cpp 에 같은 역할의 헬퍼가 있다).
 
-	FString LastOpenSslError()
+	constexpr int32 ChatMaxFrameBytes = 64 * 1024;
+	constexpr int32 ChatMaxTextBytes = 1024;
+	constexpr float ChatIdleSleepSeconds = 0.005f;
+
+	FString LastChatSslError()
 	{
 		const unsigned long Code = ERR_get_error();
 		if (Code == 0)
@@ -43,7 +47,7 @@ namespace
 		return FString(UTF8_TO_TCHAR(Buffer));
 	}
 
-	TArray<uint8> FrameOf(const flatbuffers::FlatBufferBuilder& Builder)
+	TArray<uint8> ChatFrameOf(const flatbuffers::FlatBufferBuilder& Builder)
 	{
 		const uint32 Size = Builder.GetSize();
 		TArray<uint8> Frame;
@@ -80,7 +84,7 @@ void FHHVChatConnection::Start(const FHHVChatSettings& InSettings)
 	const auto Hello = HeavenChat::CreateHello(Builder, Ticket);
 	Builder.Finish(HeavenChat::CreateEnvelope(
 		Builder, HeavenChat::Payload::Hello, Hello.Union()));
-	Outbound.Enqueue(FrameOf(Builder));
+	Outbound.Enqueue(ChatFrameOf(Builder));
 
 	Thread = FRunnableThread::Create(this, TEXT("HHVChatConnection"), 0, TPri_BelowNormal);
 }
@@ -112,7 +116,7 @@ bool FHHVChatConnection::ValidateText(const FString& Text, FString& OutError)
 	}
 
 	const FTCHARToUTF8 Utf8(*Trimmed);
-	if (Utf8.Length() > MaxChatTextBytes)
+	if (Utf8.Length() > ChatMaxTextBytes)
 	{
 		OutError = TEXT("메시지는 UTF-8 기준 1024바이트까지 보낼 수 있습니다");
 		return false;
@@ -139,7 +143,7 @@ bool FHHVChatConnection::SendSay(const FString& Text, FString& OutError)
 	const auto Body = Builder.CreateString(TCHAR_TO_UTF8(*Trimmed));
 	const auto Say = HeavenChat::CreateSay(Builder, Body);
 	Builder.Finish(HeavenChat::CreateEnvelope(Builder, HeavenChat::Payload::Say, Say.Union()));
-	Outbound.Enqueue(FrameOf(Builder));
+	Outbound.Enqueue(ChatFrameOf(Builder));
 	return true;
 }
 
@@ -158,7 +162,7 @@ uint32 FHHVChatConnection::Run()
 	{
 		if (!FlushOutbound())
 		{
-			PushDisconnect(TEXT("send failed: ") + LastOpenSslError());
+			PushDisconnect(TEXT("send failed: ") + LastChatSslError());
 			break;
 		}
 		if (!ReadInbound(Error))
@@ -166,7 +170,7 @@ uint32 FHHVChatConnection::Run()
 			PushDisconnect(Error);
 			break;
 		}
-		FPlatformProcess::Sleep(IdleSleepSeconds);
+		FPlatformProcess::Sleep(ChatIdleSleepSeconds);
 	}
 
 	bConnected = false;
@@ -180,7 +184,7 @@ bool FHHVChatConnection::ConnectAndHandshake(FString& OutError)
 	Ctx = SSL_CTX_new(TLS_client_method());
 	if (Ctx == nullptr)
 	{
-		OutError = TEXT("SSL_CTX_new failed: ") + LastOpenSslError();
+		OutError = TEXT("SSL_CTX_new failed: ") + LastChatSslError();
 		return false;
 	}
 
@@ -191,14 +195,14 @@ bool FHHVChatConnection::ConnectAndHandshake(FString& OutError)
 	Bio = BIO_new_ssl_connect(Ctx);
 	if (Bio == nullptr)
 	{
-		OutError = TEXT("BIO_new_ssl_connect failed: ") + LastOpenSslError();
+		OutError = TEXT("BIO_new_ssl_connect failed: ") + LastChatSslError();
 		return false;
 	}
 
 	BIO_get_ssl(Bio, &Ssl);
 	if (Ssl == nullptr)
 	{
-		OutError = TEXT("BIO_get_ssl failed: ") + LastOpenSslError();
+		OutError = TEXT("BIO_get_ssl failed: ") + LastChatSslError();
 		return false;
 	}
 
@@ -208,7 +212,7 @@ bool FHHVChatConnection::ConnectAndHandshake(FString& OutError)
 	if (BIO_do_connect(Bio) <= 0)
 	{
 		OutError = FString::Printf(TEXT("채팅 서버 %s에 연결할 수 없습니다: %s"),
-			*Address, *LastOpenSslError());
+			*Address, *LastChatSslError());
 		return false;
 	}
 
@@ -293,7 +297,7 @@ bool FHHVChatConnection::ReadInbound(FString& OutError)
 			return false;
 		}
 
-		OutError = TEXT("recv failed: ") + LastOpenSslError();
+		OutError = TEXT("recv failed: ") + LastChatSslError();
 		return false;
 	}
 }
@@ -309,7 +313,7 @@ void FHHVChatConnection::ParseAccumulated()
 			(static_cast<uint32>(Header[2]) << 16) |
 			(static_cast<uint32>(Header[3]) << 24);
 
-		if (Size == 0 || Size > MaxFrameBytes)
+		if (Size == 0 || Size > ChatMaxFrameBytes)
 		{
 			RecvAccum.Reset();
 			PushDisconnect(TEXT("잘못된 채팅 프레임입니다"));

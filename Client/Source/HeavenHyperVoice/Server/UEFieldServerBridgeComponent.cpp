@@ -9,6 +9,7 @@
 #include "../System/UEGameInstance.h"
 #include "UEPlayerMovementSyncComponent.h"
 
+#include "Components/CapsuleComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "HAL/PlatformMisc.h"
@@ -560,14 +561,83 @@ bool UUEFieldServerBridgeComponent::SendSetParty(const TArray<int32>& DexNumbers
 
 FVector UUEFieldServerBridgeComponent::MakeEntityLocation(float ServerX, float ServerY) const
 {
+	const double X = ToUnrealAxis(ServerX);
+	const double Y = ToUnrealAxis(ServerY);
+
+	// 서버 스냅샷에는 높이가 없다 (x, y, facing 뿐). 그래서 클라가 그 자리의
+	// 지면을 직접 찍어 높이를 얻는다.
+	//
+	// 예전에는 내 캐릭터의 Z 를 그대로 썼는데, 그러면 내가 점프하는 순간 주변
+	// 엔티티가 전부 같이 떠올랐다 — 평지에 다 같이 서 있을 때만 맞는 값이었다.
+	//
+	// 서버도 하이트맵으로 바닥을 알지만 그건 충돌 판정용이고, 화면에 보이는
+	// 지면은 언리얼 지오메트리라 미세하게 다르다. 눈에 보이는 것과 맞추려면
+	// 여기서 찍는 편이 낫다.
 	const AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter();
-	const double GroundZ = PlayerCharacter ? PlayerCharacter->GetActorLocation().Z : 0.0;
-	return FVector(ToUnrealAxis(ServerX), ToUnrealAxis(ServerY), GroundZ);
+
+	// 캡슐 중심 기준으로 돌려준다. 평지에서 내 캐릭터와 같은 높이가 나오도록
+	// 지면에 캡슐 반높이를 더한다. 호출부가 액터 위치로 그대로 쓴다.
+	double CapsuleHalfHeight = 88.0;
+	if (PlayerCharacter && PlayerCharacter->GetCapsuleComponent())
+	{
+		CapsuleHalfHeight = PlayerCharacter->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	}
+
+	// 지면을 못 찾으면 예전처럼 내 Z 를 쓴다. 점프 중이면 어긋나지만,
+	// 엔티티가 허공이나 땅속에 박히는 것보다는 낫다.
+	const double FallbackZ = PlayerCharacter ? PlayerCharacter->GetActorLocation().Z : 0.0;
+
+	const UWorld* OwnerWorld = GetWorld();
+	if (!OwnerWorld)
+	{
+		return FVector(X, Y, FallbackZ);
+	}
+
+	// 내 높이를 기준으로 위아래로 넉넉히 훑는다. 시야가 100m 라 그 안에서
+	// 지형이 오르내리는 폭을 덮어야 한다.
+	constexpr double TraceUp = 10000.0;    // 100 m
+	constexpr double TraceDown = 20000.0;  // 200 m
+	const FVector Start(X, Y, FallbackZ + TraceUp);
+	const FVector End(X, Y, FallbackZ - TraceDown);
+
+	// 지형만 맞힌다. 폰은 WorldStatic 이 아니라 서로를 밟고 서지 않는다.
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(HHVEntityGround), /*bTraceComplex=*/false);
+	if (PlayerCharacter)
+	{
+		Params.AddIgnoredActor(PlayerCharacter);
+	}
+
+	FHitResult Hit;
+	if (OwnerWorld->LineTraceSingleByChannel(Hit, Start, End, ECC_WorldStatic, Params))
+	{
+		return FVector(X, Y, Hit.ImpactPoint.Z + CapsuleHalfHeight);
+	}
+	return FVector(X, Y, FallbackZ);
 }
 
 AUEPlayerCharacter* UUEFieldServerBridgeComponent::GetPlayerCharacter() const
 {
 	return CachedPlayerCharacter.Get();
+}
+
+void UUEFieldServerBridgeComponent::ReportFieldPositionNow()
+{
+	const AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter();
+	if (!PlayerCharacter || !FieldConnection || !FieldConnection->IsInField() ||
+		!MovementSyncComponent.IsValid())
+	{
+		return;
+	}
+
+	// 전송 간격을 건너뛴다. 다음 정기 전송을 기다릴 여유가 없다 — 곧 레벨이
+	// 갈리면서 이 연결이 통째로 사라진다.
+	const FUEPlayerMovementPacket MovementPacket = MovementSyncComponent->CaptureMovementPacket();
+	FieldConnection->SendMove(
+		ToServerAxis(MovementPacket.ClientPosition.X),
+		ToServerAxis(MovementPacket.ClientPosition.Y),
+		static_cast<float>(MovementPacket.ActorRotation.Yaw),
+		MovementPacket.Sequence);
+	TimeSinceLastSend = 0.0f;
 }
 
 void UUEFieldServerBridgeComponent::HandleCharacterMovementUpdated(

@@ -213,6 +213,11 @@ uint32 FHHVFieldConnection::Run()
 		FPlatformProcess::Sleep(IdleSleepSeconds);
 	}
 
+	// 큐에 남은 것을 한 번 더 내보내고 닫는다. 인스턴스로 넘어가기 직전에 보내는
+	// 마지막 좌표가 여기서 유실되면 서버에는 포탈 위에 선 자리가 저장된다.
+	// 이미 끊겨서 실패하면 그냥 넘어간다 — 어차피 닫는 중이다.
+	FlushOutbound();
+
 	CloseTls();
 	PushDisconnect(TEXT("closed"));
 	return 0;

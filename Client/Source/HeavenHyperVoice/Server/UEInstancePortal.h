@@ -39,6 +39,19 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Instance Portal", meta = (ClampMin = "50.0"))
 	float TriggerRadius = 200.0f;
 
+	/**
+	 * 인스턴스로 들어가기 직전에 캐릭터를 포탈 중심에서 이만큼 떨어뜨린다.
+	 *
+	 * 필드 서버는 접속이 끊길 때 마지막 좌표를 저장한다. 포탈 위에 선 채로
+	 * 떠나면 다음 접속에 그 자리에서 살아나고, 겹침이 다시 터져 인스턴스로
+	 * 끌려 들어간다. 그래서 트리거 밖으로 밀어낸 자리를 저장시킨다.
+	 *
+	 * 서버가 속도 상한으로 이동을 자르므로 너무 크게 잡지 말 것. 한 번에
+	 * 200uu 남짓이 안전하다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Instance Portal", meta = (ClampMin = "0.0"))
+	float ExitMargin = 150.0f;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Instance Portal")
 	TObjectPtr<USphereComponent> Trigger = nullptr;
 
@@ -47,6 +60,9 @@ protected:
 	TObjectPtr<UStaticMeshComponent> Mesh = nullptr;
 
 private:
+	// 필드를 떠나기 전에 캐릭터를 트리거 밖으로 옮긴다.
+	void PushOutOfTrigger(AActor* PlayerActor) const;
+
 	UFUNCTION()
 	void HandleBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
 		UPrimitiveComponent* OtherComponent, int32 OtherBodyIndex, bool bFromSweep,

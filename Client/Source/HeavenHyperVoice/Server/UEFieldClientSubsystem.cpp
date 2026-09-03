@@ -116,6 +116,17 @@ void UUEFieldClientSubsystem::EnterInstance(int32 InstanceType)
 		return;
 	}
 
+	// 필드 서버는 접속이 끊길 때 "마지막으로 받은 좌표" 를 저장한다. 포탈 위에
+	// 선 채로 떠나면 그 자리가 저장되고, 다음 접속에 거기서 살아나면서 포탈
+	// 겹침이 다시 터져 인스턴스로 끌려 들어간다.
+	//
+	// 포탈이 이미 캐릭터를 밖으로 밀어 놓았으므로, 그 좌표를 한 번 더 보내
+	// 서버가 그것을 마지막으로 알게 한다.
+	if (FieldServerBridgeComponent)
+	{
+		FieldServerBridgeComponent->ReportFieldPositionNow();
+	}
+
 	PendingInstanceType = InstanceType;
 	TravelTo(InstanceLevel);
 }
@@ -145,18 +156,15 @@ void UUEFieldClientSubsystem::TravelTo(const TSoftObjectPtr<UWorld>& Level)
 		return;
 	}
 
-	// 게임 모드는 지금 쓰고 있는 것을 그대로 물려준다. 여기서 클래스를 고르면
-	// 캐릭터 선택 화면이 지정한 것과 조용히 어긋나서, 인스턴스에만 폰이나
-	// 컨트롤러가 다른 상태가 된다.
-	FString Options;
-	if (const AGameModeBase* GameMode = World->GetAuthGameMode())
-	{
-		Options = FString::Printf(TEXT("?game=%s"), *GameMode->GetClass()->GetPathName());
-	}
-
+	// 게임 모드를 ?game= 으로 넘기지 않는다. 레벨이 World Settings 에 적어 둔
+	// 오버라이드를 코드가 덮어버리기 때문이다 — 맵 담당이 거기서 게임모드를
+	// 바꿔도 아무 일이 안 일어나고, 원인이 코드에 있어서 찾기도 나쁘다.
+	//
+	// 대신 각 레벨이 자기 게임모드를 선언해야 한다. 안 하면 프로젝트 기본값
+	// (BP_FrontendGameMode) 으로 떨어져 폰이 안 뜬다.
 	UE_LOG(LogTemp, Display, TEXT("FieldClient: travelling to %s (instance type %d)"),
 		*Level.ToString(), PendingInstanceType);
-	UGameplayStatics::OpenLevelBySoftObjectPtr(World, Level, true, Options);
+	UGameplayStatics::OpenLevelBySoftObjectPtr(World, Level, /*bAbsolute=*/true, FString());
 }
 
 bool UUEFieldClientSubsystem::SendPokemonToggleRequest()

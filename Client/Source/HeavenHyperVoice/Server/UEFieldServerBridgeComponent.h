@@ -136,6 +136,14 @@ public:
 	 */
 	void SetConnectionTarget(int32 InstanceType) { TargetInstanceType = InstanceType; }
 
+	/**
+	 * 지금 위치를 서버에 즉시 한 번 보낸다. 평소 전송 간격을 무시한다.
+	 *
+	 * 필드를 떠나기 직전에 쓴다. 서버는 마지막으로 받은 좌표를 저장하므로,
+	 * 이걸 안 보내면 포탈 위에 선 자리가 저장되어 다음 접속에 다시 끌려간다.
+	 */
+	void ReportFieldPositionNow();
+
 	UFUNCTION(BlueprintPure, Category = "Field Server|Instance")
 	bool IsInInstance() const { return bInInstance; }
 
