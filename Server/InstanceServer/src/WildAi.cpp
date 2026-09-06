@@ -22,6 +22,7 @@ constexpr float kMinRestSeconds = 0.1f;
 constexpr float kMaxRestSeconds = 8.f;
 constexpr float kPi = 3.14159265358979323846f;
 constexpr float kAggroRadius = 900.f;
+constexpr float kAttackRadius = 180.f;
 constexpr float kLoseTargetRadius = 1800.f;
 constexpr float kChaseRepathDistance = 180.f;
 constexpr float kActionRetrySeconds = 0.5f;
@@ -101,15 +102,24 @@ WildIntent WildAi::decide(std::uint64_t entityId, std::uint16_t species, std::ui
 
     const ObservedPlayer* aggroPlayer =
         findNearestPlayer(x, y, mapId, players, kAggroRadius);
-    if (brain.action != RunningAction::Chase && aggroPlayer != nullptr) {
+    if (brain.action != RunningAction::Chase &&
+        brain.action != RunningAction::Attack &&
+        aggroPlayer != nullptr) {
         requestDecision(brain);
     }
 
-    if (brain.action == RunningAction::Chase && brain.targetId != 0) {
+    const bool trackingTarget =
+        (brain.action == RunningAction::Chase || brain.action == RunningAction::Attack) &&
+        brain.targetId != 0;
+    if (trackingTarget) {
         const ObservedPlayer* target = findPlayerById(players, brain.targetId, mapId);
         if (target == nullptr || !isPlayerInRange(x, y, *target, kLoseTargetRadius)) {
             brain.targetId = 0;
             brain.action = RunningAction::None;
+            requestDecision(brain);
+        } else if (brain.action == RunningAction::Chase &&
+                   brain.phase == WildPhase::Moving &&
+                   isPlayerInRange(x, y, *target, kAttackRadius)) {
             requestDecision(brain);
         } else if (brain.phase == WildPhase::Moving &&
                    distanceSquared(target->x, target->y, brain.lastTargetX,
@@ -180,6 +190,7 @@ WildIntent WildAi::chooseNextAction(std::uint64_t entityId, std::uint16_t specie
     context.currentTarget = currentTarget;
     context.nearestPlayer = nearestPlayer;
     context.aggroRadius = kAggroRadius;
+    context.attackRadius = kAttackRadius;
     context.loseTargetRadius = kLoseTargetRadius;
 
     const WildDecision decision = behavior_->decide(context);
@@ -211,11 +222,15 @@ WildIntent WildAi::chooseNextAction(std::uint64_t entityId, std::uint16_t specie
 
     const ObservedPlayer* actionTarget = findPlayerById(players, decision.targetId, mapId);
     const bool keepingCurrentTarget =
-        brain.action == RunningAction::Chase && decision.targetId == brain.targetId;
+        brain.targetId != 0 && decision.targetId == brain.targetId;
     const float allowedRadius = keepingCurrentTarget ? kLoseTargetRadius : kAggroRadius;
     if (actionTarget == nullptr || !isPlayerInRange(x, y, *actionTarget, allowedRadius)) {
         beginRest(brain, kActionRetrySeconds);
         return {};
+    }
+
+    if (decision.action == WildDecision::Action::Attack) {
+        return makeAttackIntent(x, y, decision, *actionTarget, brain);
     }
 
     const MoveAction action = makeChaseAction(decision, *actionTarget);
@@ -296,7 +311,12 @@ WildIntent WildAi::followPath(float x, float y, WildBrain& brain) {
 
     if (brain.pathIndex < brain.path.size()) {
         const nav::Vec3& waypoint = brain.path[brain.pathIndex];
-        return WildIntent{waypoint.x, waypoint.y, brain.acceptanceRadius, true};
+        WildIntent intent;
+        intent.targetX = waypoint.x;
+        intent.targetY = waypoint.y;
+        intent.acceptanceRadius = brain.acceptanceRadius;
+        intent.moving = true;
+        return intent;
     }
 
     if (distanceSquared(x, y, brain.targetX, brain.targetY) <=
@@ -304,7 +324,12 @@ WildIntent WildAi::followPath(float x, float y, WildBrain& brain) {
         return {};
     }
 
-    return WildIntent{brain.targetX, brain.targetY, brain.acceptanceRadius, true};
+    WildIntent intent;
+    intent.targetX = brain.targetX;
+    intent.targetY = brain.targetY;
+    intent.acceptanceRadius = brain.acceptanceRadius;
+    intent.moving = true;
+    return intent;
 }
 
 WildAi::MoveAction WildAi::makeWanderAction(float x, float y,
@@ -352,6 +377,40 @@ WildAi::MoveAction WildAi::makeChaseAction(const WildDecision& decision,
                                                 kMaxReconsiderSeconds);
     action.valid = std::isfinite(action.targetX) && std::isfinite(action.targetY);
     return action;
+}
+
+WildIntent WildAi::makeAttackIntent(float x, float y,
+                                    const WildDecision& decision,
+                                    const ObservedPlayer& target,
+                                    WildBrain& brain) {
+    const float attackRange = clampFinite(decision.attackRange,
+                                          kAttackRadius,
+                                          kMinAcceptanceRadius,
+                                          kMaxAcceptanceRadius);
+    if (!isPlayerInRange(x, y, target, attackRange)) {
+        beginRest(brain, kActionRetrySeconds);
+        return {};
+    }
+
+    brain.action = RunningAction::Attack;
+    brain.targetId = target.entityId;
+    brain.lastTargetX = target.x;
+    brain.lastTargetY = target.y;
+    brain.path.clear();
+    brain.pathIndex = 0;
+
+    WildIntent intent;
+    intent.attackTargetId = target.entityId;
+    intent.attackTargetX = target.x;
+    intent.attackTargetY = target.y;
+    intent.attackRange = attackRange;
+    intent.attacking = true;
+
+    beginRest(brain, clampFinite(decision.reconsiderSeconds,
+                                 1.2f,
+                                 kMinReconsiderSeconds,
+                                 kMaxReconsiderSeconds));
+    return intent;
 }
 
 void WildAi::requestDecision(WildBrain& brain) {

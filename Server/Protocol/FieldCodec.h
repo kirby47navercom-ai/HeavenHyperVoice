@@ -23,6 +23,8 @@ struct EntityView {
     // 둘 다 서버 내부 번호다. 와이어로 나갈 때 도감번호로 바뀐다 (buildEntities).
     std::uint16_t partnerSpecies = 0;
     std::uint16_t species = 0;  // 야생 포켓몬 종족. 0 이면 플레이어.
+    std::uint32_t attackSequence = 0;
+    std::uint64_t attackTargetId = 0;
 };
 
 namespace detail {
@@ -55,6 +57,10 @@ buildEntities(flatbuffers::FlatBufferBuilder& fbb, const std::vector<EntityView>
         }
         if (const std::uint16_t dex = dexOf(entity.species); dex != 0) {
             builder.add_species(dex);
+        }
+        if (entity.attackSequence != 0) {
+            builder.add_attack_sequence(entity.attackSequence);
+            builder.add_attack_target_id(entity.attackTargetId);
         }
         entries.push_back(builder.Finish());
     }

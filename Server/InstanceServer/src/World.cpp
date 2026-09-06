@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 #include "WildAi.h"
@@ -46,7 +47,8 @@ constexpr nav::Agent kDefaultAgent{};
 
 }  // namespace
 
-proto::EntityView World::viewOf(const Entity& entity, bool withIdentity) {
+proto::EntityView World::viewOf(const Entity& entity, bool withIdentity,
+                                bool withAttack) {
     proto::EntityView view;
     view.entityId = entity.characterId;
     view.x = entity.position.x;
@@ -56,6 +58,10 @@ proto::EntityView World::viewOf(const Entity& entity, bool withIdentity) {
         view.nickname = entity.nickname;
         view.partnerSpecies = entity.partnerSpecies;
         view.species = entity.species;
+    }
+    if (withAttack) {
+        view.attackSequence = entity.attackSequence;
+        view.attackTargetId = entity.attackTargetId;
     }
     return view;
 }
@@ -206,7 +212,7 @@ void World::advanceWild(float dt, WildAi& ai) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         for (const Pending& p : pending) {
-            if (!p.intent.moving) {
+            if (!p.intent.moving && !p.intent.attacking) {
                 continue;
             }
             const auto it = entities_.find(p.id);
@@ -214,6 +220,33 @@ void World::advanceWild(float dt, WildAi& ai) {
                 continue;
             }
             Entity& entity = it->second;
+
+            if (p.intent.attacking && p.intent.attackTargetId != 0) {
+                const auto target = entities_.find(p.intent.attackTargetId);
+                const float attackRange = std::max(p.intent.attackRange, 1.f);
+                if (target != entities_.end() &&
+                    !target->second.isWild &&
+                    target->second.mapId == entity.mapId &&
+                    distanceSquared(entity.position.x, entity.position.y,
+                                    target->second.position.x, target->second.position.y) <=
+                        attackRange * attackRange) {
+                    const float attackDx = target->second.position.x - entity.position.x;
+                    const float attackDy = target->second.position.y - entity.position.y;
+                    if (std::abs(attackDx) > 1e-3f || std::abs(attackDy) > 1e-3f) {
+                        entity.position.facing = std::atan2(attackDy, attackDx) * 180.f / 3.14159265f;
+                    }
+                    entity.attackSequence =
+                        entity.attackSequence == std::numeric_limits<std::uint32_t>::max()
+                            ? 1
+                            : entity.attackSequence + 1;
+                    entity.attackTargetId = p.intent.attackTargetId;
+                    entity.attackedThisTick = true;
+                }
+            }
+
+            if (!p.intent.moving) {
+                continue;
+            }
 
             const float dx = p.intent.targetX - entity.position.x;
             const float dy = p.intent.targetY - entity.position.y;
@@ -487,12 +520,16 @@ void World::tick() {
     std::unordered_map<std::uint64_t, std::vector<proto::EntityView>> pending;
 
     for (auto& [characterId, entity] : entities_) {
-        if (!entity.movedThisTick) {
+        if (!entity.movedThisTick && !entity.attackedThisTick) {
             continue;
         }
-        entity.movedThisTick = false;
 
-        const proto::EntityView view = viewOf(entity, /*withIdentity=*/false);
+        const proto::EntityView view = viewOf(
+            entity,
+            /*withIdentity=*/false,
+            /*withAttack=*/entity.attackedThisTick);
+        entity.movedThisTick = false;
+        entity.attackedThisTick = false;
         for (const std::uint64_t viewerId : entity.visible) {
             pending[viewerId].push_back(view);
         }

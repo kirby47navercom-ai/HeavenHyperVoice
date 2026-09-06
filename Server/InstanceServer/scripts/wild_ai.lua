@@ -62,6 +62,32 @@ local function player_near(ctx)
     return in_range(ctx.nearest_player, ctx.aggro_radius)
 end
 
+local function current_target_in_attack_range(ctx)
+    return in_range(ctx.current_target, ctx.attack_radius)
+end
+
+local function nearest_player_in_attack_range(ctx)
+    return in_range(ctx.nearest_player, ctx.attack_radius)
+end
+
+local function attack_current_target(ctx)
+    return {
+        action = "attack",
+        target_id = ctx.current_target.id,
+        attack_range = ctx.attack_radius,
+        reconsider_seconds = 1.2
+    }
+end
+
+local function attack_nearest_player(ctx)
+    return {
+        action = "attack",
+        target_id = ctx.nearest_player.id,
+        attack_range = ctx.attack_radius,
+        reconsider_seconds = 1.2
+    }
+end
+
 local function chase_current_target(ctx)
     return {
         action = "chase",
@@ -91,8 +117,16 @@ end
 
 local wild_tree = selector({
     sequence({
+        condition(current_target_in_attack_range),
+        action(attack_current_target)
+    }),
+    sequence({
         condition(has_current_target),
         action(chase_current_target)
+    }),
+    sequence({
+        condition(nearest_player_in_attack_range),
+        action(attack_nearest_player)
     }),
     sequence({
         condition(player_near),

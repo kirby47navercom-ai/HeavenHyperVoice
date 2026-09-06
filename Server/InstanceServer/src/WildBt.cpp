@@ -89,6 +89,7 @@ WildDecision WildBt::decide(const WildBtContext& context) {
         "x", context.x,
         "y", context.y,
         "aggro_radius", context.aggroRadius,
+        "attack_radius", context.attackRadius,
         "lose_target_radius", context.loseTargetRadius);
 
     if (context.currentTarget != nullptr) {
@@ -127,6 +128,10 @@ WildDecision WildBt::decide(const WildBtContext& context) {
         decision.action = WildDecision::Action::Chase;
         decision.targetId = readId(table, {"target_id", "targetId"});
         decision.valid = decision.targetId != 0;
+    } else if (action == "attack") {
+        decision.action = WildDecision::Action::Attack;
+        decision.targetId = readId(table, {"target_id", "targetId"});
+        decision.valid = decision.targetId != 0;
     } else {
         spdlog::debug("wild AI returned unknown action: {}", action);
         return {};
@@ -134,6 +139,8 @@ WildDecision WildBt::decide(const WildBtContext& context) {
 
     decision.wanderRadius = readFloat(table, {"wander_radius", "wanderRadius", "radius"},
                                       decision.wanderRadius);
+    decision.attackRange = readFloat(table, {"attack_range", "attackRange"},
+                                     decision.attackRange);
     decision.acceptanceRadius = readFloat(table, {"acceptance_radius", "acceptanceRadius"},
                                           decision.acceptanceRadius);
     decision.restSeconds = readFloat(table, {"rest_seconds", "restSeconds"},

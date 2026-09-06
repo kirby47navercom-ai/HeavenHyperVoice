@@ -27,6 +27,10 @@ struct FHHVFieldEntity
 
 	// 야생 포켓몬의 종족. 0 이면 플레이어 캐릭터다.
 	uint16 Species = 0;
+
+	// 야생 포켓몬 공격 이벤트. 0 이면 이번 엔티티 상태에는 공격 신호가 없다.
+	uint32 AttackSequence = 0;
+	uint64 AttackTargetId = 0;
 };
 
 struct FHHVFieldSnapshot

@@ -14,12 +14,14 @@ struct ObservedPlayer {
 struct WildDecision {
     enum class Action : std::uint8_t {
         Wander,
-        Chase
+        Chase,
+        Attack
     };
 
     Action action = Action::Wander;
     std::uint64_t targetId = 0;
     float wanderRadius = 1500.f;
+    float attackRange = 180.f;
     float acceptanceRadius = 80.f;
     float restSeconds = 2.f;
     float reconsiderSeconds = 0.5f;

@@ -87,18 +87,6 @@ void AUEPokemonCharacter::InitializeAbilitySystem()
 	bAbilitySystemInitialized = true;
 }
 
-void AUEPokemonCharacter::ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot)
-{
-	ServerEntityId = static_cast<int64>(FMath::Max(Snapshot.PokemonId, 0));
-	ServerPokemonId = Snapshot.PokemonId;
-	PokemonInstanceId = Snapshot.PokemonInstanceId;
-	ServerSpeciesId = Snapshot.SpeciesId;
-	SetRenderType(Snapshot.RenderType);
-	ApplyServerStats(Snapshot.CurrentHP, Snapshot.MaxHP);
-	ApplyServerAnimationSnapshot(Snapshot);
-	ApplyServerMoveTarget(Snapshot.Location, Snapshot.Velocity, Snapshot.Rotation, Snapshot.bTeleported);
-}
-
 void AUEPokemonCharacter::InitializeServerEntity(
 	int64 NewServerEntityId,
 	int32 SpeciesNumber,
@@ -611,46 +599,28 @@ void AUEPokemonCharacter::ApplyServerMoveTarget(const FVector& ServerLocation, c
 		: FMath::Max(ConfiguredMoveSpeed, 1.0f);
 	const float RequiredMoveSeconds = DistanceToServer / MaximumVisualSpeed;
 
-	// 로컬 서버 컴포넌트는 산책 속도 배율이 적용된 실제 속도를 함께 보낸다.
-	// 이 값을 무시하고 종별 최고속도로 움직이면 빠르게 이동한 뒤 멈추는 동작이
-	// 20Hz마다 반복되므로, 목표 거리와 실제 속도로 정확한 구간 시간을 계산한다.
+	// 서버가 실제 이동 속도를 함께 줄 수 있으면 그 값을 우선하고,
+	// 없으면 종별 이동속도와 스냅샷 주기로 화면 보간 시간을 잡는다.
 	ServerMoveDurationSeconds = bHasAuthoritativeVelocity
 		? FMath::Max(RequiredMoveSeconds, UE_SMALL_NUMBER)
 		: FMath::Max(ServerSnapshotIntervalSeconds, RequiredMoveSeconds);
 }
 
-void AUEPokemonCharacter::ApplyServerAnimationSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot)
+void AUEPokemonCharacter::HandleServerAttackSignal(uint64 TargetEntityId, uint32 AttackSequence)
 {
-	ServerAnimationState = Snapshot.AnimationState;
-
-	if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::None)
+	if (AttackSequence == 0 || AttackSequence == LastServerAttackSequence)
 	{
 		return;
 	}
 
-	LastServerAnimationEvent = Snapshot.AnimationEvent;
-	LastServerAnimationEventTimeSeconds = Snapshot.ServerTimeSeconds;
-	LastServerAnimationEventDurationSeconds = Snapshot.EventDurationSeconds;
+	LastServerAttackSequence = AttackSequence;
+	LastServerAttackTargetId = TargetEntityId;
 
-	// 서버가 선택한 필드 행동은 현재 종의 AnimInstance가 실제 시퀀스로 변환해 재생한다.
-	// DataAsset에 없는 시퀀스는 AnimInstance에서 자동으로 건너뛴다.
-	if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::FieldAnimationStarted)
+	PlayRandomPhysicalAttackCry();
+	if (UUEPokemonAnimInstance* PokemonAnimInstance = Cast<UUEPokemonAnimInstance>(GetMesh()->GetAnimInstance()))
 	{
-		if (UUEPokemonAnimInstance* PokemonAnimInstance = Cast<UUEPokemonAnimInstance>(GetMesh()->GetAnimInstance()))
-		{
-			PokemonAnimInstance->PlayFieldAnimation(Snapshot.FieldAnimation, Snapshot.FieldAnimationLoopCount);
-		}
+		PokemonAnimInstance->PlayAttackAnimation(EUEPokemonAttackAnimation::Attack01);
 	}
-	else if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::AttackStarted)
-	{
-		// 서버가 승인한 공격 종류만 재생해 클라이언트 입력과 실제 포켓몬 상태가 어긋나지 않게 한다.
-		if (UUEPokemonAnimInstance* PokemonAnimInstance = Cast<UUEPokemonAnimInstance>(GetMesh()->GetAnimInstance()))
-		{
-			PokemonAnimInstance->PlayAttackAnimation(Snapshot.AttackAnimation, Snapshot.AttackAnimationLoopCount);
-		}
-	}
-
-	BP_OnServerAnimationEvent(Snapshot.AnimationEvent, Snapshot);
 }
 
 void AUEPokemonCharacter::UpdateServerDrivenMovement(float DeltaSeconds)
