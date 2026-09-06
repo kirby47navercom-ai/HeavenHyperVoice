@@ -14,7 +14,9 @@ class UUEAbilitySystemComponent;
 class UUEPokemonAttributeSet;
 class UUEPokemonSpeciesCatalog;
 class UUEPokemonSpeciesData;
+class UUEHealthBarWidget;
 class USoundBase;
+class UWidgetComponent;
 struct FOnAttributeChangeData;
 
 // 블루프린트 UI와 피격 연출이 포켓몬 체력 변경을 즉시 구독할 때 사용한다.
@@ -106,6 +108,26 @@ enum class EUEPokemonRenderType : uint8
 	Boss
 };
 
+// 종족 DataAsset에 지정된 행동 효과음 배열을 경로 없이 선택하기 위한 종류다.
+UENUM(BlueprintType)
+enum class EUEPokemonSoundEffect : uint8
+{
+	Footstep,
+	Jump,
+	Landing,
+	Swim,
+	SpecialMovement,
+	Attack,
+	Hit,
+	Down,
+	Faint,
+	Eat,
+	Stun,
+	Sleep,
+	Spawn,
+	Despawn
+};
+
 USTRUCT(BlueprintType)
 struct FUEPokemonServerMoveSnapshot
 {
@@ -179,6 +201,8 @@ public:
 	AUEPokemonCharacter();
 
 	virtual void Tick(float DeltaSeconds) override;
+	virtual void OnJumped_Implementation() override;
+	virtual void Landed(const FHitResult& Hit) override;
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|GAS")
@@ -227,6 +251,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Species")
 	FName GetPokemonSpeciesId() const;
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Species")
+	FText GetPokemonDisplayName() const;
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Stats")
 	float GetCurrentHP() const;
@@ -324,6 +351,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
 	void PlayRandomAmbientCry();
 
+	// 에디터에서 종족별로 지정한 후보 중 하나만 골라 3D 효과음으로 재생한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayPokemonSoundEffect(EUEPokemonSoundEffect Effect);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -338,6 +369,8 @@ private:
 	void HandleHealthChanged(const FOnAttributeChangeData& ChangeData);
 	void HandleMaxHealthChanged(const FOnAttributeChangeData& ChangeData);
 	float SetPokemonHealth(float NewHealth);
+	void RefreshHealthBarWidget();
+	void RefreshHealthBarPosition();
 
 	// 실제 스켈레탈 메시가 없을 때 큐브를 종족 대표 색으로 칠한다.
 	void ApplyDebugAppearance();
@@ -346,8 +379,10 @@ private:
 	void ConfigureServerDrivenMovement();
 	void RefreshWildCryTimer();
 	void HandleWildCryTimer();
-	USoundBase* SelectRandomCry(const TArray<TObjectPtr<USoundBase>>& CryCandidates, USoundBase* FallbackCry = nullptr) const;
+	USoundBase* SelectRandomSound(const TArray<TObjectPtr<USoundBase>>& Candidates, USoundBase* FallbackSound = nullptr) const;
 	void PlayCrySound(USoundBase* CrySound) const;
+	void PlayEffectSound(USoundBase* EffectSound) const;
+	void UpdateMovementSound(const FVector& PreviousLocation, const FVector& NewLocation);
 
 	// 포켓몬 자신이 ASC의 OwnerActor와 AvatarActor를 함께 맡는 단순한 구조다.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|GAS", meta = (AllowPrivateAccess = "true"))
@@ -362,6 +397,16 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Species", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UUEPokemonSpeciesCatalog> PokemonSpeciesCatalog = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|UI", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UWidgetComponent> HealthBarWidgetComponent = nullptr;
+
+	// 실제 모양은 BP_Pokemon의 클래스 기본값에서 만든 WBP를 지정한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|UI", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UUEHealthBarWidget> HealthBarWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|UI", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+	float HealthBarHeadOffset = 30.0f;
 
 	// 필드 서버는 20Hz로 좌표를 보낸다. 클라이언트는 이 시간 동안 이전 좌표와
 	// 새 좌표를 일정한 속도로 연결해 프레임 사이의 떨림을 없앤다.
@@ -435,6 +480,10 @@ private:
 
 	// 고정 주기 반복 타이머가 아니라 매번 새 간격을 뽑는 한 번짜리 타이머로 사용한다.
 	FTimerHandle WildCryTimerHandle;
+
+	float AccumulatedMovementSoundDistance = 0.0f;
+	bool bSpawnAudioPlayed = false;
+	bool bDespawnAudioPlayed = false;
 
 	bool bHasServerMoveTarget = false;
 };
