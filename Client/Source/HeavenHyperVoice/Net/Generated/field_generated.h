@@ -258,7 +258,8 @@ struct EnterAck FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_FACING = 10,
     VT_MAP_ID = 12,
     VT_ROOM_ID = 14,
-    VT_WORLD_ORIGIN_OFFSET = 16
+    VT_WORLD_ORIGIN_OFFSET = 16,
+    VT_Z = 18
   };
   uint64_t entity_id() const {
     return GetField<uint64_t>(VT_ENTITY_ID, 0);
@@ -281,6 +282,9 @@ struct EnterAck FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   float world_origin_offset() const {
     return GetField<float>(VT_WORLD_ORIGIN_OFFSET, 0.0f);
   }
+  float z() const {
+    return GetField<float>(VT_Z, 0.0f);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -291,6 +295,7 @@ struct EnterAck FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<uint32_t>(verifier, VT_MAP_ID, 4) &&
            VerifyField<uint32_t>(verifier, VT_ROOM_ID, 4) &&
            VerifyField<float>(verifier, VT_WORLD_ORIGIN_OFFSET, 4) &&
+           VerifyField<float>(verifier, VT_Z, 4) &&
            verifier.EndTable();
   }
 };
@@ -320,6 +325,9 @@ struct EnterAckBuilder {
   void add_world_origin_offset(float world_origin_offset) {
     fbb_.AddElement<float>(EnterAck::VT_WORLD_ORIGIN_OFFSET, world_origin_offset, 0.0f);
   }
+  void add_z(float z) {
+    fbb_.AddElement<float>(EnterAck::VT_Z, z, 0.0f);
+  }
   explicit EnterAckBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -339,9 +347,11 @@ inline ::flatbuffers::Offset<EnterAck> CreateEnterAck(
     float facing = 0.0f,
     uint32_t map_id = 0,
     uint32_t room_id = 0,
-    float world_origin_offset = 0.0f) {
+    float world_origin_offset = 0.0f,
+    float z = 0.0f) {
   EnterAckBuilder builder_(_fbb);
   builder_.add_entity_id(entity_id);
+  builder_.add_z(z);
   builder_.add_world_origin_offset(world_origin_offset);
   builder_.add_room_id(room_id);
   builder_.add_map_id(map_id);
@@ -434,7 +444,8 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_PARTNER_SPECIES = 14,
     VT_SPECIES = 16,
     VT_ATTACK_SEQUENCE = 18,
-    VT_ATTACK_TARGET_ID = 20
+    VT_ATTACK_TARGET_ID = 20,
+    VT_Z = 22
   };
   uint64_t entity_id() const {
     return GetField<uint64_t>(VT_ENTITY_ID, 0);
@@ -463,6 +474,9 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   uint64_t attack_target_id() const {
     return GetField<uint64_t>(VT_ATTACK_TARGET_ID, 0);
   }
+  float z() const {
+    return GetField<float>(VT_Z, 0.0f);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -476,6 +490,7 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<uint16_t>(verifier, VT_SPECIES, 2) &&
            VerifyField<uint32_t>(verifier, VT_ATTACK_SEQUENCE, 4) &&
            VerifyField<uint64_t>(verifier, VT_ATTACK_TARGET_ID, 8) &&
+           VerifyField<float>(verifier, VT_Z, 4) &&
            verifier.EndTable();
   }
 };
@@ -511,6 +526,9 @@ struct EntityStateBuilder {
   void add_attack_target_id(uint64_t attack_target_id) {
     fbb_.AddElement<uint64_t>(EntityState::VT_ATTACK_TARGET_ID, attack_target_id, 0);
   }
+  void add_z(float z) {
+    fbb_.AddElement<float>(EntityState::VT_Z, z, 0.0f);
+  }
   explicit EntityStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -532,10 +550,12 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityState(
     uint16_t partner_species = 0,
     uint16_t species = 0,
     uint32_t attack_sequence = 0,
-    uint64_t attack_target_id = 0) {
+    uint64_t attack_target_id = 0,
+    float z = 0.0f) {
   EntityStateBuilder builder_(_fbb);
   builder_.add_attack_target_id(attack_target_id);
   builder_.add_entity_id(entity_id);
+  builder_.add_z(z);
   builder_.add_attack_sequence(attack_sequence);
   builder_.add_nickname(nickname);
   builder_.add_facing(facing);
@@ -556,7 +576,8 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityStateDirect(
     uint16_t partner_species = 0,
     uint16_t species = 0,
     uint32_t attack_sequence = 0,
-    uint64_t attack_target_id = 0) {
+    uint64_t attack_target_id = 0,
+    float z = 0.0f) {
   auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
   return HeavenField::CreateEntityState(
       _fbb,
@@ -568,7 +589,8 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityStateDirect(
       partner_species,
       species,
       attack_sequence,
-      attack_target_id);
+      attack_target_id,
+      z);
 }
 
 struct Snapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -711,7 +733,8 @@ struct Correction FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_SEQUENCE = 4,
     VT_X = 6,
     VT_Y = 8,
-    VT_FACING = 10
+    VT_FACING = 10,
+    VT_Z = 12
   };
   uint32_t sequence() const {
     return GetField<uint32_t>(VT_SEQUENCE, 0);
@@ -725,6 +748,9 @@ struct Correction FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   float facing() const {
     return GetField<float>(VT_FACING, 0.0f);
   }
+  float z() const {
+    return GetField<float>(VT_Z, 0.0f);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -732,6 +758,7 @@ struct Correction FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<float>(verifier, VT_X, 4) &&
            VerifyField<float>(verifier, VT_Y, 4) &&
            VerifyField<float>(verifier, VT_FACING, 4) &&
+           VerifyField<float>(verifier, VT_Z, 4) &&
            verifier.EndTable();
   }
 };
@@ -752,6 +779,9 @@ struct CorrectionBuilder {
   void add_facing(float facing) {
     fbb_.AddElement<float>(Correction::VT_FACING, facing, 0.0f);
   }
+  void add_z(float z) {
+    fbb_.AddElement<float>(Correction::VT_Z, z, 0.0f);
+  }
   explicit CorrectionBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -768,8 +798,10 @@ inline ::flatbuffers::Offset<Correction> CreateCorrection(
     uint32_t sequence = 0,
     float x = 0.0f,
     float y = 0.0f,
-    float facing = 0.0f) {
+    float facing = 0.0f,
+    float z = 0.0f) {
   CorrectionBuilder builder_(_fbb);
+  builder_.add_z(z);
   builder_.add_facing(facing);
   builder_.add_y(y);
   builder_.add_x(x);

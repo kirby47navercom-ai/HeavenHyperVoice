@@ -6,7 +6,7 @@
 //
 // 프레이밍은 chat/login 과 동일하다 (4바이트 LE 길이 + Envelope).
 //
-//   Enter{ticket}  -> EnterAck{entity_id, x, y}   접속 후 첫 프레임
+//   Enter{ticket}  -> EnterAck{entity_id, x, y, z} 접속 후 첫 프레임
 //   Move{x, y}     -> (없음)                       클라 -> 서버, 20Hz
 //   (없음)          -> Snapshot                    서버 -> 클라, 20Hz 틱
 //
@@ -57,10 +57,14 @@ table EnterAck {
   // room_id 뒤에 붙였다. 앞에 끼우면 room_id 의 슬롯 번호가 밀려서, 스키마를
   // 안 따라온 클라나 시험 스크립트가 엉뚱한 값을 읽는다.
   world_origin_offset:float;
+
+  // 서버가 navmesh/맵 데이터로 확정한 캡슐 기준 높이다.
+  // 뒤에 붙였다. 앞에 넣으면 기존 슬롯 번호가 밀린다.
+  z:float;
 }
 
 // 클라 -> 서버. 서버가 직전 위치와 경과 시간으로 속도 상한을 검사한다.
-// 높이는 아직 없다. 넣을 때 z 를 뒤에 추가하면 기존 클라와 호환된다.
+// 높이는 서버 맵에서 다시 정한다. 클라가 보낸 Z 를 권위로 삼지 않는다.
 table Move {
   x:float;
   y:float;
@@ -93,6 +97,10 @@ table EntityState {
 
   // attack_sequence 가 있을 때 바라보거나 맞출 대상 엔티티다.
   attack_target_id:ulong;
+
+  // 서버가 navmesh/맵 데이터로 확정한 캡슐 기준 높이다.
+  // 뒤에 붙였다. 앞에 넣으면 기존 슬롯 번호가 밀린다.
+  z:float;
 }
 
 table Snapshot {
@@ -113,6 +121,10 @@ table Correction {
   x:float;
   y:float;
   facing:float;
+
+  // 서버가 보정한 캡슐 기준 높이다.
+  // 뒤에 붙였다. 앞에 넣으면 기존 슬롯 번호가 밀린다.
+  z:float;
 }
 
 // 클라 -> 서버. 파티 구성과 꺼낼 한 마리를 정한다.

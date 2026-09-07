@@ -8,6 +8,9 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "HAL/FileManager.h"
+#include "LandscapeComponent.h"
+#include "LandscapeDataAccess.h"
+#include "LandscapeProxy.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/FileHelper.h"
 #include "Misc/PackageName.h"
@@ -95,6 +98,22 @@ namespace
 		return false;
 	}
 
+	bool LandscapeCollisionProfileMatchesMarker(const UPrimitiveComponent* Component, const FString& Marker)
+	{
+		if (Cast<ULandscapeComponent>(Component) == nullptr)
+		{
+			return false;
+		}
+
+		const ALandscapeProxy* LandscapeProxy = Cast<ALandscapeProxy>(Component->GetOwner());
+		if (LandscapeProxy == nullptr)
+		{
+			return false;
+		}
+
+		return SameName(LandscapeProxy->BodyInstance.GetCollisionProfileName().ToString(), Marker);
+	}
+
 	bool MatchesMarker(const UPrimitiveComponent* Component, const FString& Marker)
 	{
 		if (!IsValid(Component))
@@ -108,6 +127,11 @@ namespace
 		}
 
 		if (HasTag(Component->ComponentTags, Marker) || ContainsMarker(Component->GetName(), Marker))
+		{
+			return true;
+		}
+
+		if (LandscapeCollisionProfileMatchesMarker(Component, Marker))
 		{
 			return true;
 		}
@@ -296,9 +320,80 @@ namespace
 		return Data.Triangles.Num() > Before;
 	}
 
+	bool AddLandscapeGeometry(ULandscapeComponent* Component, EMapArea Area,
+	                          float WorldOriginOffset, FMapData& Data,
+	                          bool bWorkOnEditingLayer)
+	{
+#if WITH_EDITOR
+		if (Component == nullptr)
+		{
+			return false;
+		}
+
+		UTexture2D* Heightmap = Component->GetHeightmap(bWorkOnEditingLayer);
+		if (Heightmap == nullptr || !Heightmap->Source.IsValid())
+		{
+			return false;
+		}
+
+		FLandscapeComponentDataInterface LandscapeData(Component, 0, bWorkOnEditingLayer);
+		const int32 VertexCount = LandscapeData.GetComponentSizeVerts();
+		if (VertexCount < 2)
+		{
+			return false;
+		}
+
+		const int32 Before = Data.Triangles.Num();
+		TArray<FVector> Vertices;
+		Vertices.SetNum(VertexCount * VertexCount);
+		for (int32 Y = 0; Y < VertexCount; ++Y)
+		{
+			for (int32 X = 0; X < VertexCount; ++X)
+			{
+				Vertices[Y * VertexCount + X] = ToServerPosition(
+					LandscapeData.GetWorldVertex(X, Y),
+					WorldOriginOffset);
+			}
+		}
+
+		for (int32 Y = 0; Y + 1 < VertexCount; ++Y)
+		{
+			for (int32 X = 0; X + 1 < VertexCount; ++X)
+			{
+				const FVector& A = Vertices[Y * VertexCount + X];
+				const FVector& B = Vertices[Y * VertexCount + X + 1];
+				const FVector& C = Vertices[(Y + 1) * VertexCount + X];
+				const FVector& D = Vertices[(Y + 1) * VertexCount + X + 1];
+				AddTriangle(Data, Area, A, B, C);
+				AddTriangle(Data, Area, B, D, C);
+			}
+		}
+
+		return Data.Triangles.Num() > Before;
+#else
+		return false;
+#endif
+	}
+
 	bool AddComponentGeometry(UPrimitiveComponent* Component, EMapArea Area,
 	                          const FExportOptions& Options, FMapData& Data)
 	{
+		if (ULandscapeComponent* LandscapeComponent = Cast<ULandscapeComponent>(Component))
+		{
+			return AddLandscapeGeometry(
+				LandscapeComponent,
+				Area,
+				Options.WorldOriginOffset,
+				Data,
+				false) ||
+				AddLandscapeGeometry(
+					LandscapeComponent,
+					Area,
+					Options.WorldOriginOffset,
+					Data,
+					true);
+		}
+
 		if (const UBoxComponent* Box = Cast<UBoxComponent>(Component))
 		{
 			AddBoxGeometry(Box, Area, Options.WorldOriginOffset, Data);

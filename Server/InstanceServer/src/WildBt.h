@@ -16,6 +16,7 @@ struct WildBtContext {
     std::uint32_t mapId = 0;
     float x = 0.f;
     float y = 0.f;
+    float z = 0.f;
     const ObservedPlayer* currentTarget = nullptr;
     const ObservedPlayer* nearestPlayer = nullptr;
     float aggroRadius = 900.f;

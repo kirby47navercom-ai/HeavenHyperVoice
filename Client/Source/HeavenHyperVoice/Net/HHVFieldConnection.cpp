@@ -66,6 +66,7 @@ namespace
 			Entity.EntityId = State->entity_id();
 			Entity.X = State->x();
 			Entity.Y = State->y();
+			Entity.Z = State->z();
 			Entity.Facing = State->facing();
 			Entity.PartnerSpecies = State->partner_species();
 			Entity.Species = State->species();
@@ -426,6 +427,7 @@ void FHHVFieldConnection::DispatchFrame(const uint8* Data, int32 Size)
 		Event.EntityId = Ack->entity_id();
 		Event.X = Ack->x();
 		Event.Y = Ack->y();
+		Event.Z = Ack->z();
 		Event.Facing = Ack->facing();
 		Event.RoomId = Ack->room_id();
 		Event.OriginOffset = Ack->world_origin_offset();
@@ -439,6 +441,7 @@ void FHHVFieldConnection::DispatchFrame(const uint8* Data, int32 Size)
 		Event.Sequence = Correction->sequence();
 		Event.X = Correction->x();
 		Event.Y = Correction->y();
+		Event.Z = Correction->z();
 		Event.Facing = Correction->facing();
 		break;
 	}
@@ -545,7 +548,7 @@ void FHHVFieldConnection::Poll()
 			bInField = true;
 			if (OnEnterAck)
 			{
-				OnEnterAck(Event.EntityId, Event.X, Event.Y, Event.Facing, Event.RoomId,
+				OnEnterAck(Event.EntityId, Event.X, Event.Y, Event.Z, Event.Facing, Event.RoomId,
 					Event.OriginOffset);
 			}
 			break;
@@ -553,7 +556,7 @@ void FHHVFieldConnection::Poll()
 		case EHHVFieldEvent::Correction:
 			if (OnCorrection)
 			{
-				OnCorrection(Event.Sequence, Event.X, Event.Y, Event.Facing);
+				OnCorrection(Event.Sequence, Event.X, Event.Y, Event.Z, Event.Facing);
 			}
 			break;
 

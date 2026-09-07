@@ -53,6 +53,7 @@ proto::EntityView World::viewOf(const Entity& entity, bool withIdentity,
     view.entityId = entity.characterId;
     view.x = entity.position.x;
     view.y = entity.position.y;
+    view.z = entity.position.z;
     view.facing = entity.position.facing;
     if (withIdentity) {
         view.nickname = entity.nickname;
@@ -72,6 +73,22 @@ void World::sendTo(const Entity& entity, const proto::Bytes& frame) const {
     if (const auto session = entity.session.lock()) {
         session->send(frame);
     }
+}
+
+Position World::resolvePosition(const Position& position) const {
+    Position resolved = position;
+    resolved.x = clampToWorld(resolved.x);
+    resolved.y = clampToWorld(resolved.y);
+
+    if (map_ != nullptr && map_->loaded()) {
+        nav::Vec3 grounded;
+        if (map_->canStandAt(resolved.x, resolved.y, map_->agent(), &grounded)) {
+            resolved.x = grounded.x;
+            resolved.y = grounded.y;
+            resolved.z = grounded.z;
+        }
+    }
+    return resolved;
 }
 
 Displaced World::enter(std::uint64_t characterId, std::uint64_t accountId, std::string nickname,
@@ -102,9 +119,7 @@ Displaced World::enter(std::uint64_t characterId, std::uint64_t accountId, std::
     entity.nickname = std::move(nickname);
     entity.partnerSpecies = partnerSpecies;
     entity.mapId = position.mapId;
-    entity.position = position;
-    entity.position.x = clampToWorld(entity.position.x);
-    entity.position.y = clampToWorld(entity.position.y);
+    entity.position = resolvePosition(position);
     entity.sector = sectorIndex(entity.position.x, entity.position.y);
     entity.lastMoveAt = std::chrono::steady_clock::now();
 
@@ -157,9 +172,7 @@ void World::enterWild(std::uint64_t entityId, std::uint16_t species, const Posit
     entity.isWild = true;
     entity.species = species;
     entity.mapId = position.mapId;
-    entity.position = position;
-    entity.position.x = clampToWorld(entity.position.x);
-    entity.position.y = clampToWorld(entity.position.y);
+    entity.position = resolvePosition(position);
     entity.sector = sectorIndex(entity.position.x, entity.position.y);
     entity.lastMoveAt = std::chrono::steady_clock::now();
 
@@ -182,6 +195,7 @@ void World::advanceWild(float dt, WildAi& ai) {
         std::uint32_t mapId;
         float x;
         float y;
+        float z;
         WildIntent intent;
     };
     std::vector<Pending> pending;
@@ -191,9 +205,10 @@ void World::advanceWild(float dt, WildAi& ai) {
         for (const auto& [id, entity] : entities_) {
             if (entity.isWild) {
                 pending.push_back({id, entity.species, entity.mapId,
-                                   entity.position.x, entity.position.y, {}});
+                                   entity.position.x, entity.position.y, entity.position.z, {}});
             } else {
-                players.push_back({id, entity.mapId, entity.position.x, entity.position.y});
+                players.push_back({id, entity.mapId, entity.position.x, entity.position.y,
+                                   entity.position.z});
             }
         }
     }
@@ -204,7 +219,7 @@ void World::advanceWild(float dt, WildAi& ai) {
     // 2) AI 실행기는 락 밖에서 돌린다. 대부분의 틱은 현재 목표만 돌려주고,
     //    새 action 선택이 필요할 때만 Lua BT 를 호출한다.
     for (Pending& p : pending) {
-        p.intent = ai.decide(p.id, p.species, p.mapId, p.x, p.y, dt, players);
+        p.intent = ai.decide(p.id, p.species, p.mapId, p.x, p.y, p.z, dt, players);
     }
 
     // 3) 속도와 벽은 서버가 강제한다. Lua 는 action intent 만 정했다.
@@ -261,24 +276,27 @@ void World::advanceWild(float dt, WildAi& ai) {
             const float ratio = step >= distance ? 1.f : step / distance;
             const float nx = clampToWorld(entity.position.x + dx * ratio);
             const float ny = clampToWorld(entity.position.y + dy * ratio);
+            float nz = entity.position.z;
 
             // 벽에 막히면 이번 목표는 포기하고 제자리에 선다. 밀어내기(슬라이딩)는
             // 하지 않는다 — AI 실행기가 짧게 쉰 뒤 Lua BT 에 새 action 을 묻는다.
-            // ponytail: 막힌 목표를 계속 고르면 벽 앞에서 잠깐 서성인다. 신경 쓰이면
-            //           blockedAlong 결과를 Lua 로 돌려주고 목표를 바꾸게 하면 된다.
             if (map_ != nullptr && map_->loaded()) {
                 const nav::Agent& agent = map_->agent();
-                const nav::Vec3 from{entity.position.x, entity.position.y, agent.halfHeight};
-                const nav::Vec3 to{nx, ny, agent.halfHeight};
-                if (map_->blockedAlong(from, to, agent)) {
+                nav::Vec3 groundedTo;
+                const nav::Vec3 from{entity.position.x, entity.position.y, entity.position.z};
+                const nav::Vec3 to{nx, ny, p.intent.targetZ};
+                if (!map_->canStandAt(nx, ny, agent, &groundedTo) ||
+                    map_->blockedAlong(from, to, agent)) {
                     blocked.push_back(p.id);
                     continue;
                 }
+                nz = groundedTo.z;
             }
 
             entity.position.facing = std::atan2(dy, dx) * 180.f / 3.14159265f;
             entity.position.x = nx;
             entity.position.y = ny;
+            entity.position.z = nz;
             entity.lastMoveAt = std::chrono::steady_clock::now();
             entity.movedThisTick = true;
 
@@ -462,30 +480,36 @@ void World::move(std::uint64_t characterId, float x, float y, float facing,
         self.slack -= std::max(0.f, distance - straight);
     }
 
-    // 지형 검사. 도착점만 보면 한 틱에 캡슐 지름보다 멀리 움직일 때 얇은 벽을
-    // 그냥 지나간다. 출발점부터 훑는다.
-    //
-    // 벽·바닥·경계를 한 번에 본다. 캡슐 높이는 표본마다 그 자리 지형에서 다시
-    // 잡으므로, 언덕 위의 벽도 제 높이에서 판정된다.
+    // navmesh 검사. 도착점만 보면 한 틱에 캡슐 지름보다 멀리 움직일 때 좁은
+    // 막힘을 지나칠 수 있으므로 Detour raycast 로 두 점 사이를 확인한다.
     bool corrected = tooFar;
-    bool blockedByTerrain = false;
+    float z = self.position.z;
     if (map_ != nullptr && map_->loaded()) {
         const nav::Agent& agent = map_->agent();
-        const nav::Vec3 from{self.position.x, self.position.y, agent.halfHeight};
-        const nav::Vec3 to{x, y, agent.halfHeight};
-        blockedByTerrain = map_->blockedAlong(from, to, agent);
-    }
-    if (blockedByTerrain) {
-        // 통과시키지 않고 제자리에 둔다. 밀어내기(슬라이딩)는 클라이언트
-        // 물리가 이미 하므로, 서버는 "거기 못 간다" 만 말하면 된다.
-        spdlog::debug("{} blocked at ({:.0f}, {:.0f})", self.nickname, x, y);
-        x = self.position.x;
-        y = self.position.y;
-        corrected = true;
+        nav::Vec3 groundedTo;
+        const nav::Vec3 from{self.position.x, self.position.y, self.position.z};
+        const nav::Vec3 to{x, y, self.position.z};
+
+        if (!map_->canStandAt(x, y, agent, &groundedTo) ||
+            map_->blockedAlong(from, to, agent)) {
+            // 통과시키지 않고 제자리에 둔다. 밀어내기(슬라이딩)는 클라이언트
+            // 물리가 이미 하므로, 서버는 "거기 못 간다" 만 말하면 된다.
+            x = self.position.x;
+            y = self.position.y;
+            z = self.position.z;
+            corrected = true;
+            spdlog::debug("{} blocked by navmesh at ({:.0f}, {:.0f})", self.nickname,
+                          to.x, to.y);
+        } else {
+            x = groundedTo.x;
+            y = groundedTo.y;
+            z = groundedTo.z;
+        }
     }
 
     self.position.x = x;
     self.position.y = y;
+    self.position.z = z;
     self.position.facing = facing;
     self.lastMoveAt = now;
     self.movedThisTick = true;
@@ -493,7 +517,7 @@ void World::move(std::uint64_t characterId, float x, float y, float facing,
     // 서버가 좌표를 고쳤을 때만 알린다. 정상 이동까지 응답하면 20Hz x 접속자
     // 만큼 왕복이 생긴다. 클라는 이 sequence 부터 다시 예측한다.
     if (corrected) {
-        sendTo(self, proto::encodeCorrection(sequence, x, y, facing));
+        sendTo(self, proto::encodeCorrection(sequence, x, y, z, facing));
     }
 
     const int sector = sectorIndex(x, y);
