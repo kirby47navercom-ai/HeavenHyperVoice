@@ -25,6 +25,8 @@ proto::EntityView World::viewOf(const Entity& entity, bool withIdentity) {
     if (withIdentity) {
         view.nickname = entity.nickname;
         view.partnerSpecies = entity.partnerSpecies;
+        view.hasAppearance = true;
+        view.appearance = entity.appearance;
     }
     return view;
 }
@@ -38,7 +40,8 @@ void World::sendTo(const Entity& entity, const proto::Bytes& frame) const {
 }
 
 Displaced World::enter(std::uint64_t characterId, std::uint64_t accountId, std::string nickname,
-                       std::uint16_t partnerSpecies, const Position& position,
+                       std::uint16_t partnerSpecies, const proto::AppearanceInfo& appearance,
+                       const Position& position,
                        const std::shared_ptr<TlsSession>& session) {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -64,6 +67,7 @@ Displaced World::enter(std::uint64_t characterId, std::uint64_t accountId, std::
     entity.session = session;
     entity.nickname = std::move(nickname);
     entity.partnerSpecies = partnerSpecies;
+    entity.appearance = appearance;
     entity.mapId = position.mapId;
     entity.position = position;
     entity.position.x = proto::clampToWorld(entity.position.x);

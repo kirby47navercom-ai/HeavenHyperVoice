@@ -84,7 +84,9 @@ void InstanceHandler::sendPartyState(const InstanceContext& context, TlsSession&
 // 그 사이에 world.enter() 가 아직 안 끝났으면 leave 가 헛돌고, 뒤늦게 들어간
 // 엔티티는 아무도 지우지 않는 유령이 된다. 둘을 한 락 안에서 한다.
 bool InstanceHandler::placeInRoom(const std::shared_ptr<TlsSession>& self, std::uint32_t type,
-                                  std::uint16_t partnerSpecies, std::uint64_t partyId) {
+                                  std::uint16_t partnerSpecies,
+                                  const proto::AppearanceInfo& appearance,
+                                  std::uint64_t partyId) {
     // 파티가 이미 방을 잡아 뒀으면 그 번호를, 아무도 안 잡았으면 0 을 받는다.
     // 실제 확정은 방을 배정받은 뒤에 한다 — 여기서 심으면 배정에 실패했을 때
     // 아무도 못 들어가는 방 번호가 남는다.
@@ -130,7 +132,7 @@ bool InstanceHandler::placeInRoom(const std::shared_ptr<TlsSession>& self, std::
                                          start.mapId, kWorldOriginOffset, room->id));
 
         displaced = room->world.enter(characterId_, accountId_, nickname_, partnerSpecies,
-                                      start, self);
+                                      appearance, start, self);
     }
 
     if (displaced.session) {
@@ -175,7 +177,9 @@ bool InstanceHandler::enterWithoutAuth(TlsSession& session, const HeavenField::E
     }
 
     auto self = session.shared_from_this();
-    if (!placeInRoom(self, request.instance_type(), request.dev_partner_species(), 0)) {
+    // dev 경로에는 DB 가 없다. 외형은 기본값이다.
+    if (!placeInRoom(self, request.instance_type(), request.dev_partner_species(),
+                     proto::AppearanceInfo{}, 0)) {
         return false;
     }
 
@@ -262,7 +266,7 @@ bool InstanceHandler::handleEnter(TlsSession& session, const HeavenField::Enter&
         const std::uint16_t partner =
             character->hasPartner ? character->partner.speciesId : std::uint16_t{0};
 
-        if (!handler->placeInRoom(self, type, partner, partyId)) {
+        if (!handler->placeInRoom(self, type, partner, character->appearance, partyId)) {
             self->closeAfterFlush();
             return;
         }

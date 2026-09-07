@@ -58,6 +58,15 @@ proto::EntityView World::viewOf(const Entity& entity, bool withIdentity,
         view.nickname = entity.nickname;
         view.partnerSpecies = entity.partnerSpecies;
         view.species = entity.species;
+
+        // 야생에는 싣지 않는다. 클라는 species 로 갈래를 나눠 야생을 다른
+        // 컴포넌트로 보내고 거기서는 외형을 읽지도 않으므로, 실어 봐야 아무도
+        // 안 본다. 방 하나에 야생이 열두 마리이고 spawned 는 시야에 들어올
+        // 때마다 다시 나가니, 뜻 없는 18개 필드가 그만큼 반복된다.
+        if (entity.isPlayer) {
+            view.hasAppearance = true;
+            view.appearance = entity.appearance;
+        }
     }
     if (withAttack) {
         view.attackSequence = entity.attackSequence;
@@ -75,7 +84,8 @@ void World::sendTo(const Entity& entity, const proto::Bytes& frame) const {
 }
 
 Displaced World::enter(std::uint64_t characterId, std::uint64_t accountId, std::string nickname,
-                       std::uint16_t partnerSpecies, const Position& position,
+                       std::uint16_t partnerSpecies, const proto::AppearanceInfo& appearance,
+                       const Position& position,
                        const std::shared_ptr<TlsSession>& session) {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -101,6 +111,8 @@ Displaced World::enter(std::uint64_t characterId, std::uint64_t accountId, std::
     entity.session = session;
     entity.nickname = std::move(nickname);
     entity.partnerSpecies = partnerSpecies;
+    entity.appearance = appearance;
+    entity.isPlayer = true;
     entity.mapId = position.mapId;
     entity.position = position;
     entity.position.x = clampToWorld(entity.position.x);

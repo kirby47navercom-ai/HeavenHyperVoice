@@ -71,6 +71,26 @@ namespace
 			Entity.Species = State->species();
 			Entity.AttackSequence = State->attack_sequence();
 			Entity.AttackTargetId = State->attack_target_id();
+			if (const HeavenField::Appearance* Look = State->appearance())
+			{
+				Entity.bHasAppearance = true;
+				Entity.Appearance.Gender =
+					Look->gender() != 0 ? EUEHHVGender::TypeB : EUEHHVGender::TypeA;
+				Entity.Appearance.BodyIndex = Look->body();
+				Entity.Appearance.HeadIndex = Look->head();
+				Entity.Appearance.HairIndex = Look->hair();
+				Entity.Appearance.EyeIndex = Look->eye();
+				Entity.Appearance.BodyEquipmentIndex = Look->equipment();
+				Entity.Appearance.SkinColor =
+					FLinearColor(Look->skin_r(), Look->skin_g(), Look->skin_b(), 1.0f);
+				Entity.Appearance.HairColor =
+					FLinearColor(Look->hair_r(), Look->hair_g(), Look->hair_b(), 1.0f);
+				Entity.Appearance.EyeColor =
+					FLinearColor(Look->eye_r(), Look->eye_g(), Look->eye_b(), 1.0f);
+				Entity.Appearance.ArmVolume = Look->arm_volume();
+				Entity.Appearance.TorsoVolume = Look->torso_volume();
+				Entity.Appearance.LegVolume = Look->leg_volume();
+			}
 			if (const flatbuffers::String* Nickname = State->nickname())
 			{
 				Entity.Nickname = FString(UTF8_TO_TCHAR(Nickname->c_str()));

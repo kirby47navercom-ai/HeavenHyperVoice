@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "FieldGeometry.h"
+#include "Appearance.h"
 #include "Framing.h"
 #include "PokemonSpecies.h"
 #include "field_generated.h"
@@ -25,6 +26,12 @@ struct EntityView {
     std::uint16_t species = 0;  // 야생 포켓몬 종족. 0 이면 플레이어.
     std::uint32_t attackSequence = 0;
     std::uint64_t attackTargetId = 0;
+
+    // 플레이어 외형. hasAppearance 가 false 면 와이어에 넣지 않는다.
+    // moved 목록과 야생 포켓몬이 그렇다 — 전자는 안 변하는 값을 매 틱 보내지
+    // 않으려는 것이고, 후자는 받는 쪽에서 읽지도 않기 때문이다.
+    bool hasAppearance = false;
+    AppearanceInfo appearance;
 };
 
 namespace detail {
@@ -40,6 +47,17 @@ buildEntities(flatbuffers::FlatBufferBuilder& fbb, const std::vector<EntityView>
         flatbuffers::Offset<flatbuffers::String> nickname = 0;
         if (!entity.nickname.empty()) {
             nickname = fbb.CreateString(entity.nickname);
+        }
+
+        // 하위 테이블도 상위 테이블을 시작하기 전에 만들어야 한다.
+        flatbuffers::Offset<HeavenField::Appearance> appearance = 0;
+        if (entity.hasAppearance) {
+            const AppearanceInfo& look = entity.appearance;
+            appearance = HeavenField::CreateAppearance(
+                fbb, look.gender, look.body, look.head, look.hair, look.eye, look.equipment,
+                look.skinR, look.skinG, look.skinB, look.hairR, look.hairG, look.hairB,
+                look.eyeR, look.eyeG, look.eyeB, look.armVolume, look.torsoVolume,
+                look.legVolume);
         }
 
         HeavenField::EntityStateBuilder builder(fbb);
@@ -61,6 +79,9 @@ buildEntities(flatbuffers::FlatBufferBuilder& fbb, const std::vector<EntityView>
         if (entity.attackSequence != 0) {
             builder.add_attack_sequence(entity.attackSequence);
             builder.add_attack_target_id(entity.attackTargetId);
+        }
+        if (!appearance.IsNull()) {
+            builder.add_appearance(appearance);
         }
         entries.push_back(builder.Finish());
     }

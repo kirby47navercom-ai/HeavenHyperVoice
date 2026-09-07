@@ -50,6 +50,14 @@ struct Entity {
     std::string nickname;
     std::uint16_t partnerSpecies = 0;
 
+    // 커마. 스냅샷의 spawned 에만 실려 나간다 — 안 변하는 값이라 매 틱 보낼
+    // 이유가 없다.
+    proto::AppearanceInfo appearance;
+
+    // 야생은 이 값이 false 고 appearance 는 기본값 그대로다. 와이어에 싣는
+    // 것을 이걸로 가른다 (viewOf 참고).
+    bool isPlayer = false;
+
     // 시야는 같은 맵끼리만 본다. 섹터 격자는 맵 구분 없이 공유하므로
     // 후보를 추린 뒤 이 값으로 한 번 더 거른다.
     std::uint32_t mapId = 0;
@@ -99,8 +107,8 @@ public:
     // 캐릭터 단위가 아니라 계정 단위인 이유는, 한 계정으로 캐릭터 여럿을
     // 동시에 붙이는 것도 막아야 하기 때문이다.
     Displaced enter(std::uint64_t characterId, std::uint64_t accountId, std::string nickname,
-                    std::uint16_t partnerSpecies, const Position& position,
-                    const std::shared_ptr<TlsSession>& session);
+                    std::uint16_t partnerSpecies, const proto::AppearanceInfo& appearance,
+                    const Position& position, const std::shared_ptr<TlsSession>& session);
 
     // 퇴장. 마지막 위치를 돌려준다 (저장용). 없던 엔티티면 nullopt.
     //

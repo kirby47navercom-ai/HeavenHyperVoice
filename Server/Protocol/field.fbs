@@ -72,8 +72,35 @@ table Move {
   sequence:uint;
 }
 
+// 캐릭터 외형(커마). login.fbs 의 같은 이름 표와 필드가 1:1 이다.
+//
+// 스키마가 갈라져 있어 표를 한 번 더 적는다. 하나로 합치려면 field 가 login 을
+// include 해야 하는데, 그러면 필드 서버가 쓰지도 않는 로그인 메시지를 통째로
+// 끌고 들어온다. C++ 쪽은 proto::AppearanceInfo 하나를 공유하므로 값이 갈릴 일은
+// 없다 (Appearance.h).
+//
+// 옵션을 늘릴 때는 반드시 배열 뒤에 붙일 것 — 부위는 카탈로그의 **인덱스**라
+// 중간에 끼워 넣으면 이미 저장된 캐릭터의 머리·옷이 조용히 다른 것이 된다.
+table Appearance {
+  gender:ubyte;          // 0 = TypeA, 1 = TypeB
+
+  body:int;
+  head:int;
+  hair:int;
+  eye:int;
+  equipment:int;
+
+  skin_r:float; skin_g:float; skin_b:float;
+  hair_r:float; hair_g:float; hair_b:float;
+  eye_r:float;  eye_g:float;  eye_b:float;
+
+  arm_volume:float;
+  torso_volume:float;
+  leg_volume:float;
+}
+
 // nickname 과 partner_species 는 spawned 에서만 채운다. moved 에 매번 실으면
-// 20Hz × 시야 인원만큼 같은 문자열이 흐른다.
+// 20Hz × 시야 인원만큼 같은 문자열이 흐른다. 외형도 같은 이유로 spawned 에만 있다.
 table EntityState {
   entity_id:ulong;
   x:float;
@@ -93,6 +120,12 @@ table EntityState {
 
   // attack_sequence 가 있을 때 바라보거나 맞출 대상 엔티티다.
   attack_target_id:ulong;
+
+  // 플레이어 외형. **spawned 에만 싣는다** — 안 변하는 값이라 매 틱 18개 필드를
+  // 사람 수만큼 곱해 보낼 이유가 없다. 야생 포켓몬에는 아예 안 싣는다 (클라가
+  // species 로 갈래를 나눠 야생을 다른 컴포넌트로 보내고 거기서는 읽지 않는다).
+  // 뒤에 붙였다. 앞에 넣으면 기존 슬롯 번호가 밀려 구버전 클라가 깨진다.
+  appearance:Appearance;
 }
 
 table Snapshot {
