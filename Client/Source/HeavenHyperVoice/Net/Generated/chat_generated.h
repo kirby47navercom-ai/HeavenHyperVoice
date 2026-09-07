@@ -27,8 +27,77 @@ struct NoticeBuilder;
 struct Chat;
 struct ChatBuilder;
 
+struct PartyMember;
+struct PartyMemberBuilder;
+
+struct PartyInvite;
+struct PartyInviteBuilder;
+
+struct PartyAccept;
+struct PartyAcceptBuilder;
+
+struct PartyDecline;
+struct PartyDeclineBuilder;
+
+struct PartyLeave;
+struct PartyLeaveBuilder;
+
+struct PartyKick;
+struct PartyKickBuilder;
+
+struct PartyEnterInstance;
+struct PartyEnterInstanceBuilder;
+
+struct SayParty;
+struct SayPartyBuilder;
+
+struct SayInstance;
+struct SayInstanceBuilder;
+
+struct PartyState;
+struct PartyStateBuilder;
+
+struct PartyInvited;
+struct PartyInvitedBuilder;
+
+struct PartyInstanceReady;
+struct PartyInstanceReadyBuilder;
+
 struct Envelope;
 struct EnvelopeBuilder;
+
+enum class Channel : uint8_t {
+  General = 0,
+  Party = 1,
+  Instance = 2,
+  MIN = General,
+  MAX = Instance
+};
+
+inline const Channel (&EnumValuesChannel())[3] {
+  static const Channel values[] = {
+    Channel::General,
+    Channel::Party,
+    Channel::Instance
+  };
+  return values;
+}
+
+inline const char * const *EnumNamesChannel() {
+  static const char * const names[4] = {
+    "General",
+    "Party",
+    "Instance",
+    nullptr
+  };
+  return names;
+}
+
+inline const char *EnumNameChannel(Channel e) {
+  if (::flatbuffers::IsOutRange(e, Channel::General, Channel::Instance)) return "";
+  const size_t index = static_cast<size_t>(e);
+  return EnumNamesChannel()[index];
+}
 
 enum class Payload : uint8_t {
   NONE = 0,
@@ -36,35 +105,68 @@ enum class Payload : uint8_t {
   Say = 2,
   Notice = 3,
   Chat = 4,
+  PartyInvite = 5,
+  PartyAccept = 6,
+  PartyDecline = 7,
+  PartyLeave = 8,
+  PartyKick = 9,
+  PartyEnterInstance = 10,
+  SayParty = 11,
+  PartyState = 12,
+  PartyInvited = 13,
+  PartyInstanceReady = 14,
+  SayInstance = 15,
   MIN = NONE,
-  MAX = Chat
+  MAX = SayInstance
 };
 
-inline const Payload (&EnumValuesPayload())[5] {
+inline const Payload (&EnumValuesPayload())[16] {
   static const Payload values[] = {
     Payload::NONE,
     Payload::Hello,
     Payload::Say,
     Payload::Notice,
-    Payload::Chat
+    Payload::Chat,
+    Payload::PartyInvite,
+    Payload::PartyAccept,
+    Payload::PartyDecline,
+    Payload::PartyLeave,
+    Payload::PartyKick,
+    Payload::PartyEnterInstance,
+    Payload::SayParty,
+    Payload::PartyState,
+    Payload::PartyInvited,
+    Payload::PartyInstanceReady,
+    Payload::SayInstance
   };
   return values;
 }
 
 inline const char * const *EnumNamesPayload() {
-  static const char * const names[6] = {
+  static const char * const names[17] = {
     "NONE",
     "Hello",
     "Say",
     "Notice",
     "Chat",
+    "PartyInvite",
+    "PartyAccept",
+    "PartyDecline",
+    "PartyLeave",
+    "PartyKick",
+    "PartyEnterInstance",
+    "SayParty",
+    "PartyState",
+    "PartyInvited",
+    "PartyInstanceReady",
+    "SayInstance",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNamePayload(Payload e) {
-  if (::flatbuffers::IsOutRange(e, Payload::NONE, Payload::Chat)) return "";
+  if (::flatbuffers::IsOutRange(e, Payload::NONE, Payload::SayInstance)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesPayload()[index];
 }
@@ -87,6 +189,50 @@ template<> struct PayloadTraits<HeavenChat::Notice> {
 
 template<> struct PayloadTraits<HeavenChat::Chat> {
   static const Payload enum_value = Payload::Chat;
+};
+
+template<> struct PayloadTraits<HeavenChat::PartyInvite> {
+  static const Payload enum_value = Payload::PartyInvite;
+};
+
+template<> struct PayloadTraits<HeavenChat::PartyAccept> {
+  static const Payload enum_value = Payload::PartyAccept;
+};
+
+template<> struct PayloadTraits<HeavenChat::PartyDecline> {
+  static const Payload enum_value = Payload::PartyDecline;
+};
+
+template<> struct PayloadTraits<HeavenChat::PartyLeave> {
+  static const Payload enum_value = Payload::PartyLeave;
+};
+
+template<> struct PayloadTraits<HeavenChat::PartyKick> {
+  static const Payload enum_value = Payload::PartyKick;
+};
+
+template<> struct PayloadTraits<HeavenChat::PartyEnterInstance> {
+  static const Payload enum_value = Payload::PartyEnterInstance;
+};
+
+template<> struct PayloadTraits<HeavenChat::SayParty> {
+  static const Payload enum_value = Payload::SayParty;
+};
+
+template<> struct PayloadTraits<HeavenChat::PartyState> {
+  static const Payload enum_value = Payload::PartyState;
+};
+
+template<> struct PayloadTraits<HeavenChat::PartyInvited> {
+  static const Payload enum_value = Payload::PartyInvited;
+};
+
+template<> struct PayloadTraits<HeavenChat::PartyInstanceReady> {
+  static const Payload enum_value = Payload::PartyInstanceReady;
+};
+
+template<> struct PayloadTraits<HeavenChat::SayInstance> {
+  static const Payload enum_value = Payload::SayInstance;
 };
 
 template <bool B = false>
@@ -254,13 +400,17 @@ struct Chat FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef ChatBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
     VT_NICKNAME = 4,
-    VT_TEXT = 6
+    VT_TEXT = 6,
+    VT_CHANNEL = 8
   };
   const ::flatbuffers::String *nickname() const {
     return GetPointer<const ::flatbuffers::String *>(VT_NICKNAME);
   }
   const ::flatbuffers::String *text() const {
     return GetPointer<const ::flatbuffers::String *>(VT_TEXT);
+  }
+  HeavenChat::Channel channel() const {
+    return static_cast<HeavenChat::Channel>(GetField<uint8_t>(VT_CHANNEL, 0));
   }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
@@ -269,6 +419,7 @@ struct Chat FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            verifier.VerifyString(nickname()) &&
            VerifyOffset(verifier, VT_TEXT) &&
            verifier.VerifyString(text()) &&
+           VerifyField<uint8_t>(verifier, VT_CHANNEL, 1) &&
            verifier.EndTable();
   }
 };
@@ -282,6 +433,9 @@ struct ChatBuilder {
   }
   void add_text(::flatbuffers::Offset<::flatbuffers::String> text) {
     fbb_.AddOffset(Chat::VT_TEXT, text);
+  }
+  void add_channel(HeavenChat::Channel channel) {
+    fbb_.AddElement<uint8_t>(Chat::VT_CHANNEL, static_cast<uint8_t>(channel), 0);
   }
   explicit ChatBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
@@ -297,23 +451,630 @@ struct ChatBuilder {
 inline ::flatbuffers::Offset<Chat> CreateChat(
     ::flatbuffers::FlatBufferBuilder &_fbb,
     ::flatbuffers::Offset<::flatbuffers::String> nickname = 0,
-    ::flatbuffers::Offset<::flatbuffers::String> text = 0) {
+    ::flatbuffers::Offset<::flatbuffers::String> text = 0,
+    HeavenChat::Channel channel = HeavenChat::Channel::General) {
   ChatBuilder builder_(_fbb);
   builder_.add_text(text);
   builder_.add_nickname(nickname);
+  builder_.add_channel(channel);
   return builder_.Finish();
 }
 
 inline ::flatbuffers::Offset<Chat> CreateChatDirect(
     ::flatbuffers::FlatBufferBuilder &_fbb,
     const char *nickname = nullptr,
-    const char *text = nullptr) {
+    const char *text = nullptr,
+    HeavenChat::Channel channel = HeavenChat::Channel::General) {
   auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
   auto text__ = text ? _fbb.CreateString(text) : 0;
   return HeavenChat::CreateChat(
       _fbb,
       nickname__,
+      text__,
+      channel);
+}
+
+struct PartyMember FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef PartyMemberBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_ACCOUNT_ID = 4,
+    VT_NICKNAME = 6
+  };
+  uint64_t account_id() const {
+    return GetField<uint64_t>(VT_ACCOUNT_ID, 0);
+  }
+  const ::flatbuffers::String *nickname() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_NICKNAME);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint64_t>(verifier, VT_ACCOUNT_ID, 8) &&
+           VerifyOffset(verifier, VT_NICKNAME) &&
+           verifier.VerifyString(nickname()) &&
+           verifier.EndTable();
+  }
+};
+
+struct PartyMemberBuilder {
+  typedef PartyMember Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_account_id(uint64_t account_id) {
+    fbb_.AddElement<uint64_t>(PartyMember::VT_ACCOUNT_ID, account_id, 0);
+  }
+  void add_nickname(::flatbuffers::Offset<::flatbuffers::String> nickname) {
+    fbb_.AddOffset(PartyMember::VT_NICKNAME, nickname);
+  }
+  explicit PartyMemberBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<PartyMember> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<PartyMember>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<PartyMember> CreatePartyMember(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint64_t account_id = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> nickname = 0) {
+  PartyMemberBuilder builder_(_fbb);
+  builder_.add_account_id(account_id);
+  builder_.add_nickname(nickname);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<PartyMember> CreatePartyMemberDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint64_t account_id = 0,
+    const char *nickname = nullptr) {
+  auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
+  return HeavenChat::CreatePartyMember(
+      _fbb,
+      account_id,
+      nickname__);
+}
+
+struct PartyInvite FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef PartyInviteBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_TARGET_NICKNAME = 4
+  };
+  const ::flatbuffers::String *target_nickname() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_TARGET_NICKNAME);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_TARGET_NICKNAME) &&
+           verifier.VerifyString(target_nickname()) &&
+           verifier.EndTable();
+  }
+};
+
+struct PartyInviteBuilder {
+  typedef PartyInvite Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_target_nickname(::flatbuffers::Offset<::flatbuffers::String> target_nickname) {
+    fbb_.AddOffset(PartyInvite::VT_TARGET_NICKNAME, target_nickname);
+  }
+  explicit PartyInviteBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<PartyInvite> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<PartyInvite>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<PartyInvite> CreatePartyInvite(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ::flatbuffers::Offset<::flatbuffers::String> target_nickname = 0) {
+  PartyInviteBuilder builder_(_fbb);
+  builder_.add_target_nickname(target_nickname);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<PartyInvite> CreatePartyInviteDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const char *target_nickname = nullptr) {
+  auto target_nickname__ = target_nickname ? _fbb.CreateString(target_nickname) : 0;
+  return HeavenChat::CreatePartyInvite(
+      _fbb,
+      target_nickname__);
+}
+
+struct PartyAccept FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef PartyAcceptBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_PARTY_ID = 4
+  };
+  uint64_t party_id() const {
+    return GetField<uint64_t>(VT_PARTY_ID, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint64_t>(verifier, VT_PARTY_ID, 8) &&
+           verifier.EndTable();
+  }
+};
+
+struct PartyAcceptBuilder {
+  typedef PartyAccept Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_party_id(uint64_t party_id) {
+    fbb_.AddElement<uint64_t>(PartyAccept::VT_PARTY_ID, party_id, 0);
+  }
+  explicit PartyAcceptBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<PartyAccept> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<PartyAccept>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<PartyAccept> CreatePartyAccept(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint64_t party_id = 0) {
+  PartyAcceptBuilder builder_(_fbb);
+  builder_.add_party_id(party_id);
+  return builder_.Finish();
+}
+
+struct PartyDecline FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef PartyDeclineBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_PARTY_ID = 4
+  };
+  uint64_t party_id() const {
+    return GetField<uint64_t>(VT_PARTY_ID, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint64_t>(verifier, VT_PARTY_ID, 8) &&
+           verifier.EndTable();
+  }
+};
+
+struct PartyDeclineBuilder {
+  typedef PartyDecline Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_party_id(uint64_t party_id) {
+    fbb_.AddElement<uint64_t>(PartyDecline::VT_PARTY_ID, party_id, 0);
+  }
+  explicit PartyDeclineBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<PartyDecline> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<PartyDecline>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<PartyDecline> CreatePartyDecline(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint64_t party_id = 0) {
+  PartyDeclineBuilder builder_(_fbb);
+  builder_.add_party_id(party_id);
+  return builder_.Finish();
+}
+
+struct PartyLeave FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef PartyLeaveBuilder Builder;
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           verifier.EndTable();
+  }
+};
+
+struct PartyLeaveBuilder {
+  typedef PartyLeave Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  explicit PartyLeaveBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<PartyLeave> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<PartyLeave>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<PartyLeave> CreatePartyLeave(
+    ::flatbuffers::FlatBufferBuilder &_fbb) {
+  PartyLeaveBuilder builder_(_fbb);
+  return builder_.Finish();
+}
+
+struct PartyKick FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef PartyKickBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_TARGET_ACCOUNT = 4
+  };
+  uint64_t target_account() const {
+    return GetField<uint64_t>(VT_TARGET_ACCOUNT, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint64_t>(verifier, VT_TARGET_ACCOUNT, 8) &&
+           verifier.EndTable();
+  }
+};
+
+struct PartyKickBuilder {
+  typedef PartyKick Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_target_account(uint64_t target_account) {
+    fbb_.AddElement<uint64_t>(PartyKick::VT_TARGET_ACCOUNT, target_account, 0);
+  }
+  explicit PartyKickBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<PartyKick> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<PartyKick>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<PartyKick> CreatePartyKick(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint64_t target_account = 0) {
+  PartyKickBuilder builder_(_fbb);
+  builder_.add_target_account(target_account);
+  return builder_.Finish();
+}
+
+struct PartyEnterInstance FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef PartyEnterInstanceBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_INSTANCE_TYPE = 4
+  };
+  uint32_t instance_type() const {
+    return GetField<uint32_t>(VT_INSTANCE_TYPE, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_INSTANCE_TYPE, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct PartyEnterInstanceBuilder {
+  typedef PartyEnterInstance Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_instance_type(uint32_t instance_type) {
+    fbb_.AddElement<uint32_t>(PartyEnterInstance::VT_INSTANCE_TYPE, instance_type, 0);
+  }
+  explicit PartyEnterInstanceBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<PartyEnterInstance> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<PartyEnterInstance>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<PartyEnterInstance> CreatePartyEnterInstance(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t instance_type = 0) {
+  PartyEnterInstanceBuilder builder_(_fbb);
+  builder_.add_instance_type(instance_type);
+  return builder_.Finish();
+}
+
+struct SayParty FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef SayPartyBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_TEXT = 4
+  };
+  const ::flatbuffers::String *text() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_TEXT);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_TEXT) &&
+           verifier.VerifyString(text()) &&
+           verifier.EndTable();
+  }
+};
+
+struct SayPartyBuilder {
+  typedef SayParty Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_text(::flatbuffers::Offset<::flatbuffers::String> text) {
+    fbb_.AddOffset(SayParty::VT_TEXT, text);
+  }
+  explicit SayPartyBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<SayParty> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<SayParty>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<SayParty> CreateSayParty(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ::flatbuffers::Offset<::flatbuffers::String> text = 0) {
+  SayPartyBuilder builder_(_fbb);
+  builder_.add_text(text);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<SayParty> CreateSayPartyDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const char *text = nullptr) {
+  auto text__ = text ? _fbb.CreateString(text) : 0;
+  return HeavenChat::CreateSayParty(
+      _fbb,
       text__);
+}
+
+struct SayInstance FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef SayInstanceBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_TEXT = 4
+  };
+  const ::flatbuffers::String *text() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_TEXT);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_TEXT) &&
+           verifier.VerifyString(text()) &&
+           verifier.EndTable();
+  }
+};
+
+struct SayInstanceBuilder {
+  typedef SayInstance Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_text(::flatbuffers::Offset<::flatbuffers::String> text) {
+    fbb_.AddOffset(SayInstance::VT_TEXT, text);
+  }
+  explicit SayInstanceBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<SayInstance> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<SayInstance>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<SayInstance> CreateSayInstance(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ::flatbuffers::Offset<::flatbuffers::String> text = 0) {
+  SayInstanceBuilder builder_(_fbb);
+  builder_.add_text(text);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<SayInstance> CreateSayInstanceDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const char *text = nullptr) {
+  auto text__ = text ? _fbb.CreateString(text) : 0;
+  return HeavenChat::CreateSayInstance(
+      _fbb,
+      text__);
+}
+
+struct PartyState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef PartyStateBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_PARTY_ID = 4,
+    VT_MEMBERS = 6,
+    VT_MESSAGE = 8
+  };
+  uint64_t party_id() const {
+    return GetField<uint64_t>(VT_PARTY_ID, 0);
+  }
+  const ::flatbuffers::Vector<::flatbuffers::Offset<HeavenChat::PartyMember>> *members() const {
+    return GetPointer<const ::flatbuffers::Vector<::flatbuffers::Offset<HeavenChat::PartyMember>> *>(VT_MEMBERS);
+  }
+  const ::flatbuffers::String *message() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_MESSAGE);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint64_t>(verifier, VT_PARTY_ID, 8) &&
+           VerifyOffset(verifier, VT_MEMBERS) &&
+           verifier.VerifyVector(members()) &&
+           verifier.VerifyVectorOfTables(members()) &&
+           VerifyOffset(verifier, VT_MESSAGE) &&
+           verifier.VerifyString(message()) &&
+           verifier.EndTable();
+  }
+};
+
+struct PartyStateBuilder {
+  typedef PartyState Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_party_id(uint64_t party_id) {
+    fbb_.AddElement<uint64_t>(PartyState::VT_PARTY_ID, party_id, 0);
+  }
+  void add_members(::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<HeavenChat::PartyMember>>> members) {
+    fbb_.AddOffset(PartyState::VT_MEMBERS, members);
+  }
+  void add_message(::flatbuffers::Offset<::flatbuffers::String> message) {
+    fbb_.AddOffset(PartyState::VT_MESSAGE, message);
+  }
+  explicit PartyStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<PartyState> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<PartyState>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<PartyState> CreatePartyState(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint64_t party_id = 0,
+    ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<HeavenChat::PartyMember>>> members = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> message = 0) {
+  PartyStateBuilder builder_(_fbb);
+  builder_.add_party_id(party_id);
+  builder_.add_message(message);
+  builder_.add_members(members);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<PartyState> CreatePartyStateDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint64_t party_id = 0,
+    const std::vector<::flatbuffers::Offset<HeavenChat::PartyMember>> *members = nullptr,
+    const char *message = nullptr) {
+  auto members__ = members ? _fbb.CreateVector<::flatbuffers::Offset<HeavenChat::PartyMember>>(*members) : 0;
+  auto message__ = message ? _fbb.CreateString(message) : 0;
+  return HeavenChat::CreatePartyState(
+      _fbb,
+      party_id,
+      members__,
+      message__);
+}
+
+struct PartyInvited FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef PartyInvitedBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_PARTY_ID = 4,
+    VT_FROM_NICKNAME = 6
+  };
+  uint64_t party_id() const {
+    return GetField<uint64_t>(VT_PARTY_ID, 0);
+  }
+  const ::flatbuffers::String *from_nickname() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_FROM_NICKNAME);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint64_t>(verifier, VT_PARTY_ID, 8) &&
+           VerifyOffset(verifier, VT_FROM_NICKNAME) &&
+           verifier.VerifyString(from_nickname()) &&
+           verifier.EndTable();
+  }
+};
+
+struct PartyInvitedBuilder {
+  typedef PartyInvited Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_party_id(uint64_t party_id) {
+    fbb_.AddElement<uint64_t>(PartyInvited::VT_PARTY_ID, party_id, 0);
+  }
+  void add_from_nickname(::flatbuffers::Offset<::flatbuffers::String> from_nickname) {
+    fbb_.AddOffset(PartyInvited::VT_FROM_NICKNAME, from_nickname);
+  }
+  explicit PartyInvitedBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<PartyInvited> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<PartyInvited>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<PartyInvited> CreatePartyInvited(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint64_t party_id = 0,
+    ::flatbuffers::Offset<::flatbuffers::String> from_nickname = 0) {
+  PartyInvitedBuilder builder_(_fbb);
+  builder_.add_party_id(party_id);
+  builder_.add_from_nickname(from_nickname);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<PartyInvited> CreatePartyInvitedDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint64_t party_id = 0,
+    const char *from_nickname = nullptr) {
+  auto from_nickname__ = from_nickname ? _fbb.CreateString(from_nickname) : 0;
+  return HeavenChat::CreatePartyInvited(
+      _fbb,
+      party_id,
+      from_nickname__);
+}
+
+struct PartyInstanceReady FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef PartyInstanceReadyBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_INSTANCE_TYPE = 4
+  };
+  uint32_t instance_type() const {
+    return GetField<uint32_t>(VT_INSTANCE_TYPE, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_INSTANCE_TYPE, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct PartyInstanceReadyBuilder {
+  typedef PartyInstanceReady Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_instance_type(uint32_t instance_type) {
+    fbb_.AddElement<uint32_t>(PartyInstanceReady::VT_INSTANCE_TYPE, instance_type, 0);
+  }
+  explicit PartyInstanceReadyBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<PartyInstanceReady> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<PartyInstanceReady>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<PartyInstanceReady> CreatePartyInstanceReady(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t instance_type = 0) {
+  PartyInstanceReadyBuilder builder_(_fbb);
+  builder_.add_instance_type(instance_type);
+  return builder_.Finish();
 }
 
 struct Envelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -341,6 +1102,39 @@ struct Envelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const HeavenChat::Chat *payload_as_Chat() const {
     return payload_type() == HeavenChat::Payload::Chat ? static_cast<const HeavenChat::Chat *>(payload()) : nullptr;
   }
+  const HeavenChat::PartyInvite *payload_as_PartyInvite() const {
+    return payload_type() == HeavenChat::Payload::PartyInvite ? static_cast<const HeavenChat::PartyInvite *>(payload()) : nullptr;
+  }
+  const HeavenChat::PartyAccept *payload_as_PartyAccept() const {
+    return payload_type() == HeavenChat::Payload::PartyAccept ? static_cast<const HeavenChat::PartyAccept *>(payload()) : nullptr;
+  }
+  const HeavenChat::PartyDecline *payload_as_PartyDecline() const {
+    return payload_type() == HeavenChat::Payload::PartyDecline ? static_cast<const HeavenChat::PartyDecline *>(payload()) : nullptr;
+  }
+  const HeavenChat::PartyLeave *payload_as_PartyLeave() const {
+    return payload_type() == HeavenChat::Payload::PartyLeave ? static_cast<const HeavenChat::PartyLeave *>(payload()) : nullptr;
+  }
+  const HeavenChat::PartyKick *payload_as_PartyKick() const {
+    return payload_type() == HeavenChat::Payload::PartyKick ? static_cast<const HeavenChat::PartyKick *>(payload()) : nullptr;
+  }
+  const HeavenChat::PartyEnterInstance *payload_as_PartyEnterInstance() const {
+    return payload_type() == HeavenChat::Payload::PartyEnterInstance ? static_cast<const HeavenChat::PartyEnterInstance *>(payload()) : nullptr;
+  }
+  const HeavenChat::SayParty *payload_as_SayParty() const {
+    return payload_type() == HeavenChat::Payload::SayParty ? static_cast<const HeavenChat::SayParty *>(payload()) : nullptr;
+  }
+  const HeavenChat::PartyState *payload_as_PartyState() const {
+    return payload_type() == HeavenChat::Payload::PartyState ? static_cast<const HeavenChat::PartyState *>(payload()) : nullptr;
+  }
+  const HeavenChat::PartyInvited *payload_as_PartyInvited() const {
+    return payload_type() == HeavenChat::Payload::PartyInvited ? static_cast<const HeavenChat::PartyInvited *>(payload()) : nullptr;
+  }
+  const HeavenChat::PartyInstanceReady *payload_as_PartyInstanceReady() const {
+    return payload_type() == HeavenChat::Payload::PartyInstanceReady ? static_cast<const HeavenChat::PartyInstanceReady *>(payload()) : nullptr;
+  }
+  const HeavenChat::SayInstance *payload_as_SayInstance() const {
+    return payload_type() == HeavenChat::Payload::SayInstance ? static_cast<const HeavenChat::SayInstance *>(payload()) : nullptr;
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -365,6 +1159,50 @@ template<> inline const HeavenChat::Notice *Envelope::payload_as<HeavenChat::Not
 
 template<> inline const HeavenChat::Chat *Envelope::payload_as<HeavenChat::Chat>() const {
   return payload_as_Chat();
+}
+
+template<> inline const HeavenChat::PartyInvite *Envelope::payload_as<HeavenChat::PartyInvite>() const {
+  return payload_as_PartyInvite();
+}
+
+template<> inline const HeavenChat::PartyAccept *Envelope::payload_as<HeavenChat::PartyAccept>() const {
+  return payload_as_PartyAccept();
+}
+
+template<> inline const HeavenChat::PartyDecline *Envelope::payload_as<HeavenChat::PartyDecline>() const {
+  return payload_as_PartyDecline();
+}
+
+template<> inline const HeavenChat::PartyLeave *Envelope::payload_as<HeavenChat::PartyLeave>() const {
+  return payload_as_PartyLeave();
+}
+
+template<> inline const HeavenChat::PartyKick *Envelope::payload_as<HeavenChat::PartyKick>() const {
+  return payload_as_PartyKick();
+}
+
+template<> inline const HeavenChat::PartyEnterInstance *Envelope::payload_as<HeavenChat::PartyEnterInstance>() const {
+  return payload_as_PartyEnterInstance();
+}
+
+template<> inline const HeavenChat::SayParty *Envelope::payload_as<HeavenChat::SayParty>() const {
+  return payload_as_SayParty();
+}
+
+template<> inline const HeavenChat::PartyState *Envelope::payload_as<HeavenChat::PartyState>() const {
+  return payload_as_PartyState();
+}
+
+template<> inline const HeavenChat::PartyInvited *Envelope::payload_as<HeavenChat::PartyInvited>() const {
+  return payload_as_PartyInvited();
+}
+
+template<> inline const HeavenChat::PartyInstanceReady *Envelope::payload_as<HeavenChat::PartyInstanceReady>() const {
+  return payload_as_PartyInstanceReady();
+}
+
+template<> inline const HeavenChat::SayInstance *Envelope::payload_as<HeavenChat::SayInstance>() const {
+  return payload_as_SayInstance();
 }
 
 struct EnvelopeBuilder {
@@ -418,6 +1256,50 @@ inline bool VerifyPayload(::flatbuffers::VerifierTemplate<B> &verifier, const vo
     }
     case Payload::Chat: {
       auto ptr = reinterpret_cast<const HeavenChat::Chat *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::PartyInvite: {
+      auto ptr = reinterpret_cast<const HeavenChat::PartyInvite *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::PartyAccept: {
+      auto ptr = reinterpret_cast<const HeavenChat::PartyAccept *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::PartyDecline: {
+      auto ptr = reinterpret_cast<const HeavenChat::PartyDecline *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::PartyLeave: {
+      auto ptr = reinterpret_cast<const HeavenChat::PartyLeave *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::PartyKick: {
+      auto ptr = reinterpret_cast<const HeavenChat::PartyKick *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::PartyEnterInstance: {
+      auto ptr = reinterpret_cast<const HeavenChat::PartyEnterInstance *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::SayParty: {
+      auto ptr = reinterpret_cast<const HeavenChat::SayParty *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::PartyState: {
+      auto ptr = reinterpret_cast<const HeavenChat::PartyState *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::PartyInvited: {
+      auto ptr = reinterpret_cast<const HeavenChat::PartyInvited *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::PartyInstanceReady: {
+      auto ptr = reinterpret_cast<const HeavenChat::PartyInstanceReady *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::SayInstance: {
+      auto ptr = reinterpret_cast<const HeavenChat::SayInstance *>(obj);
       return verifier.VerifyTable(ptr);
     }
     default: return true;

@@ -154,12 +154,23 @@ Room* RoomManager::createRoomLocked(std::uint32_t type) {
     return raw;
 }
 
-Room* RoomManager::join(std::uint32_t type) {
+Room* RoomManager::join(std::uint32_t type, std::uint32_t preferredRoomId) {
     if (!isKnownType(type)) {
         return nullptr;
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
+
+    // 파티가 지목한 방이 있으면 먼저 본다. 없어졌거나 꽉 찼으면 아래로 흘러간다.
+    if (preferredRoomId != 0) {
+        for (const auto& room : rooms_) {
+            if (room->id == preferredRoomId && room->type == type &&
+                room->players < settings_.capacity) {
+                ++room->players;
+                return room.get();
+            }
+        }
+    }
 
     // 자리가 있는 첫 방. 앞에서부터 채워야 방이 흩어지지 않고, 빈 방이 생겨
     // 회수될 기회도 온다.

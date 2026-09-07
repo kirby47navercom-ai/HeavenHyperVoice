@@ -143,6 +143,129 @@ bool FHHVChatConnection::SendSay(const FString& Text, FString& OutError)
 	return true;
 }
 
+bool FHHVChatConnection::SendSayParty(const FString& Text, FString& OutError)
+{
+	if (!ValidateText(Text, OutError))
+	{
+		return false;
+	}
+	if (bStopRequested || !bConnected)
+	{
+		OutError = TEXT("채팅 서버에 연결되어 있지 않습니다");
+		return false;
+	}
+
+	const FString Trimmed = Text.TrimStartAndEnd();
+	flatbuffers::FlatBufferBuilder Builder(256);
+	const auto Body = Builder.CreateString(TCHAR_TO_UTF8(*Trimmed));
+	const auto Say = HeavenChat::CreateSayParty(Builder, Body);
+	Builder.Finish(
+		HeavenChat::CreateEnvelope(Builder, HeavenChat::Payload::SayParty, Say.Union()));
+	Outbound.Enqueue(HHVChatConnectionPrivate::FrameOf(Builder));
+	return true;
+}
+
+bool FHHVChatConnection::SendSayInstance(const FString& Text, FString& OutError)
+{
+	if (!ValidateText(Text, OutError))
+	{
+		return false;
+	}
+	if (bStopRequested || !bConnected)
+	{
+		OutError = TEXT("채팅 서버에 연결되어 있지 않습니다");
+		return false;
+	}
+
+	const FString Trimmed = Text.TrimStartAndEnd();
+	flatbuffers::FlatBufferBuilder Builder(256);
+	const auto Body = Builder.CreateString(TCHAR_TO_UTF8(*Trimmed));
+	const auto Say = HeavenChat::CreateSayInstance(Builder, Body);
+	Builder.Finish(
+		HeavenChat::CreateEnvelope(Builder, HeavenChat::Payload::SayInstance, Say.Union()));
+	Outbound.Enqueue(HHVChatConnectionPrivate::FrameOf(Builder));
+	return true;
+}
+
+void FHHVChatConnection::SendPartyInvite(const FString& TargetNickname)
+{
+	if (bStopRequested || !bConnected || TargetNickname.IsEmpty())
+	{
+		return;
+	}
+	flatbuffers::FlatBufferBuilder Builder(256);
+	const auto Name = Builder.CreateString(TCHAR_TO_UTF8(*TargetNickname.TrimStartAndEnd()));
+	const auto Request = HeavenChat::CreatePartyInvite(Builder, Name);
+	Builder.Finish(
+		HeavenChat::CreateEnvelope(Builder, HeavenChat::Payload::PartyInvite, Request.Union()));
+	Outbound.Enqueue(HHVChatConnectionPrivate::FrameOf(Builder));
+}
+
+void FHHVChatConnection::SendPartyAccept(uint64 PartyId)
+{
+	if (bStopRequested || !bConnected || PartyId == 0)
+	{
+		return;
+	}
+	flatbuffers::FlatBufferBuilder Builder(128);
+	const auto Request = HeavenChat::CreatePartyAccept(Builder, PartyId);
+	Builder.Finish(
+		HeavenChat::CreateEnvelope(Builder, HeavenChat::Payload::PartyAccept, Request.Union()));
+	Outbound.Enqueue(HHVChatConnectionPrivate::FrameOf(Builder));
+}
+
+void FHHVChatConnection::SendPartyDecline(uint64 PartyId)
+{
+	if (bStopRequested || !bConnected || PartyId == 0)
+	{
+		return;
+	}
+	flatbuffers::FlatBufferBuilder Builder(128);
+	const auto Request = HeavenChat::CreatePartyDecline(Builder, PartyId);
+	Builder.Finish(
+		HeavenChat::CreateEnvelope(Builder, HeavenChat::Payload::PartyDecline, Request.Union()));
+	Outbound.Enqueue(HHVChatConnectionPrivate::FrameOf(Builder));
+}
+
+void FHHVChatConnection::SendPartyLeave()
+{
+	if (bStopRequested || !bConnected)
+	{
+		return;
+	}
+	flatbuffers::FlatBufferBuilder Builder(128);
+	const auto Request = HeavenChat::CreatePartyLeave(Builder);
+	Builder.Finish(
+		HeavenChat::CreateEnvelope(Builder, HeavenChat::Payload::PartyLeave, Request.Union()));
+	Outbound.Enqueue(HHVChatConnectionPrivate::FrameOf(Builder));
+}
+
+void FHHVChatConnection::SendPartyKick(uint64 TargetAccountId)
+{
+	if (bStopRequested || !bConnected || TargetAccountId == 0)
+	{
+		return;
+	}
+	flatbuffers::FlatBufferBuilder Builder(128);
+	const auto Request = HeavenChat::CreatePartyKick(Builder, TargetAccountId);
+	Builder.Finish(
+		HeavenChat::CreateEnvelope(Builder, HeavenChat::Payload::PartyKick, Request.Union()));
+	Outbound.Enqueue(HHVChatConnectionPrivate::FrameOf(Builder));
+}
+
+void FHHVChatConnection::SendPartyEnterInstance(uint32 InstanceType)
+{
+	if (bStopRequested || !bConnected)
+	{
+		return;
+	}
+	flatbuffers::FlatBufferBuilder Builder(128);
+	const auto Request = HeavenChat::CreatePartyEnterInstance(Builder, InstanceType);
+	Builder.Finish(HeavenChat::CreateEnvelope(
+		Builder, HeavenChat::Payload::PartyEnterInstance, Request.Union()));
+	Outbound.Enqueue(HHVChatConnectionPrivate::FrameOf(Builder));
+}
+
 uint32 FHHVChatConnection::Run()
 {
 	FString Error;
@@ -371,6 +494,54 @@ void FHHVChatConnection::DispatchFrame(const uint8* Data, int32 Size)
 		{
 			Event.Text = UTF8_TO_TCHAR(Chat->text()->c_str());
 		}
+		switch (Chat->channel())
+		{
+		case HeavenChat::Channel::Party:   Event.Channel = EUEChatChannel::Party; break;
+		case HeavenChat::Channel::Instance: Event.Channel = EUEChatChannel::Instance; break;
+		default:                           Event.Channel = EUEChatChannel::General; break;
+		}
+		break;
+	}
+	case HeavenChat::Payload::PartyState:
+	{
+		Event.Type = EHHVChatEvent::PartyState;
+		const HeavenChat::PartyState* State = Envelope->payload_as_PartyState();
+		Event.PartyId = State->party_id();
+		if (State->message())
+		{
+			Event.Text = UTF8_TO_TCHAR(State->message()->c_str());
+		}
+		if (const auto* Members = State->members())
+		{
+			Event.Members.Reserve(static_cast<int32>(Members->size()));
+			for (const HeavenChat::PartyMember* Member : *Members)
+			{
+				FHHVPartyMember Row;
+				Row.AccountId = Member->account_id();
+				if (Member->nickname())
+				{
+					Row.Nickname = UTF8_TO_TCHAR(Member->nickname()->c_str());
+				}
+				Event.Members.Add(MoveTemp(Row));
+			}
+		}
+		break;
+	}
+	case HeavenChat::Payload::PartyInvited:
+	{
+		Event.Type = EHHVChatEvent::PartyInvited;
+		const HeavenChat::PartyInvited* Invited = Envelope->payload_as_PartyInvited();
+		Event.PartyId = Invited->party_id();
+		if (Invited->from_nickname())
+		{
+			Event.Nickname = UTF8_TO_TCHAR(Invited->from_nickname()->c_str());
+		}
+		break;
+	}
+	case HeavenChat::Payload::PartyInstanceReady:
+	{
+		Event.Type = EHHVChatEvent::PartyInstanceReady;
+		Event.InstanceType = Envelope->payload_as_PartyInstanceReady()->instance_type();
 		break;
 	}
 	default:
@@ -409,7 +580,25 @@ void FHHVChatConnection::Poll()
 		case EHHVChatEvent::Message:
 			if (OnMessage)
 			{
-				OnMessage(Event.Nickname, Event.Text);
+				OnMessage(Event.Nickname, Event.Text, Event.Channel);
+			}
+			break;
+		case EHHVChatEvent::PartyState:
+			if (OnPartyState)
+			{
+				OnPartyState(Event.PartyId, Event.Members, Event.Text);
+			}
+			break;
+		case EHHVChatEvent::PartyInvited:
+			if (OnPartyInvited)
+			{
+				OnPartyInvited(Event.PartyId, Event.Nickname);
+			}
+			break;
+		case EHHVChatEvent::PartyInstanceReady:
+			if (OnPartyInstanceReady)
+			{
+				OnPartyInstanceReady(Event.InstanceType);
 			}
 			break;
 		case EHHVChatEvent::Disconnected:

@@ -16,6 +16,8 @@
 
 #include "AuthTicket.h"
 #include "CharacterStore.h"
+#include "InstancePresence.h"
+#include "PartyStore.h"
 #include "FieldCodec.h"
 #include "FrameHandler.h"
 #include "RoomManager.h"
@@ -35,6 +37,16 @@ struct InstanceContext {
     // 파트너와 파티를 읽는다. 위치는 안 읽는다 — 인스턴스는 스폰 지점 고정이다.
     data::CharacterStore* characters = nullptr;
     net::WorkQueue* dbQueue = nullptr;
+
+    // 플레이어 파티. Redis 가 없으면 nullptr 이고, 그때는 파티 제약 없이
+    // 예전처럼 각자 들어간다.
+    //
+    // **여기서는 읽기만 한다.** 파티를 바꾸는 것은 ChatServer 뿐이다.
+    party::PartyStore* party = nullptr;
+
+    // 누가 어느 방에 있는지. ChatServer 가 인스턴스 채팅을 이걸로 보낸다.
+    // 여기서만 쓴다 — 채팅 서버는 읽기만 한다.
+    instancechat::InstancePresence* presence = nullptr;
 
     // 개발용. 티켓 검증과 DB 를 모두 건너뛰고 Enter 의 dev_* 를 그대로 믿는다.
     // 이때 characters 는 nullptr 이다.
@@ -61,8 +73,9 @@ private:
 
     // 방을 배정하고 월드에 넣는다. 락을 쥐지 않은 상태에서 부를 것.
     // 실패하면 사유를 보내고 false — 호출자가 연결을 끊는다.
+    // partyId 가 0 이 아니면 그 파티가 이미 잡아 둔 방으로 들어간다.
     bool placeInRoom(const std::shared_ptr<TlsSession>& self, std::uint32_t type,
-                     std::uint16_t partnerSpecies);
+                     std::uint16_t partnerSpecies, std::uint64_t partyId);
 
     static void sendPartyState(const InstanceContext& context, TlsSession& session,
                                std::uint64_t accountId, std::uint64_t characterId,

@@ -84,8 +84,16 @@ void InstanceHandler::sendPartyState(const InstanceContext& context, TlsSession&
 // 그 사이에 world.enter() 가 아직 안 끝났으면 leave 가 헛돌고, 뒤늦게 들어간
 // 엔티티는 아무도 지우지 않는 유령이 된다. 둘을 한 락 안에서 한다.
 bool InstanceHandler::placeInRoom(const std::shared_ptr<TlsSession>& self, std::uint32_t type,
-                                  std::uint16_t partnerSpecies) {
-    Room* room = context_.rooms->join(type);
+                                  std::uint16_t partnerSpecies, std::uint64_t partyId) {
+    // 파티가 이미 방을 잡아 뒀으면 그 번호를, 아무도 안 잡았으면 0 을 받는다.
+    // 실제 확정은 방을 배정받은 뒤에 한다 — 여기서 심으면 배정에 실패했을 때
+    // 아무도 못 들어가는 방 번호가 남는다.
+    std::uint32_t preferred = 0;
+    if (partyId != 0 && context_.party != nullptr) {
+        preferred = context_.party->claimRoom(partyId, type, 0);
+    }
+
+    Room* room = context_.rooms->join(type, preferred);
     if (room == nullptr) {
         // 종류를 모르거나 방 상한에 걸렸다. 둘을 구분해 알려준다.
         const char* reason = context_.rooms->isKnownType(type)
@@ -93,6 +101,12 @@ bool InstanceHandler::placeInRoom(const std::shared_ptr<TlsSession>& self, std::
                                  : "알 수 없는 인스턴스입니다";
         self->send(proto::encodeFieldNotice(reason));
         return false;
+    }
+
+    // 배정이 끝났으니 이 방을 파티의 방으로 굳힌다. 먼저 들어온 쪽이 이기고,
+    // 나중에 온 쪽은 위에서 그 번호를 받아 따라온다.
+    if (partyId != 0 && context_.party != nullptr && preferred == 0) {
+        context_.party->claimRoom(partyId, type, room->id);
     }
 
     // 맵이 아직 없어 모두 같은 지점에서 시작한다.
@@ -126,6 +140,12 @@ bool InstanceHandler::placeInRoom(const std::shared_ptr<TlsSession>& self, std::
     }
     // 밀려난 쪽의 위치는 저장하지 않는다. 인스턴스는 위치를 안 남긴다.
 
+    // 채팅 서버가 인스턴스 채팅을 보내려면 누가 어느 방에 있는지 알아야 한다.
+    // 실패해도 입장은 막지 않는다 — 채팅 한 채널만 안 될 뿐이다.
+    if (context_.presence != nullptr) {
+        context_.presence->enter(accountId_, type, room->id);
+    }
+
     spdlog::info("entered: {} (character {}, {}) room {} type {} - {}", nickname_, characterId_,
                  self->peer(), room->id, type, context_.rooms->describe());
     return true;
@@ -155,7 +175,7 @@ bool InstanceHandler::enterWithoutAuth(TlsSession& session, const HeavenField::E
     }
 
     auto self = session.shared_from_this();
-    if (!placeInRoom(self, request.instance_type(), request.dev_partner_species())) {
+    if (!placeInRoom(self, request.instance_type(), request.dev_partner_species(), 0)) {
         return false;
     }
 
@@ -213,6 +233,24 @@ bool InstanceHandler::handleEnter(TlsSession& session, const HeavenField::Enter&
 
     const bool queued = context_.dbQueue->submit([self, context, handler, characterId, accountId,
                                                   type] {
+        // 파티 확인이 DB 조회보다 먼저다. 못 들어갈 사람이면 DB 를 칠 이유가 없다.
+        //
+        // 클라이언트가 보낸 파티 번호는 쓰지 않는다. 계정으로 되짚어야 남의 파티
+        // 번호를 넣어 남의 방에 끼어드는 것을 막을 수 있다.
+        std::uint64_t partyId = 0;
+        if (context->party != nullptr) {
+            partyId = context->party->partyIdOf(accountId);
+
+            // 파티에 속해 있으면 파티장이 연 입장만 유효하다. 클라이언트 포탈에서만
+            // 막으면 우회된다 — 개별 입장 금지의 실제 집행 지점이 여기다.
+            if (partyId != 0 && !context->party->entryOpen(partyId, type)) {
+                self->send(proto::encodeFieldNotice(
+                    "파티장이 입장을 시작해야 들어갈 수 있습니다"));
+                self->closeAfterFlush();
+                return;
+            }
+        }
+
         const auto character = context->characters->find(accountId, characterId);
         if (!character.has_value()) {
             spdlog::warn("character {} not found for account {}", characterId, accountId);
@@ -224,7 +262,7 @@ bool InstanceHandler::handleEnter(TlsSession& session, const HeavenField::Enter&
         const std::uint16_t partner =
             character->hasPartner ? character->partner.speciesId : std::uint16_t{0};
 
-        if (!handler->placeInRoom(self, type, partner)) {
+        if (!handler->placeInRoom(self, type, partner, partyId)) {
             self->closeAfterFlush();
             return;
         }
@@ -332,6 +370,11 @@ void InstanceHandler::onClosed(TlsSession& session) {
     // 밀려나서 leave 가 헛돌았더라도 자리는 돌려줘야 한다. 이 세션이 join 으로
     // 한 자리를 잡았기 때문이다 — 안 돌려주면 방이 영영 안 빈다.
     context_.rooms->leave(room);
+
+    // 방을 나갔다고 알린다. 안 지우면 필드로 돌아간 뒤에도 인스턴스 채팅이 온다.
+    if (context_.presence != nullptr) {
+        context_.presence->leave(accountId_);
+    }
 
     spdlog::info("left: {} ({}) room {} - {}", nickname_, session.peer(), room->id,
                  context_.rooms->describe());

@@ -2,6 +2,8 @@
 
 #include "UEFieldClientSubsystem.h"
 #include "../Character/UEPlayerCharacter.h"
+#include "../Player/UEPlayerController.h"
+#include "../System/UEGameInstance.h"
 
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -109,19 +111,58 @@ void AUEInstancePortal::HandleBeginOverlap(UPrimitiveComponent* /*OverlappedComp
 		return;
 	}
 
-	bTravelStarted = true;
 	if (InstanceType > 0)
 	{
+		// 파티에 속해 있으면 파티장만 입장을 시작할 수 있다. 서버도 같은 것을
+		// 검사하지만(InstanceHandler 의 허가권), 여기서 막아야 파티원이 혼자
+		// 레벨을 옮겼다가 거절당하고 돌아오는 헛걸음을 안 한다.
+		UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+		const bool bInParty = GameInstance != nullptr && GameInstance->IsInPlayerParty();
+
+		if (bInParty && !GameInstance->IsPlayerPartyLeader())
+		{
+			// 겹침이 계속 들어오므로 안내는 한 번만 띄운다. 자리는 그대로 둔다 —
+			// 파티장이 열어 주면 여기 서 있어도 같이 넘어간다.
+			if (!bLeaderNoticeShown)
+			{
+				bLeaderNoticeShown = true;
+				if (AUEPlayerController* Controller =
+						Cast<AUEPlayerController>(PlayerCharacter->GetController()))
+				{
+					Controller->AddSystemMessage(TEXT("파티장만 입장을 시작할 수 있습니다"));
+				}
+			}
+			return;
+		}
+
+		bTravelStarted = true;
+
 		// 포탈 밖으로 밀어낸 뒤에 들어간다. 필드 서버가 저장하는 "마지막 좌표"
 		// 가 포탈 위면, 다음 접속에 그 자리에서 살아나면서 겹침이 다시 터져
 		// 곧장 인스턴스로 끌려 들어간다.
 		PushOutOfTrigger(OtherActor);
+
+		if (bInParty)
+		{
+			// 파티장은 곧장 가지 않는다. 채팅 서버가 전원에게 입장을 열어 주고,
+			// 그 신호를 받아 다 같이 넘어간다 (UEPlayerController 의 콜백).
+			UE_LOG(LogTemp, Display, TEXT("InstancePortal: opening instance %d for the party"),
+				InstanceType);
+			if (AUEPlayerController* Controller =
+					Cast<AUEPlayerController>(PlayerCharacter->GetController()))
+			{
+				Controller->RequestPartyEnterInstance(InstanceType);
+			}
+			return;
+		}
 
 		UE_LOG(LogTemp, Display, TEXT("InstancePortal: entering instance %d"), InstanceType);
 		FieldClientSubsystem->EnterInstance(InstanceType);
 	}
 	else
 	{
+		// 나가는 것은 개인 자유다. 파티장 권한은 입장에만 걸린다.
+		bTravelStarted = true;
 		UE_LOG(LogTemp, Display, TEXT("InstancePortal: leaving instance"));
 		FieldClientSubsystem->LeaveInstance();
 	}
