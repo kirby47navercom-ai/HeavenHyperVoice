@@ -69,6 +69,8 @@ namespace
 			Entity.Facing = State->facing();
 			Entity.PartnerSpecies = State->partner_species();
 			Entity.Species = State->species();
+			Entity.AttackSequence = State->attack_sequence();
+			Entity.AttackTargetId = State->attack_target_id();
 			if (const flatbuffers::String* Nickname = State->nickname())
 			{
 				Entity.Nickname = FString(UTF8_TO_TCHAR(Nickname->c_str()));

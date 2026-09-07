@@ -1283,7 +1283,7 @@ void AUEPlayerController::HandlePokemonAttackSlot(int32 AttackSlot)
 {
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
-		// 컨트롤러는 입력 번호만 전달하고 소유 여부와 공격 가능 여부는 캐릭터와 서버 컴포넌트가 판단한다.
+		// 컨트롤러는 입력 번호만 전달하고 소유 여부와 공격 가능 여부는 캐릭터와 서버 연결 흐름이 판단한다.
 		PlayerCharacter->CommandPokemonAttack(AttackSlot);
 	}
 }

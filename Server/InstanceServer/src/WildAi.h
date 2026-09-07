@@ -37,7 +37,12 @@ struct WildIntent {
     float targetX = 0.f;
     float targetY = 0.f;
     float acceptanceRadius = 80.f;
+    float attackTargetX = 0.f;
+    float attackTargetY = 0.f;
+    float attackRange = 180.f;
+    std::uint64_t attackTargetId = 0;
     bool moving = false;
+    bool attacking = false;
 };
 
 class WildAi {
@@ -75,7 +80,8 @@ private:
     enum class RunningAction : std::uint8_t {
         None,
         Wander,
-        Chase
+        Chase,
+        Attack
     };
 
     enum class WildPhase : std::uint8_t {
@@ -115,6 +121,8 @@ private:
     WildIntent followPath(float x, float y, WildBrain& brain);
     MoveAction makeWanderAction(float x, float y, const WildDecision& decision);
     MoveAction makeChaseAction(const WildDecision& decision, const ObservedPlayer& target);
+    WildIntent makeAttackIntent(float x, float y, const WildDecision& decision,
+                                const ObservedPlayer& target, WildBrain& brain);
     void requestDecision(WildBrain& brain);
     void beginRest(WildBrain& brain, float seconds);
     static float distanceSquared(float ax, float ay, float bx, float by);

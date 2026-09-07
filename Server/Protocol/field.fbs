@@ -86,6 +86,13 @@ table EntityState {
   // 야생 포켓몬의 **도감번호**. 0 이면 플레이어다. spawned 에서만 채운다.
   // 뒤에 붙였다 — 앞에 넣으면 기존 슬롯 번호가 밀려 구버전 클라가 깨진다.
   species:ushort;
+
+  // 야생 포켓몬이 공격을 시작한 틱에만 0 이 아닌 값이 온다.
+  // 클라는 같은 번호를 다시 받으면 중복 공격으로 처리하지 않는다.
+  attack_sequence:uint;
+
+  // attack_sequence 가 있을 때 바라보거나 맞출 대상 엔티티다.
+  attack_target_id:ulong;
 }
 
 table Snapshot {

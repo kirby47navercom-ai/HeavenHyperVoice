@@ -432,7 +432,9 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_FACING = 10,
     VT_NICKNAME = 12,
     VT_PARTNER_SPECIES = 14,
-    VT_SPECIES = 16
+    VT_SPECIES = 16,
+    VT_ATTACK_SEQUENCE = 18,
+    VT_ATTACK_TARGET_ID = 20
   };
   uint64_t entity_id() const {
     return GetField<uint64_t>(VT_ENTITY_ID, 0);
@@ -455,6 +457,12 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   uint16_t species() const {
     return GetField<uint16_t>(VT_SPECIES, 0);
   }
+  uint32_t attack_sequence() const {
+    return GetField<uint32_t>(VT_ATTACK_SEQUENCE, 0);
+  }
+  uint64_t attack_target_id() const {
+    return GetField<uint64_t>(VT_ATTACK_TARGET_ID, 0);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -466,6 +474,8 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            verifier.VerifyString(nickname()) &&
            VerifyField<uint16_t>(verifier, VT_PARTNER_SPECIES, 2) &&
            VerifyField<uint16_t>(verifier, VT_SPECIES, 2) &&
+           VerifyField<uint32_t>(verifier, VT_ATTACK_SEQUENCE, 4) &&
+           VerifyField<uint64_t>(verifier, VT_ATTACK_TARGET_ID, 8) &&
            verifier.EndTable();
   }
 };
@@ -495,6 +505,12 @@ struct EntityStateBuilder {
   void add_species(uint16_t species) {
     fbb_.AddElement<uint16_t>(EntityState::VT_SPECIES, species, 0);
   }
+  void add_attack_sequence(uint32_t attack_sequence) {
+    fbb_.AddElement<uint32_t>(EntityState::VT_ATTACK_SEQUENCE, attack_sequence, 0);
+  }
+  void add_attack_target_id(uint64_t attack_target_id) {
+    fbb_.AddElement<uint64_t>(EntityState::VT_ATTACK_TARGET_ID, attack_target_id, 0);
+  }
   explicit EntityStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -514,9 +530,13 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityState(
     float facing = 0.0f,
     ::flatbuffers::Offset<::flatbuffers::String> nickname = 0,
     uint16_t partner_species = 0,
-    uint16_t species = 0) {
+    uint16_t species = 0,
+    uint32_t attack_sequence = 0,
+    uint64_t attack_target_id = 0) {
   EntityStateBuilder builder_(_fbb);
+  builder_.add_attack_target_id(attack_target_id);
   builder_.add_entity_id(entity_id);
+  builder_.add_attack_sequence(attack_sequence);
   builder_.add_nickname(nickname);
   builder_.add_facing(facing);
   builder_.add_y(y);
@@ -534,7 +554,9 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityStateDirect(
     float facing = 0.0f,
     const char *nickname = nullptr,
     uint16_t partner_species = 0,
-    uint16_t species = 0) {
+    uint16_t species = 0,
+    uint32_t attack_sequence = 0,
+    uint64_t attack_target_id = 0) {
   auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
   return HeavenField::CreateEntityState(
       _fbb,
@@ -544,7 +566,9 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityStateDirect(
       facing,
       nickname__,
       partner_species,
-      species);
+      species,
+      attack_sequence,
+      attack_target_id);
 }
 
 struct Snapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {

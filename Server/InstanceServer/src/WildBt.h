@@ -19,6 +19,7 @@ struct WildBtContext {
     const ObservedPlayer* currentTarget = nullptr;
     const ObservedPlayer* nearestPlayer = nullptr;
     float aggroRadius = 900.f;
+    float attackRadius = 180.f;
     float loseTargetRadius = 1800.f;
 };
 
