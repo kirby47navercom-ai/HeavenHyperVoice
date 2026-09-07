@@ -29,7 +29,7 @@ namespace
         // 인스턴스 방 하나에 뿌릴 야생 포켓몬 수.
         int wildCount = 50;
 
-        std::string fieldMap = "maps/Filed.hhvmap";
+        std::string fieldMap;
         std::string instanceMap = "1=maps/Filed.hhvmap";
 
         bool verbose = false;
@@ -79,7 +79,7 @@ namespace
             "  --host <h>        host advertised to clients for chat, field and\n"
             "                    instances (default 127.0.0.1)\n"
             "  --wild-count <n>  wild pokemon per instance room (default 50)\n"
-            "  --field-map <p>   nav map for the field server (default maps/Filed.hhvmap)\n"
+            "  --field-map <p>   nav map for the field server (default disabled)\n"
             "  --instance-map <t=p> nav map for an instance type (default 1=maps/Filed.hhvmap)\n"
             "  --verbose         pass --verbose to the servers\n"
             "  --help            show this message\n"
@@ -244,9 +244,11 @@ int main(int argc, char** argv)
 
         // 야생은 여기 없다. 필드는 플레이어와 파트너만 있고 전투도 없다.
         const std::filesystem::path fieldExe = dir / "FieldServer.exe";
-        const std::string fieldArgs =
-            "FieldServer --port " + std::to_string(options.fieldPort) +
-            " --map " + options.fieldMap + verbose;
+        std::string fieldArgs = "FieldServer --port " + std::to_string(options.fieldPort);
+        if (!options.fieldMap.empty()) {
+            fieldArgs += " --map " + options.fieldMap;
+        }
+        fieldArgs += verbose;
 
         const std::filesystem::path instanceExe = dir / "InstanceServer.exe";
         const std::string instanceArgs = "InstanceServer --port " +
