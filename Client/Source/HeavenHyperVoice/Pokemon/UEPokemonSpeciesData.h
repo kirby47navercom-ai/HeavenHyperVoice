@@ -275,6 +275,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Lifecycle")
 	TArray<TObjectPtr<USoundBase>> DespawnSounds;
 
+	// 이동 중 이 거리(cm)를 지날 때마다 발걸음·수영·특수 이동 효과음을 한 번 재생한다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect", meta = (ClampMin = "1.0", UIMin = "10.0"))
+	float MovementSoundIntervalDistance = 90.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect", meta = (ClampMin = "0.0", UIMin = "0.0", UIMax = "2.0"))
+	float EffectVolumeMultiplier = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect", meta = (ClampMin = "0.01", UIMin = "0.5", UIMax = "2.0"))
+	float EffectPitchMultiplier = 1.0f;
+
+	// 비워 두면 기존 CryAttenuation을 사용한다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Spatial")
+	TObjectPtr<USoundAttenuation> EffectAttenuation = nullptr;
+
+	// 비워 두면 기존 CryConcurrency를 사용한다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Audio|Effect|Spatial")
+	TObjectPtr<USoundConcurrency> EffectConcurrency = nullptr;
+
 
 	// ========================================================================
 	// Animation - Idle

@@ -14,7 +14,9 @@ class UUEAbilitySystemComponent;
 class UUEPokemonAttributeSet;
 class UUEPokemonSpeciesCatalog;
 class UUEPokemonSpeciesData;
+class UUEHealthBarWidget;
 class USoundBase;
+class UWidgetComponent;
 struct FOnAttributeChangeData;
 
 // 블루프린트 UI와 피격 연출이 포켓몬 체력 변경을 즉시 구독할 때 사용한다.
@@ -35,6 +37,35 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	FUEPokemonAbilityActivatedSignature,
 	AUEPokemonCharacter*, Pokemon,
 	FGameplayTag, AbilityTag);
+
+// 서버가 보낸 포켓몬의 지속 애니메이션 상태다.
+UENUM(BlueprintType)
+enum class EUEPokemonAnimationState : uint8
+{
+	Idle,
+	Moving,
+	Turning,
+	Spawning,
+	Despawning,
+	Attacking,
+	HitReact,
+	Fainted
+};
+
+// 서버에서 한 번만 발생한 애니메이션 사건을 클라이언트에 전달할 때 사용한다.
+UENUM(BlueprintType)
+enum class EUEPokemonAnimationEvent : uint8
+{
+	None,
+	SpawnStarted,
+	SpawnCompleted,
+	DespawnStarted,
+	DespawnCompleted,
+	AttackStarted,
+	HitReact,
+	Fainted,
+	FieldAnimationStarted
+};
 
 // 야생 포켓몬이 필드에서 쉬는 동안 사용할 수 있는 비전투 행동 목록이다.
 // Start / Loop / End로 나뉜 행동은 AnimInstance가 이 값 하나를 받아 순서대로 재생한다.
@@ -79,6 +110,90 @@ enum class EUEPokemonRenderType : uint8
 	Boss
 };
 
+// 종족 DataAsset에 지정된 행동 효과음 배열을 경로 없이 선택하기 위한 종류다.
+UENUM(BlueprintType)
+enum class EUEPokemonSoundEffect : uint8
+{
+	Footstep,
+	Jump,
+	Landing,
+	Swim,
+	SpecialMovement,
+	Attack,
+	Hit,
+	Down,
+	Faint,
+	Eat,
+	Stun,
+	Sleep,
+	Spawn,
+	Despawn
+};
+
+USTRUCT(BlueprintType)
+struct FUEPokemonServerMoveSnapshot
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	int32 PokemonId = 0;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	int32 PokemonInstanceId = 0;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	FName SpeciesId = NAME_None;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	EUEPokemonRenderType RenderType = EUEPokemonRenderType::Wild;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	float CurrentHP = 0.0f;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	float MaxHP = 0.0f;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	FVector Location = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	FVector Velocity = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	FRotator Rotation = FRotator::ZeroRotator;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	bool bTeleported = false;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	EUEPokemonAnimationState AnimationState = EUEPokemonAnimationState::Idle;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	EUEPokemonAnimationEvent AnimationEvent = EUEPokemonAnimationEvent::None;
+
+	// FieldAnimationStarted 이벤트일 때 재생할 종별 필드 행동이다.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	EUEPokemonFieldAnimation FieldAnimation = EUEPokemonFieldAnimation::None;
+
+	// 먹기, 잠자기, 휴식처럼 Loop 구간이 있는 행동의 반복 횟수다.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server", meta = (ClampMin = "1"))
+	int32 FieldAnimationLoopCount = 1;
+
+	// AttackStarted 이벤트일 때 재생할 종별 공격 애니메이션이다.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	EUEPokemonAttackAnimation AttackAnimation = EUEPokemonAttackAnimation::None;
+
+	// Start / Loop / End 구조인 원거리 공격의 Loop 반복 횟수다.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server", meta = (ClampMin = "1"))
+	int32 AttackAnimationLoopCount = 1;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	float ServerTimeSeconds = 0.0f;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Pokemon|Server")
+	float EventDurationSeconds = 0.0f;
+};
+
 UCLASS(Blueprintable)
 class HEAVENHYPERVOICE_API AUEPokemonCharacter : public ACharacter, public IAbilitySystemInterface
 {
@@ -88,6 +203,8 @@ public:
 	AUEPokemonCharacter();
 
 	virtual void Tick(float DeltaSeconds) override;
+	virtual void OnJumped_Implementation() override;
+	virtual void Landed(const FHitResult& Hit) override;
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|GAS")
@@ -96,12 +213,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pokemon|GAS")
 	UUEPokemonAttributeSet* GetPokemonAttributeSet() const { return AttributeSet; }
 
+	// 이동·체력·애니메이션을 하나의 서버 스냅샷으로 반영한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
+	void ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot);
+
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
 	void InitializeServerEntity(int64 NewServerEntityId, int32 SpeciesNumber, EUEPokemonRenderType NewRenderType);
 
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
 	void ApplyServerMoveTarget(const FVector& ServerLocation, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bTeleported);
 
+	// main의 야생 공격 신호를 중복 재생하지 않고 한 번만 처리한다.
 	void HandleServerAttackSignal(uint64 TargetEntityId, uint32 AttackSequence);
 
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
@@ -112,6 +234,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Server")
 	int64 GetServerEntityId() const { return ServerEntityId; }
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Server")
+	int32 GetPokemonInstanceId() const { return PokemonInstanceId; }
 
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|World")
 	void SetRenderType(EUEPokemonRenderType NewRenderType);
@@ -132,6 +257,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Species")
 	FName GetPokemonSpeciesId() const;
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Species")
+	FText GetPokemonDisplayName() const;
 
 	UFUNCTION(BlueprintPure, Category = "Pokemon|Stats")
 	float GetCurrentHP() const;
@@ -177,6 +305,18 @@ public:
 	 */
 	void SetServerHardSnapDistance(float InDistance) { ServerHardSnapDistance = InDistance; }
 
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Animation")
+	EUEPokemonAnimationState GetServerAnimationState() const { return ServerAnimationState; }
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Animation")
+	EUEPokemonAnimationEvent GetLastServerAnimationEvent() const { return LastServerAnimationEvent; }
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Animation")
+	float GetLastServerAnimationEventTimeSeconds() const { return LastServerAnimationEventTimeSeconds; }
+
+	UFUNCTION(BlueprintPure, Category = "Pokemon|Animation")
+	float GetLastServerAnimationEventDurationSeconds() const { return LastServerAnimationEventDurationSeconds; }
+
 	// 소환 후보 중 하나를 무작위로 재생한다. 후보가 없으면 대표 울음을 사용한다.
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
 	void PlaySummonCry();
@@ -217,9 +357,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
 	void PlayRandomAmbientCry();
 
+	// 에디터에서 종족별로 지정한 후보 중 하나만 골라 3D 효과음으로 재생한다.
+	UFUNCTION(BlueprintCallable, Category = "Pokemon|Audio")
+	void PlayPokemonSoundEffect(EUEPokemonSoundEffect Effect);
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	// 서버 애니메이션 사건을 자식 블루프린트 연출에서도 받을 수 있게 전달한다.
+	UFUNCTION(BlueprintImplementableEvent, Category = "Pokemon|Animation", meta = (DisplayName = "On Server Animation Event"))
+	void BP_OnServerAnimationEvent(EUEPokemonAnimationEvent AnimationEvent, const FUEPokemonServerMoveSnapshot& Snapshot);
 
 private:
 	void ApplyPokemonSpeciesData();
@@ -228,15 +376,20 @@ private:
 	void HandleHealthChanged(const FOnAttributeChangeData& ChangeData);
 	void HandleMaxHealthChanged(const FOnAttributeChangeData& ChangeData);
 	float SetPokemonHealth(float NewHealth);
+	void RefreshHealthBarWidget();
+	void RefreshHealthBarPosition();
 
 	// 실제 스켈레탈 메시가 없을 때 큐브를 종족 대표 색으로 칠한다.
 	void ApplyDebugAppearance();
+	void ApplyServerAnimationSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot);
 	void UpdateServerDrivenMovement(float DeltaSeconds);
 	void ConfigureServerDrivenMovement();
 	void RefreshWildCryTimer();
 	void HandleWildCryTimer();
-	USoundBase* SelectRandomCry(const TArray<TObjectPtr<USoundBase>>& CryCandidates, USoundBase* FallbackCry = nullptr) const;
+	USoundBase* SelectRandomSound(const TArray<TObjectPtr<USoundBase>>& Candidates, USoundBase* FallbackSound = nullptr) const;
 	void PlayCrySound(USoundBase* CrySound) const;
+	void PlayEffectSound(USoundBase* EffectSound) const;
+	void UpdateMovementSound(const FVector& PreviousLocation, const FVector& NewLocation);
 
 	// 포켓몬 자신이 ASC의 OwnerActor와 AvatarActor를 함께 맡는 단순한 구조다.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|GAS", meta = (AllowPrivateAccess = "true"))
@@ -251,6 +404,16 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|Species", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UUEPokemonSpeciesCatalog> PokemonSpeciesCatalog = nullptr;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Pokemon|UI", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UWidgetComponent> HealthBarWidgetComponent = nullptr;
+
+	// 실제 모양은 BP_Pokemon의 클래스 기본값에서 만든 WBP를 지정한다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|UI", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UUEHealthBarWidget> HealthBarWidgetClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|UI", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+	float HealthBarHeadOffset = 30.0f;
 
 	// 필드 서버는 20Hz로 좌표를 보낸다. 클라이언트는 이 시간 동안 이전 좌표와
 	// 새 좌표를 일정한 속도로 연결해 프레임 사이의 떨림을 없앤다.
@@ -301,6 +464,9 @@ private:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
 	int64 ServerEntityId = 0;
 
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
+	int32 PokemonInstanceId = 0;
+
 	uint64 LastServerAttackTargetId = 0;
 
 	uint32 LastServerAttackSequence = 0;
@@ -311,8 +477,24 @@ private:
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|World", meta = (AllowPrivateAccess = "true"))
 	EUEPokemonRenderType RenderType = EUEPokemonRenderType::Wild;
 
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Animation", meta = (AllowPrivateAccess = "true"))
+	EUEPokemonAnimationState ServerAnimationState = EUEPokemonAnimationState::Idle;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Animation", meta = (AllowPrivateAccess = "true"))
+	EUEPokemonAnimationEvent LastServerAnimationEvent = EUEPokemonAnimationEvent::None;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Animation", meta = (AllowPrivateAccess = "true"))
+	float LastServerAnimationEventTimeSeconds = 0.0f;
+
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Animation", meta = (AllowPrivateAccess = "true"))
+	float LastServerAnimationEventDurationSeconds = 0.0f;
+
 	// 고정 주기 반복 타이머가 아니라 매번 새 간격을 뽑는 한 번짜리 타이머로 사용한다.
 	FTimerHandle WildCryTimerHandle;
+
+	float AccumulatedMovementSoundDistance = 0.0f;
+	bool bSpawnAudioPlayed = false;
+	bool bDespawnAudioPlayed = false;
 
 	bool bHasServerMoveTarget = false;
 };

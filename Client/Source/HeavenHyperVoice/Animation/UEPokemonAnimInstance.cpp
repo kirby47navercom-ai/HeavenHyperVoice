@@ -154,6 +154,18 @@ bool UUEPokemonAnimInstance::PlayFieldAnimation(EUEPokemonFieldAnimation FieldAn
 
 	CurrentFieldAnimation = FieldAnimation;
 	bIsFieldAnimationPlaying = true;
+	if (FieldAnimation == EUEPokemonFieldAnimation::Eat01 || FieldAnimation == EUEPokemonFieldAnimation::Eat02)
+	{
+		OwnerPokemon->PlayPokemonSoundEffect(EUEPokemonSoundEffect::Eat);
+	}
+	else if (FieldAnimation == EUEPokemonFieldAnimation::Sleep)
+	{
+		OwnerPokemon->PlayPokemonSoundEffect(EUEPokemonSoundEffect::Sleep);
+	}
+	else if (FieldAnimation == EUEPokemonFieldAnimation::StepOut)
+	{
+		OwnerPokemon->PlayPokemonSoundEffect(EUEPokemonSoundEffect::SpecialMovement);
+	}
 	PlayNextActionSequence();
 	return bIsFieldAnimationPlaying;
 }
@@ -204,6 +216,7 @@ bool UUEPokemonAnimInstance::PlayAttackAnimation(EUEPokemonAttackAnimation Attac
 
 	CurrentAttackAnimation = AttackAnimation;
 	bIsAttackAnimationPlaying = true;
+	OwnerPokemon->PlayPokemonSoundEffect(EUEPokemonSoundEffect::Attack);
 	PlayNextActionSequence();
 	return bIsAttackAnimationPlaying;
 }

@@ -4,14 +4,17 @@
 
 #include "../AbilitySystem/UEAbilitySystemComponent.h"
 #include "../Animation/UEPokemonAnimInstance.h"
+#include "../UI/HUD/UEHealthBarWidget.h"
 #include "AbilitySystem/UEPokemonAttributeSet.h"
 #include "UEPokemonSpeciesData.h"
 #include "UEPokemonSpeciesCatalog.h"
 
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/WidgetComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PhysicsVolume.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Sound/SoundBase.h"
@@ -38,6 +41,15 @@ AUEPokemonCharacter::AUEPokemonCharacter()
 	AbilitySystemComponent->SetIsReplicated(true);
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
 	AttributeSet = CreateDefaultSubobject<UUEPokemonAttributeSet>(TEXT("PokemonAttributeSet"));
+
+	HealthBarWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarWidgetComponent"));
+	HealthBarWidgetComponent->SetupAttachment(GetRootComponent());
+	HealthBarWidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
+	HealthBarWidgetComponent->SetAbsolute(false, true, false);
+	HealthBarWidgetComponent->SetDrawSize(FVector2D(220.0f, 52.0f));
+	HealthBarWidgetComponent->SetPivot(FVector2D(0.5f, 1.0f));
+	HealthBarWidgetComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 140.0f));
+	HealthBarWidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void AUEPokemonCharacter::BeginPlay()
@@ -45,8 +57,21 @@ void AUEPokemonCharacter::BeginPlay()
 	Super::BeginPlay();
 
 	InitializeAbilitySystem();
+	if (HealthBarWidgetComponent)
+	{
+		// 체력 UI만 포켓몬의 회전을 상속하지 않고 로컬 플레이어 화면을 정면으로 본다.
+		HealthBarWidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
+		HealthBarWidgetComponent->SetAbsolute(false, true, false);
+		if (HealthBarWidgetClass)
+		{
+			HealthBarWidgetComponent->SetWidgetClass(HealthBarWidgetClass);
+			HealthBarWidgetComponent->InitWidget();
+		}
+	}
 	ConfigureServerDrivenMovement();
 	ApplyPokemonSpeciesData();
+	RefreshHealthBarPosition();
+	RefreshHealthBarWidget();
 	TargetServerLocation = GetActorLocation();
 	TargetServerRotation = GetActorRotation();
 	RefreshWildCryTimer();
@@ -56,6 +81,11 @@ void AUEPokemonCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	// 시야 밖으로 사라진 야생 포켓몬의 예약 울음이 뒤늦게 실행되지 않게 정리한다.
 	GetWorldTimerManager().ClearTimer(WildCryTimerHandle);
+	if (EndPlayReason == EEndPlayReason::Destroyed && !bDespawnAudioPlayed)
+	{
+		bDespawnAudioPlayed = true;
+		PlayPokemonSoundEffect(EUEPokemonSoundEffect::Despawn);
+	}
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -64,6 +94,18 @@ void AUEPokemonCharacter::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	UpdateServerDrivenMovement(DeltaSeconds);
+}
+
+void AUEPokemonCharacter::OnJumped_Implementation()
+{
+	Super::OnJumped_Implementation();
+	PlayPokemonSoundEffect(EUEPokemonSoundEffect::Jump);
+}
+
+void AUEPokemonCharacter::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+	PlayPokemonSoundEffect(EUEPokemonSoundEffect::Landing);
 }
 
 UAbilitySystemComponent* AUEPokemonCharacter::GetAbilitySystemComponent() const
@@ -87,6 +129,19 @@ void AUEPokemonCharacter::InitializeAbilitySystem()
 	bAbilitySystemInitialized = true;
 }
 
+void AUEPokemonCharacter::ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot)
+{
+	// 같은 서버 틱에서 받은 식별자, 전투 수치, 애니메이션과 이동 목표를 함께 적용한다.
+	ServerEntityId = static_cast<int64>(FMath::Max(Snapshot.PokemonId, 0));
+	ServerPokemonId = Snapshot.PokemonId;
+	PokemonInstanceId = Snapshot.PokemonInstanceId;
+	ServerSpeciesId = Snapshot.SpeciesId;
+	SetRenderType(Snapshot.RenderType);
+	ApplyServerStats(Snapshot.CurrentHP, Snapshot.MaxHP);
+	ApplyServerAnimationSnapshot(Snapshot);
+	ApplyServerMoveTarget(Snapshot.Location, Snapshot.Velocity, Snapshot.Rotation, Snapshot.bTeleported);
+}
+
 void AUEPokemonCharacter::InitializeServerEntity(
 	int64 NewServerEntityId,
 	int32 SpeciesNumber,
@@ -102,6 +157,13 @@ void AUEPokemonCharacter::InitializeServerEntity(
 	{
 		SetWildSpecies(SpeciesNumber);
 		SetRenderType(NewRenderType);
+	}
+
+	if (PokemonSpeciesData && !bSpawnAudioPlayed)
+	{
+		bSpawnAudioPlayed = true;
+		PlayPokemonSoundEffect(EUEPokemonSoundEffect::Spawn);
+		PlaySummonCry();
 	}
 }
 
@@ -142,12 +204,25 @@ void AUEPokemonCharacter::SetWildSpecies(int32 SpeciesNumber)
 	}
 
 	ApplyDebugAppearance();
+	RefreshHealthBarPosition();
+	RefreshHealthBarWidget();
 	RefreshWildCryTimer();
 }
 
 FName AUEPokemonCharacter::GetPokemonSpeciesId() const
 {
 	return PokemonSpeciesData && !PokemonSpeciesData->SpeciesId.IsNone() ? PokemonSpeciesData->SpeciesId : ServerSpeciesId;
+}
+
+FText AUEPokemonCharacter::GetPokemonDisplayName() const
+{
+	if (PokemonSpeciesData && !PokemonSpeciesData->DisplayName.IsEmpty())
+	{
+		return PokemonSpeciesData->DisplayName;
+	}
+
+	const FName SpeciesId = GetPokemonSpeciesId();
+	return SpeciesId.IsNone() ? FText::GetEmpty() : FText::FromName(SpeciesId);
 }
 
 void AUEPokemonCharacter::SetRenderType(EUEPokemonRenderType NewRenderType)
@@ -165,7 +240,7 @@ void AUEPokemonCharacter::PlaySummonCry()
 	}
 
 	// 소환 전용 후보가 있으면 매번 하나를 새로 고르고, 미설정 종은 대표 울음으로 안전하게 대체한다.
-	PlayCrySound(SelectRandomCry(PokemonSpeciesData->SummonCries, PokemonSpeciesData->SummonCry.Get()));
+	PlayCrySound(SelectRandomSound(PokemonSpeciesData->SummonCries, PokemonSpeciesData->SummonCry.Get()));
 }
 
 void AUEPokemonCharacter::PlayFaintCry()
@@ -176,7 +251,7 @@ void AUEPokemonCharacter::PlayFaintCry()
 	}
 
 	// 기절 전용 후보만 사용한다. 전용 소리가 없는 종이 갑자기 일반 소리를 내지 않도록 소환 울음은 대체재로 쓰지 않는다.
-	PlayCrySound(SelectRandomCry(PokemonSpeciesData->FaintCries, PokemonSpeciesData->FaintCry.Get()));
+	PlayCrySound(SelectRandomSound(PokemonSpeciesData->FaintCries, PokemonSpeciesData->FaintCry.Get()));
 }
 
 void AUEPokemonCharacter::PlayRandomWildCry()
@@ -187,42 +262,75 @@ void AUEPokemonCharacter::PlayRandomWildCry()
 	}
 
 	// 야생 후보에는 평온·기쁨·환경·특수음성만 넣는다. 전투·분노·슬픔 소리는 섞지 않는다.
-	PlayCrySound(SelectRandomCry(PokemonSpeciesData->WildCries, PokemonSpeciesData->SummonCry.Get()));
+	PlayCrySound(SelectRandomSound(PokemonSpeciesData->WildCries, PokemonSpeciesData->SummonCry.Get()));
 }
 
 void AUEPokemonCharacter::PlayRandomHappyCry()
 {
-	PlayCrySound(PokemonSpeciesData ? SelectRandomCry(PokemonSpeciesData->HappyCries) : nullptr);
+	PlayCrySound(PokemonSpeciesData ? SelectRandomSound(PokemonSpeciesData->HappyCries) : nullptr);
 }
 
 void AUEPokemonCharacter::PlayRandomAngryCry()
 {
-	PlayCrySound(PokemonSpeciesData ? SelectRandomCry(PokemonSpeciesData->AngryCries) : nullptr);
+	PlayCrySound(PokemonSpeciesData ? SelectRandomSound(PokemonSpeciesData->AngryCries) : nullptr);
 }
 
 void AUEPokemonCharacter::PlayRandomSadCry()
 {
-	PlayCrySound(PokemonSpeciesData ? SelectRandomCry(PokemonSpeciesData->SadCries) : nullptr);
+	PlayCrySound(PokemonSpeciesData ? SelectRandomSound(PokemonSpeciesData->SadCries) : nullptr);
 }
 
 void AUEPokemonCharacter::PlayRandomPhysicalAttackCry()
 {
-	PlayCrySound(PokemonSpeciesData ? SelectRandomCry(PokemonSpeciesData->PhysicalAttackCries) : nullptr);
+	PlayCrySound(PokemonSpeciesData ? SelectRandomSound(PokemonSpeciesData->PhysicalAttackCries) : nullptr);
 }
 
 void AUEPokemonCharacter::PlayRandomSpecialAttackCry()
 {
-	PlayCrySound(PokemonSpeciesData ? SelectRandomCry(PokemonSpeciesData->SpecialAttackCries) : nullptr);
+	PlayCrySound(PokemonSpeciesData ? SelectRandomSound(PokemonSpeciesData->SpecialAttackCries) : nullptr);
 }
 
 void AUEPokemonCharacter::PlayRandomSpecialCry()
 {
-	PlayCrySound(PokemonSpeciesData ? SelectRandomCry(PokemonSpeciesData->SpecialCries) : nullptr);
+	PlayCrySound(PokemonSpeciesData ? SelectRandomSound(PokemonSpeciesData->SpecialCries) : nullptr);
 }
 
 void AUEPokemonCharacter::PlayRandomAmbientCry()
 {
-	PlayCrySound(PokemonSpeciesData ? SelectRandomCry(PokemonSpeciesData->AmbientCries) : nullptr);
+	PlayCrySound(PokemonSpeciesData ? SelectRandomSound(PokemonSpeciesData->AmbientCries) : nullptr);
+}
+
+void AUEPokemonCharacter::PlayPokemonSoundEffect(EUEPokemonSoundEffect Effect)
+{
+	if (!PokemonSpeciesData)
+	{
+		return;
+	}
+
+	const TArray<TObjectPtr<USoundBase>>* Candidates = nullptr;
+	switch (Effect)
+	{
+	case EUEPokemonSoundEffect::Footstep: Candidates = &PokemonSpeciesData->FootstepSounds; break;
+	case EUEPokemonSoundEffect::Jump: Candidates = &PokemonSpeciesData->JumpSounds; break;
+	case EUEPokemonSoundEffect::Landing: Candidates = &PokemonSpeciesData->LandingSounds; break;
+	case EUEPokemonSoundEffect::Swim: Candidates = &PokemonSpeciesData->SwimSounds; break;
+	case EUEPokemonSoundEffect::SpecialMovement: Candidates = &PokemonSpeciesData->SpecialMovementSounds; break;
+	case EUEPokemonSoundEffect::Attack: Candidates = &PokemonSpeciesData->AttackSounds; break;
+	case EUEPokemonSoundEffect::Hit: Candidates = &PokemonSpeciesData->HitSounds; break;
+	case EUEPokemonSoundEffect::Down: Candidates = &PokemonSpeciesData->DownSounds; break;
+	case EUEPokemonSoundEffect::Faint: Candidates = &PokemonSpeciesData->FaintEffectSounds; break;
+	case EUEPokemonSoundEffect::Eat: Candidates = &PokemonSpeciesData->EatSounds; break;
+	case EUEPokemonSoundEffect::Stun: Candidates = &PokemonSpeciesData->StunSounds; break;
+	case EUEPokemonSoundEffect::Sleep: Candidates = &PokemonSpeciesData->SleepSounds; break;
+	case EUEPokemonSoundEffect::Spawn: Candidates = &PokemonSpeciesData->SpawnSounds; break;
+	case EUEPokemonSoundEffect::Despawn: Candidates = &PokemonSpeciesData->DespawnSounds; break;
+	default: break;
+	}
+
+	if (Candidates)
+	{
+		PlayEffectSound(SelectRandomSound(*Candidates));
+	}
 }
 
 void AUEPokemonCharacter::RefreshWildCryTimer()
@@ -270,24 +378,24 @@ void AUEPokemonCharacter::HandleWildCryTimer()
 	RefreshWildCryTimer();
 }
 
-USoundBase* AUEPokemonCharacter::SelectRandomCry(
-	const TArray<TObjectPtr<USoundBase>>& CryCandidates,
-	USoundBase* FallbackCry) const
+USoundBase* AUEPokemonCharacter::SelectRandomSound(
+	const TArray<TObjectPtr<USoundBase>>& Candidates,
+	USoundBase* FallbackSound) const
 {
 	// DataAsset 편집 중 생긴 빈 칸은 후보에서 제외해 nullptr가 무작위로 선택되는 일을 막는다.
-	TArray<USoundBase*> ValidCries;
-	ValidCries.Reserve(CryCandidates.Num());
-	for (const TObjectPtr<USoundBase>& Cry : CryCandidates)
+	TArray<USoundBase*> ValidSounds;
+	ValidSounds.Reserve(Candidates.Num());
+	for (const TObjectPtr<USoundBase>& Sound : Candidates)
 	{
-		if (Cry)
+		if (Sound)
 		{
-			ValidCries.Add(Cry.Get());
+			ValidSounds.Add(Sound.Get());
 		}
 	}
 
-	return ValidCries.IsEmpty()
-		? FallbackCry
-		: ValidCries[FMath::RandRange(0, ValidCries.Num() - 1)];
+	return ValidSounds.IsEmpty()
+		? FallbackSound
+		: ValidSounds[FMath::RandRange(0, ValidSounds.Num() - 1)];
 }
 
 void AUEPokemonCharacter::PlayCrySound(USoundBase* CrySound) const
@@ -319,6 +427,60 @@ void AUEPokemonCharacter::PlayCrySound(USoundBase* CrySound) const
 		PokemonSpeciesData ? PokemonSpeciesData->CryAttenuation.Get() : nullptr,
 		PokemonSpeciesData ? PokemonSpeciesData->CryConcurrency.Get() : nullptr,
 		true);
+}
+
+void AUEPokemonCharacter::PlayEffectSound(USoundBase* EffectSound) const
+{
+	if (!EffectSound || !PokemonSpeciesData)
+	{
+		return;
+	}
+
+	UGameplayStatics::PlaySoundAtLocation(
+		this,
+		EffectSound,
+		GetActorLocation(),
+		FRotator::ZeroRotator,
+		FMath::Max(PokemonSpeciesData->EffectVolumeMultiplier, 0.0f),
+		FMath::Max(PokemonSpeciesData->EffectPitchMultiplier, 0.01f),
+		0.0f,
+		PokemonSpeciesData->EffectAttenuation
+			? PokemonSpeciesData->EffectAttenuation.Get()
+			: PokemonSpeciesData->CryAttenuation.Get(),
+		PokemonSpeciesData->EffectConcurrency
+			? PokemonSpeciesData->EffectConcurrency.Get()
+			: PokemonSpeciesData->CryConcurrency.Get(),
+		this);
+}
+
+void AUEPokemonCharacter::UpdateMovementSound(const FVector& PreviousLocation, const FVector& NewLocation)
+{
+	if (!PokemonSpeciesData)
+	{
+		return;
+	}
+
+	AccumulatedMovementSoundDistance += FVector::Dist2D(PreviousLocation, NewLocation);
+	const float Interval = FMath::Max(PokemonSpeciesData->MovementSoundIntervalDistance, 1.0f);
+	if (AccumulatedMovementSoundDistance < Interval)
+	{
+		return;
+	}
+	AccumulatedMovementSoundDistance = FMath::Fmod(AccumulatedMovementSoundDistance, Interval);
+
+	const APhysicsVolume* PhysicsVolume = GetPhysicsVolume();
+	if (PhysicsVolume && PhysicsVolume->bWaterVolume && !PokemonSpeciesData->SwimSounds.IsEmpty())
+	{
+		PlayPokemonSoundEffect(EUEPokemonSoundEffect::Swim);
+	}
+	else if (!PokemonSpeciesData->FootstepSounds.IsEmpty())
+	{
+		PlayPokemonSoundEffect(EUEPokemonSoundEffect::Footstep);
+	}
+	else
+	{
+		PlayPokemonSoundEffect(EUEPokemonSoundEffect::SpecialMovement);
+	}
 }
 
 void AUEPokemonCharacter::ConfigureServerDrivenMovement()
@@ -380,6 +542,8 @@ void AUEPokemonCharacter::ApplyPokemonSpeciesData()
 	ServerSpeciesId = PokemonSpeciesData->SpeciesId;
 
 	ApplyDebugAppearance();
+	RefreshHealthBarPosition();
+	RefreshHealthBarWidget();
 }
 
 void AUEPokemonCharacter::ApplyDebugAppearance()
@@ -500,6 +664,7 @@ float AUEPokemonCharacter::SetPokemonHealth(float NewHealth)
 	{
 		CurrentHP = ClampedHealth;
 		OnPokemonHealthChanged.Broadcast(this, OldHealth, CurrentHP, MaxHP);
+		RefreshHealthBarWidget();
 	}
 
 	return GetCurrentHP();
@@ -509,7 +674,12 @@ float AUEPokemonCharacter::ApplyPokemonDamage(float DamageAmount)
 {
 	const float OldHealth = GetCurrentHP();
 	SetPokemonHealth(OldHealth - FMath::Max(DamageAmount, 0.0f));
-	return OldHealth - GetCurrentHP();
+	const float AppliedDamage = OldHealth - GetCurrentHP();
+	if (AppliedDamage > 0.0f && GetCurrentHP() > 0.0f)
+	{
+		PlayPokemonSoundEffect(EUEPokemonSoundEffect::Hit);
+	}
+	return AppliedDamage;
 }
 
 float AUEPokemonCharacter::RestorePokemonHealth(float HealAmount)
@@ -535,6 +705,7 @@ void AUEPokemonCharacter::HandleHealthChanged(const FOnAttributeChangeData& Chan
 	CurrentHP = FMath::Clamp(ChangeData.NewValue, 0.0f, GetMaxHP());
 	MaxHP = AttributeSet ? AttributeSet->GetMaxHealth() : MaxHP;
 	OnPokemonHealthChanged.Broadcast(this, ChangeData.OldValue, CurrentHP, MaxHP);
+	RefreshHealthBarWidget();
 
 	// 여러 GameplayEffect가 같은 프레임에 체력을 0으로 만들어도 기절 이벤트는 한 번만 보낸다.
 	if (CurrentHP <= 0.0f)
@@ -544,6 +715,7 @@ void AUEPokemonCharacter::HandleHealthChanged(const FOnAttributeChangeData& Chan
 			bFaintDelegateBroadcast = true;
 			// 일반 울음과 기절 울음을 구분한다. 전용 파일이 없는 종은 조용히 넘어간다.
 			PlayFaintCry();
+			PlayPokemonSoundEffect(EUEPokemonSoundEffect::Faint);
 			OnPokemonFainted.Broadcast(this);
 		}
 	}
@@ -566,6 +738,49 @@ void AUEPokemonCharacter::HandleMaxHealthChanged(const FOnAttributeChangeData& C
 
 	// 최대 체력만 변한 경우에도 체력바가 비율을 다시 계산할 수 있도록 같은 델리게이트를 보낸다.
 	OnPokemonHealthChanged.Broadcast(this, GetCurrentHP(), GetCurrentHP(), MaxHP);
+	RefreshHealthBarWidget();
+}
+
+void AUEPokemonCharacter::RefreshHealthBarWidget()
+{
+	if (!HealthBarWidgetComponent)
+	{
+		return;
+	}
+
+	if (UUEHealthBarWidget* HealthBarWidget = Cast<UUEHealthBarWidget>(HealthBarWidgetComponent->GetUserWidgetObject()))
+	{
+		HealthBarWidget->SetDisplayName(GetPokemonDisplayName());
+		HealthBarWidget->SetHealth(GetCurrentHP(), GetMaxHP());
+	}
+}
+
+void AUEPokemonCharacter::RefreshHealthBarPosition()
+{
+	if (!HealthBarWidgetComponent)
+	{
+		return;
+	}
+
+	UPrimitiveComponent* VisualComponent = nullptr;
+	if (USkeletalMeshComponent* MeshComponent = GetMesh(); MeshComponent && MeshComponent->GetSkeletalMeshAsset())
+	{
+		VisualComponent = MeshComponent;
+	}
+	else
+	{
+		VisualComponent = FindComponentByClass<UStaticMeshComponent>();
+	}
+
+	if (!VisualComponent)
+	{
+		return;
+	}
+
+	const FBoxSphereBounds Bounds = VisualComponent->Bounds;
+	const FVector WorldTop = Bounds.Origin + FVector::UpVector * Bounds.BoxExtent.Z;
+	const FVector LocalTop = GetActorTransform().InverseTransformPosition(WorldTop);
+	HealthBarWidgetComponent->SetRelativeLocation(FVector(LocalTop.X, LocalTop.Y, LocalTop.Z + HealthBarHeadOffset));
 }
 
 void AUEPokemonCharacter::ApplyServerMoveTarget(const FVector& ServerLocation, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bTeleported)
@@ -586,6 +801,7 @@ void AUEPokemonCharacter::ApplyServerMoveTarget(const FVector& ServerLocation, c
 		// 순간이동 거리를 이동 속도로 취급하면 한 프레임 동안 달리기 애니메이션이 튄다.
 		// 다음 일반 이동 스냅샷을 받을 때까지 정지 속도로 유지한다.
 		GetCharacterMovement()->Velocity = FVector::ZeroVector;
+		AccumulatedMovementSoundDistance = 0.0f;
 		bHasServerMoveTarget = false;
 		return;
 	}
@@ -613,6 +829,7 @@ void AUEPokemonCharacter::HandleServerAttackSignal(uint64 TargetEntityId, uint32
 		return;
 	}
 
+	// 서버 시퀀스를 기억해 같은 공격 패킷이 다시 와도 소리와 모션을 중복 재생하지 않는다.
 	LastServerAttackSequence = AttackSequence;
 	LastServerAttackTargetId = TargetEntityId;
 
@@ -621,6 +838,65 @@ void AUEPokemonCharacter::HandleServerAttackSignal(uint64 TargetEntityId, uint32
 	{
 		PokemonAnimInstance->PlayAttackAnimation(EUEPokemonAttackAnimation::Attack01);
 	}
+}
+
+void AUEPokemonCharacter::ApplyServerAnimationSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot)
+{
+	ServerAnimationState = Snapshot.AnimationState;
+
+	if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::None)
+	{
+		return;
+	}
+
+	LastServerAnimationEvent = Snapshot.AnimationEvent;
+	LastServerAnimationEventTimeSeconds = Snapshot.ServerTimeSeconds;
+	LastServerAnimationEventDurationSeconds = Snapshot.EventDurationSeconds;
+
+	// 서버가 선택한 필드 행동은 현재 종의 AnimInstance가 실제 시퀀스로 변환해 재생한다.
+	// DataAsset에 없는 시퀀스는 AnimInstance에서 자동으로 건너뛴다.
+	if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::FieldAnimationStarted)
+	{
+		if (UUEPokemonAnimInstance* PokemonAnimInstance = Cast<UUEPokemonAnimInstance>(GetMesh()->GetAnimInstance()))
+		{
+			PokemonAnimInstance->PlayFieldAnimation(Snapshot.FieldAnimation, Snapshot.FieldAnimationLoopCount);
+		}
+	}
+	else if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::AttackStarted)
+	{
+		// 서버가 승인한 공격 종류만 재생해 클라이언트 입력과 실제 포켓몬 상태가 어긋나지 않게 한다.
+		if (UUEPokemonAnimInstance* PokemonAnimInstance = Cast<UUEPokemonAnimInstance>(GetMesh()->GetAnimInstance()))
+		{
+			PokemonAnimInstance->PlayAttackAnimation(Snapshot.AttackAnimation, Snapshot.AttackAnimationLoopCount);
+		}
+	}
+	else if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::SpawnStarted)
+	{
+		if (!bSpawnAudioPlayed)
+		{
+			bSpawnAudioPlayed = true;
+			PlayPokemonSoundEffect(EUEPokemonSoundEffect::Spawn);
+			PlaySummonCry();
+		}
+	}
+	else if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::DespawnStarted)
+	{
+		if (!bDespawnAudioPlayed)
+		{
+			bDespawnAudioPlayed = true;
+			PlayPokemonSoundEffect(EUEPokemonSoundEffect::Despawn);
+		}
+	}
+	else if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::HitReact)
+	{
+		PlayPokemonSoundEffect(EUEPokemonSoundEffect::Hit);
+	}
+	else if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::Fainted)
+	{
+		PlayPokemonSoundEffect(EUEPokemonSoundEffect::Down);
+	}
+
+	BP_OnServerAnimationEvent(Snapshot.AnimationEvent, Snapshot);
 }
 
 void AUEPokemonCharacter::UpdateServerDrivenMovement(float DeltaSeconds)
@@ -660,6 +936,8 @@ void AUEPokemonCharacter::UpdateServerDrivenMovement(float DeltaSeconds)
 		const float SafeDeltaSeconds = FMath::Max(DeltaSeconds, UE_SMALL_NUMBER);
 		MovementComponent->Velocity = (GetActorLocation() - PreviousLocation) / SafeDeltaSeconds;
 	}
+
+	UpdateMovementSound(PreviousLocation, GetActorLocation());
 
 	if (MoveAlpha >= 1.0f)
 	{
