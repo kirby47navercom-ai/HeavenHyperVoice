@@ -41,7 +41,7 @@ add_custom_target(ProtocolGen DEPENDS ${_gen_headers})
 # 바이트열이고, 안을 들여다볼 이유가 없다.
 set(_client_gen_dir "${PROJECT_SOURCE_DIR}/../Client/Source/HeavenHyperVoice/Net/Generated")
 
-foreach(_client_schema field login)
+foreach(_client_schema field login chat)
     add_custom_command(TARGET ProtocolGen POST_BUILD
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different
                 "${_gen_dir}/${_client_schema}_generated.h"

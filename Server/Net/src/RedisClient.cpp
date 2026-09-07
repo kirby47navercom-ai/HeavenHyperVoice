@@ -84,6 +84,20 @@ bool RedisClient::ensureConnectedLocked() {
         }
     }
 
+    // 실제로 명령이 통하는지 확인한다. 비밀번호가 저장돼 있지 않으면 위 AUTH 를
+    // 건너뛰는데, 그 상태로 "접속됨"을 돌려주면 이후 모든 명령이 NOAUTH 로 죽는다.
+    // 호출자는 캐시 실패를 조용히 넘기도록 돼 있어서 아무도 눈치채지 못한다.
+    {
+        ReplyGuard guard;
+        guard.reply = redisCommand(context_, "PING");
+        auto* reply = static_cast<redisReply*>(guard.reply);
+        if (reply == nullptr || reply->type == REDIS_REPLY_ERROR) {
+            lastError_ = reply != nullptr && reply->str != nullptr ? reply->str : "PING failed";
+            dropLocked();
+            return false;
+        }
+    }
+
     lastError_.clear();
     return true;
 }
