@@ -82,6 +82,8 @@ void UUEFieldWildPokemonSyncComponent::HandleWildPokemonMoved(
 		FVector::ZeroVector,
 		FRotator(0.0f, Entity.Facing, 0.0f),
 		/*bTeleported=*/false);
+
+	Found->Get()->HandleServerAttackSignal(Entity.AttackTargetId, Entity.AttackSequence);
 }
 
 bool UUEFieldWildPokemonSyncComponent::HandleWildPokemonDespawned(uint64 EntityId)

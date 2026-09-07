@@ -72,6 +72,9 @@ struct Entity {
     float slack = kSpeedSlack;
 
     bool movedThisTick = false;
+    std::uint32_t attackSequence = 0;
+    std::uint64_t attackTargetId = 0;
+    bool attackedThisTick = false;
 };
 
 // 야생 번호는 캐릭터 번호(작은 BIGINT)와 겹치지 않게 높은 범위를 쓴다.
@@ -131,6 +134,8 @@ public:
     // 서버가 뜬 뒤로는 바뀌지 않으므로 락 없이 읽는다.
     void setMap(const Map* map) { map_ = map; }
 
+    Position resolvePosition(const Position& position) const;
+
     // 20Hz. 이번 주기에 움직인 것들을 뷰어별로 묶어 보낸다.
     void tick();
 
@@ -145,7 +150,8 @@ private:
     void removeFromVisibility(Entity& self);
     void sendTo(const Entity& entity, const proto::Bytes& frame) const;
 
-    static proto::EntityView viewOf(const Entity& entity, bool withIdentity);
+    static proto::EntityView viewOf(const Entity& entity, bool withIdentity,
+                                    bool withAttack = false);
 
     // ponytail: 월드 전역 락 하나. 섹터별 락이 맞지만 접속자가 수백 명이 되기
     // 전까지는 경합이 없다. 올릴 때는 sectors_ 를 섹터별 뮤텍스로 감싸고

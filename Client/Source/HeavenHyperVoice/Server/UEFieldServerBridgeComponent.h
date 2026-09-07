@@ -209,14 +209,14 @@ private:
 	}
 	void StopFieldConnection();
 	void DestroyPresentationActors();
-	void HandleFieldEnterAck(uint64 EntityId, float ServerX, float ServerY, float Facing,
+	void HandleFieldEnterAck(uint64 EntityId, float ServerX, float ServerY, float ServerZ, float Facing,
 		uint32 RoomId, float OriginOffset);
-	void HandleFieldCorrection(uint32 Sequence, float ServerX, float ServerY, float Facing);
+	void HandleFieldCorrection(uint32 Sequence, float ServerX, float ServerY, float ServerZ, float Facing);
 	void HandleFieldSnapshot(const FHHVFieldSnapshot& Snapshot);
 	void HandleFieldDisconnected(const FString& Reason);
 	void HandleFieldPartyState(const FHHVFieldPartyState& State);
 	void HandleFieldPartnerChanged(uint64 EntityId, uint16 PartnerDex);
-	FVector MakeEntityLocation(float ServerX, float ServerY) const;
+	FVector MakeEntityLocation(float ServerX, float ServerY, float ServerZ) const;
 	float ToServerAxis(double UnrealAxis) const { return static_cast<float>(UnrealAxis) + WorldOriginOffset; }
 	double ToUnrealAxis(float ServerAxis) const { return static_cast<double>(ServerAxis - WorldOriginOffset); }
 	AUEPlayerCharacter* GetPlayerCharacter() const;

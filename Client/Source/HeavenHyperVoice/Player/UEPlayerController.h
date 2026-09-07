@@ -86,12 +86,50 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Chat|UI")
 	TSubclassOf<UUserWidget> ChatSystemLineWidgetClass;
 
+public:
+	// --- 플레이어 파티 ---
+	//
+	// 명령은 전부 채팅 연결로 나간다. 이 연결이 필드에서도 인스턴스에서도
+	// 살아 있는 유일한 통로다. 명단은 UUEGameInstance 가 들고 있다.
+
+	UFUNCTION(BlueprintCallable, Category = "HHV|Party")
+	void RequestPartyInvite(const FString& TargetNickname);
+
+	UFUNCTION(BlueprintCallable, Category = "HHV|Party")
+	void RequestPartyAccept(int64 PartyId);
+
+	UFUNCTION(BlueprintCallable, Category = "HHV|Party")
+	void RequestPartyDecline(int64 PartyId);
+
+	UFUNCTION(BlueprintCallable, Category = "HHV|Party")
+	void RequestPartyLeave();
+
+	UFUNCTION(BlueprintCallable, Category = "HHV|Party")
+	void RequestPartyKick(int64 TargetAccountId);
+
+	/** 파티장만 부를 수 있다. 서버가 전원에게 입장을 열어 준다. */
+	UFUNCTION(BlueprintCallable, Category = "HHV|Party")
+	void RequestPartyEnterInstance(int32 InstanceType);
+
+	/** 화면에 시스템 문구 한 줄. 포탈이 파티 안내를 띄우는 데도 쓴다. */
+	void AddSystemMessage(const FString& Text);
+
 private:
+	// 마지막으로 받은 초대. /수락 이 이걸 쓴다. 서버 쪽 초대장은 60초에 만료된다.
+	int64 PendingInvitePartyId = 0;
+
 	void CreateChatWidget();
 	void StartChat();
 	bool SubmitChatText(const FString& Text);
-	void AddChatLine(const FString& Nickname, const FString& Text, bool bSystem);
-	void AddSystemMessage(const FString& Text);
+	void AddChatLine(const FString& Nickname, const FString& Text, bool bSystem,
+		EUEChatChannel Channel);
+
+	// 지금 고른 탭에 맞춰 줄을 보이고 숨긴다. 탭을 바꿀 때마다 부른다.
+	void RefreshChatFilter();
+
+	// 탭 번호를 발화 채널로 바꾼다. "전체" 탭에서 치면 일반으로 나간다 —
+	// 모든 채널에 동시에 말하는 것은 없다.
+	EUEChatChannel ChannelForSelectedTab() const;
 	void SetChatCollapsed(bool bCollapsed);
 
 	UFUNCTION()
@@ -202,6 +240,14 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UBorder>> ChatChannelTabs;
+
+	// 0 = 전체(필터), 1 = 일반, 2 = 파티, 3 = 전투.
+	// "전체" 는 채널이 아니라 보기 방식이라 발화에는 쓰이지 않는다.
+	int32 SelectedChatTab = 0;
+
+	// 줄마다 어느 채널인지. ChatMessageList 의 자식 순서와 1:1 로 맞춘다 —
+	// 둘 다 앞에서부터 같이 잘라내므로 색인이 어긋나지 않는다.
+	TArray<EUEChatChannel> ChatLineChannels;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextBlock> ChatInputChannelText = nullptr;

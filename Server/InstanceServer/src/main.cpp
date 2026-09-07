@@ -22,6 +22,9 @@
 #include "Map.h"
 #include "OdbcStore.h"
 #include "RoomManager.h"
+#include "Credentials.h"
+#include "InstancePresence.h"
+#include "RedisClient.h"
 #include "ServerMain.h"
 #include "World.h"
 
@@ -38,6 +41,12 @@ struct Options {
 
     // 입장할 때만 DB 를 쓴다 (파트너와 파티). 위치는 저장하지 않는다.
     unsigned dbThreads = 2;
+
+    // 플레이어 파티를 읽는 곳. 파티장이 연 입장인지 확인하고, 같은 파티를
+    // 같은 방으로 보낸다. 여기서는 읽기만 한다 — 쓰는 것은 ChatServer 다.
+    std::string redisHost = "127.0.0.1";
+    std::uint16_t redisPort = 6379;
+    bool useRedis = true;
 
     // 방을 돌리는 스레드. 0 이면 하드웨어 동시성의 절반, 최소 1.
     unsigned tickThreads = 0;
@@ -99,6 +108,9 @@ void printUsage() {
                  "  --db-name <n>         database name (default hhv)\n"
                  "  --db-user <u>         database user (default hhv_server)\n"
                  "  --db-conn <str>       full ODBC connection string, overrides the above\n"
+                 "  --redis-host <h>      party store host (default 127.0.0.1)\n"
+                 "  --redis-port <n>      party store port (default 6379)\n"
+                 "  --no-redis            ignore parties; everyone enters on their own\n"
                  "  --verbose             enable debug logging\n"
                  "  --help                show this message\n"
                  "\n"
@@ -224,6 +236,12 @@ Options parseArgs(int argc, char** argv) {
                 pair.substr(equals + 1);
         } else if (heaven::data::parseOdbcOption(arg, next, options.db)) {
             // --db-driver/host/port/name/user/conn. 다른 서버와 같은 표를 쓴다.
+        } else if (arg == "--redis-host") {
+            options.redisHost = next("--redis-host");
+        } else if (arg == "--redis-port") {
+            options.redisPort = static_cast<std::uint16_t>(std::stoi(next("--redis-port")));
+        } else if (arg == "--no-redis") {
+            options.useRedis = false;
         } else if (arg == "--dev-no-auth") {
             options.devNoAuth = true;
         } else if (arg == "--verbose") {
@@ -333,11 +351,39 @@ int main(int argc, char** argv) {
         heaven::net::WorkQueue dbQueue(options.dbThreads);
         heaven::instance::RoomManager rooms(options.rooms, types);
 
+        // 파티는 Redis 에 있다. 없으면 파티 제약 없이 각자 들어간다 — 파티
+        // 기능만 죽고 인스턴스는 그대로 돈다.
+        std::unique_ptr<heaven::net::RedisClient> redis;
+        std::unique_ptr<heaven::party::PartyStore> party;
+        std::unique_ptr<heaven::instancechat::InstancePresence> presence;
+        if (options.useRedis) {
+            heaven::net::RedisSettings redisSettings;
+            redisSettings.host = options.redisHost;
+            redisSettings.port = options.redisPort;
+            if (const auto stored =
+                    heaven::net::readStoredPassword(heaven::net::kRedisCredentialTarget)) {
+                redisSettings.password = *stored;
+            }
+            redis = std::make_unique<heaven::net::RedisClient>(redisSettings);
+            if (!redis->connect()) {
+                spdlog::warn("party store unavailable at {}: {}", redis->target(),
+                             redis->lastError());
+                spdlog::warn("parties will not be grouped; everyone enters on their own");
+                redis.reset();
+            } else {
+                party = std::make_unique<heaven::party::PartyStore>(*redis);
+                presence =
+                    std::make_unique<heaven::instancechat::InstancePresence>(*redis);
+            }
+        }
+
         heaven::instance::InstanceContext context;
         context.rooms = &rooms;
         context.keys = &keys;
         context.characters = characters.get();
         context.dbQueue = &dbQueue;
+        context.party = party.get();
+        context.presence = presence.get();
         context.devNoAuth = options.devNoAuth;
 
         heaven::net::TlsServerOptions serverOptions;

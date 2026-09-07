@@ -131,6 +131,7 @@ void AUEPokemonCharacter::InitializeAbilitySystem()
 
 void AUEPokemonCharacter::ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot)
 {
+	// 같은 서버 틱에서 받은 식별자, 전투 수치, 애니메이션과 이동 목표를 함께 적용한다.
 	ServerEntityId = static_cast<int64>(FMath::Max(Snapshot.PokemonId, 0));
 	ServerPokemonId = Snapshot.PokemonId;
 	PokemonInstanceId = Snapshot.PokemonInstanceId;
@@ -814,12 +815,29 @@ void AUEPokemonCharacter::ApplyServerMoveTarget(const FVector& ServerLocation, c
 		: FMath::Max(ConfiguredMoveSpeed, 1.0f);
 	const float RequiredMoveSeconds = DistanceToServer / MaximumVisualSpeed;
 
-	// 로컬 서버 컴포넌트는 산책 속도 배율이 적용된 실제 속도를 함께 보낸다.
-	// 이 값을 무시하고 종별 최고속도로 움직이면 빠르게 이동한 뒤 멈추는 동작이
-	// 20Hz마다 반복되므로, 목표 거리와 실제 속도로 정확한 구간 시간을 계산한다.
+	// 서버가 실제 이동 속도를 함께 줄 수 있으면 그 값을 우선하고,
+	// 없으면 종별 이동속도와 스냅샷 주기로 화면 보간 시간을 잡는다.
 	ServerMoveDurationSeconds = bHasAuthoritativeVelocity
 		? FMath::Max(RequiredMoveSeconds, UE_SMALL_NUMBER)
 		: FMath::Max(ServerSnapshotIntervalSeconds, RequiredMoveSeconds);
+}
+
+void AUEPokemonCharacter::HandleServerAttackSignal(uint64 TargetEntityId, uint32 AttackSequence)
+{
+	if (AttackSequence == 0 || AttackSequence == LastServerAttackSequence)
+	{
+		return;
+	}
+
+	// 서버 시퀀스를 기억해 같은 공격 패킷이 다시 와도 소리와 모션을 중복 재생하지 않는다.
+	LastServerAttackSequence = AttackSequence;
+	LastServerAttackTargetId = TargetEntityId;
+
+	PlayRandomPhysicalAttackCry();
+	if (UUEPokemonAnimInstance* PokemonAnimInstance = Cast<UUEPokemonAnimInstance>(GetMesh()->GetAnimInstance()))
+	{
+		PokemonAnimInstance->PlayAttackAnimation(EUEPokemonAttackAnimation::Attack01);
+	}
 }
 
 void AUEPokemonCharacter::ApplyServerAnimationSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot)

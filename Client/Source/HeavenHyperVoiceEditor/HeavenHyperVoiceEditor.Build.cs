@@ -18,6 +18,7 @@ public class HeavenHyperVoiceEditor : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
 			"HeavenHyperVoice",
+			"Landscape",
 			"UnrealEd"
 		});
 	}

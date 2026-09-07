@@ -71,4 +71,7 @@ private:
 	// 레벨 이동은 한 프레임에 끝나지 않는다. 그 사이에 겹침이 몇 번 더 들어와
 	// EnterInstance 를 반복해서 부르는 것을 막는다.
 	bool bTravelStarted = false;
+
+	// 파티원이 포탈 위에 서 있으면 겹침이 계속 들어온다. 안내는 한 번만 띄운다.
+	bool bLeaderNoticeShown = false;
 };

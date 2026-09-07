@@ -302,6 +302,8 @@ void AUEPlayerController::SelectChatChannel(int32 ChannelIndex)
 		return;
 	}
 
+	SelectedChatTab = ChannelIndex;
+
 	for (int32 Index = 0; Index < ChatChannelTabs.Num(); ++Index)
 	{
 		if (ChatChannelTabs[Index])
@@ -313,6 +315,54 @@ void AUEPlayerController::SelectChatChannel(int32 ChannelIndex)
 	if (ChatInputChannelText)
 	{
 		ChatInputChannelText->SetText(ChannelNames[ChannelIndex]);
+	}
+	RefreshChatFilter();
+}
+
+EUEChatChannel AUEPlayerController::ChannelForSelectedTab() const
+{
+	switch (SelectedChatTab)
+	{
+	case 2:  return EUEChatChannel::Party;
+	case 3:  return EUEChatChannel::Instance;
+	default: return EUEChatChannel::General;  // 전체 탭에서 치면 일반으로 나간다
+	}
+}
+
+void AUEPlayerController::RefreshChatFilter()
+{
+	if (!ChatMessageList)
+	{
+		return;
+	}
+
+	// 전체 탭은 필터가 아니라 "다 보여 주기" 다.
+	const bool bShowAll = SelectedChatTab == 0;
+	const EUEChatChannel Wanted = ChannelForSelectedTab();
+
+	const int32 Count = ChatMessageList->GetChildrenCount();
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		UWidget* Line = ChatMessageList->GetChildAt(Index);
+		if (!Line)
+		{
+			continue;
+		}
+		const EUEChatChannel LineChannel = ChatLineChannels.IsValidIndex(Index)
+			? ChatLineChannels[Index]
+			: EUEChatChannel::General;
+
+		// 시스템 줄은 어느 탭에서나 보인다. 접속 끊김이나 파티 안내를 놓치면
+		// 사용자는 왜 안 되는지 알 방법이 없다.
+		const bool bVisible = bShowAll || LineChannel == EUEChatChannel::System ||
+			LineChannel == Wanted;
+		Line->SetVisibility(bVisible ? ESlateVisibility::Visible
+									 : ESlateVisibility::Collapsed);
+	}
+
+	if (ChatMessageScroll)
+	{
+		ChatMessageScroll->ScrollToEnd();
 	}
 }
 
@@ -396,9 +446,10 @@ void AUEPlayerController::StartChat()
 	{
 		AddSystemMessage(Text);
 	};
-	ChatConnection->OnMessage = [this](const FString& Nickname, const FString& Text)
+	ChatConnection->OnMessage =
+		[this](const FString& Nickname, const FString& Text, EUEChatChannel Channel)
 	{
-		AddChatLine(Nickname, Text, false);
+		AddChatLine(Nickname, Text, false, Channel);
 	};
 	ChatConnection->OnDisconnected = [this](const FString& Reason)
 	{
@@ -407,7 +458,102 @@ void AUEPlayerController::StartChat()
 			AddSystemMessage(Reason);
 		}
 	};
+
+	// 파티 명단은 GameInstance 가 들고 있는다. 이 컨트롤러는 레벨 이동에서 사라지고
+	// 채팅 연결도 같이 죽지만, 파티는 그 너머까지 이어져야 한다.
+	ChatConnection->OnPartyState =
+		[this](uint64 PartyId, const TArray<FHHVPartyMember>& Members, const FString& Message)
+	{
+		if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance()))
+		{
+			TArray<FUEPlayerPartyMember> Rows;
+			Rows.Reserve(Members.Num());
+			for (const FHHVPartyMember& Member : Members)
+			{
+				FUEPlayerPartyMember Row;
+				Row.AccountId = static_cast<int64>(Member.AccountId);
+				Row.Nickname = Member.Nickname;
+				Rows.Add(MoveTemp(Row));
+			}
+			GameInstance->ApplyPlayerParty(static_cast<int64>(PartyId), Rows);
+		}
+		if (!Message.IsEmpty())
+		{
+			AddSystemMessage(Message);
+		}
+	};
+	ChatConnection->OnPartyInvited = [this](uint64 PartyId, const FString& FromNickname)
+	{
+		PendingInvitePartyId = static_cast<int64>(PartyId);
+		AddSystemMessage(FromNickname + TEXT(" 님이 파티에 초대했습니다. /수락 또는 /거절"));
+		if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance()))
+		{
+			GameInstance->OnPartyInvited.Broadcast(static_cast<int64>(PartyId), FromNickname);
+		}
+	};
+	ChatConnection->OnPartyInstanceReady = [this](uint32 InstanceType)
+	{
+		// 파티장이 열어 준 입장이다. 파티장 본인도 여기서 넘어간다 — 포탈에서
+		// 바로 가지 않고 이 신호를 기다려야 전원이 같은 경로를 탄다.
+		if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance()))
+		{
+			GameInstance->OnPartyInstanceReady.Broadcast(static_cast<int32>(InstanceType));
+		}
+		if (UUEFieldClientSubsystem* FieldClient = UUEFieldClientSubsystem::Get(this))
+		{
+			FieldClient->EnterInstance(static_cast<int32>(InstanceType));
+		}
+	};
+
 	ChatConnection->Start(Settings);
+}
+
+void AUEPlayerController::RequestPartyInvite(const FString& TargetNickname)
+{
+	if (ChatConnection)
+	{
+		ChatConnection->SendPartyInvite(TargetNickname);
+	}
+}
+
+void AUEPlayerController::RequestPartyAccept(int64 PartyId)
+{
+	if (ChatConnection && PartyId > 0)
+	{
+		ChatConnection->SendPartyAccept(static_cast<uint64>(PartyId));
+	}
+}
+
+void AUEPlayerController::RequestPartyDecline(int64 PartyId)
+{
+	if (ChatConnection && PartyId > 0)
+	{
+		ChatConnection->SendPartyDecline(static_cast<uint64>(PartyId));
+	}
+}
+
+void AUEPlayerController::RequestPartyLeave()
+{
+	if (ChatConnection)
+	{
+		ChatConnection->SendPartyLeave();
+	}
+}
+
+void AUEPlayerController::RequestPartyKick(int64 TargetAccountId)
+{
+	if (ChatConnection && TargetAccountId > 0)
+	{
+		ChatConnection->SendPartyKick(static_cast<uint64>(TargetAccountId));
+	}
+}
+
+void AUEPlayerController::RequestPartyEnterInstance(int32 InstanceType)
+{
+	if (ChatConnection && InstanceType > 0)
+	{
+		ChatConnection->SendPartyEnterInstance(static_cast<uint32>(InstanceType));
+	}
 }
 
 void AUEPlayerController::OpenChatInput()
@@ -484,8 +630,82 @@ bool AUEPlayerController::SubmitChatText(const FString& Text)
 		return false;
 	}
 
+	// 파티 명령은 채팅 입력줄에 얹는다. 전용 창을 만들기 전까지 이걸로 쓴다.
+	// 서버가 모든 것을 다시 검사하므로 여기서는 문자열만 가른다.
+	if (Text.StartsWith(TEXT("/")))
+	{
+		FString Command;
+		FString Argument;
+		if (!Text.Split(TEXT(" "), &Command, &Argument))
+		{
+			Command = Text;
+		}
+		Command = Command.ToLower();
+		Argument = Argument.TrimStartAndEnd();
+
+		if (Command == TEXT("/초대") || Command == TEXT("/invite"))
+		{
+			if (Argument.IsEmpty())
+			{
+				AddSystemMessage(TEXT("사용법: /초대 <닉네임>"));
+				return false;
+			}
+			RequestPartyInvite(Argument);
+			return true;
+		}
+		if (Command == TEXT("/수락") || Command == TEXT("/accept"))
+		{
+			if (PendingInvitePartyId == 0)
+			{
+				AddSystemMessage(TEXT("받은 초대가 없습니다"));
+				return false;
+			}
+			RequestPartyAccept(PendingInvitePartyId);
+			PendingInvitePartyId = 0;
+			return true;
+		}
+		if (Command == TEXT("/거절") || Command == TEXT("/decline"))
+		{
+			RequestPartyDecline(PendingInvitePartyId);
+			PendingInvitePartyId = 0;
+			return true;
+		}
+		if (Command == TEXT("/탈퇴") || Command == TEXT("/leave"))
+		{
+			RequestPartyLeave();
+			return true;
+		}
+		if (Command == TEXT("/파티") || Command == TEXT("/p"))
+		{
+			if (Argument.IsEmpty())
+			{
+				AddSystemMessage(TEXT("사용법: /파티 <할 말>"));
+				return false;
+			}
+			FString PartyError;
+			if (!ChatConnection->SendSayParty(Argument, PartyError))
+			{
+				AddSystemMessage(PartyError);
+				return false;
+			}
+			return true;
+		}
+
+		AddSystemMessage(TEXT("모르는 명령입니다 (/초대 /수락 /거절 /탈퇴 /파티)"));
+		return false;
+	}
+
+	// 고른 탭이 곧 발화 채널이다. "전체" 탭에서 치면 일반으로 나간다 —
+	// 모든 채널에 동시에 말하는 것은 없다.
 	FString Error;
-	if (!ChatConnection->SendSay(Text, Error))
+	bool bSent = false;
+	switch (ChannelForSelectedTab())
+	{
+	case EUEChatChannel::Party:    bSent = ChatConnection->SendSayParty(Text, Error); break;
+	case EUEChatChannel::Instance: bSent = ChatConnection->SendSayInstance(Text, Error); break;
+	default:                       bSent = ChatConnection->SendSay(Text, Error); break;
+	}
+	if (!bSent)
 	{
 		AddSystemMessage(Error);
 		return false;
@@ -519,11 +739,13 @@ void AUEPlayerController::HandleChatTextCommitted(
 
 void AUEPlayerController::AddSystemMessage(const FString& Text)
 {
-	AddChatLine(TEXT("시스템"), Text, true);
+	// 시스템 줄은 어느 탭에서나 보인다. 접속 끊김이나 파티 안내를 놓치면
+	// 사용자는 왜 안 되는지 알 방법이 없다.
+	AddChatLine(TEXT("시스템"), Text, true, EUEChatChannel::System);
 }
 
 void AUEPlayerController::AddChatLine(
-	const FString& Nickname, const FString& Text, bool bSystem)
+	const FString& Nickname, const FString& Text, bool bSystem, EUEChatChannel Channel)
 {
 	if (!ChatMessageList || Text.IsEmpty())
 	{
@@ -541,6 +763,10 @@ void AUEPlayerController::AddChatLine(
 		ChatMessageList->GetChildrenCount() > 0)
 	{
 		ChatMessageList->RemoveChildAt(0);
+		if (ChatLineChannels.Num() > 0)
+		{
+			ChatLineChannels.RemoveAt(0);
+		}
 		--ChatMessageCount;
 	}
 
@@ -558,13 +784,47 @@ void AUEPlayerController::AddChatLine(
 		return;
 	}
 
-	NameText->SetText(FText::FromString(FString::Printf(TEXT("[%s] "), *Nickname)));
+	// 전체 탭에서는 채널이 섞이므로 파티 발화에 표시를 붙인다. 서버가 아니라
+	// 여기서 붙이는 이유는, 표시 방식이 바뀌어도 프로토콜을 안 건드리려는 것이다.
+	const TCHAR* Marker = TEXT("");
+	if (Channel == EUEChatChannel::Party)
+	{
+		Marker = TEXT("[파티] ");
+	}
+	else if (Channel == EUEChatChannel::Instance)
+	{
+		Marker = TEXT("[인스턴스] ");
+	}
+	const FString Label = FString::Printf(TEXT("%s[%s] "), Marker, *Nickname);
+
+	NameText->SetText(FText::FromString(Label));
 	BodyText->SetText(FText::FromString(Text));
-	NameText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+
+	FLinearColor NameColor = FLinearColor::White;
+	if (Channel == EUEChatChannel::Party)
+	{
+		NameColor = FLinearColor(0.55f, 0.80f, 1.0f);
+	}
+	else if (Channel == EUEChatChannel::Instance)
+	{
+		NameColor = FLinearColor(1.0f, 0.85f, 0.50f);
+	}
+	NameText->SetColorAndOpacity(FSlateColor(NameColor));
 	BodyText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+
 	ChatMessageList->AddChild(Line);
+	ChatLineChannels.Add(Channel);
 	++ChatMessageCount;
-	ChatMessageScroll->ScrollToEnd();
+
+	// 지금 탭에 안 맞으면 바로 숨긴다. 나중에 탭을 바꾸면 다시 나온다.
+	const bool bVisible = SelectedChatTab == 0 || Channel == EUEChatChannel::System ||
+		Channel == ChannelForSelectedTab();
+	Line->SetVisibility(bVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+
+	if (bVisible)
+	{
+		ChatMessageScroll->ScrollToEnd();
+	}
 }
 
 void AUEPlayerController::AddDefaultMappingContext() const
@@ -1023,7 +1283,7 @@ void AUEPlayerController::HandlePokemonAttackSlot(int32 AttackSlot)
 {
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
-		// 컨트롤러는 입력 번호만 전달하고 소유 여부와 공격 가능 여부는 캐릭터와 서버 컴포넌트가 판단한다.
+		// 컨트롤러는 입력 번호만 전달하고 소유 여부와 공격 가능 여부는 캐릭터와 서버 연결 흐름이 판단한다.
 		PlayerCharacter->CommandPokemonAttack(AttackSlot);
 	}
 }

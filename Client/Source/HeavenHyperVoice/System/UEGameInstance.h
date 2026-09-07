@@ -28,6 +28,33 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FUECharacterListChangedSignature);
 /** 캐릭터를 골라 티켓을 받았다. 이제 필드로 넘어갈 수 있다. */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FUEEnterReadySignature, const FString&, Nickname);
 
+/** 플레이어 파티가 바뀌었다. 없어졌을 때도 온다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FUEPartyChangedSignature);
+
+/** 파티 초대를 받았다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FUEPartyInvitedSignature, int64, PartyId, const FString&, FromNickname);
+
+/** 파티장이 인스턴스 입장을 열었다. */
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FUEPartyInstanceReadySignature, int32, InstanceType);
+
+/**
+ * 플레이어 파티 한 명. 포켓몬 파티(FUEPartyState)와는 다른 것이다.
+ *
+ * 계정 번호가 int64 인 이유는 블루프린트가 uint64 를 못 다루기 때문이다.
+ * 실제 값은 항상 양수라 손실이 없다.
+ */
+USTRUCT(BlueprintType)
+struct FUEPlayerPartyMember
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "HHV|Party")
+	int64 AccountId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "HHV|Party")
+	FString Nickname;
+};
+
 /** 로컬 세션과 캐릭터 슬롯 상태를 레벨 이동 사이에 유지하는 게임 인스턴스다. */
 UCLASS(Config = Game, DefaultConfig)
 class HEAVENHYPERVOICE_API UUEGameInstance : public UGameInstance
@@ -183,6 +210,38 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "HHV|Server")
 	FUEEnterReadySignature OnEnterReady;
 
+	// --- 플레이어 파티 ---
+	//
+	// 명단을 GameInstance 가 들고 있는 이유는 레벨 이동을 견뎌야 하기 때문이다.
+	// 채팅 연결은 AUEPlayerController 소유라 travel 때 죽었다가 다시 붙는다.
+
+	UPROPERTY(BlueprintAssignable, Category = "HHV|Party")
+	FUEPartyChangedSignature OnPartyChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "HHV|Party")
+	FUEPartyInvitedSignature OnPartyInvited;
+
+	UPROPERTY(BlueprintAssignable, Category = "HHV|Party")
+	FUEPartyInstanceReadySignature OnPartyInstanceReady;
+
+	// 채팅 연결이 받은 것을 그대로 옮겨 담는다. 서버가 권위다.
+	void ApplyPlayerParty(int64 PartyId, const TArray<FUEPlayerPartyMember>& Members);
+
+	UFUNCTION(BlueprintPure, Category = "HHV|Party")
+	bool IsInPlayerParty() const { return PlayerPartyId != 0; }
+
+	// 명단의 첫 번째가 파티장이다. 서버가 가입 순서로 보내 준다.
+	UFUNCTION(BlueprintPure, Category = "HHV|Party")
+	bool IsPlayerPartyLeader() const;
+
+	UFUNCTION(BlueprintPure, Category = "HHV|Party")
+	const TArray<FUEPlayerPartyMember>& GetPlayerParty() const { return PlayerPartyMembers; }
+
+	UFUNCTION(BlueprintPure, Category = "HHV|Party")
+	int64 GetPlayerPartyId() const { return PlayerPartyId; }
+
+
+
 	UPROPERTY(BlueprintAssignable, Category = "HHV|Server")
 	FUEServerResultSignature OnServerDisconnected;
 
@@ -260,6 +319,10 @@ private:
 
 	UPROPERTY(Transient)
 	FString PendingCharacterName;
+
+	// 플레이어 파티. 레벨 이동을 견뎌야 해서 여기 둔다.
+	int64 PlayerPartyId = 0;
+	TArray<FUEPlayerPartyMember> PlayerPartyMembers;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUECharacterSlotSaveGame> CharacterSlotSave = nullptr;

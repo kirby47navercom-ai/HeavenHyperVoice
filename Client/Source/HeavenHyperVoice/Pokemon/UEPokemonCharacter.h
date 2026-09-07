@@ -38,6 +38,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
 	AUEPokemonCharacter*, Pokemon,
 	FGameplayTag, AbilityTag);
 
+// 서버가 보낸 포켓몬의 지속 애니메이션 상태다.
 UENUM(BlueprintType)
 enum class EUEPokemonAnimationState : uint8
 {
@@ -51,6 +52,7 @@ enum class EUEPokemonAnimationState : uint8
 	Fainted
 };
 
+// 서버에서 한 번만 발생한 애니메이션 사건을 클라이언트에 전달할 때 사용한다.
 UENUM(BlueprintType)
 enum class EUEPokemonAnimationEvent : uint8
 {
@@ -211,6 +213,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Pokemon|GAS")
 	UUEPokemonAttributeSet* GetPokemonAttributeSet() const { return AttributeSet; }
 
+	// 이동·체력·애니메이션을 하나의 서버 스냅샷으로 반영한다.
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
 	void ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot);
 
@@ -219,6 +222,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
 	void ApplyServerMoveTarget(const FVector& ServerLocation, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bTeleported);
+
+	// main의 야생 공격 신호를 중복 재생하지 않고 한 번만 처리한다.
+	void HandleServerAttackSignal(uint64 TargetEntityId, uint32 AttackSequence);
 
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
 	void ApplyServerStats(float ServerCurrentHP, float ServerMaxHP);
@@ -241,8 +247,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Species")
 	void SetPokemonSpeciesData(UUEPokemonSpeciesData* NewSpeciesData);
 
-	// 서버 야생 포켓몬용. 종족 번호만 주고 큐브를 그 종족 색으로 칠한다.
-	// 스켈레탈 메시 없이 뜨는 임시 표현이라 데이터 애셋이 필요 없다.
+	// 야생 포켓몬용. 종족 번호로 클라이언트 종족 데이터를 찾고,
+	// 에셋이 없으면 디버그 표현을 사용한다.
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Species")
 	void SetWildSpecies(int32 SpeciesNumber);
 
@@ -359,6 +365,7 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+	// 서버 애니메이션 사건을 자식 블루프린트 연출에서도 받을 수 있게 전달한다.
 	UFUNCTION(BlueprintImplementableEvent, Category = "Pokemon|Animation", meta = (DisplayName = "On Server Animation Event"))
 	void BP_OnServerAnimationEvent(EUEPokemonAnimationEvent AnimationEvent, const FUEPokemonServerMoveSnapshot& Snapshot);
 
@@ -459,6 +466,10 @@ private:
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
 	int32 PokemonInstanceId = 0;
+
+	uint64 LastServerAttackTargetId = 0;
+
+	uint32 LastServerAttackSequence = 0;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true"))
 	FName ServerSpeciesId = NAME_None;

@@ -110,6 +110,8 @@ public:
     // 서버가 뜬 뒤로는 바뀌지 않으므로 락 없이 읽는다.
     void setMap(const Map* map) { map_ = map; }
 
+    Position resolvePosition(const Position& position) const;
+
     // 20Hz. 이번 주기에 움직인 것들을 뷰어별로 묶어 보낸다.
     void tick();
 

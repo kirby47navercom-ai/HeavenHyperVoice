@@ -757,6 +757,22 @@ void UUEGameInstance::ClearPendingCharacterCreation()
 	ClearPendingHHVAppearance();
 }
 
+void UUEGameInstance::ApplyPlayerParty(int64 PartyId, const TArray<FUEPlayerPartyMember>& Members)
+{
+	PlayerPartyId = PartyId;
+	PlayerPartyMembers = Members;
+	OnPartyChanged.Broadcast();
+}
+
+bool UUEGameInstance::IsPlayerPartyLeader() const
+{
+	// 명단의 첫 번째가 파티장이다. 계정 번호 대신 닉네임으로 견주는 이유는,
+	// 클라이언트가 자기 계정 번호를 알 방법이 없기 때문이다 — 티켓은 불투명하다.
+	// 닉네임은 DB 에서 전역 유일하므로 이걸로 충분하다.
+	return PlayerPartyMembers.Num() > 0 &&
+		PlayerPartyMembers[0].Nickname == LocalSessionNickname;
+}
+
 void UUEGameInstance::SetLocalSession(const FString& UserId, const FString& Nickname)
 {
 	LocalSessionUserId = UserId.TrimStartAndEnd();

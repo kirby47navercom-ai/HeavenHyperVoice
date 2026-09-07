@@ -21,12 +21,17 @@ struct FHHVFieldEntity
 	uint64 EntityId = 0;
 	float X = 0.0f;
 	float Y = 0.0f;
+	float Z = 0.0f;
 	float Facing = 0.0f;
 	FString Nickname;
 	uint16 PartnerSpecies = 0;
 
 	// 야생 포켓몬의 종족. 0 이면 플레이어 캐릭터다.
 	uint16 Species = 0;
+
+	// 야생 포켓몬 공격 이벤트. 0 이면 이번 엔티티 상태에는 공격 신호가 없다.
+	uint32 AttackSequence = 0;
+	uint64 AttackTargetId = 0;
 };
 
 struct FHHVFieldSnapshot
@@ -73,6 +78,7 @@ struct FHHVFieldEventData
 	uint32 Sequence = 0;
 	float X = 0.0f;
 	float Y = 0.0f;
+	float Z = 0.0f;
 	float Facing = 0.0f;
 	FString Text;
 	FHHVFieldSnapshot Snapshot;
@@ -140,9 +146,9 @@ public:
 	/** Game thread. Drains the inbound queue and fires the callbacks. */
 	void Poll();
 
-	TFunction<void(uint64 EntityId, float X, float Y, float Facing, uint32 RoomId,
+	TFunction<void(uint64 EntityId, float X, float Y, float Z, float Facing, uint32 RoomId,
 		float OriginOffset)> OnEnterAck;
-	TFunction<void(uint32 Sequence, float X, float Y, float Facing)> OnCorrection;
+	TFunction<void(uint32 Sequence, float X, float Y, float Z, float Facing)> OnCorrection;
 	TFunction<void(const FHHVFieldSnapshot& Snapshot)> OnSnapshot;
 	TFunction<void(const FString& Text)> OnNotice;
 	TFunction<void(const FHHVFieldPartyState& State)> OnPartyState;

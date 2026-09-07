@@ -115,23 +115,25 @@ Room* RoomManager::createRoomLocked(std::uint32_t type) {
             return pool.empty() ? std::uint16_t{0} : pool[fromPool(gen)];
         };
 
-        // 지형이 있으면 navmesh 위에 설 수 있는 자리만 쓴다.
-        const auto unusable = [map](float x, float y) {
+        // 지형이 있으면 navmesh 위에 설 수 있는 자리와 높이를 같이 얻는다.
+        const auto findSpawn = [map](float x, float y, nav::Vec3& out) {
+            out = nav::Vec3{x, y, 0.f};
             if (map == nullptr || !map->loaded()) {
-                return false;
+                return true;
             }
-            return !map->canStandAt(x, y, map->agent(), nullptr);
+            return map->canStandAt(x, y, map->agent(), &out);
         };
 
         int spawned = 0;
         for (int i = 0; i < settings_.wildPerRoom; ++i) {
             float x = coordX(rng);
             float y = coordY(rng);
-            for (int attempt = 0; attempt < kSpawnAttempts && unusable(x, y); ++attempt) {
+            nav::Vec3 spawn;
+            for (int attempt = 0; attempt < kSpawnAttempts && !findSpawn(x, y, spawn); ++attempt) {
                 x = coordX(rng);
                 y = coordY(rng);
             }
-            if (unusable(x, y)) {
+            if (!findSpawn(x, y, spawn)) {
                 continue;
             }
             const std::uint16_t species = pickSpecies(rng);
@@ -139,7 +141,7 @@ Room* RoomManager::createRoomLocked(std::uint32_t type) {
                 break;  // 뽑을 종족이 없다
             }
             room->world.enterWild(kWildIdBase + static_cast<std::uint64_t>(i), species,
-                                  data::Position{type, x, y, 0.f});
+                                  data::Position{type, spawn.x, spawn.y, spawn.z, 0.f});
             ++spawned;
         }
         if (spawned < settings_.wildPerRoom) {
@@ -154,12 +156,23 @@ Room* RoomManager::createRoomLocked(std::uint32_t type) {
     return raw;
 }
 
-Room* RoomManager::join(std::uint32_t type) {
+Room* RoomManager::join(std::uint32_t type, std::uint32_t preferredRoomId) {
     if (!isKnownType(type)) {
         return nullptr;
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
+
+    // 파티가 지목한 방이 있으면 먼저 본다. 없어졌거나 꽉 찼으면 아래로 흘러간다.
+    if (preferredRoomId != 0) {
+        for (const auto& room : rooms_) {
+            if (room->id == preferredRoomId && room->type == type &&
+                room->players < settings_.capacity) {
+                ++room->players;
+                return room.get();
+            }
+        }
+    }
 
     // 자리가 있는 첫 방. 앞에서부터 채워야 방이 흩어지지 않고, 빈 방이 생겨
     // 회수될 기회도 온다.
