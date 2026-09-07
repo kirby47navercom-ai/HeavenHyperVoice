@@ -508,6 +508,11 @@ bool Map::findNearestPoly(float x, float y, const nav::Agent& agent, float horiz
     return true;
 }
 
+// navmesh 폴리곤은 발이 닿는 지면에 있지만, 여기서 돌려주는 z 는 캡슐 **중심**
+// 이다 (지면 + halfHeight). 와이어로 나가는 z 가 곧 언리얼 액터 위치이고,
+// 언리얼에서 캐릭터의 액터 위치는 캡슐 중심이기 때문이다. 지면 높이를 그대로
+// 보내면 모두가 halfHeight 만큼 땅에 묻히고, 내 캐릭터는 보정이 올 때마다
+// 지면 아래로 끌려갔다가 물리에 밀려 올라오며 떨린다.
 bool Map::canStandAt(float x, float y, const nav::Agent& agent,
                      nav::Vec3* groundedLocation) const {
     nav::Vec3 location;
@@ -515,6 +520,7 @@ bool Map::canStandAt(float x, float y, const nav::Agent& agent,
         return false;
     }
     if (groundedLocation != nullptr) {
+        location.z += agent.halfHeight;
         *groundedLocation = location;
     }
     return true;
@@ -567,7 +573,9 @@ bool Map::nearestStandable(float x, float y, float radius, const nav::Agent& age
         return false;
     }
 
+    // canStandAt 과 같은 기준으로 돌려준다 — 캡슐 중심이다.
     if (findNearestPoly(x, y, agent, std::max(radius, agent.radius), outLocation)) {
+        outLocation.z += agent.halfHeight;
         return true;
     }
 
@@ -601,6 +609,7 @@ bool Map::nearestStandable(float x, float y, float radius, const nav::Agent& age
         if (d2 <= radius * radius && d2 < bestDistanceSquared) {
             bestDistanceSquared = d2;
             outLocation = candidate;
+            outLocation.z += agent.halfHeight;
             found = true;
         }
     }

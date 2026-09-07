@@ -80,6 +80,8 @@ public:
     const nav::Agent& agent() const { return agent_; }
     const nav::BuildSettings& settings() const { return settings_; }
 
+    // groundedLocation 의 z 는 지면이 아니라 캡슐 **중심** 높이다
+    // (지면 + agent.halfHeight). nearestStandable 도 같은 기준이다.
     bool canStandAt(float x, float y, const nav::Agent& agent,
                     nav::Vec3* groundedLocation = nullptr) const;
     bool blockedAlong(const nav::Vec3& from, const nav::Vec3& to,
