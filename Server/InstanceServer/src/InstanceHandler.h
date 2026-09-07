@@ -75,7 +75,8 @@ private:
     // 실패하면 사유를 보내고 false — 호출자가 연결을 끊는다.
     // partyId 가 0 이 아니면 그 파티가 이미 잡아 둔 방으로 들어간다.
     bool placeInRoom(const std::shared_ptr<TlsSession>& self, std::uint32_t type,
-                     std::uint16_t partnerSpecies, std::uint64_t partyId);
+                     std::uint16_t partnerSpecies, const proto::AppearanceInfo& appearance,
+                     std::uint64_t partyId);
 
     static void sendPartyState(const InstanceContext& context, TlsSession& session,
                                std::uint64_t accountId, std::uint64_t characterId,

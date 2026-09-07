@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include "Appearance.h"
 #include "Framing.h"
 #include "PokemonSpecies.h"
 #include "login_generated.h"
@@ -42,26 +43,6 @@ struct PartnerInfo {
     PokemonStats stats;
 };
 
-// 캐릭터 외형. 클라이언트의 FUEHHVAppearance 와 1:1 이며, 기본값도 같게 둔다.
-// 서버는 내용을 해석하지 않고 범위만 본다 — 어떤 인덱스가 어떤 머리인지는
-// 클라이언트의 카탈로그가 안다.
-struct AppearanceInfo {
-    std::uint8_t gender = 0;  // 0 = TypeA, 1 = TypeB
-
-    std::int32_t body = 1;
-    std::int32_t head = 0;
-    std::int32_t hair = 0;
-    std::int32_t eye = 0;
-    std::int32_t equipment = 1;
-
-    float skinR = 1.0f,      skinG = 0.712f,    skinB = 0.6458f;
-    float hairR = 0.1719f,   hairG = 0.1111f,   hairB = 0.0850f;
-    float eyeR  = 0.070638f, eyeG  = 0.484375f, eyeB  = 0.243701f;
-
-    float armVolume = 0.f;
-    float torsoVolume = 0.f;
-    float legVolume = 0.f;
-};
 
 // 레벨을 갖는 것은 캐릭터다. 포켓몬은 개체가 아니라 종족이라 자기 레벨이 없고,
 // 데리고 다니는 캐릭터의 레벨로 능력치가 정해진다.
@@ -84,39 +65,6 @@ struct CharacterInfo {
     // 해금한 종족 전부. 도감번호. 파티 후보 목록이다.
     std::vector<std::uint16_t> unlocked;
 };
-
-// 클라이언트가 보낸 값을 그대로 저장하지 않는다. 인덱스가 음수면 배열 접근이
-// 깨지고, 부피가 범위를 벗어나면 모델이 뒤틀린다. 색은 [0,1] 밖이면 발광한다.
-//
-// 인덱스 상한은 서버가 모른다 — 카탈로그는 클라이언트 에셋이다. 음수만 막고
-// 상한은 클라이언트가 표시할 때 클램프한다.
-inline void sanitizeAppearance(AppearanceInfo& appearance) {
-    const auto clampIndex = [](std::int32_t v) { return v < 0 ? 0 : v; };
-    appearance.gender = appearance.gender != 0 ? 1 : 0;
-    appearance.body = clampIndex(appearance.body);
-    appearance.head = clampIndex(appearance.head);
-    appearance.hair = clampIndex(appearance.hair);
-    appearance.eye = clampIndex(appearance.eye);
-    appearance.equipment = clampIndex(appearance.equipment);
-
-    const auto clampUnit = [](float v) {
-        if (!(v >= 0.f)) return 0.f;  // NaN 도 여기서 걸린다
-        return v > 1.f ? 1.f : v;
-    };
-    for (float* channel : {&appearance.skinR, &appearance.skinG, &appearance.skinB,
-                           &appearance.hairR, &appearance.hairG, &appearance.hairB,
-                           &appearance.eyeR, &appearance.eyeG, &appearance.eyeB}) {
-        *channel = clampUnit(*channel);
-    }
-
-    const auto clampVolume = [](float v) {
-        if (!(v >= -1.f)) return 0.f;  // NaN 은 중립으로
-        return v > 1.f ? 1.f : v;
-    };
-    appearance.armVolume = clampVolume(appearance.armVolume);
-    appearance.torsoVolume = clampVolume(appearance.torsoVolume);
-    appearance.legVolume = clampVolume(appearance.legVolume);
-}
 
 // UTF-8 코드포인트 개수. 잘못된 바이트열이면 nullopt.
 inline std::optional<std::size_t> utf8Length(std::string_view text) {

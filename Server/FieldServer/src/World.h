@@ -45,6 +45,13 @@ struct Entity {
     std::string nickname;
     std::uint16_t partnerSpecies = 0;
 
+    // 커마. 스냅샷의 spawned 에만 실려 나간다 — 안 변하는 값이라 매 틱 보낼
+    // 이유가 없다. 바꾸는 경로도 없다 (캐릭터를 만들 때 한 번 정해진다).
+    //
+    // 필드에는 야생이 없으므로 여기 있는 엔티티는 전부 플레이어다. 인스턴스
+    // World 가 isPlayer 를 두는 것과 다른 점이다.
+    proto::AppearanceInfo appearance;
+
     // 시야는 같은 맵끼리만 본다. 섹터 격자는 맵 구분 없이 공유하므로
     // 후보를 추린 뒤 이 값으로 한 번 더 거른다.
     std::uint32_t mapId = 0;
@@ -86,8 +93,8 @@ public:
     // 캐릭터 단위가 아니라 계정 단위인 이유는, 한 계정으로 캐릭터 여럿을
     // 동시에 붙이는 것도 막아야 하기 때문이다.
     Displaced enter(std::uint64_t characterId, std::uint64_t accountId, std::string nickname,
-                    std::uint16_t partnerSpecies, const Position& position,
-                    const std::shared_ptr<TlsSession>& session);
+                    std::uint16_t partnerSpecies, const proto::AppearanceInfo& appearance,
+                    const Position& position, const std::shared_ptr<TlsSession>& session);
 
     // 퇴장. 마지막 위치를 돌려준다 (저장용). 없던 엔티티면 nullopt.
     //
@@ -126,6 +133,7 @@ private:
     void removeFromVisibility(Entity& self);
     void sendTo(const Entity& entity, const proto::Bytes& frame) const;
 
+    // withIdentity 는 spawned 용이다. 닉네임·파트너·외형이 그때만 실린다.
     static proto::EntityView viewOf(const Entity& entity, bool withIdentity);
 
     // ponytail: 월드 전역 락 하나. 섹터별 락이 맞지만 접속자가 수백 명이 되기

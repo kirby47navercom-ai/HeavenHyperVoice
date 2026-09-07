@@ -235,8 +235,10 @@ bool FieldHandler::enterWithoutAuth(TlsSession& session, const HeavenField::Ente
             proto::encodeEnterAck(characterId, start.x, start.y, start.z, start.facing, start.mapId,
                                   proto::kWorldSize / 2.f));
 
+        // dev 경로에는 DB 가 없다. 외형은 기본값이다.
         displaced = context_.world->enter(characterId, characterId, nickname_,
-                                          request.dev_partner_species(), start, self);
+                                          request.dev_partner_species(),
+                                          proto::AppearanceInfo{}, start, self);
     }
     if (displaced.session) {
         displaced.session->send(
@@ -339,7 +341,7 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
                                              start.mapId, proto::kWorldSize / 2.f));
 
             displaced = context->world->enter(characterId, accountId, character->nickname,
-                                              partner, start, self);
+                                              partner, character->appearance, start, self);
         }
         if (displaced.session) {
             displaced.session->send(

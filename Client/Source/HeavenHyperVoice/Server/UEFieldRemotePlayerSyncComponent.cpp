@@ -52,6 +52,16 @@ void UUEFieldRemotePlayerSyncComponent::HandleRemotePlayerSpawned(
 
 	Proxy->MakeRemoteProxy();
 	Proxy->FinishSpawning(SpawnTransform);
+
+	// 여기는 spawned 에서만 불리므로 보통은 외형이 실려 있다. 그래도 확인하는
+	// 이유는 이 필드가 나중에 붙은 것이라서다 — 안 싣는 옛 서버에 붙으면
+	// 기본값으로 덮어써서 커마가 아니라 맨 얼굴이 된다. 그때는 액터의 기본
+	// 외형을 그대로 두는 편이 낫다.
+	if (Entity.bHasAppearance)
+	{
+		Proxy->ApplyHHVAppearance(Entity.Appearance);
+	}
+
 	RemotePlayers.Add(Entity.EntityId, Proxy);
 }
 

@@ -11,6 +11,8 @@
 #include "Containers/Queue.h"
 #include "HAL/Runnable.h"
 
+#include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
+
 struct ssl_ctx_st;
 struct ssl_st;
 struct bio_st;
@@ -32,6 +34,11 @@ struct FHHVFieldEntity
 	// 야생 포켓몬 공격 이벤트. 0 이면 이번 엔티티 상태에는 공격 신호가 없다.
 	uint32 AttackSequence = 0;
 	uint64 AttackTargetId = 0;
+
+	// 커마. spawned 에만 실려 온다 — moved 에서는 bHasAppearance 가 false 다.
+	// 야생 포켓몬도 false 다.
+	bool bHasAppearance = false;
+	FUEHHVAppearance Appearance;
 };
 
 struct FHHVFieldSnapshot

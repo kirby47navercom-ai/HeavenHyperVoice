@@ -15,29 +15,34 @@ namespace heaven::instance {
 
 namespace {
 
-// 맵이 없을 때 야생을 뿌릴 상자의 반폭.
-constexpr float kDefaultWildHalfExtent = 4000.f;
+// 정식 스폰 영역 데이터가 생기기 전까지는 인스턴스 시작 지점 주변에 뿌린다.
+constexpr float kSpawnWildHalfExtent = 4000.f;
 
 // 맵 경계에 딱 붙여 뿌리면 첫 배회에서 바로 지형 밖을 노리게 되므로 안쪽으로 민다.
 constexpr float kWildAreaFraction = 0.8f;
 
-// 야생을 뿌리고 배회시킬 구역. 맵 경계를 따라간다 — 스폰 상자와 배회 상자가
-// 어긋나면 스폰된 자리에서 구역 안으로 걸어 들어가느라 처음 몇 초가 어색해지고,
-// 맵과도 안 맞으면 아예 지형 밖에 뜬다.
+// 야생을 뿌리고 배회시킬 구역. 플레이 테스트에서는 입장 직후 보여야 하므로
+// 시작 지점 주변을 우선 쓴다. 맵이 붙어 있으면 실제로 설 수 있는지는 별도로 검증한다.
 WildArea wildAreaFor(const Map* map) {
     WildArea area;
-    if (map != nullptr && map->loaded() && map->bounds().valid) {
+    area.centerX = kSpawnX;
+    area.centerY = kSpawnY;
+    area.halfExtent = kSpawnWildHalfExtent;
+
+    if (map == nullptr || !map->loaded() ||
+        map->canStandAt(kSpawnX, kSpawnY, map->agent(), nullptr)) {
+        return area;
+    }
+
+    // 시작 지점이 지형 밖인 맵에서는 최후 수단으로 맵 안쪽을 쓴다.
+    if (map->bounds().valid) {
         const nav::Aabb& box = map->bounds();
         area.centerX = (box.min.x + box.max.x) * 0.5f;
         area.centerY = (box.min.y + box.max.y) * 0.5f;
         const float halfX = (box.max.x - box.min.x) * 0.5f;
         const float halfY = (box.max.y - box.min.y) * 0.5f;
         area.halfExtent = std::min(halfX, halfY) * kWildAreaFraction;
-        return area;
     }
-    area.centerX = kSpawnX;
-    area.centerY = kSpawnY;
-    area.halfExtent = kDefaultWildHalfExtent;
     return area;
 }
 
