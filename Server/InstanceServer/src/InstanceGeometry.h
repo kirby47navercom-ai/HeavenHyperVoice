@@ -46,10 +46,23 @@ inline constexpr float kSlackRefill = 200.f;    // 초당 회복량
 inline constexpr float kMaxMoveElapsed = 1.f;   // 허용 거리를 낼 때 인정하는 경과 시간 상한
 inline constexpr std::chrono::milliseconds kMinMoveInterval{10};
 
-// 스폰. 월드 한가운데이자 언리얼 원점이다.
+// 스폰. Filed.umap 의 PlayerStart 와 같은 자리다.
+//
+// 언리얼 좌표로 적고 오프셋을 더한다 — 에디터에서 읽은 값을 그대로 옮겨 적을 수
+// 있어야 하고, 서버 좌표로 바로 쓰면 맵을 볼 때마다 153600 을 암산해야 한다.
+//
+// 월드 한가운데(= 언리얼 원점)를 쓰지 않는 이유는 지형이 거기 없기 때문이다.
+// 입장하면 EnterAck 이 클라를 이 좌표로 옮기므로, 지형 밖이면 허공에서 떨어진다.
+// 맵이 바뀌면 이 두 줄을 PlayerStart 에 다시 맞출 것.
+//
 // ponytail: 전원이 같은 점에 뜬다. 맵에 spawn 줄이 생기면 거기서 골라 쓸 것.
-inline constexpr float kSpawnX = kWorldSize / 2.f;
-inline constexpr float kSpawnY = kWorldSize / 2.f;
+inline constexpr float kSpawnUnrealX = 15450.f;
+inline constexpr float kSpawnUnrealY = 17540.f;
+inline constexpr float kSpawnX = kWorldOriginOffset + kSpawnUnrealX;
+inline constexpr float kSpawnY = kWorldOriginOffset + kSpawnUnrealY;
+
+static_assert(kSpawnX > 0.f && kSpawnX < kWorldSize, "스폰이 월드 밖이다");
+static_assert(kSpawnY > 0.f && kSpawnY < kWorldSize, "스폰이 월드 밖이다");
 
 inline constexpr int kTickHz = 20;
 
