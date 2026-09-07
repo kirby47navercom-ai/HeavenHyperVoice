@@ -46,18 +46,18 @@ inline constexpr float kSlackRefill = 200.f;    // 초당 회복량
 inline constexpr float kMaxMoveElapsed = 1.f;   // 허용 거리를 낼 때 인정하는 경과 시간 상한
 inline constexpr std::chrono::milliseconds kMinMoveInterval{10};
 
-// 스폰. Filed.umap 의 PlayerStart 와 같은 자리다.
+// 스폰. 언리얼 좌표로 적고 오프셋을 더한다 — 에디터에서 읽은 값을 그대로 옮겨
+// 적을 수 있어야 하고, 서버 좌표로 바로 쓰면 맵을 볼 때마다 153600 을 암산해야
+// 한다.
 //
-// 언리얼 좌표로 적고 오프셋을 더한다 — 에디터에서 읽은 값을 그대로 옮겨 적을 수
-// 있어야 하고, 서버 좌표로 바로 쓰면 맵을 볼 때마다 153600 을 암산해야 한다.
-//
-// 월드 한가운데(= 언리얼 원점)를 쓰지 않는 이유는 지형이 거기 없기 때문이다.
-// 입장하면 EnterAck 이 클라를 이 좌표로 옮기므로, 지형 밖이면 허공에서 떨어진다.
-// 맵이 바뀌면 이 두 줄을 PlayerStart 에 다시 맞출 것.
+// 언리얼 원점이다. Filed 의 지형(Landscape)이 원점을 덮고 있어서 여기가 맞다.
+// 한동안 PlayerStart 자리(15450, 17540)로 잡았었는데, navmesh 질의가 그 점을
+// 안 받아서 "nobody will be able to move" 로 거절당했다. 맵을 바꾸면 서버가
+// 기동할 때 같은 경고를 내므로 그걸 보고 다시 맞출 것.
 //
 // ponytail: 전원이 같은 점에 뜬다. 맵에 spawn 줄이 생기면 거기서 골라 쓸 것.
-inline constexpr float kSpawnUnrealX = 15450.f;
-inline constexpr float kSpawnUnrealY = 17540.f;
+inline constexpr float kSpawnUnrealX = 0.f;
+inline constexpr float kSpawnUnrealY = 0.f;
 inline constexpr float kSpawnX = kWorldOriginOffset + kSpawnUnrealX;
 inline constexpr float kSpawnY = kWorldOriginOffset + kSpawnUnrealY;
 
