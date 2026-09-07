@@ -36,9 +36,11 @@ struct WildArea {
 struct WildIntent {
     float targetX = 0.f;
     float targetY = 0.f;
+    float targetZ = 0.f;
     float acceptanceRadius = 80.f;
     float attackTargetX = 0.f;
     float attackTargetY = 0.f;
+    float attackTargetZ = 0.f;
     float attackRange = 180.f;
     std::uint64_t attackTargetId = 0;
     bool moving = false;
@@ -56,7 +58,8 @@ public:
     // 포켓몬 하나의 다음 목표를 정한다. 이동 중이거나 휴식 중이면 실행 상태만
     // 전진하고, 새 행동 선택이 필요할 때만 Lua BT 를 호출한다.
     WildIntent decide(std::uint64_t entityId, std::uint16_t species, std::uint32_t mapId,
-                      float x, float y, float dt, const std::vector<ObservedPlayer>& players);
+                      float x, float y, float z, float dt,
+                      const std::vector<ObservedPlayer>& players);
 
     // 돌아다닐 구역. 방을 만들 때 한 번만 부를 것.
     void setArea(const WildArea& area) { area_ = area; }
@@ -95,6 +98,7 @@ private:
         WildPhase phase = WildPhase::NeedDecision;
         float targetX = 0.f;
         float targetY = 0.f;
+        float targetZ = 0.f;
         float acceptanceRadius = 80.f;
         float restAfterArriveSeconds = 1.f;
         float restRemainingSeconds = 0.f;
@@ -109,15 +113,16 @@ private:
     struct MoveAction {
         float targetX = 0.f;
         float targetY = 0.f;
+        float targetZ = 0.f;
         float acceptanceRadius = 80.f;
         float restAfterArriveSeconds = 1.f;
         bool valid = false;
     };
 
     WildIntent chooseNextAction(std::uint64_t entityId, std::uint16_t species,
-                                std::uint32_t mapId, float x, float y, WildBrain& brain,
+                                std::uint32_t mapId, float x, float y, float z, WildBrain& brain,
                                 const std::vector<ObservedPlayer>& players);
-    bool beginMove(float x, float y, const MoveAction& action, WildBrain& brain);
+    bool beginMove(float x, float y, float z, const MoveAction& action, WildBrain& brain);
     WildIntent followPath(float x, float y, WildBrain& brain);
     MoveAction makeWanderAction(float x, float y, const WildDecision& decision);
     MoveAction makeChaseAction(const WildDecision& decision, const ObservedPlayer& target);

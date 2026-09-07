@@ -103,11 +103,11 @@ inline const char* describe(PartyResult result) {
 // 마지막으로 저장된 위치. 실시간 위치는 여기 없다 — 필드 서버 메모리와
 // Redis 에 있고, 이건 입장할 때 읽고 퇴장할 때 쓰는 값이다.
 //
-// 높이는 아직 없다. 넣을 때 z 를 추가하고 스키마에 컬럼을 하나 더 만든다.
 struct Position {
     std::uint32_t mapId = 0;
     float x = 0.f;
     float y = 0.f;
+    float z = 0.f;
     float facing = 0.f;
 };
 

@@ -24,9 +24,6 @@ struct EnterAckBuilder;
 struct Move;
 struct MoveBuilder;
 
-struct Appearance;
-struct AppearanceBuilder;
-
 struct EntityState;
 struct EntityStateBuilder;
 
@@ -261,7 +258,8 @@ struct EnterAck FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_FACING = 10,
     VT_MAP_ID = 12,
     VT_ROOM_ID = 14,
-    VT_WORLD_ORIGIN_OFFSET = 16
+    VT_WORLD_ORIGIN_OFFSET = 16,
+    VT_Z = 18
   };
   uint64_t entity_id() const {
     return GetField<uint64_t>(VT_ENTITY_ID, 0);
@@ -284,6 +282,9 @@ struct EnterAck FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   float world_origin_offset() const {
     return GetField<float>(VT_WORLD_ORIGIN_OFFSET, 0.0f);
   }
+  float z() const {
+    return GetField<float>(VT_Z, 0.0f);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -294,6 +295,7 @@ struct EnterAck FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<uint32_t>(verifier, VT_MAP_ID, 4) &&
            VerifyField<uint32_t>(verifier, VT_ROOM_ID, 4) &&
            VerifyField<float>(verifier, VT_WORLD_ORIGIN_OFFSET, 4) &&
+           VerifyField<float>(verifier, VT_Z, 4) &&
            verifier.EndTable();
   }
 };
@@ -323,6 +325,9 @@ struct EnterAckBuilder {
   void add_world_origin_offset(float world_origin_offset) {
     fbb_.AddElement<float>(EnterAck::VT_WORLD_ORIGIN_OFFSET, world_origin_offset, 0.0f);
   }
+  void add_z(float z) {
+    fbb_.AddElement<float>(EnterAck::VT_Z, z, 0.0f);
+  }
   explicit EnterAckBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -342,9 +347,11 @@ inline ::flatbuffers::Offset<EnterAck> CreateEnterAck(
     float facing = 0.0f,
     uint32_t map_id = 0,
     uint32_t room_id = 0,
-    float world_origin_offset = 0.0f) {
+    float world_origin_offset = 0.0f,
+    float z = 0.0f) {
   EnterAckBuilder builder_(_fbb);
   builder_.add_entity_id(entity_id);
+  builder_.add_z(z);
   builder_.add_world_origin_offset(world_origin_offset);
   builder_.add_room_id(room_id);
   builder_.add_map_id(map_id);
@@ -426,218 +433,6 @@ inline ::flatbuffers::Offset<Move> CreateMove(
   return builder_.Finish();
 }
 
-struct Appearance FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
-  typedef AppearanceBuilder Builder;
-  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
-    VT_GENDER = 4,
-    VT_BODY = 6,
-    VT_HEAD = 8,
-    VT_HAIR = 10,
-    VT_EYE = 12,
-    VT_EQUIPMENT = 14,
-    VT_SKIN_R = 16,
-    VT_SKIN_G = 18,
-    VT_SKIN_B = 20,
-    VT_HAIR_R = 22,
-    VT_HAIR_G = 24,
-    VT_HAIR_B = 26,
-    VT_EYE_R = 28,
-    VT_EYE_G = 30,
-    VT_EYE_B = 32,
-    VT_ARM_VOLUME = 34,
-    VT_TORSO_VOLUME = 36,
-    VT_LEG_VOLUME = 38
-  };
-  uint8_t gender() const {
-    return GetField<uint8_t>(VT_GENDER, 0);
-  }
-  int32_t body() const {
-    return GetField<int32_t>(VT_BODY, 0);
-  }
-  int32_t head() const {
-    return GetField<int32_t>(VT_HEAD, 0);
-  }
-  int32_t hair() const {
-    return GetField<int32_t>(VT_HAIR, 0);
-  }
-  int32_t eye() const {
-    return GetField<int32_t>(VT_EYE, 0);
-  }
-  int32_t equipment() const {
-    return GetField<int32_t>(VT_EQUIPMENT, 0);
-  }
-  float skin_r() const {
-    return GetField<float>(VT_SKIN_R, 0.0f);
-  }
-  float skin_g() const {
-    return GetField<float>(VT_SKIN_G, 0.0f);
-  }
-  float skin_b() const {
-    return GetField<float>(VT_SKIN_B, 0.0f);
-  }
-  float hair_r() const {
-    return GetField<float>(VT_HAIR_R, 0.0f);
-  }
-  float hair_g() const {
-    return GetField<float>(VT_HAIR_G, 0.0f);
-  }
-  float hair_b() const {
-    return GetField<float>(VT_HAIR_B, 0.0f);
-  }
-  float eye_r() const {
-    return GetField<float>(VT_EYE_R, 0.0f);
-  }
-  float eye_g() const {
-    return GetField<float>(VT_EYE_G, 0.0f);
-  }
-  float eye_b() const {
-    return GetField<float>(VT_EYE_B, 0.0f);
-  }
-  float arm_volume() const {
-    return GetField<float>(VT_ARM_VOLUME, 0.0f);
-  }
-  float torso_volume() const {
-    return GetField<float>(VT_TORSO_VOLUME, 0.0f);
-  }
-  float leg_volume() const {
-    return GetField<float>(VT_LEG_VOLUME, 0.0f);
-  }
-  template <bool B = false>
-  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
-    return VerifyTableStart(verifier) &&
-           VerifyField<uint8_t>(verifier, VT_GENDER, 1) &&
-           VerifyField<int32_t>(verifier, VT_BODY, 4) &&
-           VerifyField<int32_t>(verifier, VT_HEAD, 4) &&
-           VerifyField<int32_t>(verifier, VT_HAIR, 4) &&
-           VerifyField<int32_t>(verifier, VT_EYE, 4) &&
-           VerifyField<int32_t>(verifier, VT_EQUIPMENT, 4) &&
-           VerifyField<float>(verifier, VT_SKIN_R, 4) &&
-           VerifyField<float>(verifier, VT_SKIN_G, 4) &&
-           VerifyField<float>(verifier, VT_SKIN_B, 4) &&
-           VerifyField<float>(verifier, VT_HAIR_R, 4) &&
-           VerifyField<float>(verifier, VT_HAIR_G, 4) &&
-           VerifyField<float>(verifier, VT_HAIR_B, 4) &&
-           VerifyField<float>(verifier, VT_EYE_R, 4) &&
-           VerifyField<float>(verifier, VT_EYE_G, 4) &&
-           VerifyField<float>(verifier, VT_EYE_B, 4) &&
-           VerifyField<float>(verifier, VT_ARM_VOLUME, 4) &&
-           VerifyField<float>(verifier, VT_TORSO_VOLUME, 4) &&
-           VerifyField<float>(verifier, VT_LEG_VOLUME, 4) &&
-           verifier.EndTable();
-  }
-};
-
-struct AppearanceBuilder {
-  typedef Appearance Table;
-  ::flatbuffers::FlatBufferBuilder &fbb_;
-  ::flatbuffers::uoffset_t start_;
-  void add_gender(uint8_t gender) {
-    fbb_.AddElement<uint8_t>(Appearance::VT_GENDER, gender, 0);
-  }
-  void add_body(int32_t body) {
-    fbb_.AddElement<int32_t>(Appearance::VT_BODY, body, 0);
-  }
-  void add_head(int32_t head) {
-    fbb_.AddElement<int32_t>(Appearance::VT_HEAD, head, 0);
-  }
-  void add_hair(int32_t hair) {
-    fbb_.AddElement<int32_t>(Appearance::VT_HAIR, hair, 0);
-  }
-  void add_eye(int32_t eye) {
-    fbb_.AddElement<int32_t>(Appearance::VT_EYE, eye, 0);
-  }
-  void add_equipment(int32_t equipment) {
-    fbb_.AddElement<int32_t>(Appearance::VT_EQUIPMENT, equipment, 0);
-  }
-  void add_skin_r(float skin_r) {
-    fbb_.AddElement<float>(Appearance::VT_SKIN_R, skin_r, 0.0f);
-  }
-  void add_skin_g(float skin_g) {
-    fbb_.AddElement<float>(Appearance::VT_SKIN_G, skin_g, 0.0f);
-  }
-  void add_skin_b(float skin_b) {
-    fbb_.AddElement<float>(Appearance::VT_SKIN_B, skin_b, 0.0f);
-  }
-  void add_hair_r(float hair_r) {
-    fbb_.AddElement<float>(Appearance::VT_HAIR_R, hair_r, 0.0f);
-  }
-  void add_hair_g(float hair_g) {
-    fbb_.AddElement<float>(Appearance::VT_HAIR_G, hair_g, 0.0f);
-  }
-  void add_hair_b(float hair_b) {
-    fbb_.AddElement<float>(Appearance::VT_HAIR_B, hair_b, 0.0f);
-  }
-  void add_eye_r(float eye_r) {
-    fbb_.AddElement<float>(Appearance::VT_EYE_R, eye_r, 0.0f);
-  }
-  void add_eye_g(float eye_g) {
-    fbb_.AddElement<float>(Appearance::VT_EYE_G, eye_g, 0.0f);
-  }
-  void add_eye_b(float eye_b) {
-    fbb_.AddElement<float>(Appearance::VT_EYE_B, eye_b, 0.0f);
-  }
-  void add_arm_volume(float arm_volume) {
-    fbb_.AddElement<float>(Appearance::VT_ARM_VOLUME, arm_volume, 0.0f);
-  }
-  void add_torso_volume(float torso_volume) {
-    fbb_.AddElement<float>(Appearance::VT_TORSO_VOLUME, torso_volume, 0.0f);
-  }
-  void add_leg_volume(float leg_volume) {
-    fbb_.AddElement<float>(Appearance::VT_LEG_VOLUME, leg_volume, 0.0f);
-  }
-  explicit AppearanceBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
-        : fbb_(_fbb) {
-    start_ = fbb_.StartTable();
-  }
-  ::flatbuffers::Offset<Appearance> Finish() {
-    const auto end = fbb_.EndTable(start_);
-    auto o = ::flatbuffers::Offset<Appearance>(end);
-    return o;
-  }
-};
-
-inline ::flatbuffers::Offset<Appearance> CreateAppearance(
-    ::flatbuffers::FlatBufferBuilder &_fbb,
-    uint8_t gender = 0,
-    int32_t body = 0,
-    int32_t head = 0,
-    int32_t hair = 0,
-    int32_t eye = 0,
-    int32_t equipment = 0,
-    float skin_r = 0.0f,
-    float skin_g = 0.0f,
-    float skin_b = 0.0f,
-    float hair_r = 0.0f,
-    float hair_g = 0.0f,
-    float hair_b = 0.0f,
-    float eye_r = 0.0f,
-    float eye_g = 0.0f,
-    float eye_b = 0.0f,
-    float arm_volume = 0.0f,
-    float torso_volume = 0.0f,
-    float leg_volume = 0.0f) {
-  AppearanceBuilder builder_(_fbb);
-  builder_.add_leg_volume(leg_volume);
-  builder_.add_torso_volume(torso_volume);
-  builder_.add_arm_volume(arm_volume);
-  builder_.add_eye_b(eye_b);
-  builder_.add_eye_g(eye_g);
-  builder_.add_eye_r(eye_r);
-  builder_.add_hair_b(hair_b);
-  builder_.add_hair_g(hair_g);
-  builder_.add_hair_r(hair_r);
-  builder_.add_skin_b(skin_b);
-  builder_.add_skin_g(skin_g);
-  builder_.add_skin_r(skin_r);
-  builder_.add_equipment(equipment);
-  builder_.add_eye(eye);
-  builder_.add_hair(hair);
-  builder_.add_head(head);
-  builder_.add_body(body);
-  builder_.add_gender(gender);
-  return builder_.Finish();
-}
-
 struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef EntityStateBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
@@ -650,7 +445,7 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_SPECIES = 16,
     VT_ATTACK_SEQUENCE = 18,
     VT_ATTACK_TARGET_ID = 20,
-    VT_APPEARANCE = 22
+    VT_Z = 22
   };
   uint64_t entity_id() const {
     return GetField<uint64_t>(VT_ENTITY_ID, 0);
@@ -679,8 +474,8 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   uint64_t attack_target_id() const {
     return GetField<uint64_t>(VT_ATTACK_TARGET_ID, 0);
   }
-  const HeavenField::Appearance *appearance() const {
-    return GetPointer<const HeavenField::Appearance *>(VT_APPEARANCE);
+  float z() const {
+    return GetField<float>(VT_Z, 0.0f);
   }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
@@ -695,8 +490,7 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<uint16_t>(verifier, VT_SPECIES, 2) &&
            VerifyField<uint32_t>(verifier, VT_ATTACK_SEQUENCE, 4) &&
            VerifyField<uint64_t>(verifier, VT_ATTACK_TARGET_ID, 8) &&
-           VerifyOffset(verifier, VT_APPEARANCE) &&
-           verifier.VerifyTable(appearance()) &&
+           VerifyField<float>(verifier, VT_Z, 4) &&
            verifier.EndTable();
   }
 };
@@ -732,8 +526,8 @@ struct EntityStateBuilder {
   void add_attack_target_id(uint64_t attack_target_id) {
     fbb_.AddElement<uint64_t>(EntityState::VT_ATTACK_TARGET_ID, attack_target_id, 0);
   }
-  void add_appearance(::flatbuffers::Offset<HeavenField::Appearance> appearance) {
-    fbb_.AddOffset(EntityState::VT_APPEARANCE, appearance);
+  void add_z(float z) {
+    fbb_.AddElement<float>(EntityState::VT_Z, z, 0.0f);
   }
   explicit EntityStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
@@ -757,11 +551,11 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityState(
     uint16_t species = 0,
     uint32_t attack_sequence = 0,
     uint64_t attack_target_id = 0,
-    ::flatbuffers::Offset<HeavenField::Appearance> appearance = 0) {
+    float z = 0.0f) {
   EntityStateBuilder builder_(_fbb);
   builder_.add_attack_target_id(attack_target_id);
   builder_.add_entity_id(entity_id);
-  builder_.add_appearance(appearance);
+  builder_.add_z(z);
   builder_.add_attack_sequence(attack_sequence);
   builder_.add_nickname(nickname);
   builder_.add_facing(facing);
@@ -783,7 +577,7 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityStateDirect(
     uint16_t species = 0,
     uint32_t attack_sequence = 0,
     uint64_t attack_target_id = 0,
-    ::flatbuffers::Offset<HeavenField::Appearance> appearance = 0) {
+    float z = 0.0f) {
   auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
   return HeavenField::CreateEntityState(
       _fbb,
@@ -796,7 +590,7 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityStateDirect(
       species,
       attack_sequence,
       attack_target_id,
-      appearance);
+      z);
 }
 
 struct Snapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -939,7 +733,8 @@ struct Correction FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_SEQUENCE = 4,
     VT_X = 6,
     VT_Y = 8,
-    VT_FACING = 10
+    VT_FACING = 10,
+    VT_Z = 12
   };
   uint32_t sequence() const {
     return GetField<uint32_t>(VT_SEQUENCE, 0);
@@ -953,6 +748,9 @@ struct Correction FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   float facing() const {
     return GetField<float>(VT_FACING, 0.0f);
   }
+  float z() const {
+    return GetField<float>(VT_Z, 0.0f);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -960,6 +758,7 @@ struct Correction FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<float>(verifier, VT_X, 4) &&
            VerifyField<float>(verifier, VT_Y, 4) &&
            VerifyField<float>(verifier, VT_FACING, 4) &&
+           VerifyField<float>(verifier, VT_Z, 4) &&
            verifier.EndTable();
   }
 };
@@ -980,6 +779,9 @@ struct CorrectionBuilder {
   void add_facing(float facing) {
     fbb_.AddElement<float>(Correction::VT_FACING, facing, 0.0f);
   }
+  void add_z(float z) {
+    fbb_.AddElement<float>(Correction::VT_Z, z, 0.0f);
+  }
   explicit CorrectionBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -996,8 +798,10 @@ inline ::flatbuffers::Offset<Correction> CreateCorrection(
     uint32_t sequence = 0,
     float x = 0.0f,
     float y = 0.0f,
-    float facing = 0.0f) {
+    float facing = 0.0f,
+    float z = 0.0f) {
   CorrectionBuilder builder_(_fbb);
+  builder_.add_z(z);
   builder_.add_facing(facing);
   builder_.add_y(y);
   builder_.add_x(x);

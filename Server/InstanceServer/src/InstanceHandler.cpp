@@ -111,9 +111,8 @@ bool InstanceHandler::placeInRoom(const std::shared_ptr<TlsSession>& self, std::
         context_.party->claimRoom(partyId, type, room->id);
     }
 
-    // 맵이 아직 없어 모두 같은 지점에서 시작한다.
-    // ponytail: 겹쳐 선다. 맵이 나오면 스폰 지점 목록에서 골라 쓸 것.
-    const data::Position start{type, instance::kSpawnX, instance::kSpawnY, 0.f};
+    const data::Position start =
+        room->world.resolvePosition(data::Position{type, instance::kSpawnX, instance::kSpawnY, 0.f});
 
     Displaced displaced;
     {
@@ -128,7 +127,7 @@ bool InstanceHandler::placeInRoom(const std::shared_ptr<TlsSession>& self, std::
 
         // EnterAck 이 Spawn 보다 먼저 나가야 한다. 클라가 자기 번호를 알기 전에
         // 남의 Spawn 을 받으면 어느 것이 자기인지 모른다.
-        self->send(proto::encodeEnterAck(characterId_, start.x, start.y, start.facing,
+        self->send(proto::encodeEnterAck(characterId_, start.x, start.y, start.z, start.facing,
                                          start.mapId, kWorldOriginOffset, room->id));
 
         displaced = room->world.enter(characterId_, accountId_, nickname_, partnerSpecies,

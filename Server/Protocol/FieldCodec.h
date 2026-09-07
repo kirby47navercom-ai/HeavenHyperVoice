@@ -19,6 +19,7 @@ struct EntityView {
     std::uint64_t entityId = 0;
     float x = 0.f;
     float y = 0.f;
+    float z = 0.f;
     float facing = 0.f;
     std::string nickname;
     // 둘 다 서버 내부 번호다. 와이어로 나갈 때 도감번호로 바뀐다 (buildEntities).
@@ -64,6 +65,7 @@ buildEntities(flatbuffers::FlatBufferBuilder& fbb, const std::vector<EntityView>
         builder.add_entity_id(entity.entityId);
         builder.add_x(entity.x);
         builder.add_y(entity.y);
+        builder.add_z(entity.z);
         builder.add_facing(entity.facing);
         if (!nickname.IsNull()) {
             builder.add_nickname(nickname);
@@ -101,12 +103,12 @@ inline Bytes wrapField(flatbuffers::FlatBufferBuilder& fbb, HeavenField::Payload
 
 // originOffset 은 클라가 좌표를 옮길 때 쓴다 (서버 = 언리얼 + offset).
 // roomId 는 인스턴스 서버만 채운다. 필드는 0 이다.
-inline Bytes encodeEnterAck(std::uint64_t entityId, float x, float y, float facing,
+inline Bytes encodeEnterAck(std::uint64_t entityId, float x, float y, float z, float facing,
                             std::uint32_t mapId, float originOffset,
                             std::uint32_t roomId = 0) {
     flatbuffers::FlatBufferBuilder fbb;
     auto ack = HeavenField::CreateEnterAck(fbb, entityId, x, y, facing, mapId, roomId,
-                                           originOffset);
+                                           originOffset, z);
     return detail::wrapField(fbb, HeavenField::Payload::EnterAck, ack.Union());
 }
 
@@ -125,9 +127,9 @@ inline Bytes encodeSnapshot(const std::vector<EntityView>& spawned,
     return detail::wrapField(fbb, HeavenField::Payload::Snapshot, builder.Finish().Union());
 }
 
-inline Bytes encodeCorrection(std::uint32_t sequence, float x, float y, float facing) {
+inline Bytes encodeCorrection(std::uint32_t sequence, float x, float y, float z, float facing) {
     flatbuffers::FlatBufferBuilder fbb;
-    auto correction = HeavenField::CreateCorrection(fbb, sequence, x, y, facing);
+    auto correction = HeavenField::CreateCorrection(fbb, sequence, x, y, facing, z);
     return detail::wrapField(fbb, HeavenField::Payload::Correction, correction.Union());
 }
 

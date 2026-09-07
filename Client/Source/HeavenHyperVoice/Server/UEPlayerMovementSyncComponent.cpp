@@ -70,7 +70,7 @@ void UUEPlayerMovementSyncComponent::HandleServerEnterAck(
 
 void UUEPlayerMovementSyncComponent::HandleServerCorrection(
 	uint32 Sequence,
-	const FVector2D& ServerPositionXY,
+	const FVector& ServerPosition,
 	float ServerFacing)
 {
 	AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter();
@@ -79,17 +79,12 @@ void UUEPlayerMovementSyncComponent::HandleServerCorrection(
 		return;
 	}
 
-	// 서버는 고친 좌표만 보낸다. 높이는 그 Sequence 를 보낼 때 내가 있던 높이다.
 	const int32 HistoryIndex = FindMoveHistoryIndex(Sequence);
 	if (HistoryIndex == INDEX_NONE)
 	{
 		return;
 	}
 	const FUEPlayerMovementPacket& Sent = MoveHistory[HistoryIndex];
-
-	FVector ServerPosition = Sent.ClientPosition;
-	ServerPosition.X = ServerPositionXY.X;
-	ServerPosition.Y = ServerPositionXY.Y;
 
 	FRotator ServerRotation = Sent.ActorRotation;
 	ServerRotation.Yaw = ServerFacing;

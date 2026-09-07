@@ -9,6 +9,7 @@ struct ObservedPlayer {
     std::uint32_t mapId = 0;
     float x = 0.f;
     float y = 0.f;
+    float z = 0.f;
 };
 
 struct WildDecision {

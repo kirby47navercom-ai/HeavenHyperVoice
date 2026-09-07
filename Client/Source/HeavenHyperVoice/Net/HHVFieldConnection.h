@@ -23,6 +23,7 @@ struct FHHVFieldEntity
 	uint64 EntityId = 0;
 	float X = 0.0f;
 	float Y = 0.0f;
+	float Z = 0.0f;
 	float Facing = 0.0f;
 	FString Nickname;
 	uint16 PartnerSpecies = 0;
@@ -84,6 +85,7 @@ struct FHHVFieldEventData
 	uint32 Sequence = 0;
 	float X = 0.0f;
 	float Y = 0.0f;
+	float Z = 0.0f;
 	float Facing = 0.0f;
 	FString Text;
 	FHHVFieldSnapshot Snapshot;
@@ -151,9 +153,9 @@ public:
 	/** Game thread. Drains the inbound queue and fires the callbacks. */
 	void Poll();
 
-	TFunction<void(uint64 EntityId, float X, float Y, float Facing, uint32 RoomId,
+	TFunction<void(uint64 EntityId, float X, float Y, float Z, float Facing, uint32 RoomId,
 		float OriginOffset)> OnEnterAck;
-	TFunction<void(uint32 Sequence, float X, float Y, float Facing)> OnCorrection;
+	TFunction<void(uint32 Sequence, float X, float Y, float Z, float Facing)> OnCorrection;
 	TFunction<void(const FHHVFieldSnapshot& Snapshot)> OnSnapshot;
 	TFunction<void(const FString& Text)> OnNotice;
 	TFunction<void(const FHHVFieldPartyState& State)> OnPartyState;

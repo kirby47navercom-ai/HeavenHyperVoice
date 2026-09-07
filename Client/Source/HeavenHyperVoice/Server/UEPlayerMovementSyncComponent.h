@@ -23,7 +23,7 @@ public:
 
 	FUEPlayerMovementPacket CaptureMovementPacket();
 	void HandleServerEnterAck(uint64 EntityId, const FVector& ServerPosition, const FRotator& ServerRotation);
-	void HandleServerCorrection(uint32 Sequence, const FVector2D& ServerPositionXY, float ServerFacing);
+	void HandleServerCorrection(uint32 Sequence, const FVector& ServerPosition, float ServerFacing);
 
 protected:
 	virtual void BeginPlay() override;

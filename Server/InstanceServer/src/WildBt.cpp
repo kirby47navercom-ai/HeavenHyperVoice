@@ -49,6 +49,7 @@ sol::table makePlayerTable(sol::state& lua, const ObservedPlayer& player, float 
         "map_id", player.mapId,
         "x", player.x,
         "y", player.y,
+        "z", player.z,
         "distance", std::sqrt(dx * dx + dy * dy));
 }
 
@@ -88,6 +89,7 @@ WildDecision WildBt::decide(const WildBtContext& context) {
         "map_id", context.mapId,
         "x", context.x,
         "y", context.y,
+        "z", context.z,
         "aggro_radius", context.aggroRadius,
         "attack_radius", context.attackRadius,
         "lose_target_radius", context.loseTargetRadius);

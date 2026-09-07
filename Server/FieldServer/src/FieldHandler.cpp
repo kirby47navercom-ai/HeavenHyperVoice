@@ -16,7 +16,7 @@ std::string positionKey(std::uint64_t characterId) {
     return "pos:" + std::to_string(characterId);
 }
 
-// "map|x|y|facing". 필드 서버끼리만 읽으므로 형식을 단순하게 둔다.
+// "map|x|y|z|facing". 예전 "map|x|y|facing" 도 받아준다.
 // facing 은 없어도 받아준다 (0 으로 둔다).
 std::optional<data::Position> readRedisPosition(net::RedisClient& redis,
                                                 std::uint64_t characterId) {
@@ -35,7 +35,16 @@ std::optional<data::Position> readRedisPosition(net::RedisClient& redis,
     if (!(stream >> position.mapId >> position.x >> position.y)) {
         return std::nullopt;
     }
-    stream >> position.facing;
+    float first = 0.f;
+    if (stream >> first) {
+        float second = 0.f;
+        if (stream >> second) {
+            position.z = first;
+            position.facing = second;
+        } else {
+            position.facing = first;
+        }
+    }
     return position;
 }
 
@@ -47,7 +56,8 @@ void writeRedisPosition(net::RedisClient& redis, std::uint64_t characterId,
     // 어차피 DB 에 저장된 뒤라 남아 있어도 해가 없다.
     redis.command({"SET", positionKey(characterId),
                    std::to_string(position.mapId) + "|" + std::to_string(position.x) + "|" +
-                       std::to_string(position.y) + "|" + std::to_string(position.facing),
+                       std::to_string(position.y) + "|" + std::to_string(position.z) + "|" +
+                       std::to_string(position.facing),
                    "EX", "300"});
 }
 
@@ -204,7 +214,8 @@ bool FieldHandler::enterWithoutAuth(TlsSession& session, const HeavenField::Ente
 
     session.markAuthenticated();
 
-    const data::Position start{0, proto::kSpawnX, proto::kSpawnY, 0.f};
+    const data::Position start =
+        context_.world->resolvePosition(data::Position{0, proto::kSpawnX, proto::kSpawnY, 0.f});
     auto self = session.shared_from_this();
 
     Displaced displaced;
@@ -221,7 +232,7 @@ bool FieldHandler::enterWithoutAuth(TlsSession& session, const HeavenField::Ente
 
         // EnterAck 이 Spawn 보다 먼저 나가야 한다.
         self->send(
-            proto::encodeEnterAck(characterId, start.x, start.y, start.facing, start.mapId,
+            proto::encodeEnterAck(characterId, start.x, start.y, start.z, start.facing, start.mapId,
                                   proto::kWorldSize / 2.f));
 
         // dev 경로에는 DB 가 없다. 외형은 기본값이다.
@@ -302,9 +313,10 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
         // 컬럼 기본값이 0 이라 한 번도 필드에 들어온 적 없는 캐릭터는 (0,0) 으로
         // 읽힌다. 그건 월드 모서리지 시작 지점이 아니다. 정확히 원점이면
         // 미설정으로 본다 — 실제로 거기 서 있을 일은 없다.
-        data::Position start{0, proto::kSpawnX, proto::kSpawnY, 0.f};
+        data::Position start =
+            context->world->resolvePosition(data::Position{0, proto::kSpawnX, proto::kSpawnY, 0.f});
         if (position.has_value() && (position->x != 0.f || position->y != 0.f)) {
-            start = *position;
+            start = context->world->resolvePosition(*position);
         }
 
         const std::uint16_t partner =
@@ -325,7 +337,7 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
 
             // EnterAck 이 Spawn 보다 먼저 나가야 한다. 클라가 자기 번호를 알기 전에
             // 남의 Spawn 을 받으면 어느 것이 자기인지 모른다.
-            self->send(proto::encodeEnterAck(characterId, start.x, start.y, start.facing,
+            self->send(proto::encodeEnterAck(characterId, start.x, start.y, start.z, start.facing,
                                              start.mapId, proto::kWorldSize / 2.f));
 
             displaced = context->world->enter(characterId, accountId, character->nickname,
