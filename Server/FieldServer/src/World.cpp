@@ -14,6 +14,14 @@ namespace {
 constexpr float kEnterRadiusSquared = proto::kEnterRadius * proto::kEnterRadius;
 constexpr float kExitRadiusSquared = proto::kExitRadius * proto::kExitRadius;
 
+fieldshared::PartnerOwnerState partnerOwnerStateOf(const Entity& entity) {
+    return {
+        {entity.position.x, entity.position.y, entity.position.z},
+        {entity.velocityX, entity.velocityY, entity.velocityZ},
+        entity.position.facing,
+    };
+}
+
 }  // namespace
 
 proto::EntityView World::viewOf(const Entity& entity, bool withIdentity) {
@@ -26,6 +34,17 @@ proto::EntityView World::viewOf(const Entity& entity, bool withIdentity) {
     view.velocityY = entity.velocityY;
     view.velocityZ = entity.velocityZ;
     view.facing = entity.position.facing;
+    if (entity.partnerSpecies != 0 && entity.partner.initialized) {
+        view.hasPartnerTransform = true;
+        view.partnerX = entity.partner.location.x;
+        view.partnerY = entity.partner.location.y;
+        view.partnerZ = entity.partner.location.z;
+        view.partnerVelocityX = entity.partner.velocity.x;
+        view.partnerVelocityY = entity.partner.velocity.y;
+        view.partnerVelocityZ = entity.partner.velocity.z;
+        view.partnerFacing = entity.partner.facing;
+        view.partnerTeleported = entity.partner.teleportedThisTick;
+    }
     if (withIdentity) {
         view.nickname = entity.nickname;
         view.partnerSpecies = entity.partnerSpecies;
@@ -92,6 +111,10 @@ Displaced World::enter(std::uint64_t characterId, std::uint64_t accountId, std::
     entity.position = resolvePosition(position);
     entity.sector = proto::sectorIndex(entity.position.x, entity.position.y);
     entity.lastMoveAt = std::chrono::steady_clock::now();
+    if (entity.partnerSpecies != 0) {
+        fieldshared::PartnerFollower::initialize(
+            partnerOwnerStateOf(entity), entity.partnerSpecies, entity.partner, map_);
+    }
 
     // 번호가 이미 있으면 emplace 는 아무것도 넣지 않고 기존 것을 가리킨다.
     // 그대로 진행하면 남의 엔티티를 자기 것인 양 만지게 된다.
@@ -225,6 +248,11 @@ void World::setPartnerSpecies(std::uint64_t characterId, std::uint16_t partnerSp
         return;  // 같은 값이면 알릴 것이 없다
     }
     entity.partnerSpecies = partnerSpecies;
+    fieldshared::PartnerFollower::reset(entity.partner);
+    if (entity.partnerSpecies != 0) {
+        fieldshared::PartnerFollower::initialize(
+            partnerOwnerStateOf(entity), entity.partnerSpecies, entity.partner, map_);
+    }
 
     // 프레임은 한 번만 만들어 돌려 쓴다. 보는 사람 수만큼 직렬화할 이유가 없다.
     const proto::Bytes frame = proto::encodePartnerChanged(characterId, partnerSpecies);
@@ -351,8 +379,22 @@ void World::move(std::uint64_t characterId, float x, float y, float facing,
     updateVisibility(self);
 }
 
-void World::tick() {
+void World::advancePartners(float dt) {
+    for (auto& [characterId, entity] : entities_) {
+        (void)characterId;
+        const bool pendingMove = entity.partner.movedThisTick;
+        const bool pendingTeleport = entity.partner.teleportedThisTick;
+        fieldshared::PartnerFollower::update(
+            dt, partnerOwnerStateOf(entity), entity.partnerSpecies, entity.partner, map_);
+        entity.partner.movedThisTick = entity.partner.movedThisTick || pendingMove;
+        entity.partner.teleportedThisTick =
+            entity.partner.teleportedThisTick || pendingTeleport;
+    }
+}
+
+void World::tick(float dt) {
     std::lock_guard<std::mutex> lock(mutex_);
+    advancePartners(dt);
 
     // 뷰어별로 모은다. 시야 집합이 대칭이라 "나를 보는 사람" = visible 이다.
     //
@@ -363,12 +405,18 @@ void World::tick() {
     std::unordered_map<std::uint64_t, std::vector<proto::EntityView>> pending;
 
     for (auto& [characterId, entity] : entities_) {
-        if (!entity.movedThisTick) {
+        const bool partnerMoved = entity.partner.movedThisTick;
+        if (!entity.movedThisTick && !partnerMoved) {
             continue;
         }
-        entity.movedThisTick = false;
 
         const proto::EntityView view = viewOf(entity, /*withIdentity=*/false);
+        entity.movedThisTick = false;
+        entity.partner.movedThisTick = false;
+        entity.partner.teleportedThisTick = false;
+        if (partnerMoved) {
+            pending[characterId].push_back(view);
+        }
         for (const std::uint64_t viewerId : entity.visible) {
             pending[viewerId].push_back(view);
         }

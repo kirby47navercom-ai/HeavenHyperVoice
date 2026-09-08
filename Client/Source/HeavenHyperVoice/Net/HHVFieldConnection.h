@@ -40,6 +40,13 @@ struct FHHVFieldEntity
 	uint16 CurrentHP = 0;
 	uint16 MaxHP = 0;
 
+	// 주인 엔티티에 붙어 내려오는 파트너 포켓몬의 서버 권위 이동 상태.
+	bool bHasPartnerTransform = false;
+	FVector PartnerLocation = FVector::ZeroVector;
+	FVector PartnerVelocity = FVector::ZeroVector;
+	float PartnerFacing = 0.0f;
+	bool bPartnerTeleported = false;
+
 	// 커마. spawned 에만 실려 온다 — moved 에서는 bHasAppearance 가 false 다.
 	// 야생 포켓몬도 false 다.
 	bool bHasAppearance = false;

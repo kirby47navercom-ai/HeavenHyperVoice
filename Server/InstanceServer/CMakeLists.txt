@@ -22,6 +22,7 @@ target_link_libraries(InstanceServer PRIVATE
     Net
     Data
     Nav
+    FieldShared
     sol2::sol2
     ${LUA_LIBRARIES}
 )

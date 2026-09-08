@@ -239,7 +239,7 @@ void RoomManager::tickShard(unsigned shard, unsigned shardCount, float dt) {
         if (room->ai != nullptr) {
             room->world.advanceWild(dt, *room->ai);
         }
-        room->world.tick();
+        room->world.tick(dt);
     }
 }
 

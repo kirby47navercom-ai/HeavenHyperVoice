@@ -25,6 +25,7 @@
 
 #include "CharacterStore.h"
 #include "Map.h"
+#include "PartnerFollower.h"
 #include "FieldCodec.h"
 #include "FieldGeometry.h"
 #include "TlsSession.h"
@@ -61,6 +62,7 @@ struct Entity {
     float velocityX = 0.f;
     float velocityY = 0.f;
     float velocityZ = 0.f;
+    fieldshared::PartnerState partner;
     int sector = 0;
 
     // 반경이 균일해 대칭이다. 나를 보는 집합과 같다.
@@ -123,7 +125,7 @@ public:
     Position resolvePosition(const Position& position) const;
 
     // 20Hz. 이번 주기에 움직인 것들을 뷰어별로 묶어 보낸다.
-    void tick();
+    void tick(float dt);
 
     // 주기적 저장용 스냅샷. 야생은 저장할 것이 없어 빠진다.
     std::vector<std::pair<std::uint64_t, Position>> positions();
@@ -133,6 +135,7 @@ public:
 private:
     // 아래 셋은 모두 mutex_ 를 쥔 채로 불린다.
     void updateVisibility(Entity& self);
+    void advancePartners(float dt);
     void removeFromVisibility(Entity& self);
     void sendTo(const Entity& entity, const proto::Bytes& frame) const;
 

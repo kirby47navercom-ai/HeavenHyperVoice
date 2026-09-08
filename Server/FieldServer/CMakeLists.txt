@@ -15,6 +15,7 @@ target_link_libraries(FieldServer PRIVATE
     Net
     Data
     Nav
+    FieldShared
 )
 
 target_compile_definitions(FieldServer PRIVATE

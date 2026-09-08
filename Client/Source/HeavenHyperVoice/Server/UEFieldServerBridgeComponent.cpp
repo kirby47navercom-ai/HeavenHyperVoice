@@ -343,8 +343,8 @@ void UUEFieldServerBridgeComponent::HandleFieldEnterAck(
 		MakeEntityLocation(ServerX, ServerY, ServerZ),
 		FRotator(0.0f, Facing, 0.0f));
 
-	// 내 파트너는 스냅샷에 안 온다 — 서버는 자기 자신을 자기 시야에 넣지 않는다.
-	// 로그인 때 고른 캐릭터의 파트너를 그대로 쓴다.
+	// EnterAck 에는 내 파트너 종족 정보가 없다. 종족은 로그인 때 고른 값을 쓰고,
+	// 실제 위치/속도는 이후 서버 스냅샷으로 덮어쓴다.
 	if (PartnerSyncComponent.IsValid())
 	{
 		if (const UWorld* World = GetWorld())
@@ -407,6 +407,7 @@ void UUEFieldServerBridgeComponent::HandleFieldSnapshot(const FHHVFieldSnapshot&
 						Entity.EntityId,
 						RemotePlayerSyncComponent->FindRemotePlayer(Entity.EntityId),
 						static_cast<int32>(Entity.PartnerSpecies));
+					ApplyPartnerServerState(Entity);
 				}
 			}
 			continue;
@@ -421,6 +422,7 @@ void UUEFieldServerBridgeComponent::HandleFieldSnapshot(const FHHVFieldSnapshot&
 	for (const FHHVFieldEntity& Entity : Snapshot.Moved)
 	{
 		const FVector TargetLocation = MakeEntityLocation(Entity.X, Entity.Y, Entity.Z);
+		ApplyPartnerServerState(Entity);
 		if (WildPokemonSyncComponent.IsValid() && WildPokemonSyncComponent->ContainsWildPokemon(Entity.EntityId))
 		{
 			WildPokemonSyncComponent->HandleWildPokemonMoved(Entity, TargetLocation);
@@ -448,6 +450,25 @@ void UUEFieldServerBridgeComponent::HandleFieldSnapshot(const FHHVFieldSnapshot&
 			RemotePlayerSyncComponent->HandleRemotePlayerDespawned(EntityId);
 		}
 	}
+}
+
+void UUEFieldServerBridgeComponent::ApplyPartnerServerState(const FHHVFieldEntity& Entity)
+{
+	if (!PartnerSyncComponent.IsValid() || !Entity.bHasPartnerTransform)
+	{
+		return;
+	}
+
+	const FVector PartnerLocation = MakeEntityLocation(
+		Entity.PartnerLocation.X,
+		Entity.PartnerLocation.Y,
+		Entity.PartnerLocation.Z);
+	PartnerSyncComponent->ApplyPartnerServerState(
+		Entity.EntityId,
+		PartnerLocation,
+		Entity.PartnerVelocity,
+		FRotator(0.0f, Entity.PartnerFacing, 0.0f),
+		Entity.bPartnerTeleported);
 }
 
 void UUEFieldServerBridgeComponent::HandleFieldDisconnected(const FString& Reason)

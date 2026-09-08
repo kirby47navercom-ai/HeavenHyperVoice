@@ -666,7 +666,16 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_VELOCITY_Y = 28,
     VT_VELOCITY_Z = 30,
     VT_CURRENT_HP = 32,
-    VT_MAX_HP = 34
+    VT_MAX_HP = 34,
+    VT_PARTNER_PRESENT = 36,
+    VT_PARTNER_X = 38,
+    VT_PARTNER_Y = 40,
+    VT_PARTNER_Z = 42,
+    VT_PARTNER_VELOCITY_X = 44,
+    VT_PARTNER_VELOCITY_Y = 46,
+    VT_PARTNER_VELOCITY_Z = 48,
+    VT_PARTNER_FACING = 50,
+    VT_PARTNER_TELEPORTED = 52
   };
   uint64_t entity_id() const {
     return GetField<uint64_t>(VT_ENTITY_ID, 0);
@@ -716,6 +725,33 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   uint16_t max_hp() const {
     return GetField<uint16_t>(VT_MAX_HP, 0);
   }
+  bool partner_present() const {
+    return GetField<uint8_t>(VT_PARTNER_PRESENT, 0) != 0;
+  }
+  float partner_x() const {
+    return GetField<float>(VT_PARTNER_X, 0.0f);
+  }
+  float partner_y() const {
+    return GetField<float>(VT_PARTNER_Y, 0.0f);
+  }
+  float partner_z() const {
+    return GetField<float>(VT_PARTNER_Z, 0.0f);
+  }
+  float partner_velocity_x() const {
+    return GetField<float>(VT_PARTNER_VELOCITY_X, 0.0f);
+  }
+  float partner_velocity_y() const {
+    return GetField<float>(VT_PARTNER_VELOCITY_Y, 0.0f);
+  }
+  float partner_velocity_z() const {
+    return GetField<float>(VT_PARTNER_VELOCITY_Z, 0.0f);
+  }
+  float partner_facing() const {
+    return GetField<float>(VT_PARTNER_FACING, 0.0f);
+  }
+  bool partner_teleported() const {
+    return GetField<uint8_t>(VT_PARTNER_TELEPORTED, 0) != 0;
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -737,6 +773,15 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<float>(verifier, VT_VELOCITY_Z, 4) &&
            VerifyField<uint16_t>(verifier, VT_CURRENT_HP, 2) &&
            VerifyField<uint16_t>(verifier, VT_MAX_HP, 2) &&
+           VerifyField<uint8_t>(verifier, VT_PARTNER_PRESENT, 1) &&
+           VerifyField<float>(verifier, VT_PARTNER_X, 4) &&
+           VerifyField<float>(verifier, VT_PARTNER_Y, 4) &&
+           VerifyField<float>(verifier, VT_PARTNER_Z, 4) &&
+           VerifyField<float>(verifier, VT_PARTNER_VELOCITY_X, 4) &&
+           VerifyField<float>(verifier, VT_PARTNER_VELOCITY_Y, 4) &&
+           VerifyField<float>(verifier, VT_PARTNER_VELOCITY_Z, 4) &&
+           VerifyField<float>(verifier, VT_PARTNER_FACING, 4) &&
+           VerifyField<uint8_t>(verifier, VT_PARTNER_TELEPORTED, 1) &&
            verifier.EndTable();
   }
 };
@@ -793,6 +838,33 @@ struct EntityStateBuilder {
   void add_max_hp(uint16_t max_hp) {
     fbb_.AddElement<uint16_t>(EntityState::VT_MAX_HP, max_hp, 0);
   }
+  void add_partner_present(bool partner_present) {
+    fbb_.AddElement<uint8_t>(EntityState::VT_PARTNER_PRESENT, static_cast<uint8_t>(partner_present), 0);
+  }
+  void add_partner_x(float partner_x) {
+    fbb_.AddElement<float>(EntityState::VT_PARTNER_X, partner_x, 0.0f);
+  }
+  void add_partner_y(float partner_y) {
+    fbb_.AddElement<float>(EntityState::VT_PARTNER_Y, partner_y, 0.0f);
+  }
+  void add_partner_z(float partner_z) {
+    fbb_.AddElement<float>(EntityState::VT_PARTNER_Z, partner_z, 0.0f);
+  }
+  void add_partner_velocity_x(float partner_velocity_x) {
+    fbb_.AddElement<float>(EntityState::VT_PARTNER_VELOCITY_X, partner_velocity_x, 0.0f);
+  }
+  void add_partner_velocity_y(float partner_velocity_y) {
+    fbb_.AddElement<float>(EntityState::VT_PARTNER_VELOCITY_Y, partner_velocity_y, 0.0f);
+  }
+  void add_partner_velocity_z(float partner_velocity_z) {
+    fbb_.AddElement<float>(EntityState::VT_PARTNER_VELOCITY_Z, partner_velocity_z, 0.0f);
+  }
+  void add_partner_facing(float partner_facing) {
+    fbb_.AddElement<float>(EntityState::VT_PARTNER_FACING, partner_facing, 0.0f);
+  }
+  void add_partner_teleported(bool partner_teleported) {
+    fbb_.AddElement<uint8_t>(EntityState::VT_PARTNER_TELEPORTED, static_cast<uint8_t>(partner_teleported), 0);
+  }
   explicit EntityStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -821,10 +893,26 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityState(
     float velocity_y = 0.0f,
     float velocity_z = 0.0f,
     uint16_t current_hp = 0,
-    uint16_t max_hp = 0) {
+    uint16_t max_hp = 0,
+    bool partner_present = false,
+    float partner_x = 0.0f,
+    float partner_y = 0.0f,
+    float partner_z = 0.0f,
+    float partner_velocity_x = 0.0f,
+    float partner_velocity_y = 0.0f,
+    float partner_velocity_z = 0.0f,
+    float partner_facing = 0.0f,
+    bool partner_teleported = false) {
   EntityStateBuilder builder_(_fbb);
   builder_.add_attack_target_id(attack_target_id);
   builder_.add_entity_id(entity_id);
+  builder_.add_partner_facing(partner_facing);
+  builder_.add_partner_velocity_z(partner_velocity_z);
+  builder_.add_partner_velocity_y(partner_velocity_y);
+  builder_.add_partner_velocity_x(partner_velocity_x);
+  builder_.add_partner_z(partner_z);
+  builder_.add_partner_y(partner_y);
+  builder_.add_partner_x(partner_x);
   builder_.add_velocity_z(velocity_z);
   builder_.add_velocity_y(velocity_y);
   builder_.add_velocity_x(velocity_x);
@@ -839,6 +927,8 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityState(
   builder_.add_current_hp(current_hp);
   builder_.add_species(species);
   builder_.add_partner_species(partner_species);
+  builder_.add_partner_teleported(partner_teleported);
+  builder_.add_partner_present(partner_present);
   return builder_.Finish();
 }
 
@@ -859,7 +949,16 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityStateDirect(
     float velocity_y = 0.0f,
     float velocity_z = 0.0f,
     uint16_t current_hp = 0,
-    uint16_t max_hp = 0) {
+    uint16_t max_hp = 0,
+    bool partner_present = false,
+    float partner_x = 0.0f,
+    float partner_y = 0.0f,
+    float partner_z = 0.0f,
+    float partner_velocity_x = 0.0f,
+    float partner_velocity_y = 0.0f,
+    float partner_velocity_z = 0.0f,
+    float partner_facing = 0.0f,
+    bool partner_teleported = false) {
   auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
   return HeavenField::CreateEntityState(
       _fbb,
@@ -878,7 +977,16 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityStateDirect(
       velocity_y,
       velocity_z,
       current_hp,
-      max_hp);
+      max_hp,
+      partner_present,
+      partner_x,
+      partner_y,
+      partner_z,
+      partner_velocity_x,
+      partner_velocity_y,
+      partner_velocity_z,
+      partner_facing,
+      partner_teleported);
 }
 
 struct Snapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {

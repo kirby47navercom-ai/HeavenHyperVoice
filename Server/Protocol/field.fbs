@@ -147,6 +147,18 @@ table EntityState {
   // 기존 필드의 슬롯 번호를 유지하려고 속도 필드 뒤에 붙인다.
   current_hp:ushort;
   max_hp:ushort;
+
+  // 플레이어가 데리고 다니는 파트너 포켓몬의 서버 권위 위치다. 파트너는 아직
+  // 별도 EntityState 가 아니라 주인 엔티티에 붙은 표시 개체라서 여기 싣는다.
+  partner_present:bool;
+  partner_x:float;
+  partner_y:float;
+  partner_z:float;
+  partner_velocity_x:float;
+  partner_velocity_y:float;
+  partner_velocity_z:float;
+  partner_facing:float;
+  partner_teleported:bool;
 }
 
 table Snapshot {

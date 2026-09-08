@@ -75,6 +75,17 @@ namespace
 			Entity.AttackTargetId = State->attack_target_id();
 			Entity.CurrentHP = State->current_hp();
 			Entity.MaxHP = State->max_hp();
+			Entity.bHasPartnerTransform = State->partner_present();
+			if (Entity.bHasPartnerTransform)
+			{
+				Entity.PartnerLocation = FVector(State->partner_x(), State->partner_y(), State->partner_z());
+				Entity.PartnerVelocity = FVector(
+					State->partner_velocity_x(),
+					State->partner_velocity_y(),
+					State->partner_velocity_z());
+				Entity.PartnerFacing = State->partner_facing();
+				Entity.bPartnerTeleported = State->partner_teleported();
+			}
 			if (const HeavenField::Appearance* Look = State->appearance())
 			{
 				Entity.bHasAppearance = true;

@@ -7,6 +7,7 @@
 #include <limits>
 #include <utility>
 
+#include "PokemonMovement.h"
 #include "WildAi.h"
 
 namespace heaven::instance {
@@ -16,34 +17,17 @@ namespace {
 constexpr float kEnterRadiusSquared = kEnterRadius * kEnterRadius;
 constexpr float kExitRadiusSquared = kExitRadius * kExitRadius;
 
-// 일반 포켓몬의 이동 속도는 클라이언트 DataAsset에서 측정한 달리기 보폭과
-// 같은 cm/s를 사용한다. 모든 종에 공통 200을 쓰면 작은 포켓몬은 미끄러지고
-// 지나치게 빨라 보이므로 종족 번호별로 서버 권위 속도를 나눈다.
-float wildMoveSpeed(std::uint16_t species) {
-    switch (species) {
-    case 1:  return 44.09f;   // 귀뚤뚜기
-    case 3:  return 98.05f;   // 꼬링크
-    case 4:  return 80.08f;   // 꼬부기
-    case 5:  return 29.47f;   // 꽁어름
-    case 7:  return 25.27f;   // 랄토스
-    case 8:  return 60.93f;   // 모부기
-    case 9:  return 66.50f;   // 벼리짱
-    case 10: return 86.41f;   // 불꽃숭이
-    case 12: return 68.42f;   // 이브이
-    case 13: return 108.51f;  // 이상해씨
-    case 14: return 113.51f;  // 자망칼
-    case 15: return 74.17f;   // 터검니
-    case 16: return 101.33f;  // 파이리
-    case 17: return 45.66f;   // 파치리스
-    case 18: return 95.56f;   // 팽도리
-    case 20: return 60.90f;   // 피카츄
-    default: return 100.0f;   // 아직 보폭을 확정하지 않은 종의 임시 안전 속도
-    }
-}
-
 // 맵이 없을 때 쓰는 캡슐 기본값. 맵이 있으면 그쪽 값을 쓴다 — 지형을 만든
 // 설정과 판정에 쓰는 캡슐이 다르면 navmesh 밖으로 새거나 못 지나간다.
 constexpr nav::Agent kDefaultAgent{};
+
+fieldshared::PartnerOwnerState partnerOwnerStateOf(const Entity& entity) {
+    return {
+        {entity.position.x, entity.position.y, entity.position.z},
+        {entity.velocityX, entity.velocityY, entity.velocityZ},
+        entity.position.facing,
+    };
+}
 
 }  // namespace
 
@@ -58,6 +42,17 @@ proto::EntityView World::viewOf(const Entity& entity, bool withIdentity,
     view.velocityY = entity.velocityY;
     view.velocityZ = entity.velocityZ;
     view.facing = entity.position.facing;
+    if (!entity.isWild && entity.partnerSpecies != 0 && entity.partner.initialized) {
+        view.hasPartnerTransform = true;
+        view.partnerX = entity.partner.location.x;
+        view.partnerY = entity.partner.location.y;
+        view.partnerZ = entity.partner.location.z;
+        view.partnerVelocityX = entity.partner.velocity.x;
+        view.partnerVelocityY = entity.partner.velocity.y;
+        view.partnerVelocityZ = entity.partner.velocity.z;
+        view.partnerFacing = entity.partner.facing;
+        view.partnerTeleported = entity.partner.teleportedThisTick;
+    }
     if (withIdentity) {
         view.nickname = entity.nickname;
         view.partnerSpecies = entity.partnerSpecies;
@@ -141,6 +136,10 @@ Displaced World::enter(std::uint64_t characterId, std::uint64_t accountId, std::
     entity.position = resolvePosition(position);
     entity.sector = sectorIndex(entity.position.x, entity.position.y);
     entity.lastMoveAt = std::chrono::steady_clock::now();
+    if (entity.partnerSpecies != 0) {
+        fieldshared::PartnerFollower::initialize(
+            partnerOwnerStateOf(entity), entity.partnerSpecies, entity.partner, map_);
+    }
 
     // 번호가 이미 있으면 emplace 는 아무것도 넣지 않고 기존 것을 가리킨다.
     // 그대로 진행하면 남의 엔티티를 자기 것인 양 만지게 된다.
@@ -322,7 +321,7 @@ void World::advanceWild(float dt, WildAi& ai) {
 
             // 서버 틱의 dt를 곱하므로 서버 부하나 클라이언트 FPS가 달라도
             // 초당 이동 거리는 같고, 종별 애니메이션 보폭과도 일치한다.
-            const float step = wildMoveSpeed(entity.species) * dt;
+            const float step = fieldshared::pokemonMoveSpeed(entity.species) * dt;
             const float ratio = step >= distance ? 1.f : step / distance;
             const float previousX = entity.position.x;
             const float previousY = entity.position.y;
@@ -472,6 +471,11 @@ void World::setPartnerSpecies(std::uint64_t characterId, std::uint16_t partnerSp
         return;  // 같은 값이면 알릴 것이 없다
     }
     entity.partnerSpecies = partnerSpecies;
+    fieldshared::PartnerFollower::reset(entity.partner);
+    if (entity.partnerSpecies != 0) {
+        fieldshared::PartnerFollower::initialize(
+            partnerOwnerStateOf(entity), entity.partnerSpecies, entity.partner, map_);
+    }
 
     // 프레임은 한 번만 만들어 돌려 쓴다. 보는 사람 수만큼 직렬화할 이유가 없다.
     const proto::Bytes frame = proto::encodePartnerChanged(characterId, partnerSpecies);
@@ -599,8 +603,26 @@ void World::move(std::uint64_t characterId, float x, float y, float facing,
     updateVisibility(self);
 }
 
-void World::tick() {
+void World::advancePartners(float dt) {
+    for (auto& [characterId, entity] : entities_) {
+        (void)characterId;
+        if (entity.isWild) {
+            continue;
+        }
+
+        const bool pendingMove = entity.partner.movedThisTick;
+        const bool pendingTeleport = entity.partner.teleportedThisTick;
+        fieldshared::PartnerFollower::update(
+            dt, partnerOwnerStateOf(entity), entity.partnerSpecies, entity.partner, map_);
+        entity.partner.movedThisTick = entity.partner.movedThisTick || pendingMove;
+        entity.partner.teleportedThisTick =
+            entity.partner.teleportedThisTick || pendingTeleport;
+    }
+}
+
+void World::tick(float dt) {
     std::lock_guard<std::mutex> lock(mutex_);
+    advancePartners(dt);
 
     // 뷰어별로 모은다. 시야 집합이 대칭이라 "나를 보는 사람" = visible 이다.
     //
@@ -611,7 +633,9 @@ void World::tick() {
     std::unordered_map<std::uint64_t, std::vector<proto::EntityView>> pending;
 
     for (auto& [characterId, entity] : entities_) {
-        if (!entity.movedThisTick && !entity.attackedThisTick && !entity.healthChangedThisTick) {
+        const bool partnerMoved = !entity.isWild && entity.partner.movedThisTick;
+        if (!entity.movedThisTick && !entity.attackedThisTick &&
+            !entity.healthChangedThisTick && !partnerMoved) {
             continue;
         }
         if (!entity.movedThisTick) {
@@ -628,6 +652,11 @@ void World::tick() {
         entity.movedThisTick = false;
         entity.attackedThisTick = false;
         entity.healthChangedThisTick = false;
+        entity.partner.movedThisTick = false;
+        entity.partner.teleportedThisTick = false;
+        if (partnerMoved) {
+            pending[characterId].push_back(view);
+        }
         for (const std::uint64_t viewerId : entity.visible) {
             pending[viewerId].push_back(view);
         }

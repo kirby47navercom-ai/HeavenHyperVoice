@@ -24,6 +24,15 @@ struct EntityView {
     float velocityY = 0.f;
     float velocityZ = 0.f;
     float facing = 0.f;
+    bool hasPartnerTransform = false;
+    float partnerX = 0.f;
+    float partnerY = 0.f;
+    float partnerZ = 0.f;
+    float partnerVelocityX = 0.f;
+    float partnerVelocityY = 0.f;
+    float partnerVelocityZ = 0.f;
+    float partnerFacing = 0.f;
+    bool partnerTeleported = false;
     std::string nickname;
     // 둘 다 서버 내부 번호다. 와이어로 나갈 때 도감번호로 바뀐다 (buildEntities).
     std::uint16_t partnerSpecies = 0;
@@ -77,6 +86,17 @@ buildEntities(flatbuffers::FlatBufferBuilder& fbb, const std::vector<EntityView>
         builder.add_velocity_y(entity.velocityY);
         builder.add_velocity_z(entity.velocityZ);
         builder.add_facing(entity.facing);
+        if (entity.hasPartnerTransform) {
+            builder.add_partner_present(true);
+            builder.add_partner_x(entity.partnerX);
+            builder.add_partner_y(entity.partnerY);
+            builder.add_partner_z(entity.partnerZ);
+            builder.add_partner_velocity_x(entity.partnerVelocityX);
+            builder.add_partner_velocity_y(entity.partnerVelocityY);
+            builder.add_partner_velocity_z(entity.partnerVelocityZ);
+            builder.add_partner_facing(entity.partnerFacing);
+            builder.add_partner_teleported(entity.partnerTeleported);
+        }
         if (!nickname.IsNull()) {
             builder.add_nickname(nickname);
         }

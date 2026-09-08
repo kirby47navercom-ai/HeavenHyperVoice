@@ -216,6 +216,7 @@ private:
 	void HandleFieldDisconnected(const FString& Reason);
 	void HandleFieldPartyState(const FHHVFieldPartyState& State);
 	void HandleFieldPartnerChanged(uint64 EntityId, uint16 PartnerDex);
+	void ApplyPartnerServerState(const FHHVFieldEntity& Entity);
 	FVector MakeEntityLocation(float ServerX, float ServerY, float ServerZ) const;
 	float ToServerAxis(double UnrealAxis) const { return static_cast<float>(UnrealAxis) + WorldOriginOffset; }
 	double ToUnrealAxis(float ServerAxis) const { return static_cast<double>(ServerAxis - WorldOriginOffset); }

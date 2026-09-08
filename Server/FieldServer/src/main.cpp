@@ -275,7 +275,7 @@ int main(int argc, char** argv) {
             const float dt = 1.f / static_cast<float>(heaven::proto::kTickHz);
             while (running.load(std::memory_order_acquire)) {
                 const auto deadline = std::chrono::steady_clock::now() + period;
-                world.tick();
+                world.tick(dt);
                 std::this_thread::sleep_until(deadline);
             }
         });
