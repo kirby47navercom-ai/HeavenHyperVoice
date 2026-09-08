@@ -261,7 +261,7 @@ Options parseArgs(int argc, char** argv) {
 int main(int argc, char** argv) {
     try {
         Options options = parseArgs(argc, argv);
-        heaven::net::initLogging(options.verbose);
+        heaven::net::initLogging(options.verbose, "instance");
 
 
         const auto files = heaven::net::resolveServerFiles(

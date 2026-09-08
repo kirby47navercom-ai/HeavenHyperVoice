@@ -218,7 +218,7 @@ int printPasswordHash() {
 int main(int argc, char** argv) {
     try {
         const Options options = parseArgs(argc, argv);
-        heaven::net::initLogging(options.verbose);
+        heaven::net::initLogging(options.verbose, "login");
 
         // 인증서도 키도 필요 없는 경로들이다. 서버를 띄우기 전에 처리한다.
         if (options.hashOnly) {

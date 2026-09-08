@@ -41,9 +41,12 @@ inline std::optional<std::string> databasePassword() {
     return std::nullopt;
 }
 
-inline void initLogging(bool verbose) {
+// tag 는 어느 서버가 찍은 줄인지다 (chat, field, instance, login). 런처가 넷을
+// 한 콘솔에 모아 찍으므로, 레벨(info/warning)보다 이쪽이 훨씬 자주 필요하다.
+// 레벨은 %^%$ 안에 넣은 덕에 색으로 남는다 — 경고는 노랑, 오류는 빨강이다.
+inline void initLogging(bool verbose, const char* tag) {
     spdlog::set_level(verbose ? spdlog::level::debug : spdlog::level::info);
-    spdlog::set_pattern("[%H:%M:%S.%e] [%^%l%$] %v");
+    spdlog::set_pattern(std::string("[%H:%M:%S.%e] [%^") + tag + "%$] %v");
 }
 
 // Ctrl+C 로 서버를 멈춘다. 콘솔 핸들러가 전역을 요구하므로 여기 둔다.

@@ -108,7 +108,7 @@ Options parseArgs(int argc, char** argv) {
 int main(int argc, char** argv) {
     try {
         const Options options = parseArgs(argc, argv);
-        heaven::net::initLogging(options.verbose);
+        heaven::net::initLogging(options.verbose, "chat");
 
         const auto files = heaven::net::resolveServerFiles(
             options.certFile, options.keyFile, options.authPubFile, "ticket public key");

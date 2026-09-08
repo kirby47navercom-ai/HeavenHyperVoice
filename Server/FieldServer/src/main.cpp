@@ -151,7 +151,7 @@ Options parseArgs(int argc, char** argv) {
 int main(int argc, char** argv) {
     try {
         const Options options = parseArgs(argc, argv);
-        heaven::net::initLogging(options.verbose);
+        heaven::net::initLogging(options.verbose, "field");
 
         // 자격증명만 만지고 끝나는 경로들이다. 서버를 띄우기 전에 처리한다.
         if (options.forgetRedisPassword) {
