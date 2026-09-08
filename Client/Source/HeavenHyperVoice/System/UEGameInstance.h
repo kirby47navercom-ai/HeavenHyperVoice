@@ -343,7 +343,7 @@ private:
 	FString LoginServerHost = TEXT("127.0.0.1");
 
 	UPROPERTY(EditDefaultsOnly, Config, Category = "HHV|Server")
-	int32 LoginServerPort = 9100;
+	int32 LoginServerPort = 9000;
 
 	/** 종족 id 를 데이터 에셋으로 바꿀 때 쓴다. BP 기본값에서 지정한다. */
 	UPROPERTY(EditDefaultsOnly, Config, Category = "HHV|Server")

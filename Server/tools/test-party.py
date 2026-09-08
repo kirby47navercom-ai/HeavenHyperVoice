@@ -26,8 +26,8 @@ spec = importlib.util.spec_from_file_location(
 fs = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fs)
 
-LOGIN_PORT = 9100
-CHAT_PORT = 9000
+LOGIN_PORT = 9000
+CHAT_PORT = 9100
 
 # login.fbs union 순서 (1부터)
 L_LOGIN, L_REGISTER, L_CREATE, L_SELECT = 1, 3, 5, 7

@@ -19,8 +19,8 @@ namespace
 {
     struct Options
     {
-        std::uint16_t loginPort = 9100;
-        std::uint16_t chatPort = 9000;
+        std::uint16_t loginPort = 9000;
+        std::uint16_t chatPort = 9100;
         std::uint16_t fieldPort = 9200;
         std::uint16_t instancePort = 9300;
         // 여러 서버를 한 컴퓨터에서 가동시키니 다른 서버 주소를 루프백 IP로 설정한다.
@@ -72,8 +72,8 @@ namespace
     {
         std::cout << "Launcher - starts the HeavenHyperVoice servers together\n"
             "\n"
-            "  --login-port <n>  login server port (default 9100)\n"
-            "  --chat-port <n>   chat server port (default 9000)\n"
+            "  --login-port <n>  login server port (default 9000)\n"
+            "  --chat-port <n>   chat server port (default 9100)\n"
             "  --field-port <n>  field server port (default 9200)\n"
             "  --instance-port <n>  instance server port (default 9300)\n"
             "  --host <h>        host advertised to clients for chat, field and\n"

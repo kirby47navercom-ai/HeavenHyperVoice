@@ -24,7 +24,7 @@
 namespace {
 
 struct Options {
-    std::uint16_t port = 9000;
+    std::uint16_t port = 9100;
     std::string certFile = "certs/server.crt";
     std::string keyFile = "certs/server.key";
     std::string authPubFile = "certs/auth.pub";
@@ -48,7 +48,7 @@ constexpr std::chrono::seconds kHeartbeatInterval{10};
 void printUsage() {
     std::cout << "ChatServer - TLS chat server (IOCP)\n"
                  "\n"
-                 "  --port <n>          listen port (default 9000)\n"
+                 "  --port <n>          listen port (default 9100)\n"
                  "  --cert <path>       PEM certificate chain (default certs/server.crt)\n"
                  "  --key <path>        PEM private key (default certs/server.key)\n"
                  "  --auth-pubkey <p>   Ed25519 public key used to verify login tickets\n"

@@ -103,7 +103,7 @@ struct FHHVLoginEventData
 struct FHHVLoginSettings
 {
 	FString Host = TEXT("127.0.0.1");
-	int32 Port = 9100;
+	int32 Port = 9000;
 };
 
 /**

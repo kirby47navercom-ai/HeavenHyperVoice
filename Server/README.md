@@ -25,8 +25,8 @@
 | `Net/` | 공용 IOCP + TLS 기반(`TlsServer`/`TlsSession`), Redis 래퍼, 작업 큐, 자격증명 관리자 접근 |
 | `Protocol/` | `.fbs` 스키마 + 인코딩 헬퍼 + 티켓 서명/검증 + 종족표/좌표계. 빌드 시점에 헤더 생성 |
 | `Data/` | 계정·캐릭터 저장소 (ODBC). LoginServer·FieldServer·InstanceServer 가 함께 쓴다 |
-| `LoginServer/` | 자격증명 확인 → 캐릭터 선택 → 티켓 발급. 기본 포트 **9100** |
-| `ChatServer/` | 티켓 검증 → 채팅방. 기본 포트 **9000** |
+| `LoginServer/` | 자격증명 확인 → 캐릭터 선택 → 티켓 발급. 기본 포트 **9000** |
+| `ChatServer/` | 티켓 검증 → 채팅방. 기본 포트 **9100** |
 | `FieldServer/` | 티켓 검증 → 이동 중계. 섹터 격자 + 시야 목록. 야생도 전투도 없다. 기본 포트 **9200** |
 | `InstanceServer/` | 방 단위 인스턴스. 야생 포켓몬과 그 Lua AI, 전투가 붙을 자리. 기본 포트 **9300** |
 | `Launcher/` | 서버들을 한꺼번에 띄운다 |
@@ -453,9 +453,9 @@ vcpkg 경로는 CMake가 스스로 찾으므로 환경변수 설정이 필요 �
 ### 개별 실행
 
 ```powershell
-.\build\windows-x64\bin\Debug\LoginServer.exe --port 9100 --chat-port 9000 `
+.\build\windows-x64\bin\Debug\LoginServer.exe --port 9000 --chat-port 9100 `
     --field-port 9200 --instance-port 9300
-.\build\windows-x64\bin\Debug\ChatServer.exe     --port 9000
+.\build\windows-x64\bin\Debug\ChatServer.exe     --port 9100
 .\build\windows-x64\bin\Debug\FieldServer.exe    --port 9200
 .\build\windows-x64\bin\Debug\InstanceServer.exe --port 9300
 ```

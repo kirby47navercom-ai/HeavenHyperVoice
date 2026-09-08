@@ -745,7 +745,7 @@ class Server(ThreadingHTTPServer):
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--login-host", default="127.0.0.1")
-parser.add_argument("--login-port", type=int, default=9100)
+parser.add_argument("--login-port", type=int, default=9000)
 parser.add_argument("--port", type=int, default=8080, help="port for this bridge")
 parser.add_argument("--bind", default="127.0.0.1",
                     help="listen address (default loopback only)")

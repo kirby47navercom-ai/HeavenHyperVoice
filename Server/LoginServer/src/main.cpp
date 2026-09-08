@@ -19,14 +19,14 @@
 namespace {
 
 struct Options {
-    std::uint16_t port = 9100;
+    std::uint16_t port = 9000;
     std::string certFile = "certs/server.crt";
     std::string keyFile = "certs/server.key";
     std::string authKeyFile = "certs/auth.key";
     std::string keyId = "dev-1";
     std::string issuer = "hhv-login";
     std::string chatHost = "127.0.0.1";
-    std::uint16_t chatPort = 9000;
+    std::uint16_t chatPort = 9100;
     std::string fieldHost = "127.0.0.1";
     std::uint16_t fieldPort = 9200;
     std::string instanceHost = "127.0.0.1";
@@ -62,7 +62,7 @@ struct Options {
 void printUsage() {
     std::cout << "LoginServer - TLS login server (IOCP)\n"
                  "\n"
-                 "  --port <n>         listen port (default 9100)\n"
+                 "  --port <n>         listen port (default 9000)\n"
                  "  --cert <path>      PEM certificate chain (default certs/server.crt)\n"
                  "  --key <path>       PEM private key (default certs/server.key)\n"
                  "  --auth-key <path>  Ed25519 private key for signing tickets\n"
@@ -72,7 +72,7 @@ void printUsage() {
                  "  --field-host <h>   field host handed to clients (default 127.0.0.1)\n"
                  "  --field-port <n>   field port handed to clients (default 9200)\n"
                  "  --chat-host <h>    chat host handed to clients (default 127.0.0.1)\n"
-                 "  --chat-port <n>    chat port handed to clients (default 9000)\n"
+                 "  --chat-port <n>    chat port handed to clients (default 9100)\n"
                  "  --instance-host <h>  instance host handed to clients (default 127.0.0.1)\n"
                  "  --instance-port <n>  instance port handed to clients (default 9300)\n"
                  "  --ticket-ttl <s>   ticket lifetime in seconds (default 43200 = 12h).\n"

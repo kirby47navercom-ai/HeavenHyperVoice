@@ -52,7 +52,7 @@ def say(sock, text):
 
 def open_chat():
     """로그인 -> 캐릭터 확보 -> 선택 -> 채팅 접속. 채팅 소켓을 돌려준다."""
-    login = bridge.connect("127.0.0.1", 9100)
+    login = bridge.connect("127.0.0.1", 9000)
     payload = bridge.exchange(
         login, bridge.envelope(bridge.strings_table(USERNAME, "x"), LOGIN_REQUEST), LOGIN_RESPONSE)
     if not bridge.read_scalar(payload, 0, bridge.BoolFlags, False):
@@ -121,4 +121,4 @@ if __name__ == "__main__":
     try:
         main()
     except ConnectionRefusedError:
-        raise SystemExit("cannot reach the servers. Start LoginServer (9100) and ChatServer (9000).")
+        raise SystemExit("cannot reach the servers. Start LoginServer (9000) and ChatServer (9100).")
