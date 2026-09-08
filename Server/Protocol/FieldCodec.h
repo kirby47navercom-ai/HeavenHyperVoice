@@ -31,6 +31,10 @@ struct EntityView {
     std::uint32_t attackSequence = 0;
     std::uint64_t attackTargetId = 0;
 
+    // 야생 포켓몬의 현재/최대 체력. InstanceServer만 채운다.
+    std::uint16_t currentHp = 0;
+    std::uint16_t maxHp = 0;
+
     // 플레이어 외형. hasAppearance 가 false 면 와이어에 넣지 않는다.
     // moved 목록과 야생 포켓몬이 그렇다 — 전자는 안 변하는 값을 매 틱 보내지
     // 않으려는 것이고, 후자는 받는 쪽에서 읽지도 않기 때문이다.
@@ -87,6 +91,10 @@ buildEntities(flatbuffers::FlatBufferBuilder& fbb, const std::vector<EntityView>
         if (entity.attackSequence != 0) {
             builder.add_attack_sequence(entity.attackSequence);
             builder.add_attack_target_id(entity.attackTargetId);
+        }
+        if (entity.maxHp != 0) {
+            builder.add_current_hp(entity.currentHp);
+            builder.add_max_hp(entity.maxHp);
         }
         if (!appearance.IsNull()) {
             builder.add_appearance(appearance);

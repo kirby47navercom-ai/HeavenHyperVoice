@@ -142,6 +142,11 @@ table EntityState {
   velocity_x:float;
   velocity_y:float;
   velocity_z:float;
+
+  // 야생 포켓몬의 서버 권위 체력. 플레이어 엔티티에서는 둘 다 0이다.
+  // 기존 필드의 슬롯 번호를 유지하려고 속도 필드 뒤에 붙인다.
+  current_hp:ushort;
+  max_hp:ushort;
 }
 
 table Snapshot {

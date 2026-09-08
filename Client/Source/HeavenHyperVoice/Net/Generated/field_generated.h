@@ -664,7 +664,9 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_APPEARANCE = 24,
     VT_VELOCITY_X = 26,
     VT_VELOCITY_Y = 28,
-    VT_VELOCITY_Z = 30
+    VT_VELOCITY_Z = 30,
+    VT_CURRENT_HP = 32,
+    VT_MAX_HP = 34
   };
   uint64_t entity_id() const {
     return GetField<uint64_t>(VT_ENTITY_ID, 0);
@@ -708,6 +710,12 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   float velocity_z() const {
     return GetField<float>(VT_VELOCITY_Z, 0.0f);
   }
+  uint16_t current_hp() const {
+    return GetField<uint16_t>(VT_CURRENT_HP, 0);
+  }
+  uint16_t max_hp() const {
+    return GetField<uint16_t>(VT_MAX_HP, 0);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -727,6 +735,8 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<float>(verifier, VT_VELOCITY_X, 4) &&
            VerifyField<float>(verifier, VT_VELOCITY_Y, 4) &&
            VerifyField<float>(verifier, VT_VELOCITY_Z, 4) &&
+           VerifyField<uint16_t>(verifier, VT_CURRENT_HP, 2) &&
+           VerifyField<uint16_t>(verifier, VT_MAX_HP, 2) &&
            verifier.EndTable();
   }
 };
@@ -777,6 +787,12 @@ struct EntityStateBuilder {
   void add_velocity_z(float velocity_z) {
     fbb_.AddElement<float>(EntityState::VT_VELOCITY_Z, velocity_z, 0.0f);
   }
+  void add_current_hp(uint16_t current_hp) {
+    fbb_.AddElement<uint16_t>(EntityState::VT_CURRENT_HP, current_hp, 0);
+  }
+  void add_max_hp(uint16_t max_hp) {
+    fbb_.AddElement<uint16_t>(EntityState::VT_MAX_HP, max_hp, 0);
+  }
   explicit EntityStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -803,7 +819,9 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityState(
     ::flatbuffers::Offset<HeavenField::Appearance> appearance = 0,
     float velocity_x = 0.0f,
     float velocity_y = 0.0f,
-    float velocity_z = 0.0f) {
+    float velocity_z = 0.0f,
+    uint16_t current_hp = 0,
+    uint16_t max_hp = 0) {
   EntityStateBuilder builder_(_fbb);
   builder_.add_attack_target_id(attack_target_id);
   builder_.add_entity_id(entity_id);
@@ -817,6 +835,8 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityState(
   builder_.add_facing(facing);
   builder_.add_y(y);
   builder_.add_x(x);
+  builder_.add_max_hp(max_hp);
+  builder_.add_current_hp(current_hp);
   builder_.add_species(species);
   builder_.add_partner_species(partner_species);
   return builder_.Finish();
@@ -837,7 +857,9 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityStateDirect(
     ::flatbuffers::Offset<HeavenField::Appearance> appearance = 0,
     float velocity_x = 0.0f,
     float velocity_y = 0.0f,
-    float velocity_z = 0.0f) {
+    float velocity_z = 0.0f,
+    uint16_t current_hp = 0,
+    uint16_t max_hp = 0) {
   auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
   return HeavenField::CreateEntityState(
       _fbb,
@@ -854,7 +876,9 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityStateDirect(
       appearance,
       velocity_x,
       velocity_y,
-      velocity_z);
+      velocity_z,
+      current_hp,
+      max_hp);
 }
 
 struct Snapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {

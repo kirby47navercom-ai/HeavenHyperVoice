@@ -48,7 +48,7 @@ constexpr nav::Agent kDefaultAgent{};
 }  // namespace
 
 proto::EntityView World::viewOf(const Entity& entity, bool withIdentity,
-                                bool withAttack) {
+                                 bool withAttack, bool withHealth) {
     proto::EntityView view;
     view.entityId = entity.characterId;
     view.x = entity.position.x;
@@ -75,6 +75,10 @@ proto::EntityView World::viewOf(const Entity& entity, bool withIdentity,
     if (withAttack) {
         view.attackSequence = entity.attackSequence;
         view.attackTargetId = entity.attackTargetId;
+    }
+    if (entity.isWild && (withIdentity || withHealth)) {
+        view.currentHp = entity.currentHp;
+        view.maxHp = entity.maxHp;
     }
     return view;
 }
@@ -186,6 +190,12 @@ void World::enterWild(std::uint64_t entityId, std::uint16_t species, const Posit
     entity.characterId = entityId;
     entity.isWild = true;
     entity.species = species;
+    if (const proto::SpeciesBase* base = proto::findSpecies(species)) {
+        const proto::PokemonStats stats =
+            proto::computeStats(*base, proto::kStarterLevel, {}, {});
+        entity.currentHp = stats.maxHp;
+        entity.maxHp = stats.maxHp;
+    }
     entity.mapId = position.mapId;
     entity.position = resolvePosition(position);
     entity.sector = sectorIndex(entity.position.x, entity.position.y);
@@ -200,6 +210,25 @@ void World::enterWild(std::uint64_t entityId, std::uint16_t species, const Posit
     sectors_[static_cast<std::size_t>(inserted->second.sector)].insert(entityId);
 
     updateVisibility(inserted->second);
+}
+
+bool World::setWildCurrentHp(std::uint64_t entityId, std::uint16_t currentHp) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    const auto found = entities_.find(entityId);
+    if (found == entities_.end() || !found->second.isWild || found->second.maxHp == 0) {
+        return false;
+    }
+
+    Entity& entity = found->second;
+    const std::uint16_t clamped = std::min(currentHp, entity.maxHp);
+    if (entity.currentHp == clamped) {
+        return true;
+    }
+
+    entity.currentHp = clamped;
+    entity.healthChangedThisTick = true;
+    return true;
 }
 
 void World::advanceWild(float dt, WildAi& ai) {
@@ -582,7 +611,7 @@ void World::tick() {
     std::unordered_map<std::uint64_t, std::vector<proto::EntityView>> pending;
 
     for (auto& [characterId, entity] : entities_) {
-        if (!entity.movedThisTick && !entity.attackedThisTick) {
+        if (!entity.movedThisTick && !entity.attackedThisTick && !entity.healthChangedThisTick) {
             continue;
         }
         if (!entity.movedThisTick) {
@@ -594,9 +623,11 @@ void World::tick() {
         const proto::EntityView view = viewOf(
             entity,
             /*withIdentity=*/false,
-            /*withAttack=*/entity.attackedThisTick);
+            /*withAttack=*/entity.attackedThisTick,
+            /*withHealth=*/entity.healthChangedThisTick);
         entity.movedThisTick = false;
         entity.attackedThisTick = false;
+        entity.healthChangedThisTick = false;
         for (const std::uint64_t viewerId : entity.visible) {
             pending[viewerId].push_back(view);
         }

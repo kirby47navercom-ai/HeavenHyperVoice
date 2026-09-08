@@ -73,6 +73,8 @@ namespace
 			Entity.Species = State->species();
 			Entity.AttackSequence = State->attack_sequence();
 			Entity.AttackTargetId = State->attack_target_id();
+			Entity.CurrentHP = State->current_hp();
+			Entity.MaxHP = State->max_hp();
 			if (const HeavenField::Appearance* Look = State->appearance())
 			{
 				Entity.bHasAppearance = true;

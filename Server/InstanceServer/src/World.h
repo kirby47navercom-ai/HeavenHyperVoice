@@ -86,6 +86,11 @@ struct Entity {
     std::uint32_t attackSequence = 0;
     std::uint64_t attackTargetId = 0;
     bool attackedThisTick = false;
+
+    // 야생 포켓몬의 실제 체력은 서버만 소유한다. 플레이어 엔티티에서는 0이다.
+    std::uint16_t currentHp = 0;
+    std::uint16_t maxHp = 0;
+    bool healthChangedThisTick = false;
 };
 
 // 야생 번호는 캐릭터 번호(작은 BIGINT)와 겹치지 않게 높은 범위를 쓴다.
@@ -131,6 +136,9 @@ public:
     // 야생 마릿수만큼 플레이어 이동이 뒤에 밀린다.
     void advanceWild(float dt, WildAi& ai);
 
+    // 전투 계산이 확정한 체력을 반영한다. 다음 틱에 보이는 클라이언트로 전송된다.
+    bool setWildCurrentHp(std::uint64_t entityId, std::uint16_t currentHp);
+
     // 꺼내 놓은 포켓몬을 바꾼다. 나를 보고 있는 사람 전부에게 알린다.
     //
     // Snapshot 의 partner_species 는 spawned 에만 실려서, 이미 보고 있는 상대는
@@ -162,7 +170,7 @@ private:
     void sendTo(const Entity& entity, const proto::Bytes& frame) const;
 
     static proto::EntityView viewOf(const Entity& entity, bool withIdentity,
-                                    bool withAttack = false);
+                                    bool withAttack = false, bool withHealth = false);
 
     // ponytail: 월드 전역 락 하나. 섹터별 락이 맞지만 접속자가 수백 명이 되기
     // 전까지는 경합이 없다. 올릴 때는 sectors_ 를 섹터별 뮤텍스로 감싸고

@@ -64,6 +64,10 @@ void UUEFieldWildPokemonSyncComponent::HandleWildPokemonSpawned(
 	WildActor->FinishSpawning(SpawnTransform);
 	WildActor->SetActorEnableCollision(false);
 	WildActor->InitializeServerEntity(static_cast<int64>(Entity.EntityId), static_cast<int32>(Entity.Species), EUEPokemonRenderType::Wild);
+	if (Entity.MaxHP > 0)
+	{
+		WildActor->ApplyServerStats(Entity.CurrentHP, Entity.MaxHP);
+	}
 	WildActors.Add(Entity.EntityId, WildActor);
 }
 
@@ -77,13 +81,19 @@ void UUEFieldWildPokemonSyncComponent::HandleWildPokemonMoved(
 		return;
 	}
 
-	Found->Get()->ApplyServerMoveTarget(
+	AUEPokemonCharacter* WildActor = Found->Get();
+	if (Entity.MaxHP > 0)
+	{
+		WildActor->ApplyServerStats(Entity.CurrentHP, Entity.MaxHP);
+	}
+
+	WildActor->ApplyServerMoveTarget(
 		TargetLocation,
 		Entity.Velocity,
 		FRotator(0.0f, Entity.Facing, 0.0f),
 		/*bTeleported=*/false);
 
-	Found->Get()->HandleServerAttackSignal(Entity.AttackTargetId, Entity.AttackSequence);
+	WildActor->HandleServerAttackSignal(Entity.AttackTargetId, Entity.AttackSequence);
 }
 
 bool UUEFieldWildPokemonSyncComponent::HandleWildPokemonDespawned(uint64 EntityId)

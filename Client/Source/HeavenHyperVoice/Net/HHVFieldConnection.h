@@ -36,6 +36,10 @@ struct FHHVFieldEntity
 	uint32 AttackSequence = 0;
 	uint64 AttackTargetId = 0;
 
+	// InstanceServer가 소유한 야생 포켓몬 체력. MaxHP가 0이면 체력 데이터가 없는 엔티티다.
+	uint16 CurrentHP = 0;
+	uint16 MaxHP = 0;
+
 	// 커마. spawned 에만 실려 온다 — moved 에서는 bHasAppearance 가 false 다.
 	// 야생 포켓몬도 false 다.
 	bool bHasAppearance = false;
