@@ -36,8 +36,9 @@ struct Options {
     // 입장/퇴장에서만 DB 를 쓴다. 로그인 서버만큼 필요하지 않다.
     unsigned dbThreads = 2;
 
-    // 서버 이동 맵. 없으면 검사하지 않는다.
-    std::string mapFile;
+    // 서버 이동 맵. 기본 필드 레벨(PlayerTestLevel)과 같은 추출 파일을 쓴다.
+    // 끄고 싶으면 --no-map 을 명시한다.
+    std::string mapFile = "maps/PlayerTestLevel.hhvmap";
 
 
     std::string redisHost = "127.0.0.1";
@@ -66,8 +67,8 @@ void printUsage() {
                  "  --threads <n>       IOCP worker threads (default: hardware concurrency)\n"
                  "  --db-threads <n>    threads for position load/save (default 2; entering\n"
                  "                      and leaving only, so fewer than the login server)\n"
-                 "  --map <path>        server nav map. Without it the server does\n"
-                 "                      not check map walkability or walls.\n"
+                 "  --map <path>        server nav map (default maps/PlayerTestLevel.hhvmap)\n"
+                 "  --no-map            disable field map checks and partner pathfinding\n"
                  "  --redis-host <h>    default 127.0.0.1\n"
                  "  --redis-port <n>    default 6379\n"
                  "  --no-redis          skip the position cache; load and save via the DB only\n"
@@ -120,7 +121,9 @@ Options parseArgs(int argc, char** argv) {
             options.dbThreads = static_cast<unsigned>(std::stoi(next("--db-threads")));
         } else if (arg == "--map") {
             options.mapFile = next("--map");
-                } else if (arg == "--redis-host") {
+        } else if (arg == "--no-map") {
+            options.mapFile.clear();
+        } else if (arg == "--redis-host") {
             options.redisHost = next("--redis-host");
         } else if (arg == "--redis-port") {
             options.redisPort = static_cast<std::uint16_t>(std::stoi(next("--redis-port")));
@@ -211,8 +214,8 @@ int main(int argc, char** argv) {
         heaven::net::WorkQueue dbQueue(options.dbThreads);
         heaven::field::World world;
 
-        // 서버 이동 맵. 경로를 줬는데 못 읽으면 기동을 멈춘다 — 검사가 켜진 줄
-        // 알고 운영하는 것이 제일 나쁘다. 아예 안 주면 검사 없이 뜬다.
+        // 서버 이동 맵. 기본값은 PlayerTestLevel 추출 파일이다.
+        // 경로를 줬는데 못 읽으면 기동을 멈춘다.
         heaven::Map map;
         std::string loadedMapFile;
         if (!options.mapFile.empty()) {
@@ -260,7 +263,7 @@ int main(int argc, char** argv) {
                          loadedMapFile, map.groundCount(), map.wallCount(),
                          map.walkablePolyCount());
         } else {
-            spdlog::warn("field map: disabled (--map). Players can walk through anything.");
+            spdlog::warn("field map: disabled (--no-map). Players can walk through anything.");
         }
         if (options.devNoAuth) {
             spdlog::warn("--dev-no-auth: ANY client may enter with a name of its choosing.");

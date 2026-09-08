@@ -460,6 +460,10 @@ vcpkg 경로는 CMake가 스스로 찾으므로 환경변수 설정이 필요 �
 .\build\windows-x64\bin\Debug\InstanceServer.exe --port 9300
 ```
 
+`FieldServer` 는 기본으로 `maps/PlayerTestLevel.hhvmap` 을 읽는다. 그래서
+`PlayerTestLevel` 의 플레이어/파트너 이동은 서버 navmesh 기준으로 보정된다.
+맵 없이 옛 방식으로 띄우려면 `--no-map` 을 붙인다.
+
 `InstanceServer` 는 Lua 스크립트를 **작업 디렉터리 기준** `scripts/wild_ai.lua` 로
 찾는다. 빌드가 실행 파일 옆에 복사해 두므로 그 폴더에서 실행하거나
 `--wild-script` 에 절대 경로를 주면 된다.
