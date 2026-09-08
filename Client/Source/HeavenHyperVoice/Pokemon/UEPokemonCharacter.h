@@ -6,6 +6,7 @@
 #include "AbilitySystemInterface.h"
 #include "GameFramework/Character.h"
 #include "GameplayTagContainer.h"
+#include "../Net/UEServerMoveBuffer.h"
 #include "UEPokemonCharacter.generated.h"
 
 class AUEPokemonCharacter;
@@ -221,7 +222,7 @@ public:
 	void InitializeServerEntity(int64 NewServerEntityId, int32 SpeciesNumber, EUEPokemonRenderType NewRenderType);
 
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|Server")
-	void ApplyServerMoveTarget(const FVector& ServerLocation, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bTeleported);
+	void ApplyServerMoveTarget(const FVector& ServerLocation, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bTeleported, double ServerTimeSeconds = 0.0);
 
 	// main의 야생 공격 신호를 중복 재생하지 않고 한 번만 처리한다.
 	void HandleServerAttackSignal(uint64 TargetEntityId, uint32 AttackSequence);
@@ -415,8 +416,7 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|UI", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float HealthBarHeadOffset = 30.0f;
 
-	// 필드 서버는 20Hz로 좌표를 보낸다. 클라이언트는 이 시간 동안 이전 좌표와
-	// 새 좌표를 일정한 속도로 연결해 프레임 사이의 떨림을 없앤다.
+	// Two 20 Hz samples absorb ordinary arrival jitter.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true", ClampMin = "0.01", ClampMax = "0.2"))
 	float ServerSnapshotIntervalSeconds = 0.05f;
 
@@ -426,22 +426,7 @@ private:
 	UPROPERTY(Transient)
 	bool bDebugAppearanceApplied = false;
 
-	FVector TargetServerLocation = FVector::ZeroVector;
-
-	UPROPERTY(Transient)
-	FVector ServerMoveStartLocation = FVector::ZeroVector;
-
-	UPROPERTY(Transient)
-	FRotator TargetServerRotation = FRotator::ZeroRotator;
-
-	UPROPERTY(Transient)
-	FRotator ServerMoveStartRotation = FRotator::ZeroRotator;
-
-	UPROPERTY(Transient)
-	float ServerMoveElapsedSeconds = 0.0f;
-
-	UPROPERTY(Transient)
-	float ServerMoveDurationSeconds = 0.05f;
+	FUEServerMoveBuffer ServerMoveBuffer;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Pokemon|Stats", meta = (AllowPrivateAccess = "true"))
 	float CurrentHP = 100.0f;
@@ -496,5 +481,4 @@ private:
 	bool bSpawnAudioPlayed = false;
 	bool bDespawnAudioPlayed = false;
 
-	bool bHasServerMoveTarget = false;
 };

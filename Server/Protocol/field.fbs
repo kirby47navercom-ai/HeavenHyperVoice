@@ -165,6 +165,9 @@ table Snapshot {
   spawned:[EntityState];
   moved:[EntityState];
   despawned:[ulong];
+  // Monotonic server clock. Clients interpolate by simulation sample time,
+  // independently of packet arrival jitter and vertical movement distance.
+  server_time_seconds:double;
 }
 
 // 서버 -> 클라. 입장 거절 사유 등.

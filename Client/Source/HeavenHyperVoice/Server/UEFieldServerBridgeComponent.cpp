@@ -468,7 +468,7 @@ void UUEFieldServerBridgeComponent::ApplyPartnerServerState(const FHHVFieldEntit
 		PartnerLocation,
 		Entity.PartnerVelocity,
 		FRotator(0.0f, Entity.PartnerFacing, 0.0f),
-		Entity.bPartnerTeleported);
+		Entity.bPartnerTeleported, Entity.ServerTimeSeconds);
 }
 
 void UUEFieldServerBridgeComponent::HandleFieldDisconnected(const FString& Reason)
@@ -508,11 +508,10 @@ void UUEFieldServerBridgeComponent::HandleFieldPartnerChanged(uint64 EntityId, u
 		return;
 	}
 
-	// 같은 액터를 새 종족으로 바꾸지 않고 지우고 다시 만든다. 메시·캡슐·
-	// 애니메이션·울음이 전부 종족 데이터에 묶여 있어 교체 경로가 따로 필요하다.
-	PartnerSyncComponent->RemovePartner(EntityId);
+	// A repeated PartyState must not destroy an already synchronized partner.
 	if (PartnerDex == 0)
 	{
+		PartnerSyncComponent->RemovePartner(EntityId);
 		return;
 	}
 

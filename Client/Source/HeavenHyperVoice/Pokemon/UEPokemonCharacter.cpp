@@ -72,8 +72,6 @@ void AUEPokemonCharacter::BeginPlay()
 	ApplyPokemonSpeciesData();
 	RefreshHealthBarPosition();
 	RefreshHealthBarWidget();
-	TargetServerLocation = GetActorLocation();
-	TargetServerRotation = GetActorRotation();
 	RefreshWildCryTimer();
 }
 
@@ -139,7 +137,7 @@ void AUEPokemonCharacter::ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnap
 	SetRenderType(Snapshot.RenderType);
 	ApplyServerStats(Snapshot.CurrentHP, Snapshot.MaxHP);
 	ApplyServerAnimationSnapshot(Snapshot);
-	ApplyServerMoveTarget(Snapshot.Location, Snapshot.Velocity, Snapshot.Rotation, Snapshot.bTeleported);
+	ApplyServerMoveTarget(Snapshot.Location, Snapshot.Velocity, Snapshot.Rotation, Snapshot.bTeleported, Snapshot.ServerTimeSeconds);
 }
 
 void AUEPokemonCharacter::InitializeServerEntity(
@@ -783,43 +781,23 @@ void AUEPokemonCharacter::RefreshHealthBarPosition()
 	HealthBarWidgetComponent->SetRelativeLocation(FVector(LocalTop.X, LocalTop.Y, LocalTop.Z + HealthBarHeadOffset));
 }
 
-void AUEPokemonCharacter::ApplyServerMoveTarget(const FVector& ServerLocation, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bTeleported)
+void AUEPokemonCharacter::ApplyServerMoveTarget(const FVector& ServerLocation, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bTeleported, double ServerTimeSeconds)
 {
-	ServerMoveStartLocation = GetActorLocation();
-	ServerMoveStartRotation = GetActorRotation();
-	TargetServerLocation = ServerLocation;
-	TargetServerRotation = ServerRotation;
-	ServerMoveElapsedSeconds = 0.0f;
-	bHasServerMoveTarget = true;
-
-	const float DistanceToServer = FVector::Dist(GetActorLocation(), ServerLocation);
-	if (bTeleported || DistanceToServer >= ServerHardSnapDistance)
+	const bool bReset = bTeleported || ServerMoveBuffer.IsEmpty() ||
+		FVector::Dist(GetActorLocation(), ServerLocation) >= ServerHardSnapDistance;
+	const double SampleTime = ServerTimeSeconds > 0.0 ? ServerTimeSeconds : FPlatformTime::Seconds();
+	const FUEServerMoveSample Sample{SampleTime, ServerLocation, ServerVelocity, ServerRotation.Quaternion()};
+	if (!ServerMoveBuffer.Add(Sample, bReset, ServerSnapshotIntervalSeconds * 2.0))
+	{
+		return;
+	}
+	if (bReset)
 	{
 		SetActorLocation(ServerLocation, false, nullptr, ETeleportType::TeleportPhysics);
 		SetActorRotation(ServerRotation, ETeleportType::TeleportPhysics);
-
-		// 순간이동 거리를 이동 속도로 취급하면 한 프레임 동안 달리기 애니메이션이 튄다.
-		// 다음 일반 이동 스냅샷을 받을 때까지 정지 속도로 유지한다.
 		GetCharacterMovement()->Velocity = FVector::ZeroVector;
 		AccumulatedMovementSoundDistance = 0.0f;
-		bHasServerMoveTarget = false;
-		return;
 	}
-
-	// 네트워크 패킷이 잠시 밀려 목표점이 멀어져도 한 프레임에 따라잡지 않는다.
-	// 종별 DataAsset의 MoveSpeed를 상한으로 삼아 갑작스러운 가속과 떨림을 막는다.
-	const float SnapshotVelocity = ServerVelocity.Size2D();
-	const bool bHasAuthoritativeVelocity = SnapshotVelocity > UE_KINDA_SMALL_NUMBER;
-	const float MaximumVisualSpeed = bHasAuthoritativeVelocity
-		? SnapshotVelocity
-		: FMath::Max(ConfiguredMoveSpeed, 1.0f);
-	const float RequiredMoveSeconds = DistanceToServer / MaximumVisualSpeed;
-
-	// 서버가 실제 이동 속도를 함께 줄 수 있으면 그 값을 우선하고,
-	// 없으면 종별 이동속도와 스냅샷 주기로 화면 보간 시간을 잡는다.
-	ServerMoveDurationSeconds = bHasAuthoritativeVelocity
-		? FMath::Max(RequiredMoveSeconds, UE_SMALL_NUMBER)
-		: FMath::Max(ServerSnapshotIntervalSeconds, RequiredMoveSeconds);
 }
 
 void AUEPokemonCharacter::HandleServerAttackSignal(uint64 TargetEntityId, uint32 AttackSequence)
@@ -902,10 +880,9 @@ void AUEPokemonCharacter::ApplyServerAnimationSnapshot(const FUEPokemonServerMov
 void AUEPokemonCharacter::UpdateServerDrivenMovement(float DeltaSeconds)
 {
 	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
-	if (!bHasServerMoveTarget)
+	FUEServerMoveSample Sample;
+	if (!ServerMoveBuffer.Advance(DeltaSeconds, ServerSnapshotIntervalSeconds * 2.0, Sample))
 	{
-		// 서버 스냅샷 사이에 이미 목표점에 도착했다면 남아 있는 목표 속도를 지운다.
-		// 이 값이 남으면 몸은 멈췄는데 걷기 애니메이션만 계속 재생된다.
 		if (MovementComponent)
 		{
 			MovementComponent->Velocity = FVector::ZeroVector;
@@ -914,20 +891,8 @@ void AUEPokemonCharacter::UpdateServerDrivenMovement(float DeltaSeconds)
 	}
 
 	const FVector PreviousLocation = GetActorLocation();
-	ServerMoveElapsedSeconds += FMath::Max(DeltaSeconds, 0.0f);
-	const float SafeMoveDuration = FMath::Max(ServerMoveDurationSeconds, UE_SMALL_NUMBER);
-	const float MoveAlpha = FMath::Clamp(ServerMoveElapsedSeconds / SafeMoveDuration, 0.0f, 1.0f);
-
-	// VInterpTo는 새 20Hz 좌표가 올 때마다 빠르게 출발했다가 느려져 속도가 맥동한다.
-	// 선형 보간은 구간 전체의 속도를 일정하게 유지해 몸과 발의 부들거림을 없앤다.
-	const FVector NewLocation = FMath::Lerp(ServerMoveStartLocation, TargetServerLocation, MoveAlpha);
-	const FQuat NewRotation = FQuat::Slerp(
-		ServerMoveStartRotation.Quaternion(),
-		TargetServerRotation.Quaternion(),
-		MoveAlpha).GetNormalized();
-
-	SetActorLocation(NewLocation, false);
-	SetActorRotation(NewRotation);
+	SetActorLocation(Sample.Location, false);
+	SetActorRotation(Sample.Rotation);
 
 	if (MovementComponent)
 	{
@@ -938,9 +903,4 @@ void AUEPokemonCharacter::UpdateServerDrivenMovement(float DeltaSeconds)
 	}
 
 	UpdateMovementSound(PreviousLocation, GetActorLocation());
-
-	if (MoveAlpha >= 1.0f)
-	{
-		bHasServerMoveTarget = false;
-	}
 }

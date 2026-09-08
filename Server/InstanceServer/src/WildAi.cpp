@@ -131,7 +131,7 @@ WildIntent WildAi::decide(std::uint64_t entityId, std::uint16_t species, std::ui
     }
 
     if (brain.phase == WildPhase::Moving) {
-        WildIntent intent = followPath(x, y, brain);
+        WildIntent intent = followPath(x, y, z, brain);
         if (!intent.moving) {
             beginRest(brain, brain.restAfterArriveSeconds);
         }
@@ -209,7 +209,7 @@ WildIntent WildAi::chooseNextAction(std::uint64_t entityId, std::uint16_t specie
             const MoveAction action = makeWanderAction(x, y, decision);
             if (action.valid && beginMove(x, y, z, action, brain)) {
                 brain.phase = WildPhase::Moving;
-                WildIntent intent = followPath(x, y, brain);
+                WildIntent intent = followPath(x, y, z, brain);
                 if (!intent.moving) {
                     beginRest(brain, brain.restAfterArriveSeconds);
                 }
@@ -247,7 +247,7 @@ WildIntent WildAi::chooseNextAction(std::uint64_t entityId, std::uint16_t specie
     brain.replanRemainingSeconds = action.restAfterArriveSeconds;
     brain.phase = WildPhase::Moving;
 
-    WildIntent intent = followPath(x, y, brain);
+    WildIntent intent = followPath(x, y, z, brain);
     if (!intent.moving) {
         beginRest(brain, brain.restAfterArriveSeconds);
     }
@@ -271,14 +271,14 @@ bool WildAi::beginMove(float x, float y, float z, const MoveAction& action, Wild
     if (map_ != nullptr && map_->loaded()) {
         nav::Vec3 goal{brain.targetX, brain.targetY, brain.targetZ};
         nav::Vec3 groundedGoal;
-        if (map_->canStandAt(goal.x, goal.y, agent_, &groundedGoal)) {
+        if (map_->canStandAt(goal.x, goal.y, agent_, &groundedGoal, z)) {
             goal = groundedGoal;
         } else if (map_->nearestStandable(
                        goal.x,
                        goal.y,
                        std::max(brain.acceptanceRadius, agent_.radius * 4.f),
                        agent_,
-                       groundedGoal)) {
+                       groundedGoal, z)) {
             goal = groundedGoal;
         } else {
             return false;
@@ -302,13 +302,21 @@ bool WildAi::beginMove(float x, float y, float z, const MoveAction& action, Wild
     return true;
 }
 
-WildIntent WildAi::followPath(float x, float y, WildBrain& brain) {
+WildIntent WildAi::followPath(float x, float y, float z, WildBrain& brain) {
     constexpr float kWaypointRadius = 35.f;
     const float waypointRadiusSquared = kWaypointRadius * kWaypointRadius;
 
     while (brain.pathIndex < brain.path.size() &&
            distanceSquared(x, y, brain.path[brain.pathIndex].x, brain.path[brain.pathIndex].y) <=
-               waypointRadiusSquared) {
+                waypointRadiusSquared) {
+        const nav::Vec3 current{x, y, z};
+        const nav::Vec3 next = brain.pathIndex + 1 < brain.path.size()
+            ? brain.path[brain.pathIndex + 1]
+            : nav::Vec3{brain.targetX, brain.targetY, brain.targetZ};
+        if (map_ != nullptr && map_->loaded() && map_->blockedAlong(current, next, agent_) &&
+            distanceSquared(x, y, brain.path[brain.pathIndex].x, brain.path[brain.pathIndex].y) > 0.25f) {
+            break;
+        }
         ++brain.pathIndex;
     }
 

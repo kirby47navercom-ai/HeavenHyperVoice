@@ -29,6 +29,8 @@ endif()
 
 project(HHVServer LANGUAGES CXX)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -50,4 +52,10 @@ add_subdirectory(ChatServer)
 add_subdirectory(FieldServer)
 add_subdirectory(InstanceServer)
 add_subdirectory(Launcher)
+
+if(BUILD_TESTING)
+    add_executable(FieldMovementTests tests/FieldMovementTests.cpp)
+    target_link_libraries(FieldMovementTests PRIVATE FieldShared)
+    add_test(NAME FieldMovementTests COMMAND FieldMovementTests "${PROJECT_SOURCE_DIR}/maps/Filed.hhvmap")
+endif()
 

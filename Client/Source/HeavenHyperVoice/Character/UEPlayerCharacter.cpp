@@ -666,14 +666,28 @@ FVector AUEPlayerCharacter::GetMoveDirectionFromInput(const FVector2D& Input, co
 
 void AUEPlayerCharacter::ApplyServerMovementCorrection(const FVector& ServerPosition, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bUseHardCorrection)
 {
-	const ETeleportType CorrectionTeleportType = bUseHardCorrection ? ETeleportType::TeleportPhysics : ETeleportType::None;
-
-	// 서버 보정은 실제 위치와 속도를 맞춘 뒤 다음 틱에서 로컬 입력을 다시 적용한다.
-	SetActorLocation(ServerPosition, false, nullptr, CorrectionTeleportType);
-	SetActorRotation(ServerRotation, CorrectionTeleportType);
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
+		if (bUseHardCorrection)
+		{
+			FVector LandingPosition = ServerPosition;
+			if (!GetWorld()->FindTeleportSpot(this, LandingPosition, ServerRotation))
+			{
+				UE_LOG(LogTemp, Warning, TEXT("PlayerMovementSync: no collision-free correction location at %s"),
+					*ServerPosition.ToString());
+				return;
+			}
+			SetActorLocationAndRotation(LandingPosition, ServerRotation, false, nullptr, ETeleportType::TeleportPhysics);
+			MovementComponent->OnTeleported();
+		}
+		else
+		{
+			FHitResult Hit;
+			MovementComponent->SafeMoveUpdatedComponent(ServerPosition - GetActorLocation(),
+				GetActorQuat(), true, Hit);
+		}
 		MovementComponent->Velocity = ServerVelocity;
+		MovementComponent->bForceNextFloorCheck = true;
 	}
 }
 

@@ -20,6 +20,8 @@ struct PartnerFollowConfig {
     float teleportDistance = 900.f;
     float repathDistance = 80.f;
     float waypointRadius = 35.f;
+    float blockedRecoverySeconds = 2.f;
+    float pathRetrySeconds = 0.25f;
 };
 
 struct PartnerOwnerState {
@@ -37,6 +39,8 @@ struct PartnerState {
     // +1 이 주인 기준 오른쪽, -1 이 왼쪽이다.
     float sideSign = 1.f;
     float idleSeconds = 0.f;
+    float blockedSeconds = 0.f;
+    float retrySeconds = 0.f;
     nav::Vec3 pathGoal;
     std::vector<nav::Vec3> path;
     std::size_t pathIndex = 0;

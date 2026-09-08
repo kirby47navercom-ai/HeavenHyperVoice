@@ -84,13 +84,9 @@ void UUEPlayerMovementSyncComponent::HandleServerCorrection(
 	{
 		return;
 	}
-	const FUEPlayerMovementPacket& Sent = MoveHistory[HistoryIndex];
-
-	FRotator ServerRotation = Sent.ActorRotation;
-	ServerRotation.Yaw = ServerFacing;
-
-	// 확인된 것까지는 다시 볼 일이 없다.
-	const float CorrectionDistance = FVector::Dist(Sent.ClientPosition, ServerPosition);
+	const FVector Error = FVector(ServerPosition.X - MoveHistory[HistoryIndex].ClientPosition.X,
+		ServerPosition.Y - MoveHistory[HistoryIndex].ClientPosition.Y, 0.0);
+	const float CorrectionDistance = Error.Size2D();
 	MoveHistory.RemoveAt(0, HistoryIndex + 1, EAllowShrinking::No);
 
 	if (CorrectionDistance <= ServerCorrectionTolerance)
@@ -98,11 +94,32 @@ void UUEPlayerMovementSyncComponent::HandleServerCorrection(
 		return;
 	}
 
-	PlayerCharacter->ApplyServerMovementCorrection(
-		ServerPosition,
-		FVector::ZeroVector,
-		ServerRotation,
-		/*bUseHardCorrection=*/CorrectionDistance >= HardCorrectionDistance);
+	const bool bHard = CorrectionDistance >= HardCorrectionDistance;
+	const FVector Before = PlayerCharacter->GetActorLocation();
+	FRotator Rotation = PlayerCharacter->GetActorRotation();
+	if (bHard)
+	{
+		Rotation.Yaw = ServerFacing;
+	}
+	// The protocol validates XY, not jumping/falling. Preserve vertical physics
+	// and movement performed since the acknowledged packet for ordinary corrections.
+	PlayerCharacter->ApplyServerMovementCorrection(bHard ? ServerPosition : Before + Error,
+		bHard ? FVector::ZeroVector : PlayerCharacter->GetVelocity(), Rotation, bHard);
+	if (bHard)
+	{
+		MoveHistory.Reset();
+	}
+	else
+	{
+		// Later replies refer to packets sent before this adjustment. Rebase the
+		// remaining history so the same displacement is not applied twice.
+		FVector Applied = PlayerCharacter->GetActorLocation() - Before;
+		Applied.Z = 0.0;
+		for (FUEPlayerMovementPacket& Pending : MoveHistory)
+		{
+			Pending.ClientPosition += Applied;
+		}
+	}
 }
 
 int32 UUEPlayerMovementSyncComponent::FindMoveHistoryIndex(uint32 Sequence) const

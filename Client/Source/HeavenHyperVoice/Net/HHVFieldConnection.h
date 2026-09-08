@@ -21,6 +21,7 @@ struct bio_st;
 struct FHHVFieldEntity
 {
 	uint64 EntityId = 0;
+	double ServerTimeSeconds = 0.0;
 	float X = 0.0f;
 	float Y = 0.0f;
 	float Z = 0.0f;

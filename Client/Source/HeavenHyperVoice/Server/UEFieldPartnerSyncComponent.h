@@ -30,7 +30,7 @@ public:
 	// 같은 주인을 다시 등록하면 무시한다.
 	void AddPartner(uint64 OwnerEntityId, AActor* OwnerActor, int32 DexNumber);
 	bool ApplyPartnerServerState(uint64 OwnerEntityId, const FVector& ServerLocation,
-		const FVector& ServerVelocity, const FRotator& ServerRotation, bool bTeleported);
+		const FVector& ServerVelocity, const FRotator& ServerRotation, bool bTeleported, double ServerTimeSeconds);
 
 	// 주인이 시야에서 사라지면 파트너도 같이 없앤다.
 	bool RemovePartner(uint64 OwnerEntityId);
@@ -46,6 +46,7 @@ private:
 	struct FPartner
 	{
 		TWeakObjectPtr<AUEPokemonCharacter> Actor;
+		int32 DexNumber = 0;
 	};
 
 	// 주인 엔티티 id -> 그 주인의 파트너. 로컬 플레이어도 여기에 들어간다.

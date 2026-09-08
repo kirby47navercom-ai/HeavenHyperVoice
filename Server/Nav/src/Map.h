@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <memory>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -83,12 +84,15 @@ public:
     // groundedLocation 의 z 는 지면이 아니라 캡슐 **중심** 높이다
     // (지면 + agent.halfHeight). nearestStandable 도 같은 기준이다.
     bool canStandAt(float x, float y, const nav::Agent& agent,
-                    nav::Vec3* groundedLocation = nullptr) const;
+                    nav::Vec3* groundedLocation = nullptr,
+                    float referenceZ = std::numeric_limits<float>::quiet_NaN()) const;
     bool blockedAlong(const nav::Vec3& from, const nav::Vec3& to,
                       const nav::Agent& agent) const;
     bool nearestStandable(float x, float y, float radius, const nav::Agent& agent,
-                          nav::Vec3& outLocation) const;
+                          nav::Vec3& outLocation,
+                          float referenceZ = std::numeric_limits<float>::quiet_NaN()) const;
 
+    const dtNavMesh* navMesh() const { return navMesh_.get(); }
     const dtNavMeshQuery* navQuery() const { return query_.get(); }
     const dtQueryFilter* queryFilter() const { return filter_.get(); }
     std::array<float, 3> queryExtents(const nav::Agent& agent) const;
@@ -97,6 +101,11 @@ public:
     static nav::Vec3 fromDetour(const float* value);
 
 private:
+    struct GroundNode {
+        float minX, minY, maxX, maxY;
+        std::size_t begin = 0, count = 0;
+        int left = -1, right = -1;
+    };
     struct NavMeshDeleter {
         void operator()(dtNavMesh* mesh) const;
     };
@@ -111,16 +120,20 @@ private:
 
     bool parseLine(const std::string& line, int lineNumber, std::string& error);
     bool buildNavMesh(std::string& error);
+    int buildGroundIndex(std::size_t begin, std::size_t end);
+    bool sampleGroundHeight(nav::Vec3& location) const;
     void clear();
     void updateBounds(const nav::Vec3& value);
     bool findNearestPoly(float x, float y, const nav::Agent& agent, float horizontalRadius,
-                         nav::Vec3& outLocation) const;
+                         nav::Vec3& outLocation, float referenceZ) const;
 
     std::string source_;
     nav::Aabb bounds_;
     nav::Agent agent_;
     nav::BuildSettings settings_;
     std::vector<nav::Triangle> triangles_;
+    std::vector<std::size_t> groundIndices_;
+    std::vector<GroundNode> groundNodes_;
     std::size_t groundTriangleCount_ = 0;
     std::size_t wallTriangleCount_ = 0;
     std::size_t walkablePolyCount_ = 0;

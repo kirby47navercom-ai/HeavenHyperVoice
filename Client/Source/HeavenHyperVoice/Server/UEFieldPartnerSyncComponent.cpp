@@ -19,9 +19,17 @@ void UUEFieldPartnerSyncComponent::SetPartnerPokemonClass(TSubclassOf<AUEPokemon
 
 void UUEFieldPartnerSyncComponent::AddPartner(uint64 OwnerEntityId, AActor* OwnerActor, int32 DexNumber)
 {
-	if (DexNumber <= 0 || OwnerActor == nullptr || Partners.Contains(OwnerEntityId))
+	if (DexNumber <= 0 || OwnerActor == nullptr)
 	{
 		return;
+	}
+	if (const FPartner* Existing = Partners.Find(OwnerEntityId))
+	{
+		if (Existing->Actor.IsValid() && Existing->DexNumber == DexNumber)
+		{
+			return;
+		}
+		RemovePartner(OwnerEntityId);
 	}
 
 	UWorld* World = GetWorld();
@@ -71,7 +79,7 @@ void UUEFieldPartnerSyncComponent::AddPartner(uint64 OwnerEntityId, AActor* Owne
 	// 주인이 달리기만 해도 그만큼 뒤처져서, 그대로 두면 매 프레임 순간이동한다.
 	PartnerActor->SetServerHardSnapDistance(TeleportDistance);
 
-	Partners.Add(OwnerEntityId, FPartner{PartnerActor});
+	Partners.Add(OwnerEntityId, FPartner{PartnerActor, DexNumber});
 }
 
 bool UUEFieldPartnerSyncComponent::ApplyPartnerServerState(
@@ -79,7 +87,7 @@ bool UUEFieldPartnerSyncComponent::ApplyPartnerServerState(
 	const FVector& ServerLocation,
 	const FVector& ServerVelocity,
 	const FRotator& ServerRotation,
-	bool bTeleported)
+	bool bTeleported, double ServerTimeSeconds)
 {
 	const FPartner* Partner = Partners.Find(OwnerEntityId);
 	if (Partner == nullptr || !Partner->Actor.IsValid())
@@ -91,7 +99,7 @@ bool UUEFieldPartnerSyncComponent::ApplyPartnerServerState(
 		ServerLocation,
 		ServerVelocity,
 		ServerRotation,
-		bTeleported);
+		bTeleported, ServerTimeSeconds);
 	return true;
 }
 

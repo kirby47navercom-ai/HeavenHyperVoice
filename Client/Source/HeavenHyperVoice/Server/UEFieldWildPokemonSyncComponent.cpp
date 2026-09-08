@@ -91,7 +91,7 @@ void UUEFieldWildPokemonSyncComponent::HandleWildPokemonMoved(
 		TargetLocation,
 		Entity.Velocity,
 		FRotator(0.0f, Entity.Facing, 0.0f),
-		/*bTeleported=*/false);
+		/*bTeleported=*/false, Entity.ServerTimeSeconds);
 
 	WildActor->HandleServerAttackSignal(Entity.AttackTargetId, Entity.AttackSequence);
 }

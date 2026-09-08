@@ -123,7 +123,7 @@ private:
                                 std::uint32_t mapId, float x, float y, float z, WildBrain& brain,
                                 const std::vector<ObservedPlayer>& players);
     bool beginMove(float x, float y, float z, const MoveAction& action, WildBrain& brain);
-    WildIntent followPath(float x, float y, WildBrain& brain);
+    WildIntent followPath(float x, float y, float z, WildBrain& brain);
     MoveAction makeWanderAction(float x, float y, const WildDecision& decision);
     MoveAction makeChaseAction(const WildDecision& decision, const ObservedPlayer& target);
     WildIntent makeAttackIntent(float x, float y, const WildDecision& decision,

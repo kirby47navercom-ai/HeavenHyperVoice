@@ -20,7 +20,52 @@ namespace {
 constexpr unsigned char kGroundArea = 1;
 constexpr unsigned short kWalkFlag = 1;
 constexpr int kMaxRaycastPolys = 256;
-constexpr int kMaxNearestPolys = 128;
+constexpr float kPositionTolerance = 0.5f;
+
+// Rank candidates horizontally first. A distant map-wide Z must not select
+// an uphill neighbour instead of the polygon directly below the requested XY.
+class HorizontalNearestQuery final : public dtPolyQuery {
+public:
+    HorizontalNearestQuery(const dtNavMeshQuery& query, const float* center,
+                           float radius, float referenceGroundZ)
+        : query_(query), center_(center), radiusSquared_(radius * radius),
+          referenceZ_(referenceGroundZ) {}
+
+    void process(const dtMeshTile*, dtPoly**, dtPolyRef* refs, int count) override {
+        for (int i = 0; i < count; ++i) {
+            float point[3]{};
+            if (dtStatusFailed(query_.closestPointOnPoly(refs[i], center_, point, nullptr))) {
+                continue;
+            }
+            const float dx = point[0] - center_[0];
+            const float dy = point[2] - center_[2];
+            const float distance = dx * dx + dy * dy;
+            const float heightDistance = std::isfinite(referenceZ_)
+                ? std::abs(point[1] - referenceZ_) : -point[1];
+            if (distance > radiusSquared_) {
+                continue;
+            }
+            if (!found || distance < bestDistance_ - 1e-4f ||
+                (std::abs(distance - bestDistance_) <= 1e-4f && heightDistance < bestHeight_)) {
+                found = true;
+                bestDistance_ = distance;
+                bestHeight_ = heightDistance;
+                location = Map::fromDetour(point);
+            }
+        }
+    }
+
+    bool found = false;
+    nav::Vec3 location;
+
+private:
+    const dtNavMeshQuery& query_;
+    const float* center_;
+    float radiusSquared_;
+    float referenceZ_;
+    float bestDistance_ = std::numeric_limits<float>::max();
+    float bestHeight_ = std::numeric_limits<float>::max();
+};
 
 struct HeightFieldDeleter {
     void operator()(rcHeightfield* value) const { rcFreeHeightField(value); }
@@ -53,10 +98,6 @@ protected:
 bool parseFloat(std::istringstream& stream, float& out) {
     stream >> out;
     return !stream.fail();
-}
-
-float sqr(float value) {
-    return value * value;
 }
 
 bool sameToken(const std::string& a, const char* b) {
@@ -103,6 +144,8 @@ void Map::clear() {
     agent_ = {};
     settings_ = {};
     triangles_.clear();
+    groundIndices_.clear();
+    groundNodes_.clear();
     groundTriangleCount_ = 0;
     wallTriangleCount_ = 0;
     walkablePolyCount_ = 0;
@@ -152,6 +195,11 @@ bool Map::loadFromFile(const std::string& path, std::string& error) {
     }
     filter_->setIncludeFlags(kWalkFlag);
     filter_->setExcludeFlags(0);
+
+    for (std::size_t i = 0; i < triangles_.size(); ++i) {
+        if (triangles_[i].area == kGroundArea) groundIndices_.push_back(i);
+    }
+    if (!groundIndices_.empty()) buildGroundIndex(0, groundIndices_.size());
 
     if (!buildNavMesh(error)) {
         clear();
@@ -254,6 +302,75 @@ void Map::updateBounds(const nav::Vec3& value) {
     bounds_.max.x = std::max(bounds_.max.x, value.x);
     bounds_.max.y = std::max(bounds_.max.y, value.y);
     bounds_.max.z = std::max(bounds_.max.z, value.z);
+}
+
+int Map::buildGroundIndex(std::size_t begin, std::size_t end) {
+    GroundNode node{std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
+                    std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(),
+                    begin, end - begin};
+    for (std::size_t i = begin; i < end; ++i) {
+        const auto& t = triangles_[groundIndices_[i]];
+        node.minX = std::min({node.minX, t.a.x, t.b.x, t.c.x});
+        node.minY = std::min({node.minY, t.a.y, t.b.y, t.c.y});
+        node.maxX = std::max({node.maxX, t.a.x, t.b.x, t.c.x});
+        node.maxY = std::max({node.maxY, t.a.y, t.b.y, t.c.y});
+    }
+    const int index = static_cast<int>(groundNodes_.size());
+    groundNodes_.push_back(node);
+    if (end - begin > 8) {
+        const bool splitX = node.maxX - node.minX > node.maxY - node.minY;
+        const auto center = [&](std::size_t i) {
+            const auto& t = triangles_[i];
+            return splitX ? t.a.x + t.b.x + t.c.x : t.a.y + t.b.y + t.c.y;
+        };
+        const std::size_t middle = begin + (end - begin) / 2;
+        std::nth_element(groundIndices_.begin() + begin, groundIndices_.begin() + middle,
+                         groundIndices_.begin() + end,
+                         [&](std::size_t a, std::size_t b) { return center(a) < center(b); });
+        const int left = buildGroundIndex(begin, middle);
+        const int right = buildGroundIndex(middle, end);
+        groundNodes_[index].left = left;
+        groundNodes_[index].right = right;
+    }
+    return index;
+}
+
+bool Map::sampleGroundHeight(nav::Vec3& location) const {
+    if (groundNodes_.empty()) return false;
+    float bestError = std::numeric_limits<float>::max();
+    float height = location.z;
+    // The index and geometry are immutable after loading, including in shared rooms.
+    const auto visit = [&](const auto& self, int index) -> void {
+        const auto& node = groundNodes_[index];
+        if (location.x < node.minX || location.x > node.maxX ||
+            location.y < node.minY || location.y > node.maxY) return;
+        if (node.left >= 0) {
+            self(self, node.left);
+            self(self, node.right);
+            return;
+        }
+        for (std::size_t i = node.begin; i < node.begin + node.count; ++i) {
+            const auto& t = triangles_[groundIndices_[i]];
+            const double ax = double(t.a.x) - t.c.x, ay = double(t.a.y) - t.c.y;
+            const double bx = double(t.b.x) - t.c.x, by = double(t.b.y) - t.c.y;
+            const double px = double(location.x) - t.c.x, py = double(location.y) - t.c.y;
+            const double determinant = ax * by - ay * bx;
+            if (std::abs(determinant) < 1e-8) continue;
+            const double a = (px * by - py * bx) / determinant;
+            const double b = (ax * py - ay * px) / determinant;
+            if (a < -1e-5 || b < -1e-5 || a + b > 1.00001) continue;
+            const float z = static_cast<float>(a * t.a.z + b * t.b.z + (1.0 - a - b) * t.c.z);
+            const float error = std::abs(z - location.z);
+            if (error < bestError) {
+                bestError = error;
+                height = z;
+            }
+        }
+    };
+    visit(visit, 0);
+    if (bestError == std::numeric_limits<float>::max()) return false;
+    location.z = height;
+    return true;
 }
 
 bool Map::buildNavMesh(std::string& error) {
@@ -461,10 +578,7 @@ bool Map::buildNavMesh(std::string& error) {
 
 std::array<float, 3> Map::queryExtents(const nav::Agent& agent) const {
     const float horizontal = std::max({agent.radius * 2.f, settings_.cellSize * 2.f, 100.f});
-    float vertical = std::max(agent.height(), 300.f);
-    if (bounds_.valid) {
-        vertical = std::max(vertical, (bounds_.max.z - bounds_.min.z) * 0.5f + agent.height());
-    }
+    const float vertical = std::max(agent.height(), 300.f);
     return {horizontal, vertical, horizontal};
 }
 
@@ -477,8 +591,8 @@ nav::Vec3 Map::fromDetour(const float* value) {
 }
 
 bool Map::findNearestPoly(float x, float y, const nav::Agent& agent, float horizontalRadius,
-                          nav::Vec3& outLocation) const {
-    if (!hasNavMesh() || filter_ == nullptr) {
+                          nav::Vec3& outLocation, float referenceZ) const {
+    if (!hasNavMesh() || filter_ == nullptr || !std::isfinite(x) || !std::isfinite(y)) {
         return false;
     }
 
@@ -486,25 +600,17 @@ bool Map::findNearestPoly(float x, float y, const nav::Agent& agent, float horiz
     const nav::Vec3 serverCenter{x, y, centerZ};
     const std::array<float, 3> center = toDetour(serverCenter);
     std::array<float, 3> extents = queryExtents(agent);
-    extents[0] = std::max(extents[0], horizontalRadius);
-    extents[2] = std::max(extents[2], horizontalRadius);
+    extents[0] = extents[2] = std::max(horizontalRadius, kPositionTolerance);
+    extents[1] = std::max(extents[1], (bounds_.max.z - bounds_.min.z) * 0.5f + agent.height());
 
-    dtPolyRef ref = 0;
-    float nearest[3]{};
-    if (dtStatusFailed(query_->findNearestPoly(center.data(), extents.data(), filter_.get(), &ref,
-                                               nearest)) ||
-        ref == 0) {
+    HorizontalNearestQuery candidates(*query_, center.data(), horizontalRadius,
+                                      referenceZ - agent.halfHeight);
+    if (dtStatusFailed(query_->queryPolygons(center.data(), extents.data(), filter_.get(),
+                                             &candidates)) || !candidates.found) {
         return false;
     }
 
-    const nav::Vec3 converted = fromDetour(nearest);
-    const float horizontalDistance =
-        std::sqrt(sqr(converted.x - x) + sqr(converted.y - y));
-    if (horizontalDistance > horizontalRadius) {
-        return false;
-    }
-
-    outLocation = converted;
+    outLocation = candidates.location;
     return true;
 }
 
@@ -514,11 +620,12 @@ bool Map::findNearestPoly(float x, float y, const nav::Agent& agent, float horiz
 // 보내면 모두가 halfHeight 만큼 땅에 묻히고, 내 캐릭터는 보정이 올 때마다
 // 지면 아래로 끌려갔다가 물리에 밀려 올라오며 떨린다.
 bool Map::canStandAt(float x, float y, const nav::Agent& agent,
-                     nav::Vec3* groundedLocation) const {
+                     nav::Vec3* groundedLocation, float referenceZ) const {
     nav::Vec3 location;
-    if (!findNearestPoly(x, y, agent, std::max(agent.radius, settings_.cellSize), location)) {
+    if (!findNearestPoly(x, y, agent, kPositionTolerance, location, referenceZ)) {
         return false;
     }
+    if (!sampleGroundHeight(location)) return false;
     if (groundedLocation != nullptr) {
         location.z += agent.halfHeight;
         *groundedLocation = location;
@@ -534,16 +641,14 @@ bool Map::blockedAlong(const nav::Vec3& from, const nav::Vec3& to,
 
     nav::Vec3 groundedFrom;
     nav::Vec3 groundedTo;
-    if (!findNearestPoly(from.x, from.y, agent, std::max(agent.radius, settings_.cellSize),
-                         groundedFrom) ||
-        !findNearestPoly(to.x, to.y, agent, std::max(agent.radius, settings_.cellSize),
-                         groundedTo)) {
+    if (!findNearestPoly(from.x, from.y, agent, kPositionTolerance, groundedFrom, from.z) ||
+        !findNearestPoly(to.x, to.y, agent, kPositionTolerance, groundedTo, to.z)) {
         return true;
     }
 
     const std::array<float, 3> start = toDetour(groundedFrom);
     const std::array<float, 3> end = toDetour(groundedTo);
-    const std::array<float, 3> extents = queryExtents(agent);
+    const std::array<float, 3> extents{kPositionTolerance, agent.maxStepHeight, kPositionTolerance};
 
     dtPolyRef startRef = 0;
     float nearestStart[3]{};
@@ -564,56 +669,28 @@ bool Map::blockedAlong(const nav::Vec3& from, const nav::Vec3& to,
         return true;
     }
 
-    return t < 1.f;
+    const float remaining = std::hypot(end[0] - start[0], end[2] - start[2]) * (1.f - t);
+    // Straight-path corners lie exactly on polygon edges. Floating point
+    // roundoff may report a hit just before the otherwise valid endpoint.
+    if (t < 1.f && remaining > kPositionTolerance) {
+        return true;
+    }
+    // Detour's raycast is 2D. Reject an endpoint on a different vertical layer.
+    float reached[3]{};
+    if (visitedCount == 0 || dtStatusFailed(query_->closestPointOnPoly(
+            visited[visitedCount - 1], end.data(), reached, nullptr))) return true;
+    return std::hypot(reached[0] - end[0], reached[2] - end[2]) > kPositionTolerance ||
+        std::abs(reached[1] - groundedTo.z) > agent.maxStepHeight;
 }
 
 bool Map::nearestStandable(float x, float y, float radius, const nav::Agent& agent,
-                           nav::Vec3& outLocation) const {
-    if (!hasNavMesh() || filter_ == nullptr) {
-        return false;
-    }
-
-    // canStandAt 과 같은 기준으로 돌려준다 — 캡슐 중심이다.
-    if (findNearestPoly(x, y, agent, std::max(radius, agent.radius), outLocation)) {
+                           nav::Vec3& outLocation, float referenceZ) const {
+    if (findNearestPoly(x, y, agent, std::max(radius, 0.f), outLocation, referenceZ)) {
+        if (!sampleGroundHeight(outLocation)) return false;
         outLocation.z += agent.halfHeight;
         return true;
     }
-
-    const float centerZ = bounds_.valid ? (bounds_.min.z + bounds_.max.z) * 0.5f : 0.f;
-    const std::array<float, 3> center = toDetour(nav::Vec3{x, y, centerZ});
-    std::array<float, 3> extents = queryExtents(agent);
-    extents[0] = std::max(extents[0], radius);
-    extents[2] = std::max(extents[2], radius);
-
-    dtPolyRef refs[kMaxNearestPolys]{};
-    int count = 0;
-    const dtStatus status = query_->queryPolygons(center.data(), extents.data(), filter_.get(),
-                                                  refs, &count, kMaxNearestPolys);
-    if (dtStatusFailed(status) || count <= 0) {
-        return false;
-    }
-
-    float bestDistanceSquared = std::numeric_limits<float>::max();
-    bool found = false;
-    for (int i = 0; i < count; ++i) {
-        float closest[3]{};
-        bool posOverPoly = false;
-        if (dtStatusFailed(query_->closestPointOnPoly(refs[i], center.data(), closest,
-                                                      &posOverPoly))) {
-            continue;
-        }
-        const nav::Vec3 candidate = fromDetour(closest);
-        const float dx = candidate.x - x;
-        const float dy = candidate.y - y;
-        const float d2 = dx * dx + dy * dy;
-        if (d2 <= radius * radius && d2 < bestDistanceSquared) {
-            bestDistanceSquared = d2;
-            outLocation = candidate;
-            outLocation.z += agent.halfHeight;
-            found = true;
-        }
-    }
-    return found;
+    return false;
 }
 
 }  // namespace heaven

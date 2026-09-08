@@ -3,6 +3,7 @@
 // 필드 메시지 인코딩/검증.
 
 #include <cstdint>
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -158,6 +159,8 @@ inline Bytes encodeSnapshot(const std::vector<EntityView>& spawned,
     builder.add_spawned(spawnedList);
     builder.add_moved(movedList);
     builder.add_despawned(despawnedList);
+    builder.add_server_time_seconds(std::chrono::duration<double>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
     return detail::wrapField(fbb, HeavenField::Payload::Snapshot, builder.Finish().Union());
 }
 

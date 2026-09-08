@@ -10,6 +10,7 @@
 #include "HAL/FileManager.h"
 #include "LandscapeComponent.h"
 #include "LandscapeDataAccess.h"
+#include "LandscapeHeightfieldCollisionComponent.h"
 #include "LandscapeProxy.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/FileHelper.h"
@@ -321,8 +322,7 @@ namespace
 	}
 
 	bool AddLandscapeGeometry(ULandscapeComponent* Component, EMapArea Area,
-	                          float WorldOriginOffset, FMapData& Data,
-	                          bool bWorkOnEditingLayer)
+	                          float WorldOriginOffset, FMapData& Data)
 	{
 #if WITH_EDITOR
 		if (Component == nullptr)
@@ -330,18 +330,33 @@ namespace
 			return false;
 		}
 
-		UTexture2D* Heightmap = Component->GetHeightmap(bWorkOnEditingLayer);
-		if (Heightmap == nullptr || !Heightmap->Source.IsValid())
+		ULandscapeHeightfieldCollisionComponent* Collision = Component->GetCollisionComponent();
+		if (!Collision || Collision->CollisionSizeQuads <= 0)
 		{
 			return false;
 		}
 
-		FLandscapeComponentDataInterface LandscapeData(Component, 0, bWorkOnEditingLayer);
-		const int32 VertexCount = LandscapeData.GetComponentSizeVerts();
-		if (VertexCount < 2)
+		// CharacterMovement sweeps simple collision. Export that heightfield when
+		// present, including its mip resolution, instead of the render heightmap.
+		const bool bSimple = Collision->SimpleCollisionSizeQuads > 0;
+		const int32 Quads = bSimple ? Collision->SimpleCollisionSizeQuads : Collision->CollisionSizeQuads;
+		const int32 VertexCount = Quads + 1;
+		const int32 SampleOffset = bSimple ? FMath::Square(Collision->CollisionSizeQuads + 1) : 0;
+		if (Collision->CollisionHeightData.GetElementCount() < SampleOffset + VertexCount * VertexCount)
 		{
 			return false;
 		}
+		const uint16* Heights = static_cast<const uint16*>(Collision->CollisionHeightData.LockReadOnly());
+		if (!Heights)
+		{
+			Collision->CollisionHeightData.Unlock();
+			return false;
+		}
+		const uint8* Layers = Collision->DominantLayerData.GetElementCount() >= SampleOffset + VertexCount * VertexCount
+			? static_cast<const uint8*>(Collision->DominantLayerData.LockReadOnly()) : nullptr;
+		const int32 VisibilityLayer = Collision->ComponentLayerInfos.IndexOfByKey(ALandscapeProxy::VisibilityLayer);
+		const float GridScale = Collision->CollisionScale * Collision->CollisionSizeQuads / Quads;
+		const FTransform Transform = Collision->GetComponentTransform();
 
 		const int32 Before = Data.Triangles.Num();
 		TArray<FVector> Vertices;
@@ -351,7 +366,8 @@ namespace
 			for (int32 X = 0; X < VertexCount; ++X)
 			{
 				Vertices[Y * VertexCount + X] = ToServerPosition(
-					LandscapeData.GetWorldVertex(X, Y),
+					Transform.TransformPosition(FVector(X * GridScale, Y * GridScale,
+						LandscapeDataAccess::GetLocalHeight(Heights[SampleOffset + Y * VertexCount + X]))),
 					WorldOriginOffset);
 			}
 		}
@@ -360,15 +376,34 @@ namespace
 		{
 			for (int32 X = 0; X + 1 < VertexCount; ++X)
 			{
+				if (Layers && VisibilityLayer != INDEX_NONE &&
+					Layers[SampleOffset + Y * VertexCount + X] == VisibilityLayer)
+				{
+					continue;
+				}
 				const FVector& A = Vertices[Y * VertexCount + X];
 				const FVector& B = Vertices[Y * VertexCount + X + 1];
 				const FVector& C = Vertices[(Y + 1) * VertexCount + X];
 				const FVector& D = Vertices[(Y + 1) * VertexCount + X + 1];
-				AddTriangle(Data, Area, A, B, C);
-				AddTriangle(Data, Area, B, D, C);
+				// Chaos::FHeightField uses the A-D diagonal.
+				if (Transform.GetDeterminant() >= 0.0)
+				{
+					AddTriangle(Data, Area, A, B, D);
+					AddTriangle(Data, Area, A, D, C);
+				}
+				else
+				{
+					AddTriangle(Data, Area, A, D, B);
+					AddTriangle(Data, Area, A, C, D);
+				}
 			}
 		}
 
+		if (Layers)
+		{
+			Collision->DominantLayerData.Unlock();
+		}
+		Collision->CollisionHeightData.Unlock();
 		return Data.Triangles.Num() > Before;
 #else
 		return false;
@@ -384,14 +419,7 @@ namespace
 				LandscapeComponent,
 				Area,
 				Options.WorldOriginOffset,
-				Data,
-				false) ||
-				AddLandscapeGeometry(
-					LandscapeComponent,
-					Area,
-					Options.WorldOriginOffset,
-					Data,
-					true);
+				Data);
 		}
 
 		if (const UBoxComponent* Box = Cast<UBoxComponent>(Component))

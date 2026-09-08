@@ -47,7 +47,7 @@ namespace
 	}
 
 	void ReadEntities(const flatbuffers::Vector<flatbuffers::Offset<HeavenField::EntityState>>* Source,
-		TArray<FHHVFieldEntity>& Out)
+		TArray<FHHVFieldEntity>& Out, double ServerTimeSeconds)
 	{
 		if (Source == nullptr)
 		{
@@ -64,6 +64,7 @@ namespace
 
 			FHHVFieldEntity& Entity = Out.AddDefaulted_GetRef();
 			Entity.EntityId = State->entity_id();
+			Entity.ServerTimeSeconds = ServerTimeSeconds;
 			Entity.X = State->x();
 			Entity.Y = State->y();
 			Entity.Z = State->z();
@@ -484,8 +485,8 @@ void FHHVFieldConnection::DispatchFrame(const uint8* Data, int32 Size)
 	{
 		const HeavenField::Snapshot* Snapshot = Envelope->payload_as_Snapshot();
 		Event.Type = EHHVFieldEvent::Snapshot;
-		ReadEntities(Snapshot->spawned(), Event.Snapshot.Spawned);
-		ReadEntities(Snapshot->moved(), Event.Snapshot.Moved);
+		ReadEntities(Snapshot->spawned(), Event.Snapshot.Spawned, Snapshot->server_time_seconds());
+		ReadEntities(Snapshot->moved(), Event.Snapshot.Moved, Snapshot->server_time_seconds());
 		if (const flatbuffers::Vector<uint64_t>* Despawned = Snapshot->despawned())
 		{
 			Event.Snapshot.Despawned.Reserve(static_cast<int32>(Despawned->size()));

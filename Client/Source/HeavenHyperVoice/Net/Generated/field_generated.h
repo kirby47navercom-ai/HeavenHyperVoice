@@ -994,7 +994,8 @@ struct Snapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
     VT_SPAWNED = 4,
     VT_MOVED = 6,
-    VT_DESPAWNED = 8
+    VT_DESPAWNED = 8,
+    VT_SERVER_TIME_SECONDS = 10
   };
   const ::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::EntityState>> *spawned() const {
     return GetPointer<const ::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::EntityState>> *>(VT_SPAWNED);
@@ -1004,6 +1005,9 @@ struct Snapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   }
   const ::flatbuffers::Vector<uint64_t> *despawned() const {
     return GetPointer<const ::flatbuffers::Vector<uint64_t> *>(VT_DESPAWNED);
+  }
+  double server_time_seconds() const {
+    return GetField<double>(VT_SERVER_TIME_SECONDS, 0.0);
   }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
@@ -1016,6 +1020,7 @@ struct Snapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            verifier.VerifyVectorOfTables(moved()) &&
            VerifyOffset(verifier, VT_DESPAWNED) &&
            verifier.VerifyVector(despawned()) &&
+           VerifyField<double>(verifier, VT_SERVER_TIME_SECONDS, 8) &&
            verifier.EndTable();
   }
 };
@@ -1033,6 +1038,9 @@ struct SnapshotBuilder {
   void add_despawned(::flatbuffers::Offset<::flatbuffers::Vector<uint64_t>> despawned) {
     fbb_.AddOffset(Snapshot::VT_DESPAWNED, despawned);
   }
+  void add_server_time_seconds(double server_time_seconds) {
+    fbb_.AddElement<double>(Snapshot::VT_SERVER_TIME_SECONDS, server_time_seconds, 0.0);
+  }
   explicit SnapshotBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -1048,8 +1056,10 @@ inline ::flatbuffers::Offset<Snapshot> CreateSnapshot(
     ::flatbuffers::FlatBufferBuilder &_fbb,
     ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::EntityState>>> spawned = 0,
     ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::EntityState>>> moved = 0,
-    ::flatbuffers::Offset<::flatbuffers::Vector<uint64_t>> despawned = 0) {
+    ::flatbuffers::Offset<::flatbuffers::Vector<uint64_t>> despawned = 0,
+    double server_time_seconds = 0.0) {
   SnapshotBuilder builder_(_fbb);
+  builder_.add_server_time_seconds(server_time_seconds);
   builder_.add_despawned(despawned);
   builder_.add_moved(moved);
   builder_.add_spawned(spawned);
@@ -1060,7 +1070,8 @@ inline ::flatbuffers::Offset<Snapshot> CreateSnapshotDirect(
     ::flatbuffers::FlatBufferBuilder &_fbb,
     const std::vector<::flatbuffers::Offset<HeavenField::EntityState>> *spawned = nullptr,
     const std::vector<::flatbuffers::Offset<HeavenField::EntityState>> *moved = nullptr,
-    const std::vector<uint64_t> *despawned = nullptr) {
+    const std::vector<uint64_t> *despawned = nullptr,
+    double server_time_seconds = 0.0) {
   auto spawned__ = spawned ? _fbb.CreateVector<::flatbuffers::Offset<HeavenField::EntityState>>(*spawned) : 0;
   auto moved__ = moved ? _fbb.CreateVector<::flatbuffers::Offset<HeavenField::EntityState>>(*moved) : 0;
   auto despawned__ = despawned ? _fbb.CreateVector<uint64_t>(*despawned) : 0;
@@ -1068,7 +1079,8 @@ inline ::flatbuffers::Offset<Snapshot> CreateSnapshotDirect(
       _fbb,
       spawned__,
       moved__,
-      despawned__);
+      despawned__,
+      server_time_seconds);
 }
 
 struct Notice FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {

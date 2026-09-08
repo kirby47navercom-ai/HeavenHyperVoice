@@ -69,7 +69,7 @@ Position World::resolvePosition(const Position& position) const {
 
     if (map_ != nullptr && map_->loaded()) {
         nav::Vec3 grounded;
-        if (map_->canStandAt(resolved.x, resolved.y, map_->agent(), &grounded)) {
+        if (map_->canStandAt(resolved.x, resolved.y, map_->agent(), &grounded, resolved.z)) {
             resolved.x = grounded.x;
             resolved.y = grounded.y;
             resolved.z = grounded.z;
@@ -332,17 +332,16 @@ void World::move(std::uint64_t characterId, float x, float y, float facing,
         const nav::Agent& agent = map_->agent();
         nav::Vec3 groundedTo;
         const nav::Vec3 from{self.position.x, self.position.y, self.position.z};
-        const nav::Vec3 to{x, y, self.position.z};
 
-        if (!map_->canStandAt(x, y, agent, &groundedTo) ||
-            map_->blockedAlong(from, to, agent)) {
+        if (!map_->canStandAt(x, y, agent, &groundedTo, self.position.z) ||
+            map_->blockedAlong(from, groundedTo, agent)) {
+            spdlog::debug("{} blocked by navmesh at ({:.0f}, {:.0f})", self.nickname, x, y);
             // 통과시키지 않고 제자리에 둔다. 밀어내기(슬라이딩)는 클라이언트
             // 물리가 이미 하므로, 서버는 "거기 못 간다" 만 말하면 된다.
             x = self.position.x;
             y = self.position.y;
             z = self.position.z;
             corrected = true;
-            spdlog::debug("{} blocked by navmesh at ({:.0f}, {:.0f})", self.nickname, to.x, to.y);
         } else {
             x = groundedTo.x;
             y = groundedTo.y;

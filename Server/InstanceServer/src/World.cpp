@@ -93,7 +93,7 @@ Position World::resolvePosition(const Position& position) const {
 
     if (map_ != nullptr && map_->loaded()) {
         nav::Vec3 grounded;
-        if (map_->canStandAt(resolved.x, resolved.y, map_->agent(), &grounded)) {
+        if (map_->canStandAt(resolved.x, resolved.y, map_->agent(), &grounded, resolved.z)) {
             resolved.x = grounded.x;
             resolved.y = grounded.y;
             resolved.z = grounded.z;
@@ -270,14 +270,16 @@ void World::advanceWild(float dt, WildAi& ai) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         for (const Pending& p : pending) {
-            if (!p.intent.moving && !p.intent.attacking) {
-                continue;
-            }
             const auto it = entities_.find(p.id);
             if (it == entities_.end()) {
                 continue;
             }
             Entity& entity = it->second;
+            const auto stop = [&entity] {
+                const bool wasMoving = entity.velocityX != 0.f || entity.velocityY != 0.f || entity.velocityZ != 0.f;
+                entity.velocityX = entity.velocityY = entity.velocityZ = 0.f;
+                entity.movedThisTick = entity.movedThisTick || wasMoving;
+            };
 
             if (p.intent.attacking && p.intent.attackTargetId != 0) {
                 const auto target = entities_.find(p.intent.attackTargetId);
@@ -303,9 +305,7 @@ void World::advanceWild(float dt, WildAi& ai) {
             }
 
             if (!p.intent.moving) {
-                entity.velocityX = 0.f;
-                entity.velocityY = 0.f;
-                entity.velocityZ = 0.f;
+                stop();
                 continue;
             }
 
@@ -313,9 +313,7 @@ void World::advanceWild(float dt, WildAi& ai) {
             const float dy = p.intent.targetY - entity.position.y;
             const float distance = std::sqrt(dx * dx + dy * dy);
             if (distance < 1e-3f) {
-                entity.velocityX = 0.f;
-                entity.velocityY = 0.f;
-                entity.velocityZ = 0.f;
+                stop();
                 continue;
             }
 
@@ -336,12 +334,9 @@ void World::advanceWild(float dt, WildAi& ai) {
                 const nav::Agent& agent = map_->agent();
                 nav::Vec3 groundedTo;
                 const nav::Vec3 from{entity.position.x, entity.position.y, entity.position.z};
-                const nav::Vec3 to{nx, ny, p.intent.targetZ};
-                if (!map_->canStandAt(nx, ny, agent, &groundedTo) ||
-                    map_->blockedAlong(from, to, agent)) {
-                    entity.velocityX = 0.f;
-                    entity.velocityY = 0.f;
-                    entity.velocityZ = 0.f;
+                if (!map_->canStandAt(nx, ny, agent, &groundedTo, entity.position.z) ||
+                    map_->blockedAlong(from, groundedTo, agent)) {
+                    stop();
                     blocked.push_back(p.id);
                     continue;
                 }
@@ -555,18 +550,16 @@ void World::move(std::uint64_t characterId, float x, float y, float facing,
         const nav::Agent& agent = map_->agent();
         nav::Vec3 groundedTo;
         const nav::Vec3 from{self.position.x, self.position.y, self.position.z};
-        const nav::Vec3 to{x, y, self.position.z};
 
-        if (!map_->canStandAt(x, y, agent, &groundedTo) ||
-            map_->blockedAlong(from, to, agent)) {
+        if (!map_->canStandAt(x, y, agent, &groundedTo, self.position.z) ||
+            map_->blockedAlong(from, groundedTo, agent)) {
+            spdlog::debug("{} blocked by navmesh at ({:.0f}, {:.0f})", self.nickname, x, y);
             // 통과시키지 않고 제자리에 둔다. 밀어내기(슬라이딩)는 클라이언트
             // 물리가 이미 하므로, 서버는 "거기 못 간다" 만 말하면 된다.
             x = self.position.x;
             y = self.position.y;
             z = self.position.z;
             corrected = true;
-            spdlog::debug("{} blocked by navmesh at ({:.0f}, {:.0f})", self.nickname,
-                          to.x, to.y);
         } else {
             x = groundedTo.x;
             y = groundedTo.y;
@@ -638,12 +631,6 @@ void World::tick(float dt) {
             !entity.healthChangedThisTick && !partnerMoved) {
             continue;
         }
-        if (!entity.movedThisTick) {
-            entity.velocityX = 0.f;
-            entity.velocityY = 0.f;
-            entity.velocityZ = 0.f;
-        }
-
         const proto::EntityView view = viewOf(
             entity,
             /*withIdentity=*/false,
