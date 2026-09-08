@@ -9,6 +9,8 @@ target_compile_definitions(Launcher PRIVATE
     NOMINMAX
 )
 
+target_link_libraries(Launcher PRIVATE ws2_32)
+
 # 링크하지 않으므로 CMake 가 의존 관계를 알지 못한다. 명시해두지 않으면
 # IDE 에서 Launcher 만 빌드해 실행했을 때 서버 exe 가 없어 실패한다.
 add_dependencies(Launcher LoginServer ChatServer FieldServer)

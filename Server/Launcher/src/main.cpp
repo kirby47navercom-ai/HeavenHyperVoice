@@ -4,6 +4,8 @@
 // 런처가 어떤 이유로 죽든(정상 종료, Ctrl+C, 강제 종료) 커널이 자식을 함께 정리하므로
 // 고아 서버가 남지 않는다. 개발 중 포트가 물려 있는 사고를 막아준다.
 
+#include <winsock2.h>
+#include <ws2tcpip.h>
 #include <windows.h>
 
 #include <cstdlib>
@@ -23,8 +25,10 @@ namespace
         std::uint16_t chatPort = 9100;
         std::uint16_t fieldPort = 9200;
         std::uint16_t instancePort = 9300;
-        // 여러 서버를 한 컴퓨터에서 가동시키니 다른 서버 주소를 루프백 IP로 설정한다.
-        std::string host = "127.0.0.1";
+        // 비워두면 detectLocalHost() 가 이 컴퓨터의 랜 주소를 채운다. 루프백을
+        // 박아두지 않는 이유는, 그 값이 그대로 클라이언트에게 건너가기 때문이다 —
+        // 다른 컴퓨터는 자기 루프백에 붙으려 하다가 아무 서버에도 못 닿는다.
+        std::string host = "";
 
         // 인스턴스 방 하나에 뿌릴 야생 포켓몬 수.
         int wildCount = 50;
@@ -87,7 +91,44 @@ namespace
             "Servers are looked up next to this executable. Children are placed in a job\n"
             "object, so they are terminated whenever the launcher exits.\n";
     }
+    
+    // 런처가 도는 컴퓨터의 주소. 어댑터 목록을 훑지 않고 라우팅 테이블에 묻는다.
+    // UDP connect 는 패킷을 보내지 않는다 — 목적지로 나갈 인터페이스만 정해지고,
+    // 그 주소를 되읽는다. 8.8.8.8 에 접속하지 않으므로 인터넷이 끊겨 있어도 된다.
+    //
+    // 못 알아내면 루프백으로 둔다. 그 경우 다른 컴퓨터는 못 붙지만, 적어도
+    // 이 컴퓨터에서 혼자 하는 시험은 그대로 돌아간다.
+    std::string detectLocalHost()
+    {
+        WSADATA wsa{};
+        if (::WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
+            return "127.0.0.1";
 
+        std::string host = "127.0.0.1";
+        const SOCKET probe = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (probe != INVALID_SOCKET)
+        {
+            sockaddr_in target{};
+            target.sin_family = AF_INET;
+            target.sin_port = ::htons(53);
+            ::inet_pton(AF_INET, "8.8.8.8", &target.sin_addr);
+
+            sockaddr_in local{};
+            int length = sizeof(local);
+            char text[INET_ADDRSTRLEN]{};
+            if (::connect(probe, reinterpret_cast<sockaddr*>(&target), sizeof(target)) == 0 &&
+                ::getsockname(probe, reinterpret_cast<sockaddr*>(&local), &length) == 0 &&
+                ::inet_ntop(AF_INET, &local.sin_addr, text, sizeof(text)) != nullptr)
+            {
+                host = text;
+            }
+            ::closesocket(probe);
+        }
+
+        ::WSACleanup();
+        return host;
+    }
+    
     Options parseArgs(int argc, char** argv)
     {
         Options options;
@@ -135,6 +176,10 @@ namespace
                 throw std::runtime_error("unknown argument: " + std::string(arg));
             
         }
+        // 비어 있으면 이 컴퓨터 주소를 쓴다. --host 로 준 값이 언제나 이긴다.
+        if (options.host.empty())
+            options.host = detectLocalHost();
+        std::cout << "[launcher] advertising " << options.host << " to clients" << std::endl;
         return options;
     }
 
