@@ -67,6 +67,7 @@ namespace
 			Entity.X = State->x();
 			Entity.Y = State->y();
 			Entity.Z = State->z();
+			Entity.Velocity = FVector(State->velocity_x(), State->velocity_y(), State->velocity_z());
 			Entity.Facing = State->facing();
 			Entity.PartnerSpecies = State->partner_species();
 			Entity.Species = State->species();

@@ -661,7 +661,10 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_ATTACK_SEQUENCE = 18,
     VT_ATTACK_TARGET_ID = 20,
     VT_Z = 22,
-    VT_APPEARANCE = 24
+    VT_APPEARANCE = 24,
+    VT_VELOCITY_X = 26,
+    VT_VELOCITY_Y = 28,
+    VT_VELOCITY_Z = 30
   };
   uint64_t entity_id() const {
     return GetField<uint64_t>(VT_ENTITY_ID, 0);
@@ -696,6 +699,15 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const HeavenField::Appearance *appearance() const {
     return GetPointer<const HeavenField::Appearance *>(VT_APPEARANCE);
   }
+  float velocity_x() const {
+    return GetField<float>(VT_VELOCITY_X, 0.0f);
+  }
+  float velocity_y() const {
+    return GetField<float>(VT_VELOCITY_Y, 0.0f);
+  }
+  float velocity_z() const {
+    return GetField<float>(VT_VELOCITY_Z, 0.0f);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -712,6 +724,9 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<float>(verifier, VT_Z, 4) &&
            VerifyOffset(verifier, VT_APPEARANCE) &&
            verifier.VerifyTable(appearance()) &&
+           VerifyField<float>(verifier, VT_VELOCITY_X, 4) &&
+           VerifyField<float>(verifier, VT_VELOCITY_Y, 4) &&
+           VerifyField<float>(verifier, VT_VELOCITY_Z, 4) &&
            verifier.EndTable();
   }
 };
@@ -753,6 +768,15 @@ struct EntityStateBuilder {
   void add_appearance(::flatbuffers::Offset<HeavenField::Appearance> appearance) {
     fbb_.AddOffset(EntityState::VT_APPEARANCE, appearance);
   }
+  void add_velocity_x(float velocity_x) {
+    fbb_.AddElement<float>(EntityState::VT_VELOCITY_X, velocity_x, 0.0f);
+  }
+  void add_velocity_y(float velocity_y) {
+    fbb_.AddElement<float>(EntityState::VT_VELOCITY_Y, velocity_y, 0.0f);
+  }
+  void add_velocity_z(float velocity_z) {
+    fbb_.AddElement<float>(EntityState::VT_VELOCITY_Z, velocity_z, 0.0f);
+  }
   explicit EntityStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -776,10 +800,16 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityState(
     uint32_t attack_sequence = 0,
     uint64_t attack_target_id = 0,
     float z = 0.0f,
-    ::flatbuffers::Offset<HeavenField::Appearance> appearance = 0) {
+    ::flatbuffers::Offset<HeavenField::Appearance> appearance = 0,
+    float velocity_x = 0.0f,
+    float velocity_y = 0.0f,
+    float velocity_z = 0.0f) {
   EntityStateBuilder builder_(_fbb);
   builder_.add_attack_target_id(attack_target_id);
   builder_.add_entity_id(entity_id);
+  builder_.add_velocity_z(velocity_z);
+  builder_.add_velocity_y(velocity_y);
+  builder_.add_velocity_x(velocity_x);
   builder_.add_appearance(appearance);
   builder_.add_z(z);
   builder_.add_attack_sequence(attack_sequence);
@@ -804,7 +834,10 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityStateDirect(
     uint32_t attack_sequence = 0,
     uint64_t attack_target_id = 0,
     float z = 0.0f,
-    ::flatbuffers::Offset<HeavenField::Appearance> appearance = 0) {
+    ::flatbuffers::Offset<HeavenField::Appearance> appearance = 0,
+    float velocity_x = 0.0f,
+    float velocity_y = 0.0f,
+    float velocity_z = 0.0f) {
   auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
   return HeavenField::CreateEntityState(
       _fbb,
@@ -818,7 +851,10 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityStateDirect(
       attack_sequence,
       attack_target_id,
       z,
-      appearance);
+      appearance,
+      velocity_x,
+      velocity_y,
+      velocity_z);
 }
 
 struct Snapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {

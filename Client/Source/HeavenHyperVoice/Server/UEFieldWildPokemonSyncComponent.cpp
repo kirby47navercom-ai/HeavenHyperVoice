@@ -79,7 +79,7 @@ void UUEFieldWildPokemonSyncComponent::HandleWildPokemonMoved(
 
 	Found->Get()->ApplyServerMoveTarget(
 		TargetLocation,
-		FVector::ZeroVector,
+		Entity.Velocity,
 		FRotator(0.0f, Entity.Facing, 0.0f),
 		/*bTeleported=*/false);
 

@@ -20,6 +20,9 @@ struct EntityView {
     float x = 0.f;
     float y = 0.f;
     float z = 0.f;
+    float velocityX = 0.f;
+    float velocityY = 0.f;
+    float velocityZ = 0.f;
     float facing = 0.f;
     std::string nickname;
     // 둘 다 서버 내부 번호다. 와이어로 나갈 때 도감번호로 바뀐다 (buildEntities).
@@ -66,6 +69,9 @@ buildEntities(flatbuffers::FlatBufferBuilder& fbb, const std::vector<EntityView>
         builder.add_x(entity.x);
         builder.add_y(entity.y);
         builder.add_z(entity.z);
+        builder.add_velocity_x(entity.velocityX);
+        builder.add_velocity_y(entity.velocityY);
+        builder.add_velocity_z(entity.velocityZ);
         builder.add_facing(entity.facing);
         if (!nickname.IsNull()) {
             builder.add_nickname(nickname);

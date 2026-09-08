@@ -24,6 +24,7 @@ struct FHHVFieldEntity
 	float X = 0.0f;
 	float Y = 0.0f;
 	float Z = 0.0f;
+	FVector Velocity = FVector::ZeroVector;
 	float Facing = 0.0f;
 	FString Nickname;
 	uint16 PartnerSpecies = 0;

@@ -136,6 +136,12 @@ table EntityState {
   // z 보다 뒤다. z 가 먼저 푸시돼서 그 슬롯 번호로 도는 빌드가 이미 있다 —
   // 앞에 끼우면 그쪽이 외형을 높이로 읽는다.
   appearance:Appearance;
+
+  // 서버가 이번 스냅샷 위치를 만들 때 쓴 실제 속도다. 위치처럼 X/Y는 서버
+  // 좌표축이고, 속도에는 원점 오프셋을 적용하지 않는다.
+  velocity_x:float;
+  velocity_y:float;
+  velocity_z:float;
 }
 
 table Snapshot {

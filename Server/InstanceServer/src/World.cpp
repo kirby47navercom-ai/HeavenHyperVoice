@@ -54,6 +54,9 @@ proto::EntityView World::viewOf(const Entity& entity, bool withIdentity,
     view.x = entity.position.x;
     view.y = entity.position.y;
     view.z = entity.position.z;
+    view.velocityX = entity.velocityX;
+    view.velocityY = entity.velocityY;
+    view.velocityZ = entity.velocityZ;
     view.facing = entity.position.facing;
     if (withIdentity) {
         view.nickname = entity.nickname;
@@ -272,6 +275,9 @@ void World::advanceWild(float dt, WildAi& ai) {
             }
 
             if (!p.intent.moving) {
+                entity.velocityX = 0.f;
+                entity.velocityY = 0.f;
+                entity.velocityZ = 0.f;
                 continue;
             }
 
@@ -279,6 +285,9 @@ void World::advanceWild(float dt, WildAi& ai) {
             const float dy = p.intent.targetY - entity.position.y;
             const float distance = std::sqrt(dx * dx + dy * dy);
             if (distance < 1e-3f) {
+                entity.velocityX = 0.f;
+                entity.velocityY = 0.f;
+                entity.velocityZ = 0.f;
                 continue;
             }
 
@@ -286,6 +295,9 @@ void World::advanceWild(float dt, WildAi& ai) {
             // 초당 이동 거리는 같고, 종별 애니메이션 보폭과도 일치한다.
             const float step = wildMoveSpeed(entity.species) * dt;
             const float ratio = step >= distance ? 1.f : step / distance;
+            const float previousX = entity.position.x;
+            const float previousY = entity.position.y;
+            const float previousZ = entity.position.z;
             const float nx = clampToWorld(entity.position.x + dx * ratio);
             const float ny = clampToWorld(entity.position.y + dy * ratio);
             float nz = entity.position.z;
@@ -299,6 +311,9 @@ void World::advanceWild(float dt, WildAi& ai) {
                 const nav::Vec3 to{nx, ny, p.intent.targetZ};
                 if (!map_->canStandAt(nx, ny, agent, &groundedTo) ||
                     map_->blockedAlong(from, to, agent)) {
+                    entity.velocityX = 0.f;
+                    entity.velocityY = 0.f;
+                    entity.velocityZ = 0.f;
                     blocked.push_back(p.id);
                     continue;
                 }
@@ -309,6 +324,10 @@ void World::advanceWild(float dt, WildAi& ai) {
             entity.position.x = nx;
             entity.position.y = ny;
             entity.position.z = nz;
+            const float safeDt = std::max(dt, 1e-3f);
+            entity.velocityX = (nx - previousX) / safeDt;
+            entity.velocityY = (ny - previousY) / safeDt;
+            entity.velocityZ = (nz - previousZ) / safeDt;
             entity.lastMoveAt = std::chrono::steady_clock::now();
             entity.movedThisTick = true;
 
@@ -472,6 +491,9 @@ void World::move(std::uint64_t characterId, float x, float y, float facing,
     // 것만으로 허용 거리가 그만큼 커져 맵 반대편까지 순간이동한다.
     const float elapsed = std::min(kMaxMoveElapsed,
                                    std::chrono::duration<float>(now - self.lastMoveAt).count());
+    const float previousX = self.position.x;
+    const float previousY = self.position.y;
+    const float previousZ = self.position.z;
     const float straight = kMaxSpeed * elapsed;
     self.slack = std::min(kSpeedSlack, self.slack + kSlackRefill * elapsed);
 
@@ -523,6 +545,10 @@ void World::move(std::uint64_t characterId, float x, float y, float facing,
     self.position.y = y;
     self.position.z = z;
     self.position.facing = facing;
+    const float safeElapsed = std::max(elapsed, 1e-3f);
+    self.velocityX = (x - previousX) / safeElapsed;
+    self.velocityY = (y - previousY) / safeElapsed;
+    self.velocityZ = (z - previousZ) / safeElapsed;
     self.lastMoveAt = now;
     self.movedThisTick = true;
 
@@ -558,6 +584,11 @@ void World::tick() {
     for (auto& [characterId, entity] : entities_) {
         if (!entity.movedThisTick && !entity.attackedThisTick) {
             continue;
+        }
+        if (!entity.movedThisTick) {
+            entity.velocityX = 0.f;
+            entity.velocityY = 0.f;
+            entity.velocityZ = 0.f;
         }
 
         const proto::EntityView view = viewOf(

@@ -22,6 +22,9 @@ proto::EntityView World::viewOf(const Entity& entity, bool withIdentity) {
     view.x = entity.position.x;
     view.y = entity.position.y;
     view.z = entity.position.z;
+    view.velocityX = entity.velocityX;
+    view.velocityY = entity.velocityY;
+    view.velocityZ = entity.velocityZ;
     view.facing = entity.position.facing;
     if (withIdentity) {
         view.nickname = entity.nickname;
@@ -270,6 +273,9 @@ void World::move(std::uint64_t characterId, float x, float y, float facing,
     // 것만으로 허용 거리가 그만큼 커져 맵 반대편까지 순간이동한다.
     const float elapsed = std::min(proto::kMaxMoveElapsed,
                                    std::chrono::duration<float>(now - self.lastMoveAt).count());
+    const float previousX = self.position.x;
+    const float previousY = self.position.y;
+    const float previousZ = self.position.z;
     const float straight = proto::kMaxSpeed * elapsed;
     self.slack = std::min(proto::kSpeedSlack, self.slack + proto::kSlackRefill * elapsed);
 
@@ -320,6 +326,10 @@ void World::move(std::uint64_t characterId, float x, float y, float facing,
     self.position.y = y;
     self.position.z = z;
     self.position.facing = facing;
+    const float safeElapsed = std::max(elapsed, 1e-3f);
+    self.velocityX = (x - previousX) / safeElapsed;
+    self.velocityY = (y - previousY) / safeElapsed;
+    self.velocityZ = (z - previousZ) / safeElapsed;
     self.lastMoveAt = now;
     self.movedThisTick = true;
 

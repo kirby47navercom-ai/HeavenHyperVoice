@@ -67,6 +67,9 @@ struct Entity {
     std::uint16_t species = 0;
 
     Position position;
+    float velocityX = 0.f;
+    float velocityY = 0.f;
+    float velocityZ = 0.f;
     int sector = 0;
 
     // 반경이 균일해 대칭이다. 나를 보는 집합과 같다.
