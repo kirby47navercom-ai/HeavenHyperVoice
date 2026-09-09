@@ -50,6 +50,13 @@ UUEFieldClientSubsystem* UUEFieldClientSubsystem::Get(const UObject* WorldContex
 
 void UUEFieldClientSubsystem::Deinitialize()
 {
+	ResetForFrontend();
+	Super::Deinitialize();
+}
+
+void UUEFieldClientSubsystem::ResetForFrontend()
+{
+	PendingInstanceType = 0;
 	if (FieldServerBridgeComponent)
 	{
 		FieldServerBridgeComponent->OnPokemonPartyChanged.RemoveDynamic(
@@ -61,7 +68,6 @@ void UUEFieldClientSubsystem::Deinitialize()
 	}
 
 	CachedPlayerController.Reset();
-	Super::Deinitialize();
 }
 
 void UUEFieldClientSubsystem::RegisterPlayerController(AUEPlayerController* PlayerController)

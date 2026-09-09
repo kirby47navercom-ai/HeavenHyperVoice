@@ -10,11 +10,10 @@
 // 것은 회색으로 눌리지 않게 둔다. 파티에 넣은 것은 노란 테두리와 모서리 번호로
 // 표시한다 — 파티만 따로 떼어 놓으면 같은 포켓몬이 화면에 두 번 나온다.
 //
-// WBP 없이도 뜬다. 자식 위젯이 하나도 없으면 RebuildWidget 이 기본 배치를
-// 만든다 — DefaultGame.ini 에 이 C++ 클래스를 그대로 지정해도 동작한다.
-// 나중에 WBP 를 만들어 아래 BindWidgetOptional 이름들을 맞춰 두면 그쪽이 쓰인다.
+// 화면과 항목 배치는 WBP_FieldParty/WBP_FieldPartyEntry에서 편집한다.
 
 #include "CoreMinimal.h"
+#include "../UI/UEWindowWidget.h"
 #include "Blueprint/UserWidget.h"
 
 #include "UEFieldPartyWidget.generated.h"
@@ -69,7 +68,7 @@ public:
  *
  * 누르면 파티에 넣고, 다시 누르면 뺀다. 어느 것을 꺼낼지는 1/2/3 키로 정한다.
  */
-UCLASS(Blueprintable)
+UCLASS(Abstract, Blueprintable)
 class HEAVENHYPERVOICE_API UUEFieldPartyEntryWidget : public UUserWidget
 {
 	GENERATED_BODY()
@@ -79,29 +78,28 @@ public:
 	void Setup(UUEFieldPartyEntryData* InEntryData);
 
 protected:
-	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> SelectButton = nullptr;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> LabelText = nullptr;
 
 	// 종족 데이터의 ProfileIcon. 없는 종족은 이름만 뜬다.
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> IconImage = nullptr;
 
 	// 파티에 들어 있으면 노랗게, 꺼내 놓았으면 더 밝게 칠한다.
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UBorder> SelectionBorder = nullptr;
 
 	// 모서리의 1/2/3. 파티에 없으면 접힌다.
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UBorder> SlotBadge = nullptr;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> SlotBadgeText = nullptr;
 
 private:
@@ -114,8 +112,8 @@ private:
 	TObjectPtr<UUEFieldPartyEntryData> EntryData = nullptr;
 };
 
-UCLASS(Blueprintable)
-class HEAVENHYPERVOICE_API UUEFieldPartyWidget : public UUserWidget
+UCLASS(Abstract, Blueprintable)
+class HEAVENHYPERVOICE_API UUEFieldPartyWidget : public UUEWindowWidget
 {
 	GENERATED_BODY()
 
@@ -148,28 +146,30 @@ public:
 	int32 GetPendingActive() const { return PendingActive; }
 
 protected:
-	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent) override;
 
 	// 모든 종족이 도감번호 순으로 들어간다.
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UPanelWidget> PokemonList = nullptr;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> ConfirmButton = nullptr;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> CloseButton = nullptr;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> StatusText = nullptr;
 
 	// 화면에 늘어놓을 종족 표. 도감번호를 이름·초상화로 바꾸는 데도 쓴다.
 	// 비어 있으면 ini 의 SpeciesCatalog 를 빌린다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field Party")
 	TObjectPtr<UUEPokemonSpeciesCatalog> SpeciesCatalog = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field Party")
+	TSubclassOf<UUEFieldPartyEntryWidget> EntryWidgetClass;
 
 	// 파티 상한. 서버(kMaxPartySize)와 DB(ck_party_slot)가 같은 값을 강제한다.
 	// 여기서 막는 것은 화면 편의일 뿐이고 거절은 서버가 한다.

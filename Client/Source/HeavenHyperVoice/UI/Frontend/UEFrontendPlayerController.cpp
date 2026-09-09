@@ -12,7 +12,12 @@ void AUEFrontendPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
-	const UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	if (GameInstance && GameInstance->ConsumeFrontendLoginRequest())
+	{
+		ShowLogin();
+		return;
+	}
 	if (GameInstance && GameInstance->HasLocalSession())
 	{
 		ShowLobby();

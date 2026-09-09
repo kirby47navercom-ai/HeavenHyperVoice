@@ -42,6 +42,8 @@ Client/Plugins/MCPUnreal/
 *.tmp
 *.temp
 *.bak
+__pycache__/
+*.py[cod]
 
 # Logs and diagnostics
 *.log

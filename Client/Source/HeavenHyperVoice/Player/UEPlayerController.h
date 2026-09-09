@@ -13,13 +13,17 @@
 class AUEPlayerCharacter;
 class UBorder;
 class UScrollBox;
-class USizeBox;
 class UTextBlock;
 class UUserWidget;
 class UVerticalBox;
 class UWidget;
 class UUEDataAsset;
 class UUEPokemonPartyWidget;
+class UUEOptionsMenuWidget;
+class UUEOptionsHUDWidget;
+class UUEOptionsScreenWidget;
+class UUEGameSettingsWidget;
+class UUEOptionsConfirmWidget;
 
 /** 실제 플레이 레벨의 이동과 액션 입력을 처리한다. */
 UCLASS()
@@ -33,7 +37,16 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	void OpenChatInput();
-	void CloseChatInput();
+	void CloseChatInput(bool bClearDraft = true);
+
+	/** 가장 최근에 선택한 창을 맨 앞으로 올린다. WBP 자식은 UEWindowWidget을 사용한다. */
+	UFUNCTION(BlueprintCallable, Category = "UI|Windows")
+	void ActivateUIWindow(UUserWidget* Window, bool bFocus = true);
+	void DeactivateUIWindow(UUserWidget* Window);
+	bool HandleChatWindowKey(UUserWidget* Window, const FKeyEvent& Event);
+
+	UFUNCTION(BlueprintCallable, Category = "Options")
+	void ToggleOptionsMenu();
 
 	// WBP 클래스가 지정된 경우에만 HUD를 만든다. 에셋 경로는 코드에서 찾지 않는다.
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|UI")
@@ -59,6 +72,17 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void SetupInputComponent() override;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Options")
+	TSubclassOf<UUEOptionsMenuWidget> OptionsMenuClass;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Options")
+	TSubclassOf<UUEOptionsHUDWidget> OptionsHUDClass;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Options")
+	TSubclassOf<UUEGameSettingsWidget> GameSettingsClass;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Options")
+	TSubclassOf<UUEOptionsConfirmWidget> OptionsConfirmClass;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Options")
+	TSoftObjectPtr<UWorld> FrontendLevel;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UUEDataAsset> InputData = nullptr;
@@ -115,6 +139,23 @@ public:
 	void AddSystemMessage(const FString& Text);
 
 private:
+	void HandleEscape();
+	void HandleGameViewportClick();
+	void CloseOptionsMenu();
+	UFUNCTION()
+	void HandleOptionsAction(FName ActionId);
+	UFUNCTION()
+	void HandleOptionsScreenAction(FName ActionId);
+	void ShowOptionsScreen(UUEOptionsScreenWidget* Screen);
+	void RemoveOptionsScreen();
+	UPROPERTY(Transient)
+	TObjectPtr<UUEOptionsScreenWidget> OptionsScreen;
+	UPROPERTY(Transient)
+	TObjectPtr<UUEOptionsMenuWidget> OptionsMenu;
+	UPROPERTY(Transient)
+	TObjectPtr<UUEOptionsHUDWidget> OptionsHUD;
+	bool bReturningToFrontend = false;
+
 	// 마지막으로 받은 초대. /수락 이 이걸 쓴다. 서버 쪽 초대장은 60초에 만료된다.
 	int64 PendingInvitePartyId = 0;
 
@@ -130,7 +171,12 @@ private:
 	// 탭 번호를 발화 채널로 바꾼다. "전체" 탭에서 치면 일반으로 나간다 —
 	// 모든 채널에 동시에 말하는 것은 없다.
 	EUEChatChannel ChannelForSelectedTab() const;
-	void SetChatCollapsed(bool bCollapsed);
+	void SuspendChatInput();
+	void RefreshWindowOrder();
+	void RefreshWindowInput(bool bFocus = true);
+	TArray<TWeakObjectPtr<UUserWidget>> UIWindowOrder;
+	bool bWindowMoveBlocked = false;
+	bool bWindowLookBlocked = false;
 
 	UFUNCTION()
 	void HandleChatTextCommitted(const FText& Text, ETextCommit::Type CommitMethod);
@@ -201,8 +247,6 @@ private:
 	UFUNCTION()
 	FEventReply HandleChatHeaderMouseMove(FGeometry MyGeometry, const FPointerEvent& MouseEvent);
 
-	UFUNCTION()
-	FEventReply HandleChatHeaderMouseDoubleClick(FGeometry MyGeometry, const FPointerEvent& MouseEvent);
 
 	FVector2D PendingMovementInput = FVector2D::ZeroVector;
 	float MaxWalkSpeed = 260.0f;
@@ -226,11 +270,7 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UWidget> ChatMovablePanel = nullptr;
 
-	UPROPERTY(Transient)
-	TObjectPtr<USizeBox> ChatSizeBox = nullptr;
 
-	UPROPERTY(Transient)
-	TObjectPtr<UWidget> ChatInputContainer = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> ChatDragHandle = nullptr;
@@ -256,9 +296,6 @@ private:
 	bool bChatInputOpen = false;
 	bool bMouseViewHeld = false;
 	bool bDraggingChat = false;
-	bool bChatCollapsed = false;
-	bool bChatHadHeightOverride = false;
-	float ExpandedChatHeightOverride = 0.0f;
 	FVector2D LastChatDragMousePosition = FVector2D::ZeroVector;
 	FLinearColor SelectedChatTabColor = FLinearColor::White;
 	FLinearColor NormalChatTabColor = FLinearColor::White;

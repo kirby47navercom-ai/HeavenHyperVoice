@@ -1,136 +1,19 @@
 #include "UEFieldPartyWidget.h"
 
+
 #include "UEFieldServerBridgeComponent.h"
 #include "../Character/UEPlayerCharacter.h"
 #include "../Pokemon/UEPokemonSpeciesCatalog.h"
 #include "../Pokemon/UEPokemonSpeciesData.h"
 #include "../System/UEGameInstance.h"
 
-#include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/Button.h"
-#include "Components/CanvasPanel.h"
-#include "Components/CanvasPanelSlot.h"
-#include "Components/HorizontalBox.h"
 #include "Components/Image.h"
-#include "Components/Overlay.h"
-#include "Components/OverlaySlot.h"
 #include "Components/PanelWidget.h"
-#include "Components/ScrollBox.h"
-#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
-#include "Components/VerticalBox.h"
-#include "Components/VerticalBoxSlot.h"
-#include "Components/WrapBox.h"
 #include "Components/WrapBoxSlot.h"
 #include "GameFramework/PlayerController.h"
-
-namespace
-{
-// 기본 배치에서만 쓰는 값들. WBP 를 만들면 전부 그쪽 것이 된다.
-//
-// 스무 종이 일곱 칸씩 세 줄에 다 들어가게 잡았다. 종족이 늘면 스크롤이 생긴다.
-constexpr float kEntryWidth = 150.0f;
-constexpr float kEntryHeight = 158.0f;
-constexpr float kIconSize = 102.0f;
-constexpr float kBorderThickness = 3.0f;
-constexpr float kBadgeSize = 28.0f;
-
-constexpr float kPanelWidth = 1240.0f;
-constexpr float kPanelHeight = 900.0f;
-
-const FLinearColor kPanelColor(0.02f, 0.02f, 0.04f, 0.94f);
-const FLinearColor kEntryColor(0.14f, 0.14f, 0.18f, 1.0f);
-const FLinearColor kLockedColor(0.09f, 0.09f, 0.11f, 1.0f);
-const FLinearColor kLockedTint(0.30f, 0.30f, 0.34f, 1.0f);
-
-// 파티에 든 것은 노란 테두리, 그중 꺼내 놓은 한 마리는 더 밝게.
-const FLinearColor kPartyBorder(0.86f, 0.62f, 0.16f, 1.0f);
-const FLinearColor kActiveBorder(1.0f, 0.85f, 0.35f, 1.0f);
-const FLinearColor kNoBorder(0.0f, 0.0f, 0.0f, 0.0f);
-
-UTextBlock* MakeLabel(UWidgetTree& Tree, const FText& Text)
-{
-	UTextBlock* Label = Tree.ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-	Label->SetText(Text);
-	return Label;
-}
-}  // namespace
-
-// --- 항목 ---------------------------------------------------------------
-
-TSharedRef<SWidget> UUEFieldPartyEntryWidget::RebuildWidget()
-{
-	// WBP 가 자식을 들고 있으면 그대로 쓴다. 비어 있을 때만 기본 배치를 만든다.
-	if (WidgetTree && WidgetTree->RootWidget == nullptr)
-	{
-		USizeBox* Sizer = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-		Sizer->SetWidthOverride(kEntryWidth);
-		Sizer->SetHeightOverride(kEntryHeight);
-		WidgetTree->RootWidget = Sizer;
-
-		// 테두리를 버튼 바깥에 두른다. 버튼 색으로 표시하면 눌린 상태와 선택
-		// 상태가 같은 색을 두고 다툰다.
-		SelectionBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(),
-			TEXT("SelectionBorder"));
-		SelectionBorder->SetPadding(FMargin(kBorderThickness));
-		Sizer->AddChild(SelectionBorder);
-
-		UOverlay* Stack = WidgetTree->ConstructWidget<UOverlay>(UOverlay::StaticClass());
-		SelectionBorder->AddChild(Stack);
-
-		UButton* Button =
-			WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("SelectButton"));
-		SelectButton = Button;
-		if (UOverlaySlot* ButtonSlot = Cast<UOverlaySlot>(Stack->AddChild(Button)))
-		{
-			ButtonSlot->SetHorizontalAlignment(HAlign_Fill);
-			ButtonSlot->SetVerticalAlignment(VAlign_Fill);
-		}
-
-		// 초상화 위에 이름. 버튼은 자식 하나만 받으므로 세로 상자를 끼운다.
-		UVerticalBox* Column =
-			WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-		Button->AddChild(Column);
-
-		USizeBox* IconBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-		IconBox->SetWidthOverride(kIconSize);
-		IconBox->SetHeightOverride(kIconSize);
-		if (UVerticalBoxSlot* IconSlot = Cast<UVerticalBoxSlot>(Column->AddChild(IconBox)))
-		{
-			IconSlot->SetHorizontalAlignment(HAlign_Center);
-		}
-
-		IconImage = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), TEXT("IconImage"));
-		IconBox->AddChild(IconImage);
-
-		LabelText = MakeLabel(*WidgetTree, FText::GetEmpty());
-		LabelText->SetJustification(ETextJustify::Center);
-		if (UVerticalBoxSlot* LabelSlot = Cast<UVerticalBoxSlot>(Column->AddChild(LabelText)))
-		{
-			LabelSlot->SetHorizontalAlignment(HAlign_Center);
-		}
-
-		// 파티 번호는 칸 위에 겹쳐 띄운다. 흐름에 넣으면 파티에 든 칸만 키가 달라진다.
-		USizeBox* BadgeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
-		BadgeBox->SetWidthOverride(kBadgeSize);
-		BadgeBox->SetHeightOverride(kBadgeSize);
-		if (UOverlaySlot* BadgeSlot = Cast<UOverlaySlot>(Stack->AddChild(BadgeBox)))
-		{
-			BadgeSlot->SetHorizontalAlignment(HAlign_Left);
-			BadgeSlot->SetVerticalAlignment(VAlign_Top);
-		}
-
-		SlotBadge = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("SlotBadge"));
-		BadgeBox->AddChild(SlotBadge);
-
-		SlotBadgeText = MakeLabel(*WidgetTree, FText::GetEmpty());
-		SlotBadgeText->SetJustification(ETextJustify::Center);
-		SlotBadge->AddChild(SlotBadgeText);
-	}
-
-	return Super::RebuildWidget();
-}
 
 void UUEFieldPartyEntryWidget::NativeConstruct()
 {
@@ -168,7 +51,7 @@ void UUEFieldPartyEntryWidget::ApplyEntryData()
 	{
 		LabelText->SetText(EntryData->Label);
 		LabelText->SetColorAndOpacity(
-			EntryData->bLocked ? FSlateColor(kLockedTint) : FSlateColor(FLinearColor::White));
+			EntryData->bLocked ? FSlateColor(FLinearColor(0.30f, 0.30f, 0.34f, 1.0f)) : FSlateColor(FLinearColor::White));
 	}
 
 	if (IconImage)
@@ -181,7 +64,7 @@ void UUEFieldPartyEntryWidget::ApplyEntryData()
 			IconImage->SetVisibility(ESlateVisibility::HitTestInvisible);
 
 			// 해금 전에는 회색으로 죽인다. 무엇이 있는지는 보이되 고를 수 없다.
-			IconImage->SetColorAndOpacity(EntryData->bLocked ? kLockedTint : FLinearColor::White);
+			IconImage->SetColorAndOpacity(EntryData->bLocked ? FLinearColor(0.45f, 0.45f, 0.45f) : FLinearColor::White);
 		}
 		else
 		{
@@ -192,7 +75,7 @@ void UUEFieldPartyEntryWidget::ApplyEntryData()
 
 	if (SelectButton)
 	{
-		SelectButton->SetBackgroundColor(EntryData->bLocked ? kLockedColor : kEntryColor);
+		SelectButton->SetBackgroundColor(EntryData->bLocked ? FLinearColor(0.75f, 0.75f, 0.75f) : FLinearColor::White);
 
 		// 해금하지 않은 칸은 눌리지 않는다. 눌러 봐야 서버가 거절할 뿐이다.
 		SelectButton->SetIsEnabled(!EntryData->bLocked);
@@ -201,8 +84,8 @@ void UUEFieldPartyEntryWidget::ApplyEntryData()
 	if (SelectionBorder)
 	{
 		const FLinearColor Border = EntryData->bActive
-			? kActiveBorder
-			: (EntryData->PartySlot > 0 ? kPartyBorder : kNoBorder);
+			? FLinearColor(1.0f, 0.85f, 0.35f, 1.0f)
+			: (EntryData->PartySlot > 0 ? FLinearColor(0.86f, 0.62f, 0.16f, 1.0f) : FLinearColor::Transparent);
 		SelectionBorder->SetBrushColor(Border);
 	}
 
@@ -211,7 +94,7 @@ void UUEFieldPartyEntryWidget::ApplyEntryData()
 		SlotBadge->SetVisibility(EntryData->PartySlot > 0
 			? ESlateVisibility::HitTestInvisible
 			: ESlateVisibility::Collapsed);
-		SlotBadge->SetBrushColor(EntryData->bActive ? kActiveBorder : kPartyBorder);
+		SlotBadge->SetBrushColor(EntryData->bActive ? FLinearColor(1.0f, 0.85f, 0.35f, 1.0f) : FLinearColor(0.86f, 0.62f, 0.16f, 1.0f));
 	}
 	if (SlotBadgeText && EntryData->PartySlot > 0)
 	{
@@ -229,67 +112,6 @@ void UUEFieldPartyEntryWidget::HandleClicked()
 }
 
 // --- 화면 ---------------------------------------------------------------
-
-TSharedRef<SWidget> UUEFieldPartyWidget::RebuildWidget()
-{
-	if (WidgetTree && WidgetTree->RootWidget == nullptr)
-	{
-		UCanvasPanel* Canvas =
-			WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass());
-		WidgetTree->RootWidget = Canvas;
-
-		UBorder* Panel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
-		Panel->SetBrushColor(kPanelColor);
-		Panel->SetPadding(FMargin(24.0f));
-
-		if (UCanvasPanelSlot* PanelSlot = Cast<UCanvasPanelSlot>(Canvas->AddChild(Panel)))
-		{
-			// 화면 한가운데. 해상도가 달라져도 자리가 유지된다.
-			PanelSlot->SetAnchors(FAnchors(0.5f, 0.5f));
-			PanelSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-			PanelSlot->SetSize(FVector2D(kPanelWidth, kPanelHeight));
-		}
-
-		UVerticalBox* Column =
-			WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
-		Panel->AddChild(Column);
-
-		Column->AddChild(MakeLabel(*WidgetTree, NSLOCTEXT("HHV", "PartyTitle", "모든 포켓몬")));
-		Column->AddChild(MakeLabel(*WidgetTree, NSLOCTEXT("HHV", "PartyHint",
-			"눌러서 파티에 넣고 빼기 (최대 3마리) · 1 2 3 키로 꺼내고 집어넣기")));
-
-		// 종족이 늘어나면 화면 밖으로 넘친다. 목록만 스크롤한다.
-		UScrollBox* Scroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass());
-		if (UVerticalBoxSlot* ScrollSlot = Cast<UVerticalBoxSlot>(Column->AddChild(Scroll)))
-		{
-			ScrollSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-		}
-
-		UWrapBox* Grid =
-			WidgetTree->ConstructWidget<UWrapBox>(UWrapBox::StaticClass(), TEXT("PokemonList"));
-		PokemonList = Grid;
-		Scroll->AddChild(Grid);
-
-		StatusText = MakeLabel(*WidgetTree, FText::GetEmpty());
-		Column->AddChild(StatusText);
-
-		UHorizontalBox* Buttons =
-			WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
-		Column->AddChild(Buttons);
-
-		ConfirmButton =
-			WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("ConfirmButton"));
-		ConfirmButton->AddChild(MakeLabel(*WidgetTree, NSLOCTEXT("HHV", "PartyConfirm", "확인")));
-		Buttons->AddChild(ConfirmButton);
-
-		CloseButton =
-			WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("CloseButton"));
-		CloseButton->AddChild(MakeLabel(*WidgetTree, NSLOCTEXT("HHV", "PartyClose", "닫기")));
-		Buttons->AddChild(CloseButton);
-	}
-
-	return Super::RebuildWidget();
-}
 
 void UUEFieldPartyWidget::NativeConstruct()
 {
@@ -312,18 +134,7 @@ void UUEFieldPartyWidget::NativeConstruct()
 	// 열 때는 서버가 마지막으로 알려준 상태에서 시작한다.
 	HandlePartyStateChanged();
 
-	// UI가 먼저 키를 처리하고, 처리하지 않은 입력은 Enhanced Input으로 넘긴다.
-	// 따라서 파티 토글은 DataAsset의 Input.Action.SpawnPokemon 하나로 열고 닫는다.
-	SetIsFocusable(true);
-	if (APlayerController* Controller = GetOwningPlayer())
-	{
-		FInputModeGameAndUI Mode;
-		Mode.SetWidgetToFocus(TakeWidget());
-		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-		Mode.SetHideCursorDuringCapture(false);
-		Controller->SetInputMode(Mode);
-		Controller->SetShowMouseCursor(true);
-	}
+
 }
 
 FReply UUEFieldPartyWidget::NativeOnKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent)
@@ -377,11 +188,6 @@ void UUEFieldPartyWidget::NativeDestruct()
 		Bridge->OnPartyStateChanged.RemoveDynamic(this, &ThisClass::HandlePartyStateChanged);
 	}
 
-	if (APlayerController* Controller = GetOwningPlayer())
-	{
-		Controller->SetInputMode(FInputModeGameOnly());
-		Controller->SetShowMouseCursor(false);
-	}
 
 	Super::NativeDestruct();
 }
@@ -414,7 +220,7 @@ UUEPokemonSpeciesCatalog* UUEFieldPartyWidget::ResolveCatalog() const
 		return SpeciesCatalog;
 	}
 
-	// WBP 없이 뜰 때는 지정할 곳이 없다. 로비가 쓰는 것과 같은 표를 빌린다.
+	// 별도 카탈로그를 지정하지 않으면 로비가 쓰는 표를 빌린다.
 	const UWorld* World = GetWorld();
 	UUEGameInstance* GameInstance =
 		World ? Cast<UUEGameInstance>(World->GetGameInstance()) : nullptr;
@@ -523,7 +329,7 @@ void UUEFieldPartyWidget::HandlePartyStateChanged()
 void UUEFieldPartyWidget::RebuildList()
 {
 	const UUEFieldServerBridgeComponent* Bridge = FindBridge();
-	if (!Bridge || !PokemonList)
+	if (!Bridge || !PokemonList || !EntryWidgetClass)
 	{
 		return;
 	}
@@ -581,7 +387,7 @@ void UUEFieldPartyWidget::RebuildList()
 		}
 
 		UUEFieldPartyEntryWidget* EntryWidget =
-			CreateWidget<UUEFieldPartyEntryWidget>(this, UUEFieldPartyEntryWidget::StaticClass());
+			CreateWidget<UUEFieldPartyEntryWidget>(this, EntryWidgetClass);
 		if (!EntryWidget)
 		{
 			continue;

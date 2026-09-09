@@ -24,6 +24,7 @@ public:
 	static UUEFieldClientSubsystem* Get(const UObject* WorldContextObject);
 
 	virtual void Deinitialize() override;
+	void ResetForFrontend();
 
 	UFUNCTION(BlueprintCallable, Category = "Field Server")
 	void RegisterPlayerController(AUEPlayerController* PlayerController);
