@@ -1,8 +1,4 @@
 // Launcher - 서버들을 한꺼번에 띄운다.
-//
-// 자식 프로세스를 Job Object 에 넣고 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE 를 건다.
-// 런처가 어떤 이유로 죽든(정상 종료, Ctrl+C, 강제 종료) 커널이 자식을 함께 정리하므로
-// 고아 서버가 남지 않는다. 개발 중 포트가 물려 있는 사고를 막아준다.
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -25,9 +21,6 @@ namespace
         std::uint16_t chatPort = 9100;
         std::uint16_t fieldPort = 9200;
         std::uint16_t instancePort = 9300;
-        // 비워두면 detectLocalHost() 가 이 컴퓨터의 랜 주소를 채운다. 루프백을
-        // 박아두지 않는 이유는, 그 값이 그대로 클라이언트에게 건너가기 때문이다 —
-        // 다른 컴퓨터는 자기 루프백에 붙으려 하다가 아무 서버에도 못 닿는다.
         std::string host = "";
 
         // 인스턴스 방 하나에 뿌릴 야생 포켓몬 수.
