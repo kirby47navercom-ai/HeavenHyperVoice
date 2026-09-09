@@ -300,7 +300,7 @@ TSharedRef<SWidget> UUEFieldPartyWidget::RebuildWidget()
 
 		Column->AddChild(MakeLabel(*WidgetTree, NSLOCTEXT("HHV", "PartyTitle", "모든 포켓몬")));
 		Column->AddChild(MakeLabel(*WidgetTree, NSLOCTEXT("HHV", "PartyHint",
-			"눌러서 파티에 넣고 빼기 (최대 3마리) · 1 2 3 키로 꺼내고 집어넣기")));
+			"눌러서 파티에 넣고 빼기 (최대 3마리) · 1 2 3 키로 꺼내고 집어넣기 · 창을 닫으면 저장된다")));
 
 		// 종족이 늘어나면 화면 밖으로 넘친다. 목록만 스크롤한다.
 		UScrollBox* Scroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass());
@@ -321,15 +321,14 @@ TSharedRef<SWidget> UUEFieldPartyWidget::RebuildWidget()
 			WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
 		Column->AddChild(Buttons);
 
-		ConfirmButton =
-			WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("ConfirmButton"));
-		ConfirmButton->AddChild(MakeLabel(*WidgetTree, NSLOCTEXT("HHV", "PartyConfirm", "확인")));
-		Buttons->AddChild(ConfirmButton);
+		// 되돌리는 버튼을 보내는 버튼 왼쪽에 둔다. 오른쪽에 있으면 확인을
+		// 누르려다 스치기 쉽다.
+		ResetButton =
+			WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("ResetButton"));
+		ResetButton->AddChild(MakeLabel(*WidgetTree,
+			NSLOCTEXT("HHV", "PartyReset", "파티 비우기")));
+		Buttons->AddChild(ResetButton);
 
-		CloseButton =
-			WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("CloseButton"));
-		CloseButton->AddChild(MakeLabel(*WidgetTree, NSLOCTEXT("HHV", "PartyClose", "닫기")));
-		Buttons->AddChild(CloseButton);
 	}
 
 	return Super::RebuildWidget();
@@ -339,13 +338,9 @@ void UUEFieldPartyWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	if (ConfirmButton)
+	if (ResetButton)
 	{
-		ConfirmButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleConfirmClicked);
-	}
-	if (CloseButton)
-	{
-		CloseButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
+		ResetButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleResetClicked);
 	}
 
 	if (UUEFieldServerBridgeComponent* Bridge = FindBridge())
@@ -408,16 +403,23 @@ FReply UUEFieldPartyWidget::NativeOnKeyDown(const FGeometry& Geometry, const FKe
 
 void UUEFieldPartyWidget::NativeDestruct()
 {
-	if (ConfirmButton)
+	if (ResetButton)
 	{
-		ConfirmButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleConfirmClicked);
-	}
-	if (CloseButton)
-	{
-		CloseButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleCloseClicked);
+		ResetButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleResetClicked);
 	}
 	if (UUEFieldServerBridgeComponent* Bridge = FindBridge())
 	{
+		// 닫는 것이 곧 적용이다. 확인 버튼이 없으므로 여기가 유일한 저장 지점이다.
+		//
+		// 바뀐 것이 없으면 보내지 않는다. 창을 열었다 닫기만 해도 매번 DB 쓰기가
+		// 일어나면, 아무것도 안 한 사람이 서버 부하를 만든다.
+		const FUEFieldPartyState& Saved = Bridge->GetPartyState();
+		if (PendingParty != Saved.Party || PendingActive != Saved.ActiveDex)
+		{
+			Bridge->SendSetParty(PendingParty, PendingActive);
+		}
+
+		// 응답이 와도 받을 창이 없다. 먼저 보내고 구독을 끊는다.
 		Bridge->OnPartyStateChanged.RemoveDynamic(this, &ThisClass::HandlePartyStateChanged);
 	}
 
@@ -528,19 +530,26 @@ void UUEFieldPartyWidget::Confirm()
 	}
 }
 
+void UUEFieldPartyWidget::ResetParty()
+{
+	PendingParty.Reset();
+	PendingActive = 0;
+	RebuildList();
+
+	// 아직 서버에 안 갔다는 것을 분명히 한다. 비운 채로 확인하면 인스턴스에
+	// 못 들어가므로(파티가 비면 서버가 거절한다) 그것도 같이 알린다.
+	SetStatus(NSLOCTEXT("HHV", "PartyResetDone",
+		"파티를 비웠습니다. 이대로 닫으면 저장되고, 비어 있으면 인스턴스에 들어갈 수 없습니다"));
+}
+
+void UUEFieldPartyWidget::HandleResetClicked()
+{
+	ResetParty();
+}
+
 void UUEFieldPartyWidget::Close()
 {
 	RemoveFromParent();
-}
-
-void UUEFieldPartyWidget::HandleConfirmClicked()
-{
-	Confirm();
-}
-
-void UUEFieldPartyWidget::HandleCloseClicked()
-{
-	Close();
 }
 
 void UUEFieldPartyWidget::HandlePartyStateChanged()

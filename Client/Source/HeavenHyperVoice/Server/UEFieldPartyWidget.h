@@ -133,7 +133,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Field Party")
 	void SetActiveSlot(int32 SlotNumber);
 
-	/** 서버에 보낸다. 응답이 오면 화면이 서버 상태로 다시 그려진다. */
+	/**
+	 * 편집 중인 파티를 전부 비운다. 서버에는 확인을 눌러야 간다 -- 실수로
+	 * 눌렀으면 닫기로 버리면 된다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Field Party")
+	void ResetParty();
+
+	/**
+	 * 편집한 파티를 서버에 보낸다. 응답이 오면 화면이 서버 상태로 다시 그려진다.
+	 *
+	 * 창을 닫을 때 자동으로 불린다. 확인 버튼은 없다 -- 눌러야 저장되는 창은,
+	 * 안 누르고 닫은 사람에게 아무 말 없이 편집을 버린다.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Field Party")
 	void Confirm();
 
@@ -158,10 +170,7 @@ protected:
 	TObjectPtr<UPanelWidget> PokemonList = nullptr;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UButton> ConfirmButton = nullptr;
-
-	UPROPERTY(meta = (BindWidgetOptional))
-	TObjectPtr<UButton> CloseButton = nullptr;
+	TObjectPtr<UButton> ResetButton = nullptr;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> StatusText = nullptr;
@@ -178,10 +187,7 @@ protected:
 
 private:
 	UFUNCTION()
-	void HandleConfirmClicked();
-
-	UFUNCTION()
-	void HandleCloseClicked();
+	void HandleResetClicked();
 
 	// 서버가 상태를 보내면 편집 중인 내용을 버리고 그것으로 되돌린다.
 	// 거절당한 변경이 화면에만 남지 않게 한다.
