@@ -35,6 +35,7 @@ constexpr float kEntryHeight = 158.0f;
 constexpr float kIconSize = 102.0f;
 constexpr float kBorderThickness = 3.0f;
 constexpr float kBadgeSize = 28.0f;
+constexpr float kTypeHeaderIcon = 34.0f;
 
 constexpr float kPanelWidth = 1240.0f;
 constexpr float kPanelHeight = 900.0f;
@@ -54,6 +55,49 @@ UTextBlock* MakeLabel(UWidgetTree& Tree, const FText& Text)
 	UTextBlock* Label = Tree.ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
 	Label->SetText(Text);
 	return Label;
+}
+
+// 속성 배지는 이름 규칙으로 찾는다: /Game/UI/PokemonType/T_Type_<열거형 이름>.
+// 속성마다 경로를 적은 표를 두면 속성을 늘릴 때 두 군데를 고쳐야 하고, 한쪽만
+// 고치면 배지가 조용히 사라진다. 규칙이면 그 이름으로 텍스처를 넣는 것이 전부다.
+//
+// 없으면 nullptr 다. 머리글은 배지 없이 이름만 나온다.
+UTexture2D* LoadTypeIcon(EUEPokemonType Type)
+{
+	const UEnum* Enum = StaticEnum<EUEPokemonType>();
+	if (!Enum || Type == EUEPokemonType::None)
+	{
+		return nullptr;
+	}
+
+	const FString Name = Enum->GetNameStringByValue(static_cast<int64>(Type));
+	const FString Path = FString::Printf(
+		TEXT("/Game/UI/PokemonType/T_Type_%s.T_Type_%s"), *Name, *Name);
+	return LoadObject<UTexture2D>(nullptr, *Path);
+}
+
+// 화면에 쓰는 이름은 UENUM 의 DisplayName 이다 (불꽃, 물). 한글을 코드에
+// 두 번 적지 않는다.
+FText TypeDisplayName(EUEPokemonType Type)
+{
+	const UEnum* Enum = StaticEnum<EUEPokemonType>();
+	return Enum ? Enum->GetDisplayNameTextByValue(static_cast<int64>(Type))
+	            : FText::GetEmpty();
+}
+
+// 속성 구역의 머리글. 배지 + 이름 한 줄이다.
+UWidget* MakeTypeHeader(UWidgetTree& Tree, EUEPokemonType Type)
+{
+	UHorizontalBox* Row = Tree.ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+	if (UTexture2D* Icon = LoadTypeIcon(Type))
+	{
+		UImage* Image = Tree.ConstructWidget<UImage>(UImage::StaticClass());
+		Image->SetBrushFromTexture(Icon);
+		Image->SetDesiredSizeOverride(FVector2D(kTypeHeaderIcon, kTypeHeaderIcon));
+		Row->AddChild(Image);
+	}
+	Row->AddChild(MakeLabel(Tree, TypeDisplayName(Type)));
+	return Row;
 }
 }  // namespace
 
@@ -536,19 +580,29 @@ void UUEFieldPartyWidget::RebuildList()
 		return;
 	}
 
-	// 도감번호 순으로 늘어놓는다. 카탈로그 배열은 등록한 차례라 뒤죽박죽이고,
-	// 그 순서를 바꾸면 배열 위치를 종족 id 로 쓰는 옛 경로가 밀린다.
+	// 속성을 정해 둔 종족만 늘어놓는다. 속성이 곧 "이 게임에 실린 로스터" 라,
+	// 목록을 따로 두지 않는다 — 두면 종족을 넣고 한쪽을 빠뜨렸을 때 화면과
+	// 데이터가 조용히 어긋난다. 새 종족을 내보내려면 DataAsset 의 PokemonType 을
+	// 채우면 되고, 감추려면 None 으로 둔다.
 	TArray<UUEPokemonSpeciesData*> Ordered;
 	Ordered.Reserve(Catalog->Species.Num());
 	for (UUEPokemonSpeciesData* Entry : Catalog->Species)
 	{
-		if (Entry && Entry->DexNumber > 0)
+		if (Entry && Entry->DexNumber > 0 && Entry->PokemonType != EUEPokemonType::None)
 		{
 			Ordered.Add(Entry);
 		}
 	}
+
+	// 속성으로 묶고 그 안에서 도감번호 순이다. 카탈로그 배열 순서는 등록한
+	// 차례라 뒤죽박죽이고, 그 순서를 바꾸면 배열 위치를 종족 id 로 쓰는 옛
+	// 경로가 밀린다 — 그래서 배열이 아니라 여기서 정렬한다.
 	Ordered.Sort([](const UUEPokemonSpeciesData& Left, const UUEPokemonSpeciesData& Right)
 	{
+		if (Left.PokemonType != Right.PokemonType)
+		{
+			return static_cast<uint8>(Left.PokemonType) < static_cast<uint8>(Right.PokemonType);
+		}
 		return Left.DexNumber < Right.DexNumber;
 	});
 
@@ -557,8 +611,28 @@ void UUEFieldPartyWidget::RebuildList()
 	const TArray<int32>& Unlocked = Bridge->GetPartyState().Unlocked;
 
 	PokemonList->ClearChildren();
+
+	// 속성이 바뀌는 자리마다 머리글을 끼운다. 줄바꿈을 강제해야 머리글이
+	// 앞 구역 마지막 줄에 얹히지 않는다.
+	EUEPokemonType LastType = EUEPokemonType::None;
+
 	for (UUEPokemonSpeciesData* Species : Ordered)
 	{
+		const bool bStartsGroup = Species->PokemonType != LastType;
+		if (bStartsGroup)
+		{
+			LastType = Species->PokemonType;
+			if (UWidget* Header = MakeTypeHeader(*WidgetTree, LastType))
+			{
+				if (UWrapBoxSlot* HeaderSlot = Cast<UWrapBoxSlot>(PokemonList->AddChild(Header)))
+				{
+					HeaderSlot->SetNewLine(true);
+					HeaderSlot->SetFillEmptySpace(true);
+					HeaderSlot->SetPadding(FMargin(6.0f, 12.0f, 6.0f, 4.0f));
+				}
+			}
+		}
+
 		UUEFieldPartyEntryData* Entry = NewObject<UUEFieldPartyEntryData>(this);
 		Entry->DexNumber = Species->DexNumber;
 		Entry->Species = Species;
@@ -591,6 +665,10 @@ void UUEFieldPartyWidget::RebuildList()
 		if (UWrapBoxSlot* WrapSlot = Cast<UWrapBoxSlot>(PokemonList->AddChild(EntryWidget)))
 		{
 			WrapSlot->SetPadding(FMargin(4.0f));
+
+			// 머리글 바로 뒤 칸은 새 줄에서 시작한다. 머리글이 가로로 늘어나
+			// 있어도 첫 칸이 그 옆에 끼지 않는다.
+			WrapSlot->SetNewLine(bStartsGroup);
 		}
 	}
 }

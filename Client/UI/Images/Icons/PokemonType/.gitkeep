@@ -1,0 +1,7 @@
+속성 배지 원본. 여기 넣으면 임포트 스크립트가 기존 ../Element_*.png 대신 이걸 쓴다.
+
+  Type_Fire.png
+  Type_Water.png
+
+Content 가 아니라 원본 보관용이다 (PNG 를 Content 에 두면 쿠킹에 딸려 들어간다).
+가져오는 곳: /Game/UI/PokemonType/T_Type_Fire, T_Type_Water

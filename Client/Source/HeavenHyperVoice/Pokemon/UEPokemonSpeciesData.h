@@ -17,6 +17,29 @@ class UTexture2D;
 
 
 // ============================================================================
+// Pokemon Type
+// ============================================================================
+
+/**
+ * 속성. 지금은 캐릭터 생성 화면을 속성별로 묶는 데만 쓴다.
+ *
+ * 값을 뒤에만 붙일 것 — DataAsset 에 저장되는 열거형이라 중간에 끼우면
+ * 이미 지정해 둔 종족의 속성이 조용히 다른 것이 된다.
+ *
+ * 이 순서가 곧 파티 화면의 구역 순서다 (UEFieldPartyWidget::RebuildList).
+ */
+UENUM(BlueprintType)
+enum class EUEPokemonType : uint8
+{
+	None     UMETA(DisplayName = "없음"),
+	Fire     UMETA(DisplayName = "불꽃"),
+	Water    UMETA(DisplayName = "물"),
+	Grass    UMETA(DisplayName = "풀"),
+	Electric UMETA(DisplayName = "전기"),
+	Normal   UMETA(DisplayName = "노말"),
+};
+
+// ============================================================================
 // Pokemon Skill Data
 // ============================================================================
 
@@ -88,6 +111,10 @@ public:
 	// 포켓몬 프로필에 사용할 초상화다. 경로 문자열이 아니라 DataAsset 변수로 직접 지정한다.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Profile")
 	TObjectPtr<UTexture2D> ProfileIcon = nullptr;
+
+	// 속성. None 이면 아직 안 정한 것이고, 캐릭터 생성 화면에서 묶이지 않는다.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Pokemon|Profile")
+	EUEPokemonType PokemonType = EUEPokemonType::None;
 
 
 	// ========================================================================
