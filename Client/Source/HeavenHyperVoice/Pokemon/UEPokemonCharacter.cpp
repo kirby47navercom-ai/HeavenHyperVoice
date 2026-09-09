@@ -13,7 +13,9 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/GameInstance.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "GameFramework/PhysicsVolume.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -73,6 +75,7 @@ void AUEPokemonCharacter::BeginPlay()
 	RefreshHealthBarPosition();
 	RefreshHealthBarWidget();
 	TargetServerLocation = GetActorLocation();
+	RefreshHealthBarVisibility();
 	TargetServerRotation = GetActorRotation();
 	RefreshWildCryTimer();
 }
@@ -94,6 +97,7 @@ void AUEPokemonCharacter::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	UpdateServerDrivenMovement(DeltaSeconds);
+	RefreshHealthBarVisibility();
 }
 
 void AUEPokemonCharacter::OnJumped_Implementation()
@@ -753,6 +757,19 @@ void AUEPokemonCharacter::RefreshHealthBarWidget()
 		HealthBarWidget->SetDisplayName(GetPokemonDisplayName());
 		HealthBarWidget->SetHealth(GetCurrentHP(), GetMaxHP());
 	}
+}
+
+void AUEPokemonCharacter::RefreshHealthBarVisibility()
+{
+	if (!HealthBarWidgetComponent) return;
+	const UGameInstance* Instance = GetGameInstance();
+	const APlayerController* LocalController = Instance ? Instance->GetFirstLocalPlayerController(GetWorld()) : nullptr;
+	const APawn* LocalPlayer = LocalController ? LocalController->GetPawn() : nullptr;
+	const bool bVisible = LocalPlayer && HealthBarVisibleDistance > 0.0f
+		&& FVector::DistSquared(GetActorLocation(), LocalPlayer->GetActorLocation())
+			<= FMath::Square(HealthBarVisibleDistance);
+	if (HealthBarWidgetComponent->IsVisible() != bVisible)
+		HealthBarWidgetComponent->SetVisibility(bVisible);
 }
 
 void AUEPokemonCharacter::RefreshHealthBarPosition()
