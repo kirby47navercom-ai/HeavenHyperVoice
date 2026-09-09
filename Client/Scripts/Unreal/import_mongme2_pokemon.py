@@ -282,7 +282,7 @@ def import_form(species_name, package_name, form_folder):
     if not source.is_dir():
         raise RuntimeError(f"리타겟 폴더를 찾을 수 없습니다: {source}")
 
-    # 폼이 하나뿐이면 불필요한 중간 폴더를 만들지 않고, 실제로 두 폼인 찌르꼬만 분리한다.
+    # 폼이 하나뿐이면 불필요한 중간 폴더를 만들지 않고, 실제로 여러 폼인 종만 분리한다.
     destination_root = f"{ASSET_ROOT}/{species_name}"
     if form_folder:
         destination_root += f"/{form_folder}"
