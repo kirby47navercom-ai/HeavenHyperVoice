@@ -782,9 +782,29 @@ void UUEGameInstance::SetLocalSession(const FString& UserId, const FString& Nick
 
 void UUEGameInstance::ClearLocalSession()
 {
+	ServiceEndpoints.Reset();
+	ServerCharacters.Reset();
+	ApplyPlayerParty(0, {});
+	ClearPendingCharacterCreation();
+	ClearPendingHHVAppearance();
 	LocalSessionUserId.Reset();
 	LocalSessionNickname.Reset();
 	bHasLocalSession = false;
+}
+
+void UUEGameInstance::PrepareReturnToFrontend(bool bLogout)
+{
+	// 필드 연결과 인증 정보를 비운 뒤 프런트 화면에서 다시 로그인하도록 한다.
+	DisconnectFromServer();
+	ClearLocalSession();
+	bFrontendLoginRequested = !bLogout;
+}
+
+bool UUEGameInstance::ConsumeFrontendLoginRequest()
+{
+	const bool bRequested = bFrontendLoginRequested;
+	bFrontendLoginRequested = false;
+	return bRequested;
 }
 
 void UUEGameInstance::SetServerAddress(const FString& ServerAddress)

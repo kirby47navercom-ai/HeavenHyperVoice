@@ -252,6 +252,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "HHV|Local Session")
 	void ClearLocalSession();
 
+	/** 게임플레이 티켓을 정리한다. 온라인 캐릭터 변경은 다시 로그인해야 한다. */
+	void PrepareReturnToFrontend(bool bLogout);
+	bool ConsumeFrontendLoginRequest();
+
 	UFUNCTION(BlueprintPure, Category = "HHV|Local Session")
 	bool HasLocalSession() const { return bHasLocalSession; }
 
@@ -281,6 +285,7 @@ public:
 	void PollServer();
 
 private:
+	bool bFrontendLoginRequested = false;
 	void ShowLoadingScreen();
 	void HandlePreLoadMap(const FString& MapName);
 	void HandlePostLoadMap(UWorld* LoadedWorld);

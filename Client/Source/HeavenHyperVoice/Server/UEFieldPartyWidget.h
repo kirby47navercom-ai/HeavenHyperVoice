@@ -10,11 +10,10 @@
 // 것은 회색으로 눌리지 않게 둔다. 파티에 넣은 것은 노란 테두리와 모서리 번호로
 // 표시한다 — 파티만 따로 떼어 놓으면 같은 포켓몬이 화면에 두 번 나온다.
 //
-// WBP 없이도 뜬다. 자식 위젯이 하나도 없으면 RebuildWidget 이 기본 배치를
-// 만든다 — DefaultGame.ini 에 이 C++ 클래스를 그대로 지정해도 동작한다.
-// 나중에 WBP 를 만들어 아래 BindWidgetOptional 이름들을 맞춰 두면 그쪽이 쓰인다.
+// 화면과 항목 배치는 WBP_FieldParty/WBP_FieldPartyEntry에서 편집한다.
 
 #include "CoreMinimal.h"
+#include "../UI/UEWindowWidget.h"
 #include "Blueprint/UserWidget.h"
 
 #include "UEFieldPartyWidget.generated.h"
@@ -69,7 +68,7 @@ public:
  *
  * 누르면 파티에 넣고, 다시 누르면 뺀다. 어느 것을 꺼낼지는 1/2/3 키로 정한다.
  */
-UCLASS(Blueprintable)
+UCLASS(Abstract, Blueprintable)
 class HEAVENHYPERVOICE_API UUEFieldPartyEntryWidget : public UUserWidget
 {
 	GENERATED_BODY()
@@ -79,29 +78,28 @@ public:
 	void Setup(UUEFieldPartyEntryData* InEntryData);
 
 protected:
-	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> SelectButton = nullptr;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> LabelText = nullptr;
 
 	// 종족 데이터의 ProfileIcon. 없는 종족은 이름만 뜬다.
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UImage> IconImage = nullptr;
 
 	// 파티에 들어 있으면 노랗게, 꺼내 놓았으면 더 밝게 칠한다.
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UBorder> SelectionBorder = nullptr;
 
 	// 모서리의 1/2/3. 파티에 없으면 접힌다.
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UBorder> SlotBadge = nullptr;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> SlotBadgeText = nullptr;
 
 private:
@@ -114,8 +112,8 @@ private:
 	TObjectPtr<UUEFieldPartyEntryData> EntryData = nullptr;
 };
 
-UCLASS(Blueprintable)
-class HEAVENHYPERVOICE_API UUEFieldPartyWidget : public UUserWidget
+UCLASS(Abstract, Blueprintable)
+class HEAVENHYPERVOICE_API UUEFieldPartyWidget : public UUEWindowWidget
 {
 	GENERATED_BODY()
 
@@ -133,19 +131,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Field Party")
 	void SetActiveSlot(int32 SlotNumber);
 
-	/**
-	 * 편집 중인 파티를 전부 비운다. 서버에는 확인을 눌러야 간다 -- 실수로
-	 * 눌렀으면 닫기로 버리면 된다.
-	 */
+	/** 편집 중인 파티를 전부 비운다. 저장은 확인하거나 창을 닫을 때 수행된다. */
 	UFUNCTION(BlueprintCallable, Category = "Field Party")
 	void ResetParty();
 
-	/**
-	 * 편집한 파티를 서버에 보낸다. 응답이 오면 화면이 서버 상태로 다시 그려진다.
-	 *
-	 * 창을 닫을 때 자동으로 불린다. 확인 버튼은 없다 -- 눌러야 저장되는 창은,
-	 * 안 누르고 닫은 사람에게 아무 말 없이 편집을 버린다.
-	 */
+	/** 서버에 보낸다. 응답이 오면 화면이 서버 상태로 다시 그려진다. */
 	UFUNCTION(BlueprintCallable, Category = "Field Party")
 	void Confirm();
 
@@ -160,25 +150,34 @@ public:
 	int32 GetPendingActive() const { return PendingActive; }
 
 protected:
-	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual FReply NativeOnKeyDown(const FGeometry& Geometry, const FKeyEvent& KeyEvent) override;
 
 	// 모든 종족이 도감번호 순으로 들어간다.
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UPanelWidget> PokemonList = nullptr;
 
+	// 기존 WBP도 열 수 있도록 선택 연결로 두며, 새 WBP에는 같은 이름의 버튼을 배치한다.
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> ResetButton = nullptr;
 
-	UPROPERTY(meta = (BindWidgetOptional))
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UButton> ConfirmButton = nullptr;
+
+	UPROPERTY(meta = (BindWidget))
+	TObjectPtr<UButton> CloseButton = nullptr;
+
+	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> StatusText = nullptr;
 
 	// 화면에 늘어놓을 종족 표. 도감번호를 이름·초상화로 바꾸는 데도 쓴다.
 	// 비어 있으면 ini 의 SpeciesCatalog 를 빌린다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field Party")
 	TObjectPtr<UUEPokemonSpeciesCatalog> SpeciesCatalog = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field Party")
+	TSubclassOf<UUEFieldPartyEntryWidget> EntryWidgetClass;
 
 	// 파티 상한. 서버(kMaxPartySize)와 DB(ck_party_slot)가 같은 값을 강제한다.
 	// 여기서 막는 것은 화면 편의일 뿐이고 거절은 서버가 한다.
@@ -188,6 +187,12 @@ protected:
 private:
 	UFUNCTION()
 	void HandleResetClicked();
+
+	UFUNCTION()
+	void HandleConfirmClicked();
+
+	UFUNCTION()
+	void HandleCloseClicked();
 
 	// 서버가 상태를 보내면 편집 중인 내용을 버리고 그것으로 되돌린다.
 	// 거절당한 변경이 화면에만 남지 않게 한다.
