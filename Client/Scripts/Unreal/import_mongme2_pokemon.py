@@ -469,7 +469,8 @@ def create_species_data(species, primary_form, anim_blueprint, data_template):
     data.set_editor_property("skeletal_mesh", primary_form["Mesh"])
     data.set_editor_property("anim_instance_class", anim_blueprint.generated_class())
 
-    # +X 정면 규칙과 현재 캐릭터 캡슐 기준은 기존 DA에서 그대로 복사한다.
+    # +X 정면 규칙과 현재 캐릭터 기준값은 기존 DA에서 그대로 복사한다.
+    # 클래스 개편으로 사라진 선택 속성은 건너뛰어 이전 자동화도 계속 사용할 수 있게 한다.
     for property_name in (
         "mesh_relative_transform",
         "capsule_radius",
@@ -484,7 +485,11 @@ def create_species_data(species, primary_form, anim_blueprint, data_template):
         "wild_cry_min_interval_seconds",
         "wild_cry_max_interval_seconds",
     ):
-        data.set_editor_property(property_name, data_template.get_editor_property(property_name))
+        try:
+            template_value = data_template.get_editor_property(property_name)
+        except Exception:
+            continue
+        set_property(data, property_name, template_value)
 
     data.set_editor_property("move_speed", float(species["RunSpeed"]))
     for property_name, suffix in ANIMATION_PROPERTIES.items():
@@ -492,6 +497,11 @@ def create_species_data(species, primary_form, anim_blueprint, data_template):
             property_name,
             find_animation(primary_form["Animations"], suffix),
         )
+
+    # 원본 FBX에 전투 대기 전용 동작이 없는 종은 일반 대기를 대신 사용한다.
+    # 빈 값으로 두면 전투 상태에 진입하는 순간 포즈가 멈출 수 있으므로 필수 슬롯만 안전하게 보완한다.
+    if not data.get_editor_property("battle_idle"):
+        data.set_editor_property("battle_idle", data.get_editor_property("idle"))
 
     editor_assets.save_loaded_asset(data, only_if_is_dirty=False)
     return data
@@ -505,7 +515,7 @@ def verify_species(species, forms, blend, blueprint, data):
         errors.append("DA 메시 불일치")
     if data.get_editor_property("anim_instance_class") != blueprint.generated_class():
         errors.append("DA AnimBP 불일치")
-    for required in ("idle", "walk", "run"):
+    for required in ("idle", "battle_idle", "walk", "run"):
         if not data.get_editor_property(required):
             errors.append(f"DA {required} 비어 있음")
     if get_skeleton(blend) != primary["Skeleton"]:
