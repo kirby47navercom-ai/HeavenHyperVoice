@@ -132,6 +132,10 @@ private:
 	EUEChatChannel ChannelForSelectedTab() const;
 	void SetChatCollapsed(bool bCollapsed);
 
+	// T 로 채팅창을 통째로 켜고 끈다. 접기(SetChatCollapsed)와 달리 머리글까지
+	// 감춘다 -- 시야를 가린다는 것이 이 기능의 이유라서다.
+	void ToggleChatVisible();
+
 	UFUNCTION()
 	void HandleChatTextCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 
@@ -256,6 +260,13 @@ private:
 	bool bChatInputOpen = false;
 	bool bMouseViewHeld = false;
 	bool bDraggingChat = false;
+	// T 로 감춘 상태. 접힘(bChatCollapsed)과는 별개다 -- 감췄다 켜면
+	// 접혀 있던 상태가 그대로 돌아온다.
+	bool bChatHidden = false;
+
+	// 감추기 전 가시성. WBP 가 정한 값을 그대로 되돌리려고 남겨 둔다 --
+	// 상수를 박아 두면 드래그 손잡이 같은 것이 조용히 안 눌리게 된다.
+	ESlateVisibility ChatVisibilityBeforeHide = ESlateVisibility::SelfHitTestInvisible;
 	bool bChatCollapsed = false;
 	bool bChatHadHeightOverride = false;
 	float ExpandedChatHeightOverride = 0.0f;

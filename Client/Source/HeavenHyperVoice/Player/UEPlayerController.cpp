@@ -177,6 +177,7 @@ void AUEPlayerController::SetupInputComponent()
 
 	BindGameplayInput();
 	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ThisClass::CloseChatInput);
+	InputComponent->BindKey(EKeys::T, IE_Pressed, this, &ThisClass::ToggleChatVisible);
 }
 
 void AUEPlayerController::CreateChatWidget()
@@ -422,6 +423,36 @@ void AUEPlayerController::SetChatCollapsed(bool bCollapsed)
 	}
 
 	bChatCollapsed = bCollapsed;
+}
+
+void AUEPlayerController::ToggleChatVisible()
+{
+	if (!ChatWidget)
+	{
+		return;
+	}
+
+	// 채팅을 치는 중이면 T 는 글자다. 입력칸이 포커스를 쥐고 있으면 보통
+	// 여기까지 오지도 않지만, 포커스가 어긋난 순간에 창이 사라지지 않게 막는다.
+	if (bChatInputOpen)
+	{
+		return;
+	}
+
+	bChatHidden = !bChatHidden;
+	if (bChatHidden)
+	{
+		// 감추기 전에 입력칸을 닫는다. 열어둔 채 감추면 포커스가 보이지 않는
+		// 위젯에 남아 키가 게임으로 안 간다.
+		CloseChatInput();
+		ChatVisibilityBeforeHide = ChatWidget->GetVisibility();
+		ChatWidget->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	else
+	{
+		// 끌 때 접혀 있었으면 접힌 채로 돌아온다. 안쪽 상태는 건드리지 않는다.
+		ChatWidget->SetVisibility(ChatVisibilityBeforeHide);
+	}
 }
 
 void AUEPlayerController::StartChat()
