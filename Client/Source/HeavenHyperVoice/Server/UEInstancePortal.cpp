@@ -1,6 +1,7 @@
 #include "UEInstancePortal.h"
 
 #include "UEFieldClientSubsystem.h"
+#include "UEFieldServerBridgeComponent.h"
 #include "../Character/UEPlayerCharacter.h"
 #include "../Player/UEPlayerController.h"
 #include "../System/UEGameInstance.h"
@@ -113,6 +114,34 @@ void AUEInstancePortal::HandleBeginOverlap(UPrimitiveComponent* /*OverlappedComp
 
 	if (InstanceType > 0)
 	{
+		// 파티가 비어 있으면 들어가 봐야 싸울 포켓몬이 없다. 서버도 같은 것을
+		// 검사하지만(InstanceHandler), 여기서 막아야 레벨을 옮겼다가 거절당하고
+		// 돌아오는 헛걸음을 안 한다.
+		// 브릿지는 UUEFieldClientSubsystem 이 **컨트롤러**에 붙인다.
+		AController* OwningController = PlayerCharacter->GetController();
+		const UUEFieldServerBridgeComponent* Bridge =
+			OwningController
+				? OwningController->FindComponentByClass<UUEFieldServerBridgeComponent>()
+				: nullptr;
+		if (Bridge != nullptr)
+		{
+			if (Bridge->GetPartyState().Party.IsEmpty())
+			{
+				// 겹침이 계속 들어오므로 안내는 한 번만 띄운다.
+				if (!bEmptyPartyNoticeShown)
+				{
+					bEmptyPartyNoticeShown = true;
+					if (AUEPlayerController* Controller =
+							Cast<AUEPlayerController>(PlayerCharacter->GetController()))
+					{
+						Controller->AddSystemMessage(
+							TEXT("파티에 포켓몬을 한 마리 이상 넣어야 들어갈 수 있습니다"));
+					}
+				}
+				return;
+			}
+		}
+
 		// 파티에 속해 있으면 파티장만 입장을 시작할 수 있다. 서버도 같은 것을
 		// 검사하지만(InstanceHandler 의 허가권), 여기서 막아야 파티원이 혼자
 		// 레벨을 옮겼다가 거절당하고 돌아오는 헛걸음을 안 한다.

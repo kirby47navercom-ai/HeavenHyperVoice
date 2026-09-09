@@ -262,6 +262,16 @@ bool InstanceHandler::handleEnter(TlsSession& session, const HeavenField::Enter&
             return;
         }
 
+        // 파티가 비어 있으면 들어가도 할 수 있는 것이 없다. 야생을 상대할
+        // 포켓몬이 한 마리도 없기 때문이다. 클라이언트 포탈에서도 막지만
+        // 집행은 여기다 — 포탈을 우회해 붙어도 이 검사는 지나야 한다.
+        if (character->party.empty()) {
+            self->send(proto::encodeFieldNotice(
+                "파티에 포켓몬을 한 마리 이상 넣어야 들어갈 수 있습니다"));
+            self->closeAfterFlush();
+            return;
+        }
+
         const std::uint16_t partner =
             character->hasPartner ? character->partner.speciesId : std::uint16_t{0};
 

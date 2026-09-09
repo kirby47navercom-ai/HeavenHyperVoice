@@ -74,4 +74,7 @@ private:
 
 	// 파티원이 포탈 위에 서 있으면 겹침이 계속 들어온다. 안내는 한 번만 띄운다.
 	bool bLeaderNoticeShown = false;
+
+	// 파티가 비었다는 안내도 한 번만. 위와 같은 이유다.
+	bool bEmptyPartyNoticeShown = false;
 };
