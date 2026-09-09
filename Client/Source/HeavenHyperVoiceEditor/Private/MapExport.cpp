@@ -292,6 +292,15 @@ namespace
 		}
 
 		const FTransform& Transform = Component->GetComponentTransform();
+
+		// 언리얼 인덱스 버퍼는 왼손 좌표계 기준 시계 방향이고, 이 파일 형식은
+		// (B-A)x(C-A) 가 바깥을 향하는 반시계 방향이다. 그대로 내보내면 법선이
+		// 전부 뒤집혀서, Recast 가 바닥의 **밑면**을 걸을 수 있는 면으로 잡는다.
+		// 실제로 필드 스폰이 바닥 슬래브 아래로 잡혀 캐릭터가 떨어졌다.
+		//
+		// 음수 스케일이면 변환이 이미 한 번 뒤집으므로 그때는 그대로 둔다.
+		const bool bMirrored = Transform.GetDeterminant() < 0.0f;
+
 		const FIndexArrayView Indices = LOD.IndexBuffer.GetArrayView();
 		const int32 Before = Data.Triangles.Num();
 		for (int32 Index = 0; Index + 2 < Indices.Num(); Index += 3)
@@ -315,7 +324,14 @@ namespace
 			const FVector C = ToServerPosition(
 				Transform.TransformPosition(FVector(PositionBuffer.VertexPosition(I2))),
 				WorldOriginOffset);
-			AddTriangle(Data, Area, A, B, C);
+			if (bMirrored)
+			{
+				AddTriangle(Data, Area, A, B, C);
+			}
+			else
+			{
+				AddTriangle(Data, Area, A, C, B);
+			}
 		}
 
 		return Data.Triangles.Num() > Before;
