@@ -54,15 +54,18 @@ def import_portrait(species_name: str):
     return texture
 
 
-for species_name in SPECIES_NAMES:
-    portrait_texture = import_portrait(species_name)
-    data_path = f"/Game/Pokemon/SpeciesData/{species_name}/DA_{species_name}"
-    species_data = unreal.EditorAssetLibrary.load_asset(data_path)
-    if species_data is None:
-        raise RuntimeError(f"종족 데이터 에셋을 찾지 못함: {data_path}")
+def import_species_portraits(species_names):
+    for species_name in species_names:
+        data_path = f"/Game/Pokemon/SpeciesData/{species_name}/DA_{species_name}"
+        species_data = unreal.EditorAssetLibrary.load_asset(data_path)
+        if species_data is None:
+            raise RuntimeError(f"종족 데이터 에셋을 찾지 못함: {data_path}")
+        portrait_texture = import_portrait(species_name)
+        # 런타임 경로 검색 없이 공용 종족 데이터 에셋이 텍스처를 직접 참조한다.
+        species_data.set_editor_property("profile_icon", portrait_texture)
+        unreal.EditorAssetLibrary.save_loaded_asset(species_data, only_if_is_dirty=False)
+    unreal.log(f"[ROUND PORTRAIT] 원형 초상화 {len(species_names)}종 임포트 및 연결 완료")
 
-    # 런타임 경로 검색을 쓰지 않고 DataAsset 변수가 Texture2D를 직접 소유한다.
-    species_data.set_editor_property("profile_icon", portrait_texture)
-    unreal.EditorAssetLibrary.save_loaded_asset(species_data, only_if_is_dirty=False)
 
-unreal.log("[ROUND PORTRAIT] 원형 포켓몬 초상화 20종 임포트 및 연결 완료")
+if __name__ == "__main__":
+    import_species_portraits(SPECIES_NAMES)

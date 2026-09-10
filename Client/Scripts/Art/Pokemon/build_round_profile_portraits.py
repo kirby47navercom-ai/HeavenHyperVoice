@@ -40,6 +40,31 @@ PORTRAIT_JOBS = {
     "squirtle": ("꼬부기", (65, 15, 365, 315)),
     "tinkatuff": ("벼리짱", (25, 45, 335, 355)),
     "turtwig": ("모부기", (45, 10, 370, 335)),
+    "combusken": ("영치코", (170, 0, 395, 225)),
+    "camerupt": ("폭타", (-15, 110, 295, 420)),
+    "talonflame": ("파이어로", (35, 130, 275, 370)),
+    "arcanine": ("윈디", (10, 0, 295, 285)),
+    "frogadier": ("개굴반장", (0, 35, 280, 315)),
+    "clawitzer": ("블로스터", (15, 110, 360, 455)),
+    "quagsire": ("누오", (95, 10, 390, 305)),
+    "gyarados": ("갸라도스", (20, 5, 310, 295)),
+    "grovyle": ("나무돌이", (45, 0, 350, 305)),
+    "breloom": ("버섯모", (45, 0, 290, 245)),
+    "abomasnow": ("눈설왕", (90, 25, 355, 290)),
+    "lilligant": ("드레디어", (85, 0, 380, 295)),
+    "meowth": ("나옹", (85, 0, 385, 300)),
+    "dunsparce": ("노고치", (20, 170, 325, 475)),
+    "slaking": ("게을킹", (115, 45, 445, 375)),
+    "snorlax": ("잠만보", (115, 45, 345, 275)),
+    "ursaluna-bloodmoon": ("붉은달다투곰", (70, 0, 335, 265)),
+    "dedenne": ("데덴네", (25, 0, 435, 410)),
+    "ampharos": ("전룡", (140, 0, 350, 210)),
+    "rotom": ("로토무", (80, 0, 390, 310)),
+    "rotom-heat": ("히트로토무", (105, 0, 430, 325)),
+    "rotom-wash": ("워시로토무", (65, 25, 415, 375)),
+    "rotom-frost": ("프로스트로토무", (90, 35, 430, 375)),
+    "rotom-fan": ("스핀로토무", (15, 15, 460, 460)),
+    "rotom-mow": ("커트로토무", (50, 0, 455, 405)),
 }
 
 
@@ -124,6 +149,11 @@ def build_portrait(
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--only", nargs="+", choices=PORTRAIT_JOBS, help="지정한 종만 생성한다.")
+    args = parser.parse_args()
     circle_mask = make_antialiased_circle_mask()
     circle_ring = make_antialiased_ring()
     generated_paths = [
@@ -135,6 +165,7 @@ def main() -> None:
             circle_ring,
         )
         for source_name, (korean_name, crop_box) in PORTRAIT_JOBS.items()
+        if not args.only or source_name in args.only
     ]
     print(f"원형 포켓몬 얼굴 초상화 생성 완료: {len(generated_paths)}개")
 
