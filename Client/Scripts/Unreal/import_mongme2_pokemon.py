@@ -601,4 +601,5 @@ def run():
         raise RuntimeError("; ".join(report["Errors"]))
 
 
-run()
+if __name__ == "__main__":
+    run()
