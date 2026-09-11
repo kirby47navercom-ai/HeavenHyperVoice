@@ -12,8 +12,10 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
+#include "Engine/GameInstance.h"
 #include "Engine/SkeletalMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "GameFramework/PhysicsVolume.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -72,6 +74,7 @@ void AUEPokemonCharacter::BeginPlay()
 	ApplyPokemonSpeciesData();
 	RefreshHealthBarPosition();
 	RefreshHealthBarWidget();
+	RefreshHealthBarVisibility();
 	RefreshWildCryTimer();
 }
 
@@ -92,6 +95,7 @@ void AUEPokemonCharacter::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	UpdateServerDrivenMovement(DeltaSeconds);
+	RefreshHealthBarVisibility();
 }
 
 void AUEPokemonCharacter::OnJumped_Implementation()
@@ -750,6 +754,29 @@ void AUEPokemonCharacter::RefreshHealthBarWidget()
 	{
 		HealthBarWidget->SetDisplayName(GetPokemonDisplayName());
 		HealthBarWidget->SetHealth(GetCurrentHP(), GetMaxHP());
+	}
+}
+
+void AUEPokemonCharacter::RefreshHealthBarVisibility()
+{
+	if (!HealthBarWidgetComponent)
+	{
+		return;
+	}
+
+	// 분할 화면이 아닌 현재 클라이언트의 첫 로컬 플레이어를 거리 기준으로 삼는다.
+	// 서버 소유자나 카메라 위치를 쓰면 다른 클라이언트에서 표시 결과가 달라질 수 있다.
+	const UGameInstance* Instance = GetGameInstance();
+	const APlayerController* LocalController =
+		Instance ? Instance->GetFirstLocalPlayerController(GetWorld()) : nullptr;
+	const APawn* LocalPlayer = LocalController ? LocalController->GetPawn() : nullptr;
+	const bool bVisible = LocalPlayer && HealthBarVisibleDistance > 0.0f
+		&& FVector::DistSquared(GetActorLocation(), LocalPlayer->GetActorLocation())
+			<= FMath::Square(HealthBarVisibleDistance);
+
+	if (HealthBarWidgetComponent->IsVisible() != bVisible)
+	{
+		HealthBarWidgetComponent->SetVisibility(bVisible);
 	}
 }
 

@@ -77,7 +77,7 @@ namespace
             "  --host <h>        host advertised to clients for chat, field and\n"
             "                    instances (default 127.0.0.1)\n"
             "  --wild-count <n>  wild pokemon per instance room (default 50)\n"
-            "  --field-map <p>   nav map for the field server (default maps/PlayerTestLevel.hhvmap)\n"
+            "  --field-map <p>   nav map for the field server (default maps/Goldenrod.hhvmap)\n"
             "  --no-field-map    disable field server nav map\n"
             "  --instance-map <t=p> nav map for an instance type (default 1=maps/Filed.hhvmap)\n"
             "  --verbose         pass --verbose to the servers\n"

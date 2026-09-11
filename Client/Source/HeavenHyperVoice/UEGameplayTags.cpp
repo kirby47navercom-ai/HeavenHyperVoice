@@ -18,6 +18,7 @@ namespace UEGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG(Input_Action_PokemonAttack4, "Input.Action.PokemonAttack.4");
 	UE_DEFINE_GAMEPLAY_TAG(Input_Action_MouseView, "Input.Action.MouseView");
 	UE_DEFINE_GAMEPLAY_TAG(Input_Action_Chat, "Input.Action.Chat");
+	UE_DEFINE_GAMEPLAY_TAG(Input_Action_ToggleChat, "Input.Action.ToggleChat");
 
 	//UE_DEFINE_GAMEPLAY_TAG(Event_Montage_Begin, "Event.Montage.Begin");
 	//UE_DEFINE_GAMEPLAY_TAG(Event_Montage_End, "Event.Montage.End");

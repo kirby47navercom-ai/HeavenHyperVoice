@@ -13,13 +13,22 @@
 class AUEPlayerCharacter;
 class UBorder;
 class UScrollBox;
-class USizeBox;
 class UTextBlock;
 class UUserWidget;
 class UVerticalBox;
 class UWidget;
 class UUEDataAsset;
 class UUEPokemonPartyWidget;
+class UUEOptionsMenuWidget;
+class UUEOptionsHUDWidget;
+class UUEOptionsScreenWidget;
+class UUEGameSettingsWidget;
+class UUEOptionsConfirmWidget;
+class UUEPhotoModeWidget;
+class UInputMappingContext;
+class UInputAction;
+class UCameraComponent;
+class AUEGoldenrodCity;
 
 /** 실제 플레이 레벨의 이동과 액션 입력을 처리한다. */
 UCLASS()
@@ -33,7 +42,40 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	void OpenChatInput();
-	void CloseChatInput();
+	void CloseChatInput(bool bClearDraft = true);
+
+	/** 가장 최근에 선택한 창을 맨 앞으로 올린다. WBP 자식은 UEWindowWidget을 사용한다. */
+	UFUNCTION(BlueprintCallable, Category = "UI|Windows")
+	void ActivateUIWindow(UUserWidget* Window, bool bFocus = true);
+	void DeactivateUIWindow(UUserWidget* Window);
+	bool HandleChatWindowKey(UUserWidget* Window, const FKeyEvent& Event);
+
+	UFUNCTION(BlueprintCallable, Category = "Options")
+	void ToggleOptionsMenu();
+
+	UFUNCTION(BlueprintCallable, Category = "Chat")
+	void ToggleChatVisibility();
+	UFUNCTION(BlueprintPure, Category = "Camera")
+	bool IsOptionsCameraActive() const { return OptionsMenu != nullptr; }
+	UFUNCTION(BlueprintPure, Category = "Camera")
+	bool IsPhotoModeActive() const { return bPhotoMode; }
+	UFUNCTION(BlueprintCallable, Category = "Camera")
+	void EnterPhotoMode();
+	UFUNCTION(BlueprintCallable, Category = "Camera")
+	void ExitPhotoMode();
+	UFUNCTION(BlueprintCallable, Category = "Camera")
+	void TakePhoto();
+	UFUNCTION(BlueprintCallable, Category = "Camera")
+	void SetPhotoZoom(float Value);
+	UFUNCTION(BlueprintPure, Category = "Camera")
+	float GetPhotoZoom() const { return PhotoZoom; }
+	/** Future combat entry/exit must notify this controller; entry immediately cancels photography. */
+	UFUNCTION(BlueprintCallable, Category = "Camera|Integration")
+	void SetInCombat(bool bNewInCombat);
+	/** NPCs and other world interactions must consult this before opening UI or starting an action. */
+	UFUNCTION(BlueprintPure, Category = "Camera|Integration")
+	bool CanInteractWithWorld() const { return !bPhotoMode && !bReturningToFrontend && !bWindowMoveBlocked; }
+	virtual void UpdateHiddenComponents(const FVector& ViewLocation, TSet<FPrimitiveComponentId>& HiddenComponents) override;
 
 	// WBP 클래스가 지정된 경우에만 HUD를 만든다. 에셋 경로는 코드에서 찾지 않는다.
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|UI")
@@ -56,9 +98,34 @@ public:
 	void HHVLeaveInstance();
 
 protected:
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|UI")
+	TSubclassOf<UUEPhotoModeWidget> PhotoModeWidgetClass;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Input")
+	TObjectPtr<UInputMappingContext> PhotoMappingContext;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Input")
+	TObjectPtr<UInputAction> PhotoCaptureAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Input")
+	TObjectPtr<UInputAction> PhotoZoomAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Input")
+	TObjectPtr<UInputAction> PhotoLookAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta=(ClampMin="20", ClampMax="100"))
+	float PhotoWideFOV = 80.f;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta=(ClampMin="10", ClampMax="80"))
+	float PhotoTeleFOV = 20.f;
 	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void SetupInputComponent() override;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Options")
+	TSubclassOf<UUEOptionsMenuWidget> OptionsMenuClass;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Options")
+	TSubclassOf<UUEOptionsHUDWidget> OptionsHUDClass;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Options")
+	TSubclassOf<UUEGameSettingsWidget> GameSettingsClass;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Options")
+	TSubclassOf<UUEOptionsConfirmWidget> OptionsConfirmClass;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Options")
+	TSoftObjectPtr<UWorld> FrontendLevel;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UUEDataAsset> InputData = nullptr;
@@ -115,6 +182,50 @@ public:
 	void AddSystemMessage(const FString& Text);
 
 private:
+	void BindPhotoInput(class UEnhancedInputComponent* EnhancedInputComponent);
+	void TickPhotoMode(float DeltaSeconds);
+	void HideGameplayUIForPhoto();
+	void RefreshPhotoInput();
+	bool IsNearPhotoBoundary() const;
+	void HandlePhotoZoom(const FInputActionValue& Value);
+	void HandlePhotoLookStarted();
+	void HandlePhotoLookStopped();
+	void OnPhotoProcessed();
+	UPROPERTY(Transient)
+	TObjectPtr<UUEPhotoModeWidget> PhotoWidget;
+	TMap<TWeakObjectPtr<UUserWidget>, ESlateVisibility> PhotoHiddenWidgets;
+	TMap<TWeakObjectPtr<UUserWidget>, float> PhotoHiddenWorldWidgets;
+	TArray<TWeakObjectPtr<UUserWidget>> PhotoPreviousWindowOrder;
+	TWeakObjectPtr<APawn> PhotoPawn;
+	TWeakObjectPtr<UCameraComponent> PhotoCamera;
+	TWeakObjectPtr<AUEGoldenrodCity> PhotoCity;
+	bool bPhotoMode = false;
+	bool bPhotoLookHeld = false;
+	bool bInCombat = false;
+	bool bPhotoSavedHUD = true;
+	bool bPhotoSavedClickEvents = false;
+	bool bPhotoSavedMouseOverEvents = false;
+	float PhotoZoom = 0.f;
+	float PhotoOriginalFOV = 90.f;
+	FString PendingPhotoFilename;
+	FDelegateHandle PhotoProcessedHandle;
+	void HandleEscape();
+	void HandleGameViewportClick();
+	void CloseOptionsMenu();
+	UFUNCTION()
+	void HandleOptionsAction(FName ActionId);
+	UFUNCTION()
+	void HandleOptionsScreenAction(FName ActionId);
+	void ShowOptionsScreen(UUEOptionsScreenWidget* Screen);
+	void RemoveOptionsScreen();
+	UPROPERTY(Transient)
+	TObjectPtr<UUEOptionsScreenWidget> OptionsScreen;
+	UPROPERTY(Transient)
+	TObjectPtr<UUEOptionsMenuWidget> OptionsMenu;
+	UPROPERTY(Transient)
+	TObjectPtr<UUEOptionsHUDWidget> OptionsHUD;
+	bool bReturningToFrontend = false;
+
 	// 마지막으로 받은 초대. /수락 이 이걸 쓴다. 서버 쪽 초대장은 60초에 만료된다.
 	int64 PendingInvitePartyId = 0;
 
@@ -130,10 +241,14 @@ private:
 	// 탭 번호를 발화 채널로 바꾼다. "전체" 탭에서 치면 일반으로 나간다 —
 	// 모든 채널에 동시에 말하는 것은 없다.
 	EUEChatChannel ChannelForSelectedTab() const;
-	void SetChatCollapsed(bool bCollapsed);
+	void SuspendChatInput();
+	void RefreshWindowOrder();
+	void RefreshWindowInput(bool bFocus = true);
+	TArray<TWeakObjectPtr<UUserWidget>> UIWindowOrder;
+	bool bWindowMoveBlocked = false;
+	bool bWindowLookBlocked = false;
 
-	// T 로 채팅창을 통째로 켜고 끈다. 접기(SetChatCollapsed)와 달리 머리글까지
-	// 감춘다 -- 시야를 가린다는 것이 이 기능의 이유라서다.
+	// T로 채팅창 전체를 켜고 끈다. 시야를 가리는 채팅창을 빠르게 숨길 때 쓴다.
 	void ToggleChatVisible();
 
 	UFUNCTION()
@@ -205,8 +320,6 @@ private:
 	UFUNCTION()
 	FEventReply HandleChatHeaderMouseMove(FGeometry MyGeometry, const FPointerEvent& MouseEvent);
 
-	UFUNCTION()
-	FEventReply HandleChatHeaderMouseDoubleClick(FGeometry MyGeometry, const FPointerEvent& MouseEvent);
 
 	FVector2D PendingMovementInput = FVector2D::ZeroVector;
 	float MaxWalkSpeed = 260.0f;
@@ -230,11 +343,7 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UWidget> ChatMovablePanel = nullptr;
 
-	UPROPERTY(Transient)
-	TObjectPtr<USizeBox> ChatSizeBox = nullptr;
 
-	UPROPERTY(Transient)
-	TObjectPtr<UWidget> ChatInputContainer = nullptr;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBorder> ChatDragHandle = nullptr;
@@ -260,16 +369,11 @@ private:
 	bool bChatInputOpen = false;
 	bool bMouseViewHeld = false;
 	bool bDraggingChat = false;
-	// T 로 감춘 상태. 접힘(bChatCollapsed)과는 별개다 -- 감췄다 켜면
-	// 접혀 있던 상태가 그대로 돌아온다.
+	// T로 채팅창 전체를 감춘 상태다.
 	bool bChatHidden = false;
 
-	// 감추기 전 가시성. WBP 가 정한 값을 그대로 되돌리려고 남겨 둔다 --
-	// 상수를 박아 두면 드래그 손잡이 같은 것이 조용히 안 눌리게 된다.
+	// 감추기 전 가시성을 저장해 WBP가 정한 입력 처리 상태까지 그대로 복원한다.
 	ESlateVisibility ChatVisibilityBeforeHide = ESlateVisibility::SelfHitTestInvisible;
-	bool bChatCollapsed = false;
-	bool bChatHadHeightOverride = false;
-	float ExpandedChatHeightOverride = 0.0f;
 	FVector2D LastChatDragMousePosition = FVector2D::ZeroVector;
 	FLinearColor SelectedChatTabColor = FLinearColor::White;
 	FLinearColor NormalChatTabColor = FLinearColor::White;

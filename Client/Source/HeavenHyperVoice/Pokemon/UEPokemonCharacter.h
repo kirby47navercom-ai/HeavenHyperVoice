@@ -379,6 +379,7 @@ private:
 	float SetPokemonHealth(float NewHealth);
 	void RefreshHealthBarWidget();
 	void RefreshHealthBarPosition();
+	void RefreshHealthBarVisibility();
 
 	// 실제 스켈레탈 메시가 없을 때 큐브를 종족 대표 색으로 칠한다.
 	void ApplyDebugAppearance();
@@ -416,7 +417,11 @@ private:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|UI", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float HealthBarHeadOffset = 30.0f;
 
-	// Two 20 Hz samples absorb ordinary arrival jitter.
+	// 로컬 플레이어와의 거리(cm)가 이 값보다 멀면 체력바를 숨긴다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pokemon|UI", meta = (AllowPrivateAccess = "true", ClampMin = "0.0", Units = "cm"))
+	float HealthBarVisibleDistance = 1500.0f;
+
+	// 20Hz 스냅샷 두 개를 보관해 일반적인 도착 시간 흔들림을 흡수한다.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pokemon|Server", meta = (AllowPrivateAccess = "true", ClampMin = "0.01", ClampMax = "0.2"))
 	float ServerSnapshotIntervalSeconds = 0.05f;
 

@@ -8,6 +8,9 @@
 # Local editor automation bridge. Do not commit this; teammates may not have it.
 Client/Plugins/MCPUnreal/
 
+# Local authoring sources; commit imported Unreal assets from Content instead.
+/Client/SourceArt/
+
 # Generated project files
 *.sln
 *.suo
@@ -42,6 +45,8 @@ Client/Plugins/MCPUnreal/
 *.tmp
 *.temp
 *.bak
+__pycache__/
+*.py[cod]
 
 # Logs and diagnostics
 *.log

@@ -7,15 +7,17 @@
 #include "../Server/UEFieldClientSubsystem.h"
 #include "../System/UEGameInstance.h"
 #include "../UI/PokemonParty/UEPokemonPartyWidget.h"
+#include "../UI/Options/UEOptionsMenuWidget.h"
+#include "../UI/Options/UEOptionsScreensWidget.h"
 #include "../UEGameplayTags.h"
 
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/GameViewportSubsystem.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Blueprint/WidgetLayoutLibrary.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/ScrollBox.h"
-#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "EnhancedInputComponent.h"
@@ -47,6 +49,11 @@ void AUEPlayerController::BeginPlay()
 	{
 		CreateChatWidget();
 		StartChat();
+		if (OptionsHUDClass)
+		{
+			OptionsHUD = CreateWidget<UUEOptionsHUDWidget>(this, OptionsHUDClass);
+			if (OptionsHUD) OptionsHUD->AddToViewport(20);
+		}
 	}
 	
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
@@ -58,6 +65,7 @@ void AUEPlayerController::BeginPlay()
 void AUEPlayerController::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	TickPhotoMode(DeltaSeconds);
 	if (ChatConnection)
 	{
 		ChatConnection->Poll();
@@ -66,6 +74,16 @@ void AUEPlayerController::Tick(float DeltaSeconds)
 
 void AUEPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ExitPhotoMode();
+	bReturningToFrontend = true;
+	RemoveOptionsScreen();
+	if (OptionsMenu)
+	{
+		OptionsMenu->OnMenuActionRequested.RemoveDynamic(this, &ThisClass::HandleOptionsAction);
+		OptionsMenu->RemoveFromParent();
+		OptionsMenu = nullptr;
+	}
+	if (OptionsHUD) OptionsHUD->RemoveFromParent();
 	if (ChatInput)
 	{
 		ChatInput->OnTextCommitted.RemoveDynamic(this, &ThisClass::HandleChatTextCommitted);
@@ -79,7 +97,6 @@ void AUEPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		ChatDragHandle->OnMouseButtonDownEvent.Unbind();
 		ChatDragHandle->OnMouseButtonUpEvent.Unbind();
 		ChatDragHandle->OnMouseMoveEvent.Unbind();
-		ChatDragHandle->OnMouseDoubleClickEvent.Unbind();
 	}
 	for (int32 Index = 0; Index < ChatChannelTabs.Num(); ++Index)
 	{
@@ -88,14 +105,15 @@ void AUEPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 			continue;
 		}
 		ChatChannelTabs[Index]->OnMouseButtonDownEvent.Unbind();
-		ChatChannelTabs[Index]->OnMouseDoubleClickEvent.Unbind();
 	}
 	ChatConnection.reset();
+	UIWindowOrder.Empty();
 	Super::EndPlay(EndPlayReason);
 }
 
 void AUEPlayerController::OnPossess(APawn* InPawn)
 {
+	ExitPhotoMode();
 	Super::OnPossess(InPawn);
 
 	AUEPlayerCharacter* PlayerCharacter = Cast<AUEPlayerCharacter>(InPawn);
@@ -129,6 +147,7 @@ void AUEPlayerController::OnPossess(APawn* InPawn)
 
 void AUEPlayerController::HHVEnterInstance(int32 InstanceType)
 {
+	if (bPhotoMode) return;
 	if (UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
 	{
 		FieldClientSubsystem->EnterInstance(InstanceType);
@@ -137,6 +156,7 @@ void AUEPlayerController::HHVEnterInstance(int32 InstanceType)
 
 void AUEPlayerController::HHVLeaveInstance()
 {
+	if (bPhotoMode) return;
 	if (UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
 	{
 		FieldClientSubsystem->LeaveInstance();
@@ -176,8 +196,139 @@ void AUEPlayerController::SetupInputComponent()
 	Super::SetupInputComponent();
 
 	BindGameplayInput();
-	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ThisClass::CloseChatInput);
-	InputComponent->BindKey(EKeys::T, IE_Pressed, this, &ThisClass::ToggleChatVisible);
+	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ThisClass::HandleEscape);
+	InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &ThisClass::HandleGameViewportClick);
+	InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &ThisClass::HandleGameViewportClick);
+}
+
+void AUEPlayerController::HandleGameViewportClick()
+{
+	if (bPhotoMode) return;
+	// UI가 클릭을 먼저 소비하므로, 게임 뷰포트까지 도달한 클릭만 채팅 선택을 해제한다.
+	// 다른 창이 열려 있다면 그 창이 입력 모드를 계속 유지한다.
+	if (bReturningToFrontend || !bShowMouseCursor || bDraggingChat) return;
+	CloseChatInput(false);
+}
+
+void AUEPlayerController::HandleEscape()
+{
+	if (bPhotoMode) { ExitPhotoMode(); return; }
+	if (bChatInputOpen) CloseChatInput();
+	else ToggleOptionsMenu();
+}
+
+void AUEPlayerController::ToggleOptionsMenu()
+{
+	if (bPhotoMode) { ExitPhotoMode(); return; }
+	if (!IsLocalController() || bReturningToFrontend) return;
+	if (OptionsScreen)
+	{
+		HandleOptionsScreenAction(TEXT("Back"));
+		return;
+	}
+	if (OptionsMenu)
+	{
+		CloseOptionsMenu();
+		return;
+	}
+	if (!OptionsMenuClass) return;
+	UUEOptionsMenuWidget* Menu = CreateWidget<UUEOptionsMenuWidget>(this, OptionsMenuClass);
+	if (!Menu) return;
+	SuspendChatInput();
+	if (bMouseViewHeld)
+	{
+		HandleMouseViewStopped(FInputActionValue());
+	}
+	PendingMovementInput = FVector2D::ZeroVector;
+	PushMovementInputToCharacter();
+	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
+	{
+		PlayerCharacter->SetRunning(false);
+		PlayerCharacter->StopJumping();
+		PlayerCharacter->GetCharacterMovement()->StopMovementImmediately();
+	}
+	bDraggingChat = false;
+	OptionsMenu = Menu;
+	Menu->OnMenuActionRequested.AddUniqueDynamic(this, &ThisClass::HandleOptionsAction);
+	Menu->AddToViewport(100);
+	if (OptionsHUD) OptionsHUD->SetVisibility(ESlateVisibility::Collapsed);
+	ActivateUIWindow(Menu);
+}
+
+void AUEPlayerController::CloseOptionsMenu()
+{
+	if (!OptionsMenu || bReturningToFrontend) return;
+	RemoveOptionsScreen();
+	OptionsMenu->OnMenuActionRequested.RemoveDynamic(this, &ThisClass::HandleOptionsAction);
+	OptionsMenu->RemoveFromParent();
+	OptionsMenu = nullptr;
+	if (OptionsHUD) OptionsHUD->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	RefreshWindowInput();
+}
+
+void AUEPlayerController::HandleOptionsAction(FName ActionId)
+{
+	if (bReturningToFrontend) return;
+	if (ActionId == TEXT("Resume")) CloseOptionsMenu();
+	else if (ActionId == TEXT("Camera")) EnterPhotoMode();
+	else if (ActionId == TEXT("Settings"))
+	{
+		if (OptionsMenu && !OptionsScreen && GameSettingsClass)
+			ShowOptionsScreen(CreateWidget<UUEGameSettingsWidget>(this, GameSettingsClass));
+	}
+	else if (ActionId == TEXT("CharacterSelect") || ActionId == TEXT("Logout"))
+	{
+		if (!OptionsMenu || OptionsScreen || !OptionsConfirmClass) return;
+		UUEOptionsConfirmWidget* Screen = CreateWidget<UUEOptionsConfirmWidget>(this, OptionsConfirmClass);
+		if (!Screen) return;
+		ShowOptionsScreen(Screen);
+		Screen->SetAction(ActionId);
+	}
+}
+
+void AUEPlayerController::ShowOptionsScreen(UUEOptionsScreenWidget* Screen)
+{
+	if (!Screen || !OptionsMenu) return;
+	OptionsScreen = Screen;
+	Screen->OnScreenActionRequested.AddUniqueDynamic(this, &ThisClass::HandleOptionsScreenAction);
+	OptionsMenu->SetVisibility(ESlateVisibility::Collapsed);
+	Screen->AddToViewport(110);
+	ActivateUIWindow(Screen);
+}
+
+void AUEPlayerController::RemoveOptionsScreen()
+{
+	if (!OptionsScreen) return;
+	OptionsScreen->OnScreenActionRequested.RemoveDynamic(this, &ThisClass::HandleOptionsScreenAction);
+	OptionsScreen->RemoveFromParent();
+	OptionsScreen = nullptr;
+}
+
+void AUEPlayerController::HandleOptionsScreenAction(FName ActionId)
+{
+	if (bReturningToFrontend || !OptionsScreen) return;
+	if (ActionId == TEXT("Back"))
+	{
+		RemoveOptionsScreen();
+		if (OptionsMenu)
+		{
+			OptionsMenu->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			ActivateUIWindow(OptionsMenu);
+		}
+	}
+	else if (OptionsScreen->IsA<UUEOptionsConfirmWidget>()
+		&& (ActionId == TEXT("CharacterSelect") || ActionId == TEXT("Logout")))
+	{
+		UUEGameInstance* GI = GetGameInstance<UUEGameInstance>();
+		if (!GI || FrontendLevel.IsNull()) return;
+		bReturningToFrontend = true;
+		OptionsScreen->SetIsEnabled(false);
+		if (OptionsMenu) OptionsMenu->SetIsEnabled(false);
+		ChatConnection.reset();
+		if (UUEFieldClientSubsystem* Field = UUEFieldClientSubsystem::Get(this)) Field->ResetForFrontend();
+		GI->PrepareReturnToFrontend(ActionId == TEXT("Logout"));
+		GI->OpenLevelWithLoadingScreen(FrontendLevel);
+	}
 }
 
 void AUEPlayerController::CreateChatWidget()
@@ -229,13 +380,6 @@ void AUEPlayerController::CreateChatWidget()
 	}
 	ChatDragHandle = Cast<UBorder>(ChatWidget->GetWidgetFromName(TEXT("ChannelHeader")));
 	ChatInputBackground = Cast<UBorder>(ChatWidget->GetWidgetFromName(TEXT("InputBackground")));
-	ChatSizeBox = Cast<USizeBox>(ChatWidget->GetWidgetFromName(TEXT("ChatPanelSize")));
-	ChatInputContainer = ChatWidget->GetWidgetFromName(TEXT("InputOutline"));
-	if (ChatSizeBox)
-	{
-		bChatHadHeightOverride = ChatSizeBox->IsHeightOverride();
-		ExpandedChatHeightOverride = ChatSizeBox->GetHeightOverride();
-	}
 	if (ChatDragHandle)
 	{
 		ChatDragHandle->OnMouseButtonDownEvent.BindDynamic(
@@ -244,8 +388,6 @@ void AUEPlayerController::CreateChatWidget()
 			this, &ThisClass::HandleChatHeaderMouseButtonUp);
 		ChatDragHandle->OnMouseMoveEvent.BindDynamic(
 			this, &ThisClass::HandleChatHeaderMouseMove);
-		ChatDragHandle->OnMouseDoubleClickEvent.BindDynamic(
-			this, &ThisClass::HandleChatHeaderMouseDoubleClick);
 	}
 	if (ChatInputBackground)
 	{
@@ -268,27 +410,20 @@ void AUEPlayerController::CreateChatWidget()
 			this, &ThisClass::HandleChannelTab0MouseButtonDown);
 		ChatChannelTabs[1]->OnMouseButtonDownEvent.BindDynamic(
 			this, &ThisClass::HandleChannelTab1MouseButtonDown);
-		ChatChannelTabs[0]->OnMouseDoubleClickEvent.BindDynamic(
-			this, &ThisClass::HandleChatHeaderMouseDoubleClick);
-		ChatChannelTabs[1]->OnMouseDoubleClickEvent.BindDynamic(
-			this, &ThisClass::HandleChatHeaderMouseDoubleClick);
 		if (ChatChannelTabs[2])
 		{
 			ChatChannelTabs[2]->OnMouseButtonDownEvent.BindDynamic(
 				this, &ThisClass::HandleChannelTab2MouseButtonDown);
-			ChatChannelTabs[2]->OnMouseDoubleClickEvent.BindDynamic(
-				this, &ThisClass::HandleChatHeaderMouseDoubleClick);
 		}
 		if (ChatChannelTabs[3])
 		{
 			ChatChannelTabs[3]->OnMouseButtonDownEvent.BindDynamic(
 				this, &ThisClass::HandleChannelTab3MouseButtonDown);
-			ChatChannelTabs[3]->OnMouseDoubleClickEvent.BindDynamic(
-				this, &ThisClass::HandleChatHeaderMouseDoubleClick);
 		}
 		SelectChatChannel(0);
 	}
-	ChatWidget->AddToViewport(20);
+	ChatWidget->AddToViewport(5);
+	ChatWidget->SetRenderOpacity(0.2f);
 }
 
 void AUEPlayerController::SelectChatChannel(int32 ChannelIndex)
@@ -395,39 +530,11 @@ FEventReply AUEPlayerController::HandleChannelTab3MouseButtonDown(
 	return UWidgetBlueprintLibrary::Handled();
 }
 
-void AUEPlayerController::SetChatCollapsed(bool bCollapsed)
-{
-	if (bChatCollapsed == bCollapsed || !ChatMessageScroll || !ChatInputContainer)
-	{
-		return;
-	}
 
-	if (bCollapsed)
-	{
-		CloseChatInput();
-		ChatMessageScroll->SetVisibility(ESlateVisibility::Collapsed);
-		ChatInputContainer->SetVisibility(ESlateVisibility::Collapsed);
-		if (ChatSizeBox)
-		{
-			ChatSizeBox->ClearHeightOverride();
-		}
-	}
-	else
-	{
-		ChatMessageScroll->SetVisibility(ESlateVisibility::Visible);
-		ChatInputContainer->SetVisibility(ESlateVisibility::Visible);
-		if (ChatSizeBox && bChatHadHeightOverride)
-		{
-			ChatSizeBox->SetHeightOverride(ExpandedChatHeightOverride);
-		}
-	}
-
-	bChatCollapsed = bCollapsed;
-}
 
 void AUEPlayerController::ToggleChatVisible()
 {
-	if (!ChatWidget)
+	if (bPhotoMode || bReturningToFrontend || !ChatWidget)
 	{
 		return;
 	}
@@ -589,68 +696,146 @@ void AUEPlayerController::RequestPartyEnterInstance(int32 InstanceType)
 
 void AUEPlayerController::OpenChatInput()
 {
-	if (!ChatWidget || !ChatInput)
-	{
-		return;
-	}
-	SetChatCollapsed(false);
-
-	if (!bChatInputOpen)
-	{
-		PendingMovementInput = FVector2D::ZeroVector;
-		PushMovementInputToCharacter();
-		if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
-		{
-			PlayerCharacter->SetRunning(false);
-		}
-
-		SetIgnoreMoveInput(true);
-		SetIgnoreLookInput(true);
-		bChatInputOpen = true;
-	}
-
-	FInputModeGameAndUI InputMode;
-	InputMode.SetWidgetToFocus(ChatInput->TakeWidget());
-	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	InputMode.SetHideCursorDuringCapture(false);
-	SetInputMode(InputMode);
-	bShowMouseCursor = bMouseViewHeld;
-	ChatInput->SetVisibility(ESlateVisibility::Visible);
-	ChatInput->SetIsReadOnly(false);
-	ChatInput->SetForegroundColor(FLinearColor::White);
+	if (bPhotoMode || bReturningToFrontend || !ChatWidget || !ChatInput) return;
+	bChatHidden = false;
+	ChatWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+	bChatInputOpen = true;
+	// 편집 상자에 포커스를 주기 전에 커서 단축키 입력을 끝낸다.
+	// 누르고 있던 키의 반복 문자가 채팅에 섞이는 것을 막기 위한 순서다.
+	ChatInput->SetVisibility(bMouseViewHeld ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Visible);
+	ChatInput->SetIsReadOnly(bMouseViewHeld);
 	ChatInput->SetHintText(FText::FromString(TEXT("메시지를 입력하고 Enter")));
-	ChatInput->SetUserFocus(this);
-	ChatInput->SetKeyboardFocus();
+	ActivateUIWindow(ChatWidget, false);
+	RefreshWindowInput();
 }
 
-void AUEPlayerController::CloseChatInput()
+void AUEPlayerController::CloseChatInput(bool bClearDraft)
 {
-	if (!ChatWidget || !ChatInput || !bChatInputOpen)
-	{
-		return;
-	}
+	if (!ChatWidget || !ChatInput) return;
+	SuspendChatInput();
+	if (bClearDraft) ChatInput->SetText(FText::GetEmpty());
+	DeactivateUIWindow(ChatWidget);
+}
 
+void AUEPlayerController::SuspendChatInput()
+{
 	bChatInputOpen = false;
-	ChatInput->SetText(FText::GetEmpty());
+	bDraggingChat = false;
+	if (!ChatInput) return;
 	ChatInput->SetIsReadOnly(true);
 	ChatInput->SetVisibility(ESlateVisibility::HitTestInvisible);
 	ChatInput->SetHintText(FText::FromString(TEXT("Enter 키를 눌러 채팅")));
-	SetIgnoreMoveInput(false);
-	if (bMouseViewHeld)
+}
+
+void AUEPlayerController::ActivateUIWindow(UUserWidget* Window, bool bFocus)
+{
+	if (bPhotoMode) { HideGameplayUIForPhoto(); return; }
+	if (bReturningToFrontend || !Window || !Window->IsInViewport() || !Window->IsVisible()) return;
+	if (!UIWindowOrder.IsEmpty() && UIWindowOrder.Last().Get() == Window) return;
+	if (Window != ChatWidget)
 	{
-		SetIgnoreLookInput(true);
-		FInputModeGameAndUI InputMode;
-		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-		InputMode.SetHideCursorDuringCapture(false);
-		SetInputMode(InputMode);
-		bShowMouseCursor = true;
+		SuspendChatInput();
+		UIWindowOrder.Remove(ChatWidget.Get());
 	}
-	else
+	UIWindowOrder.Remove(Window);
+	UIWindowOrder.Add(Window);
+	RefreshWindowInput(bFocus);
+}
+
+void AUEPlayerController::DeactivateUIWindow(UUserWidget* Window)
+{
+	if (bReturningToFrontend || !Window) return;
+	const bool bWasActive = !UIWindowOrder.IsEmpty() && UIWindowOrder.Last().Get() == Window;
+	UIWindowOrder.Remove(Window);
+	if (Window == ChatWidget) SuspendChatInput();
+	RefreshWindowInput(bWasActive);
+}
+
+void AUEPlayerController::RefreshWindowOrder()
+{
+	UIWindowOrder.RemoveAll([](const TWeakObjectPtr<UUserWidget>& Entry)
 	{
-		SetIgnoreLookInput(false);
-		SetInputMode(FInputModeGameOnly());
-		bShowMouseCursor = false;
+		return !Entry.IsValid() || !Entry->IsInViewport() || !Entry->IsVisible();
+	});
+	const auto SetWindowOrder = [](UUserWidget* Window, int32 ZOrder)
+	{
+		if (UGameViewportSubsystem* Viewport = UGameViewportSubsystem::Get())
+		{
+			FGameViewportWidgetSlot Slot = Viewport->GetWidgetSlot(Window);
+			if (!Window->IsInViewport() || Slot.ZOrder == ZOrder) return;
+			// UE 5.8의 SetWidgetSlot은 내부 캔버스 순서만 바꾸므로 뷰포트 슬롯을 다시 설치한다.
+			// 이때 Slate 트리는 유지해 설정값, 채팅 초안, 스크롤 위치가 초기화되지 않게 한다.
+			const TSharedRef<SWidget> KeepAlive = Window->TakeWidget();
+			Viewport->RemoveWidget(Window);
+			Slot.ZOrder = ZOrder;
+			Viewport->AddWidget(Window, Slot);
+		}
+	};
+	for (int32 Index = 0; Index < UIWindowOrder.Num(); ++Index)
+		SetWindowOrder(UIWindowOrder[Index].Get(), 100 + Index);
+	if (ChatWidget)
+	{
+		const bool bActive = !UIWindowOrder.IsEmpty() && UIWindowOrder.Last().Get() == ChatWidget;
+		ChatWidget->SetRenderOpacity(bActive ? 1.0f : 0.2f);
+		if (!bActive) SetWindowOrder(ChatWidget, 5);
 	}
+}
+
+void AUEPlayerController::RefreshWindowInput(bool bFocus)
+{
+	if (bReturningToFrontend) return;
+	if (bPhotoMode) { RefreshPhotoInput(); return; }
+	RefreshWindowOrder();
+	UUserWidget* Active = UIWindowOrder.IsEmpty() ? nullptr : UIWindowOrder.Last().Get();
+	const bool bBlockMove = Active != nullptr;
+	const bool bBlockLook = bBlockMove || bMouseViewHeld;
+	if (bWindowMoveBlocked != bBlockMove)
+	{
+		bWindowMoveBlocked = bBlockMove;
+		SetIgnoreMoveInput(bBlockMove);
+		PendingMovementInput = FVector2D::ZeroVector;
+		PushMovementInputToCharacter();
+		if (bBlockMove)
+			if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
+			{
+				PlayerCharacter->SetRunning(false);
+				PlayerCharacter->StopJumping();
+			}
+	}
+	if (bWindowLookBlocked != bBlockLook)
+	{
+		bWindowLookBlocked = bBlockLook;
+		SetIgnoreLookInput(bBlockLook);
+	}
+	bShowMouseCursor = Active != nullptr || bMouseViewHeld;
+	if (Active || bMouseViewHeld)
+	{
+		FInputModeGameAndUI Mode;
+		Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		Mode.SetHideCursorDuringCapture(false);
+		if (bFocus && Active)
+			Mode.SetWidgetToFocus(bChatInputOpen && Active == ChatWidget && !bMouseViewHeld
+				? ChatInput->TakeWidget() : Active->TakeWidget());
+		SetInputMode(Mode);
+		if (bFocus && !Active) UWidgetBlueprintLibrary::SetFocusToGameViewport();
+	}
+	else SetInputMode(FInputModeGameOnly());
+}
+
+bool AUEPlayerController::HandleChatWindowKey(UUserWidget* Window, const FKeyEvent& Event)
+{
+	if (Window != ChatWidget) return false;
+	if (Event.GetKey() == EKeys::Escape)
+	{
+		if (!Event.IsRepeat()) CloseChatInput();
+		return true;
+	}
+	if (Event.GetKey() == EKeys::Enter && !bChatInputOpen)
+	{
+		if (!Event.IsRepeat()) OpenChatInput();
+		return true;
+	}
+	return false;
 }
 
 bool AUEPlayerController::SubmitChatText(const FString& Text)
@@ -749,10 +934,10 @@ void AUEPlayerController::HandleChatTextCommitted(
 {
 	if (CommitMethod != ETextCommit::OnEnter)
 	{
-		if (CommitMethod == ETextCommit::OnUserMovedFocus ||
-			CommitMethod == ETextCommit::OnCleared)
+		if (bChatInputOpen && (CommitMethod == ETextCommit::OnUserMovedFocus ||
+			CommitMethod == ETextCommit::OnCleared))
 		{
-			CloseChatInput();
+			CloseChatInput(false);
 		}
 		return;
 	}
@@ -895,10 +1080,13 @@ void AUEPlayerController::BindGameplayInput()
 	BindPokemonAttackInput(EnhancedInputComponent);
 	BindMouseViewInput(EnhancedInputComponent);
 	BindChatInput(EnhancedInputComponent);
+	BindPhotoInput(EnhancedInputComponent);
 }
 
 void AUEPlayerController::BindChatInput(UEnhancedInputComponent* EnhancedInputComponent)
 {
+	if (const UInputAction* Toggle = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_ToggleChat))
+		EnhancedInputComponent->BindAction(Toggle, ETriggerEvent::Started, this, &ThisClass::ToggleChatVisibility);
 	const UInputAction* ChatAction =
 		InputData->FindInputActionByTag(UEGameplayTags::Input_Action_Chat);
 	if (ChatAction)
@@ -933,47 +1121,32 @@ void AUEPlayerController::BindMouseViewInput(UEnhancedInputComponent* EnhancedIn
 
 void AUEPlayerController::HandleMouseViewStarted(const FInputActionValue& Value)
 {
+	if (bPhotoMode) return;
+	if (bReturningToFrontend || bMouseViewHeld) return;
 	bMouseViewHeld = true;
-	bShowMouseCursor = true;
 	bEnableClickEvents = true;
 	bEnableMouseOverEvents = true;
-	SetIgnoreLookInput(true);
-
-	FInputModeGameAndUI InputMode;
-	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	InputMode.SetHideCursorDuringCapture(false);
-	if (bChatInputOpen && ChatInput)
-	{
-		InputMode.SetWidgetToFocus(ChatInput->TakeWidget());
-	}
-	SetInputMode(InputMode);
+	RefreshWindowInput(false);
 }
 
 void AUEPlayerController::HandleMouseViewStopped(const FInputActionValue& Value)
 {
+	if (!bMouseViewHeld) return;
 	bMouseViewHeld = false;
-	bDraggingChat = false;
-	bShowMouseCursor = false;
-
 	if (bChatInputOpen && ChatInput)
 	{
-		FInputModeGameAndUI InputMode;
-		InputMode.SetWidgetToFocus(ChatInput->TakeWidget());
-		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-		InputMode.SetHideCursorDuringCapture(false);
-		SetInputMode(InputMode);
-		ChatInput->SetKeyboardFocus();
-		return;
+		ChatInput->SetVisibility(ESlateVisibility::Visible);
+		ChatInput->SetIsReadOnly(false);
 	}
-
-	SetIgnoreLookInput(false);
-	SetInputMode(FInputModeGameOnly());
+	// 창을 선택한 동안에는 그 창을 닫을 때까지 커서 모드를 유지한다.
+	// 단축키를 놓더라도 진행 중인 마우스 드래그는 계속 캡처해야 한다.
+	if (!bDraggingChat) RefreshWindowInput(bChatInputOpen);
 }
 
 FEventReply AUEPlayerController::HandleChatInputMouseButtonDown(
 	FGeometry MyGeometry, const FPointerEvent& MouseEvent)
 {
-	if (!bMouseViewHeld || MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+	if (!bShowMouseCursor || MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
 	{
 		return UWidgetBlueprintLibrary::Unhandled();
 	}
@@ -985,7 +1158,7 @@ FEventReply AUEPlayerController::HandleChatInputMouseButtonDown(
 FEventReply AUEPlayerController::HandleChatHeaderMouseButtonDown(
 	FGeometry MyGeometry, const FPointerEvent& MouseEvent)
 {
-	if (!bMouseViewHeld || !ChatMovablePanel ||
+	if (!bShowMouseCursor || !ChatMovablePanel ||
 		MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
 	{
 		return UWidgetBlueprintLibrary::Unhandled();
@@ -1014,7 +1187,7 @@ FEventReply AUEPlayerController::HandleChatHeaderMouseButtonUp(
 FEventReply AUEPlayerController::HandleChatHeaderMouseMove(
 	FGeometry MyGeometry, const FPointerEvent& MouseEvent)
 {
-	if (!bMouseViewHeld || !bDraggingChat || !ChatMovablePanel ||
+	if (!bShowMouseCursor || !bDraggingChat || !ChatMovablePanel ||
 		!MouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton))
 	{
 		return UWidgetBlueprintLibrary::Unhandled();
@@ -1031,17 +1204,7 @@ FEventReply AUEPlayerController::HandleChatHeaderMouseMove(
 	return UWidgetBlueprintLibrary::Handled();
 }
 
-FEventReply AUEPlayerController::HandleChatHeaderMouseDoubleClick(
-	FGeometry MyGeometry, const FPointerEvent& MouseEvent)
-{
-	if (!bMouseViewHeld || MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
-	{
-		return UWidgetBlueprintLibrary::Unhandled();
-	}
 
-	SetChatCollapsed(!bChatCollapsed);
-	return UWidgetBlueprintLibrary::Handled();
-}
 
 void AUEPlayerController::BindMoveInput(UEnhancedInputComponent* EnhancedInputComponent)
 {
@@ -1144,7 +1307,8 @@ void AUEPlayerController::PushMovementInputToCharacter()
 {
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
-		PlayerCharacter->SetMovementInput(PendingMovementInput);
+		PlayerCharacter->SetMovementInput(bWindowMoveBlocked || bReturningToFrontend
+			? FVector2D::ZeroVector : PendingMovementInput);
 	}
 }
 
@@ -1210,16 +1374,20 @@ void AUEPlayerController::HandleMoveLeftStopped(const FInputActionValue& Value)
 
 void AUEPlayerController::HandleLookYaw(const FInputActionValue& Value)
 {
+	if (bPhotoMode && !bPhotoLookHeld) return;
 	AddYawInput(Value.Get<float>() * LookYawRate);
 }
 
 void AUEPlayerController::HandleLookPitch(const FInputActionValue& Value)
 {
+	if (bPhotoMode && !bPhotoLookHeld) return;
 	AddPitchInput(-Value.Get<float>() * LookPitchRate);
 }
 
 void AUEPlayerController::HandleRunStarted(const FInputActionValue& Value)
 {
+	if (bPhotoMode) return;
+	if (bWindowMoveBlocked || bReturningToFrontend) return;
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
 		PlayerCharacter->SetRunning(true);
@@ -1262,6 +1430,8 @@ void AUEPlayerController::HandleRunStopped(const FInputActionValue& Value)
 
 void AUEPlayerController::HandleJump(const FInputActionValue& Value)
 {
+	if (bPhotoMode) return;
+	if (bWindowMoveBlocked || bReturningToFrontend) return;
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
 		PlayerCharacter->Jump();
@@ -1270,6 +1440,8 @@ void AUEPlayerController::HandleJump(const FInputActionValue& Value)
 
 void AUEPlayerController::HandleRoll(const FInputActionValue& Value)
 {
+	if (bPhotoMode) return;
+	if (bWindowMoveBlocked || bReturningToFrontend) return;
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
 		PlayerCharacter->Roll();
@@ -1278,6 +1450,8 @@ void AUEPlayerController::HandleRoll(const FInputActionValue& Value)
 
 void AUEPlayerController::HandlePokemonToggle(const FInputActionValue& Value)
 {
+	if (bPhotoMode) return;
+	if (OptionsMenu || bChatInputOpen || bReturningToFrontend) return;
 
 
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
@@ -1312,6 +1486,8 @@ void AUEPlayerController::HandlePokemonAttack4(const FInputActionValue& Value)
 
 void AUEPlayerController::HandlePokemonAttackSlot(int32 AttackSlot)
 {
+	if (bPhotoMode) return;
+	if (bWindowMoveBlocked || bReturningToFrontend) return;
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
 		// 컨트롤러는 입력 번호만 전달하고 소유 여부와 공격 가능 여부는 캐릭터와 서버 연결 흐름이 판단한다.
