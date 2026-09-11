@@ -892,7 +892,6 @@ CreateCharacterResult OdbcStore::create(std::uint64_t accountId, std::string_vie
             return CreateCharacterResult::Error;
         }
 
-        // 빈 비트맵을 깐다.
         SQLLEN unlockRowLength = 0;
         bindUInt64(connection->insertUnlockRow, 1, characterId, unlockRowLength);
         require(SQLExecute(connection->insertUnlockRow), SQL_HANDLE_STMT,
@@ -1014,8 +1013,6 @@ PartyResult OdbcStore::setParty(std::uint64_t accountId, std::uint64_t character
     // 해금하지 않은 포켓몬을 파티에 넣을 수 있다.
     //
     // 이 조회의 JOIN 이 캐릭터 소유까지 확인한다 — 남의 캐릭터면 0행이다.
-    // 파티를 비우는 요청(dexNumbers 가 빈 경우)에는 확인할 것이 없어서
-    // 아래 clearParty 의 행 수로 대신 본다.
     try {
         for (const std::uint16_t dex : dexNumbers) {
             std::int32_t byteIndex = dex / 8;

@@ -100,6 +100,24 @@ inline const char* describe(PartyResult result) {
     return "unknown result";
 }
 
+// 사용자에게 그대로 보여줄 문구. describe() 는 로그용 영문이라 따로 둔다.
+//
+// 로그인·필드·인스턴스 세 서버가 같은 파티 편집 요청을 받는다. 문구를 각자
+// 적으면 한 곳만 고쳐진 채로 서버마다 다른 말을 하게 된다.
+inline const char* partyMessage(PartyResult result) {
+    switch (result) {
+        case PartyResult::Ok:           return "파티를 저장했습니다";
+        case PartyResult::NotFound:     return "캐릭터를 찾을 수 없습니다";
+        case PartyResult::NotUnlocked:  return "해금하지 않은 포켓몬입니다";
+        case PartyResult::TooMany:      return "파티는 3마리까지입니다";
+        case PartyResult::Duplicate:    return "같은 포켓몬을 두 번 넣을 수 없습니다";
+        case PartyResult::NotInParty:   return "파티에 없는 포켓몬은 꺼낼 수 없습니다";
+        case PartyResult::NotSupported: return "이 서버는 파티 편집을 지원하지 않습니다";
+        case PartyResult::Error:        return "서버 오류로 저장하지 못했습니다";
+    }
+    return "알 수 없는 결과입니다";
+}
+
 // 마지막으로 저장된 위치. 실시간 위치는 여기 없다 — 필드 서버 메모리와
 // Redis 에 있고, 이건 입장할 때 읽고 퇴장할 때 쓰는 값이다.
 //

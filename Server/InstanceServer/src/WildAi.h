@@ -36,11 +36,6 @@ struct WildArea {
 struct WildIntent {
     float targetX = 0.f;
     float targetY = 0.f;
-    float targetZ = 0.f;
-    float acceptanceRadius = 80.f;
-    float attackTargetX = 0.f;
-    float attackTargetY = 0.f;
-    float attackTargetZ = 0.f;
     float attackRange = 180.f;
     std::uint64_t attackTargetId = 0;
     bool moving = false;
@@ -130,7 +125,6 @@ private:
                                 const ObservedPlayer& target, WildBrain& brain);
     void requestDecision(WildBrain& brain);
     void beginRest(WildBrain& brain, float seconds);
-    static float distanceSquared(float ax, float ay, float bx, float by);
 
     std::unique_ptr<WildBt> behavior_;
     std::mt19937 rng_;

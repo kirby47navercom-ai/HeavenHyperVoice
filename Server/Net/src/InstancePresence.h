@@ -45,8 +45,6 @@ public:
     std::vector<std::uint64_t> roommates(std::uint64_t accountId);
 
 private:
-    std::string eval(const char* script, const std::vector<std::string>& args);
-
     net::RedisClient& redis_;
 };
 

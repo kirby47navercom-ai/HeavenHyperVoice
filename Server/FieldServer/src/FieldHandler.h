@@ -60,10 +60,6 @@ private:
     bool handleSetParty(TlsSession& session, const HeavenField::SetParty& request);
 
     // 저장소에서 파티와 해금을 다시 읽어 그대로 보낸다. DB 스레드에서 부를 것.
-    static void sendPartyState(const FieldContext& context, TlsSession& session,
-                               std::uint64_t accountId, std::uint64_t characterId,
-                               bool ok, std::string_view message);
-
     const FieldContext& context_;
 
     std::mutex mutex_;

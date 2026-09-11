@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "InstanceGeometry.h"
+#include "PartyEdit.h"
 
 namespace heaven::instance {
 
@@ -55,27 +56,6 @@ bool InstanceHandler::onFrame(TlsSession& session, const proto::Bytes& body) {
             spdlog::warn("{}: unexpected instance payload", session.peer());
             return false;
     }
-}
-
-// 저장소가 곧 권위다. 방금 쓴 값을 다시 읽어 보내면 부분 적용이나 거절을
-// 클라가 따로 해석할 필요가 없다.
-void InstanceHandler::sendPartyState(const InstanceContext& context, TlsSession& session,
-                                     std::uint64_t accountId, std::uint64_t characterId,
-                                     bool ok, std::string_view message) {
-    std::vector<std::uint16_t> party;
-    std::vector<std::uint16_t> unlocked;
-    std::uint16_t activeDex = 0;
-
-    if (context.characters != nullptr) {
-        if (const auto character = context.characters->find(accountId, characterId)) {
-            party = character->party;
-            unlocked = character->unlocked;
-            if (character->hasPartner) {
-                activeDex = proto::dexOf(character->partner.speciesId);
-            }
-        }
-    }
-    session.send(proto::encodePartyState(ok, message, party, activeDex, unlocked));
 }
 
 // 방 배정과 월드 입장, EnterAck 까지 한 번에 한다.
@@ -282,7 +262,7 @@ bool InstanceHandler::handleEnter(TlsSession& session, const HeavenField::Enter&
 
         // 파티 화면이 열릴 때 조회하지 않도록 입장할 때 한 번 실어 보낸다.
         // 이미 DB 스레드 위라 그대로 쓴다.
-        sendPartyState(*context, *self, accountId, characterId, true, "");
+        fieldshared::sendPartyState(context->characters, *self, accountId, characterId, true, "");
     });
 
     if (!queued) {
@@ -300,66 +280,14 @@ void InstanceHandler::handleMove(Room& room, const HeavenField::Move& request) {
 
 bool InstanceHandler::handleSetParty(TlsSession& session, Room& room,
                                      const HeavenField::SetParty& request) {
-    // dev 모드에는 저장소가 없다. 파티는 DB 에만 있으므로 바꿀 것도 읽을 것도 없다.
-    if (context_.characters == nullptr) {
-        session.send(proto::encodePartyState(false, "이 서버에서는 파티를 바꿀 수 없습니다", {},
-                                             0, {}));
-        return true;
-    }
-
-    std::vector<std::uint16_t> dexNumbers;
-    if (const auto* numbers = request.dex_numbers()) {
-        if (numbers->size() > data::kMaxPartySize) {
-            session.send(proto::encodePartyState(false, "파티는 3마리까지입니다", {}, 0, {}));
-            return true;
-        }
-        dexNumbers.reserve(numbers->size());
-        for (const std::uint16_t dex : *numbers) {
-            dexNumbers.push_back(dex);
-        }
-    }
-
-    auto self = session.shared_from_this();
-    const InstanceContext* context = &context_;
+    // 방에 반영해야 같은 방 사람들 화면의 파트너가 바뀐다.
     Room* roomPtr = &room;
-    const std::uint64_t accountId = accountId_;
     const std::uint64_t characterId = characterId_;
-    const std::uint16_t activeDex = request.active_dex();
-
-    const bool queued = context_.dbQueue->submit(
-        [self, context, roomPtr, accountId, characterId, dexNumbers, activeDex] {
-            const data::PartyResult result =
-                context->characters->setParty(accountId, characterId, dexNumbers, activeDex);
-
-            const char* message = nullptr;
-            switch (result) {
-                case data::PartyResult::Ok:           message = "파티를 저장했습니다"; break;
-                case data::PartyResult::NotFound:     message = "캐릭터를 찾을 수 없습니다"; break;
-                case data::PartyResult::NotUnlocked:  message = "해금하지 않은 포켓몬입니다"; break;
-                case data::PartyResult::TooMany:      message = "파티는 3마리까지입니다"; break;
-                case data::PartyResult::Duplicate:    message = "같은 포켓몬을 두 번 넣을 수 없습니다"; break;
-                case data::PartyResult::NotInParty:   message = "파티에 없는 포켓몬은 꺼낼 수 없습니다"; break;
-                case data::PartyResult::NotSupported: message = "이 서버는 파티 편집을 지원하지 않습니다"; break;
-                case data::PartyResult::Error:        message = "서버 오류로 저장하지 못했습니다"; break;
-            }
-
-            const bool ok = result == data::PartyResult::Ok;
-            sendPartyState(*context, *self, accountId, characterId, ok, message);
-
-            if (ok) {
-                // 방에도 반영해야 같은 방 사람들 화면의 파트너가 바뀐다.
-                const proto::SpeciesBase* species =
-                    activeDex == 0 ? nullptr : proto::findSpeciesByDex(activeDex);
-                roomPtr->world.setPartnerSpecies(
-                    characterId, species != nullptr ? species->id : std::uint16_t{0});
-            }
-        });
-
-    if (!queued) {
-        spdlog::warn("{}: db queue full, refusing SetParty", session.peer());
-        session.send(proto::encodePartyState(false, "서버가 혼잡합니다", {}, 0, {}));
-    }
-    return true;
+    return fieldshared::setParty(session, context_.characters, *context_.dbQueue, accountId_,
+                                 characterId, request,
+                                 [roomPtr, characterId](std::uint16_t speciesId) {
+                                     roomPtr->world.setPartnerSpecies(characterId, speciesId);
+                                 });
 }
 
 void InstanceHandler::onClosed(TlsSession& session) {

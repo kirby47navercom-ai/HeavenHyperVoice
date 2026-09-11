@@ -273,8 +273,6 @@ bool LoginHandler::handleLogin(TlsSession& session, const HeavenLogin::LoginRequ
     return true;
 }
 
-// ------------------------------------------------------------- 캐릭터 생성
-
 // --------------------------------------------------------- 닉네임 사용 가능
 
 // 캐릭터를 만들지 않는다. 이름이 비어 있는지만 답하고 선택 단계로 돌아간다.
@@ -294,12 +292,6 @@ bool LoginHandler::handleCheckNickname(TlsSession& session,
     if (const char* problem = proto::validateNickname(nick)) {
         resume(Stage::AwaitingSelection);
         session.send(proto::encodeCheckNicknameResult(false, problem));
-        return true;
-    }
-
-    if (context_.characters == nullptr) {
-        resume(Stage::AwaitingSelection);
-        session.send(proto::encodeCheckNicknameResult(true, ""));
         return true;
     }
 
@@ -548,17 +540,7 @@ bool LoginHandler::handleSetParty(TlsSession& session,
         const data::PartyResult result =
             context->characters->setParty(accountId, characterId, dexNumbers, activeDex);
 
-        const char* message = nullptr;
-        switch (result) {
-            case data::PartyResult::Ok:           message = "파티를 저장했습니다"; break;
-            case data::PartyResult::NotFound:     message = "캐릭터를 찾을 수 없습니다"; break;
-            case data::PartyResult::NotUnlocked:  message = "해금하지 않은 포켓몬입니다"; break;
-            case data::PartyResult::TooMany:      message = "파티는 3마리까지입니다"; break;
-            case data::PartyResult::Duplicate:    message = "같은 포켓몬을 두 번 넣을 수 없습니다"; break;
-            case data::PartyResult::NotInParty:   message = "파티에 없는 포켓몬은 꺼낼 수 없습니다"; break;
-            case data::PartyResult::NotSupported: message = "이 서버는 파티 편집을 지원하지 않습니다"; break;
-            case data::PartyResult::Error:        message = "서버 오류로 저장하지 못했습니다"; break;
-        }
+        const char* message = data::partyMessage(result);
 
         const bool ok = result == data::PartyResult::Ok;
         if (ok) {

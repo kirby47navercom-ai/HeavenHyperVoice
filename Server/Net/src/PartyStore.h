@@ -9,12 +9,8 @@
 // **쓰는 것은 ChatServer 하나다.** 다른 서버는 읽기만 한다. 쓰기가 한 곳이면
 // 경쟁 조건도 한 곳에만 생긴다.
 //
-// 여러 키를 함께 바꾸는 연산은 전부 EVAL 로 보낸다. Lua 가 문자열을 돌려주므로
-// RedisClient::commandForString 으로 그대로 받을 수 있다 — 배열 응답을 다루는
-// 코드를 새로 만들지 않아도 된다.
-//
-// 단일 노드 Redis(Memurai, localhost)를 전제로 키를 스크립트 안에서 만든다.
-// 클러스터로 가면 KEYS[] 로 넘기도록 고쳐야 한다.
+// 여러 키를 함께 바꾸는 연산은 전부 RedisClient::eval 로 보낸다. Lua 가 문자열을
+// 돌려주므로 배열 응답을 다루는 코드를 새로 만들지 않아도 된다.
 //
 // 키 구성
 //   party:seq                    INCR 로 파티 번호를 뽑는다
@@ -137,9 +133,6 @@ public:
                             std::uint32_t fallbackRoomId);
 
 private:
-    // EVAL 한 번. 실패하면 빈 문자열.
-    std::string eval(const char* script, const std::vector<std::string>& args);
-
     net::RedisClient& redis_;
 };
 

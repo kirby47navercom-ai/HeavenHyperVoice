@@ -227,8 +227,6 @@ int main(int argc, char** argv) {
             world.setMap(&map);
         }
 
-        // 야생 포켓몬 AI. 현재 wander 는 C++ 에서 직접 처리한다. count 가 0 이면
-        // 아예 만들지 않는다.
         heaven::field::FieldContext context;
         context.world = &world;
         context.keys = &keys;

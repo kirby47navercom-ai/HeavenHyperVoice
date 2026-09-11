@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include "InstanceGeometry.h"
 #include "WildBt.h"
 
 namespace heaven::instance {
@@ -325,8 +326,6 @@ WildIntent WildAi::followPath(float x, float y, float z, WildBrain& brain) {
         WildIntent intent;
         intent.targetX = waypoint.x;
         intent.targetY = waypoint.y;
-        intent.targetZ = waypoint.z;
-        intent.acceptanceRadius = brain.acceptanceRadius;
         intent.moving = true;
         return intent;
     }
@@ -339,8 +338,6 @@ WildIntent WildAi::followPath(float x, float y, float z, WildBrain& brain) {
     WildIntent intent;
     intent.targetX = brain.targetX;
     intent.targetY = brain.targetY;
-    intent.targetZ = brain.targetZ;
-    intent.acceptanceRadius = brain.acceptanceRadius;
     intent.moving = true;
     return intent;
 }
@@ -415,9 +412,6 @@ WildIntent WildAi::makeAttackIntent(float x, float y,
 
     WildIntent intent;
     intent.attackTargetId = target.entityId;
-    intent.attackTargetX = target.x;
-    intent.attackTargetY = target.y;
-    intent.attackTargetZ = target.z;
     intent.attackRange = attackRange;
     intent.attacking = true;
 
@@ -438,12 +432,6 @@ void WildAi::requestDecision(WildBrain& brain) {
 void WildAi::beginRest(WildBrain& brain, float seconds) {
     brain.phase = WildPhase::Resting;
     brain.restRemainingSeconds = std::max(seconds, 0.f);
-}
-
-float WildAi::distanceSquared(float ax, float ay, float bx, float by) {
-    const float dx = ax - bx;
-    const float dy = ay - by;
-    return dx * dx + dy * dy;
 }
 
 }  // namespace heaven::instance

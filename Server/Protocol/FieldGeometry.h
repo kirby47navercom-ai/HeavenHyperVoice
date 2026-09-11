@@ -12,6 +12,8 @@
 #include <cstdint>
 #include <limits>
 
+#include "SectorGrid.h"
+
 namespace heaven::proto {
 
 inline constexpr float kWorldSize = 51200.f;   // 512 m 정사각형
@@ -69,15 +71,10 @@ static_assert(kEnterRadius < kExitRadius,
               "히스테리시스가 없으면 경계에서 Spawn/Despawn 이 깜빡인다");
 static_assert(kSectorCols * kSectorSize == kWorldSize, "격자와 월드 크기가 안 맞는다");
 
+// 경계 자체는 다음 섹터로 넘어가므로 아주 살짝 안쪽으로 민다.
+// 512m 월드에서 float 눈금은 0.004 라 0.01 이면 충분하다.
 inline constexpr float clampToWorld(float value) {
-    // 경계 자체는 다음 섹터로 넘어가므로 아주 살짝 안쪽으로 민다.
-    constexpr float kEpsilon = 0.01f;
-    // `value < 0` 이 아니라 `!(value >= 0)` 으로 쓴다. NaN 은 모든 비교가 거짓이라
-    // 앞의 형태로는 그대로 빠져나가고, sectorIndex 의 float->int 변환이 정의되지
-    // 않은 값을 내서 섹터 배열을 범위 밖에서 건드리게 된다.
-    if (!(value >= 0.f)) return 0.f;
-    if (value >= kWorldSize) return kWorldSize - kEpsilon;
-    return value;
+    return grid::clampToWorld(value, kWorldSize, 0.01f);
 }
 
 // 섹터 인덱스가 배열 안에 있으려면 위 클램프가 셋 다 지켜야 한다.
@@ -85,37 +82,15 @@ static_assert(clampToWorld(-1.f) == 0.f, "음수는 0 으로");
 static_assert(clampToWorld(kWorldSize) < kWorldSize, "상한은 배열 안쪽으로");
 static_assert(clampToWorld(std::numeric_limits<float>::quiet_NaN()) == 0.f, "NaN 은 0 으로");
 
-inline constexpr int sectorCol(float x) { return static_cast<int>(x / kSectorSize); }
-inline constexpr int sectorRow(float y) { return static_cast<int>(y / kSectorSize); }
-
 inline constexpr int sectorIndex(float x, float y) {
-    return sectorRow(y) * kSectorCols + sectorCol(x);
+    return grid::sectorIndex(x, y, kSectorSize, kSectorCols);
 }
 
-// 자기 섹터와 8이웃. 월드 밖은 건너뛴다.
 template <typename Fn>
 inline void forEachNeighborSector(int index, Fn&& fn) {
-    const int col = index % kSectorCols;
-    const int row = index / kSectorCols;
-    for (int dr = -1; dr <= 1; ++dr) {
-        const int r = row + dr;
-        if (r < 0 || r >= kSectorRows) {
-            continue;
-        }
-        for (int dc = -1; dc <= 1; ++dc) {
-            const int c = col + dc;
-            if (c < 0 || c >= kSectorCols) {
-                continue;
-            }
-            fn(r * kSectorCols + c);
-        }
-    }
+    grid::forEachNeighborSector(index, kSectorCols, kSectorRows, fn);
 }
 
-inline constexpr float distanceSquared(float ax, float ay, float bx, float by) {
-    const float dx = ax - bx;
-    const float dy = ay - by;
-    return dx * dx + dy * dy;
-}
+using grid::distanceSquared;
 
 }  // namespace heaven::proto

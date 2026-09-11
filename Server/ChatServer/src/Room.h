@@ -42,7 +42,6 @@ public:
     std::shared_ptr<TlsSession> findAccount(std::uint64_t accountId) const;
 
     // 닉네임으로 계정을 찾는다. 접속 중이 아니면 0.
-    // 대소문자와 앞뒤 공백은 호출자가 이미 다듬어 넘긴다.
     std::uint64_t accountByNickname(const std::string& nickname) const;
 
     // 지금 붙어 있는 계정 전부. 생존 신호를 주기적으로 갱신하는 데 쓴다.
