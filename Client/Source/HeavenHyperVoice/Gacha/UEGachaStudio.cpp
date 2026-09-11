@@ -88,7 +88,9 @@ void AUEGachaStudioController::Tick(float Seconds)
 	if (!CurrentMachine || !CurrentMachine->CanTurn() || !IsInputKeyDown(EKeys::LeftMouseButton)) { ReleaseHandle(); return; }
 	float Angle;
 	if (!GetCrankAngle(Angle)) { ReleaseHandle(); return; }
-	const float Delta = FMath::RadiansToDegrees(FMath::FindDeltaAngleRadians(PreviousAngle, Angle));
+	// 화면 Y는 아래로 증가하므로 각도 증가가 시계 방향이다. ±PI 경계도 연속 처리한다.
+	const float Difference = Angle - PreviousAngle;
+	const float Delta = FMath::RadiansToDegrees(FMath::Atan2(FMath::Sin(Difference), FMath::Cos(Difference)));
 	PreviousAngle = Angle;
 	CurrentMachine->TurnHandle(Delta);
 }

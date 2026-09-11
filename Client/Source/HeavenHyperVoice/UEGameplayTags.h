@@ -20,6 +20,7 @@ namespace UEGameplayTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_PokemonAttack4);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_MouseView);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_Chat);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Input_Action_ToggleChat);
 
 	//UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Montage_Begin);
 	//UE_DECLARE_GAMEPLAY_TAG_EXTERN(Event_Montage_End);

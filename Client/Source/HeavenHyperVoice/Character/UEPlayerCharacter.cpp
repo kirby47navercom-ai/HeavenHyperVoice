@@ -11,6 +11,7 @@
 #include "../Server/UEPlayerMovementSyncComponent.h"
 #include "../System/UEGameInstance.h"
 #include "../UEGameplayTags.h"
+#include "../World/UEGoldenrodSpringArm.h"
 
 #include "Animation/AnimSequence.h"
 #include "Animation/AnimInstance.h"
@@ -271,7 +272,7 @@ AUEPlayerCharacter::AUEPlayerCharacter()
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 540.0f, 0.0f);
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
 
-	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	CameraBoom = CreateDefaultSubobject<UUEGoldenrodSpringArm>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
 	CameraBoom->TargetArmLength = 420.0f;
 	CameraBoom->bUsePawnControlRotation = true;

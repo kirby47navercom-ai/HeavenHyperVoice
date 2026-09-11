@@ -8,6 +8,10 @@ public class HeavenHyperVoice : ModuleRules
 	public HeavenHyperVoice(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+		if (Target.Platform == UnrealTargetPlatform.Win64)
+		{
+			PublicSystemLibraries.AddRange(new string[] { "Shell32.lib", "Ole32.lib" });
+		}
 	
 		PublicDependencyModuleNames.AddRange(new string[]
 		{

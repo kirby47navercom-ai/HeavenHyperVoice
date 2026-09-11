@@ -413,6 +413,9 @@ def create_blend_space(species, primary_form, blend_template):
         sample.set_editor_property("sample_value", unreal.Vector(speed, 0.0, 0.0))
         samples.append(sample)
     blend.set_editor_property("sample_data", samples)
+    # Setting SampleData from Python does not rebuild runtime interpolation segments.
+    if not unreal.PokemonAnimationEditorLibrary.rebuild_blend_space(blend):
+        raise RuntimeError(f"BlendSpace 재생 데이터 생성 실패: {asset_path}")
     editor_assets.save_loaded_asset(blend, only_if_is_dirty=False)
     return blend
 
