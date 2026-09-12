@@ -36,9 +36,9 @@ struct Options {
     // 입장/퇴장에서만 DB 를 쓴다. 로그인 서버만큼 필요하지 않다.
     unsigned dbThreads = 2;
 
-    // 서버 이동 맵. 기본 필드 레벨(PlayerTestLevel)과 같은 추출 파일을 쓴다.
+    // 서버 이동 맵. 기본 필드 레벨(Goldenrod)과 같은 추출 파일을 쓴다.
     // 끄고 싶으면 --no-map 을 명시한다.
-    std::string mapFile = "maps/PlayerTestLevel.hhvmap";
+    std::string mapFile = "maps/Goldenrod.hhvmap";
 
 
     std::string redisHost = "127.0.0.1";
@@ -67,7 +67,7 @@ void printUsage() {
                  "  --threads <n>       IOCP worker threads (default: hardware concurrency)\n"
                  "  --db-threads <n>    threads for position load/save (default 2; entering\n"
                  "                      and leaving only, so fewer than the login server)\n"
-                 "  --map <path>        server nav map (default maps/PlayerTestLevel.hhvmap)\n"
+                 "  --map <path>        server nav map (default maps/Goldenrod.hhvmap)\n"
                  "  --no-map            disable field map checks and partner pathfinding\n"
                  "  --redis-host <h>    default 127.0.0.1\n"
                  "  --redis-port <n>    default 6379\n"
@@ -227,8 +227,6 @@ int main(int argc, char** argv) {
             world.setMap(&map);
         }
 
-        // 야생 포켓몬 AI. 현재 wander 는 C++ 에서 직접 처리한다. count 가 0 이면
-        // 아예 만들지 않는다.
         heaven::field::FieldContext context;
         context.world = &world;
         context.keys = &keys;

@@ -7,7 +7,7 @@ SOURCE = ROOT / "SourceArt/UI/Options"
 GLYPHS = {
     "Resume": "\uf04b", "Settings": "\uf013", "Characters": "\uf0c0",
     "Logout": "\uf08b", "Menu": "\uf0c9", "Back": "\uf060",
-    "Profile": "\uf1b0", "Compass": "\uf14e",
+    "Profile": "\uf1b0", "Compass": "\uf14e", "Camera": "\uf030",
 }
 
 if __name__ == "__main__":

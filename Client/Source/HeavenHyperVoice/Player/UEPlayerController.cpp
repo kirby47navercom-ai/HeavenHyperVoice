@@ -65,6 +65,7 @@ void AUEPlayerController::BeginPlay()
 void AUEPlayerController::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	TickPhotoMode(DeltaSeconds);
 	if (ChatConnection)
 	{
 		ChatConnection->Poll();
@@ -73,6 +74,7 @@ void AUEPlayerController::Tick(float DeltaSeconds)
 
 void AUEPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ExitPhotoMode();
 	bReturningToFrontend = true;
 	RemoveOptionsScreen();
 	if (OptionsMenu)
@@ -111,6 +113,7 @@ void AUEPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void AUEPlayerController::OnPossess(APawn* InPawn)
 {
+	ExitPhotoMode();
 	Super::OnPossess(InPawn);
 
 	AUEPlayerCharacter* PlayerCharacter = Cast<AUEPlayerCharacter>(InPawn);
@@ -144,6 +147,7 @@ void AUEPlayerController::OnPossess(APawn* InPawn)
 
 void AUEPlayerController::HHVEnterInstance(int32 InstanceType)
 {
+	if (bPhotoMode) return;
 	if (UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
 	{
 		FieldClientSubsystem->EnterInstance(InstanceType);
@@ -152,6 +156,7 @@ void AUEPlayerController::HHVEnterInstance(int32 InstanceType)
 
 void AUEPlayerController::HHVLeaveInstance()
 {
+	if (bPhotoMode) return;
 	if (UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
 	{
 		FieldClientSubsystem->LeaveInstance();
@@ -192,13 +197,13 @@ void AUEPlayerController::SetupInputComponent()
 
 	BindGameplayInput();
 	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ThisClass::HandleEscape);
-	InputComponent->BindKey(EKeys::T, IE_Pressed, this, &ThisClass::ToggleChatVisible);
 	InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &ThisClass::HandleGameViewportClick);
 	InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &ThisClass::HandleGameViewportClick);
 }
 
 void AUEPlayerController::HandleGameViewportClick()
 {
+	if (bPhotoMode) return;
 	// UI가 클릭을 먼저 소비하므로, 게임 뷰포트까지 도달한 클릭만 채팅 선택을 해제한다.
 	// 다른 창이 열려 있다면 그 창이 입력 모드를 계속 유지한다.
 	if (bReturningToFrontend || !bShowMouseCursor || bDraggingChat) return;
@@ -207,12 +212,14 @@ void AUEPlayerController::HandleGameViewportClick()
 
 void AUEPlayerController::HandleEscape()
 {
+	if (bPhotoMode) { ExitPhotoMode(); return; }
 	if (bChatInputOpen) CloseChatInput();
 	else ToggleOptionsMenu();
 }
 
 void AUEPlayerController::ToggleOptionsMenu()
 {
+	if (bPhotoMode) { ExitPhotoMode(); return; }
 	if (!IsLocalController() || bReturningToFrontend) return;
 	if (OptionsScreen)
 	{
@@ -263,6 +270,7 @@ void AUEPlayerController::HandleOptionsAction(FName ActionId)
 {
 	if (bReturningToFrontend) return;
 	if (ActionId == TEXT("Resume")) CloseOptionsMenu();
+	else if (ActionId == TEXT("Camera")) EnterPhotoMode();
 	else if (ActionId == TEXT("Settings"))
 	{
 		if (OptionsMenu && !OptionsScreen && GameSettingsClass)
@@ -526,7 +534,7 @@ FEventReply AUEPlayerController::HandleChannelTab3MouseButtonDown(
 
 void AUEPlayerController::ToggleChatVisible()
 {
-	if (!ChatWidget)
+	if (bPhotoMode || bReturningToFrontend || !ChatWidget)
 	{
 		return;
 	}
@@ -688,7 +696,9 @@ void AUEPlayerController::RequestPartyEnterInstance(int32 InstanceType)
 
 void AUEPlayerController::OpenChatInput()
 {
-	if (bReturningToFrontend || !ChatWidget || !ChatInput) return;
+	if (bPhotoMode || bReturningToFrontend || !ChatWidget || !ChatInput) return;
+	bChatHidden = false;
+	ChatWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 	bChatInputOpen = true;
 	// 편집 상자에 포커스를 주기 전에 커서 단축키 입력을 끝낸다.
 	// 누르고 있던 키의 반복 문자가 채팅에 섞이는 것을 막기 위한 순서다.
@@ -719,6 +729,7 @@ void AUEPlayerController::SuspendChatInput()
 
 void AUEPlayerController::ActivateUIWindow(UUserWidget* Window, bool bFocus)
 {
+	if (bPhotoMode) { HideGameplayUIForPhoto(); return; }
 	if (bReturningToFrontend || !Window || !Window->IsInViewport() || !Window->IsVisible()) return;
 	if (!UIWindowOrder.IsEmpty() && UIWindowOrder.Last().Get() == Window) return;
 	if (Window != ChatWidget)
@@ -773,6 +784,7 @@ void AUEPlayerController::RefreshWindowOrder()
 void AUEPlayerController::RefreshWindowInput(bool bFocus)
 {
 	if (bReturningToFrontend) return;
+	if (bPhotoMode) { RefreshPhotoInput(); return; }
 	RefreshWindowOrder();
 	UUserWidget* Active = UIWindowOrder.IsEmpty() ? nullptr : UIWindowOrder.Last().Get();
 	const bool bBlockMove = Active != nullptr;
@@ -1068,10 +1080,13 @@ void AUEPlayerController::BindGameplayInput()
 	BindPokemonAttackInput(EnhancedInputComponent);
 	BindMouseViewInput(EnhancedInputComponent);
 	BindChatInput(EnhancedInputComponent);
+	BindPhotoInput(EnhancedInputComponent);
 }
 
 void AUEPlayerController::BindChatInput(UEnhancedInputComponent* EnhancedInputComponent)
 {
+	if (const UInputAction* Toggle = InputData->FindInputActionByTag(UEGameplayTags::Input_Action_ToggleChat))
+		EnhancedInputComponent->BindAction(Toggle, ETriggerEvent::Started, this, &ThisClass::ToggleChatVisibility);
 	const UInputAction* ChatAction =
 		InputData->FindInputActionByTag(UEGameplayTags::Input_Action_Chat);
 	if (ChatAction)
@@ -1106,6 +1121,7 @@ void AUEPlayerController::BindMouseViewInput(UEnhancedInputComponent* EnhancedIn
 
 void AUEPlayerController::HandleMouseViewStarted(const FInputActionValue& Value)
 {
+	if (bPhotoMode) return;
 	if (bReturningToFrontend || bMouseViewHeld) return;
 	bMouseViewHeld = true;
 	bEnableClickEvents = true;
@@ -1358,16 +1374,19 @@ void AUEPlayerController::HandleMoveLeftStopped(const FInputActionValue& Value)
 
 void AUEPlayerController::HandleLookYaw(const FInputActionValue& Value)
 {
+	if (bPhotoMode && !bPhotoLookHeld) return;
 	AddYawInput(Value.Get<float>() * LookYawRate);
 }
 
 void AUEPlayerController::HandleLookPitch(const FInputActionValue& Value)
 {
+	if (bPhotoMode && !bPhotoLookHeld) return;
 	AddPitchInput(-Value.Get<float>() * LookPitchRate);
 }
 
 void AUEPlayerController::HandleRunStarted(const FInputActionValue& Value)
 {
+	if (bPhotoMode) return;
 	if (bWindowMoveBlocked || bReturningToFrontend) return;
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
@@ -1411,6 +1430,7 @@ void AUEPlayerController::HandleRunStopped(const FInputActionValue& Value)
 
 void AUEPlayerController::HandleJump(const FInputActionValue& Value)
 {
+	if (bPhotoMode) return;
 	if (bWindowMoveBlocked || bReturningToFrontend) return;
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
@@ -1420,6 +1440,7 @@ void AUEPlayerController::HandleJump(const FInputActionValue& Value)
 
 void AUEPlayerController::HandleRoll(const FInputActionValue& Value)
 {
+	if (bPhotoMode) return;
 	if (bWindowMoveBlocked || bReturningToFrontend) return;
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
@@ -1429,6 +1450,7 @@ void AUEPlayerController::HandleRoll(const FInputActionValue& Value)
 
 void AUEPlayerController::HandlePokemonToggle(const FInputActionValue& Value)
 {
+	if (bPhotoMode) return;
 	if (OptionsMenu || bChatInputOpen || bReturningToFrontend) return;
 
 
@@ -1464,6 +1486,7 @@ void AUEPlayerController::HandlePokemonAttack4(const FInputActionValue& Value)
 
 void AUEPlayerController::HandlePokemonAttackSlot(int32 AttackSlot)
 {
+	if (bPhotoMode) return;
 	if (bWindowMoveBlocked || bReturningToFrontend) return;
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{

@@ -17,10 +17,6 @@ namespace {
 constexpr float kEnterRadiusSquared = kEnterRadius * kEnterRadius;
 constexpr float kExitRadiusSquared = kExitRadius * kExitRadius;
 
-// 맵이 없을 때 쓰는 캡슐 기본값. 맵이 있으면 그쪽 값을 쓴다 — 지형을 만든
-// 설정과 판정에 쓰는 캡슐이 다르면 navmesh 밖으로 새거나 못 지나간다.
-constexpr nav::Agent kDefaultAgent{};
-
 fieldshared::PartnerOwnerState partnerOwnerStateOf(const Entity& entity) {
     return {
         {entity.position.x, entity.position.y, entity.position.z},

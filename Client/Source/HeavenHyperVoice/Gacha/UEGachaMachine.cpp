@@ -66,7 +66,8 @@ void AUEGachaMachine::TurnHandle(float Degrees)
 	}
 	// 반대로 돌리면 현재 회전량이 줄어든다. 손잡이를 앞뒤로 흔들어 횟수를 채울 수는 없다.
 	TurnDegrees = FMath::Clamp(TurnDegrees + Degrees, CompletedTurns * 360.f, 1080.f);
-	HandlePivot->SetRelativeRotation(FRotator(0, 0, -TurnDegrees));
+	// 정면 카메라에서 +Roll은 시계 방향이다. 화면 입력과 같은 방향으로 회전한다.
+	HandlePivot->SetRelativeRotation(FRotator(0, 0, TurnDegrees));
 	for (int32 I = 0; I < Capsules.Num(); ++I)
 	{
 		if (!Capsules[I].IsValid()) continue;

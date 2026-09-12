@@ -24,6 +24,11 @@ class UUEOptionsHUDWidget;
 class UUEOptionsScreenWidget;
 class UUEGameSettingsWidget;
 class UUEOptionsConfirmWidget;
+class UUEPhotoModeWidget;
+class UInputMappingContext;
+class UInputAction;
+class UCameraComponent;
+class AUEGoldenrodCity;
 
 /** 실제 플레이 레벨의 이동과 액션 입력을 처리한다. */
 UCLASS()
@@ -48,6 +53,30 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Options")
 	void ToggleOptionsMenu();
 
+	UFUNCTION(BlueprintCallable, Category = "Chat")
+	void ToggleChatVisibility();
+	UFUNCTION(BlueprintPure, Category = "Camera")
+	bool IsOptionsCameraActive() const { return OptionsMenu != nullptr; }
+	UFUNCTION(BlueprintPure, Category = "Camera")
+	bool IsPhotoModeActive() const { return bPhotoMode; }
+	UFUNCTION(BlueprintCallable, Category = "Camera")
+	void EnterPhotoMode();
+	UFUNCTION(BlueprintCallable, Category = "Camera")
+	void ExitPhotoMode();
+	UFUNCTION(BlueprintCallable, Category = "Camera")
+	void TakePhoto();
+	UFUNCTION(BlueprintCallable, Category = "Camera")
+	void SetPhotoZoom(float Value);
+	UFUNCTION(BlueprintPure, Category = "Camera")
+	float GetPhotoZoom() const { return PhotoZoom; }
+	/** Future combat entry/exit must notify this controller; entry immediately cancels photography. */
+	UFUNCTION(BlueprintCallable, Category = "Camera|Integration")
+	void SetInCombat(bool bNewInCombat);
+	/** NPCs and other world interactions must consult this before opening UI or starting an action. */
+	UFUNCTION(BlueprintPure, Category = "Camera|Integration")
+	bool CanInteractWithWorld() const { return !bPhotoMode && !bReturningToFrontend && !bWindowMoveBlocked; }
+	virtual void UpdateHiddenComponents(const FVector& ViewLocation, TSet<FPrimitiveComponentId>& HiddenComponents) override;
+
 	// WBP 클래스가 지정된 경우에만 HUD를 만든다. 에셋 경로는 코드에서 찾지 않는다.
 	UFUNCTION(BlueprintCallable, Category = "Pokemon|UI")
 	void ShowPokemonPartyWidget();
@@ -69,6 +98,20 @@ public:
 	void HHVLeaveInstance();
 
 protected:
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|UI")
+	TSubclassOf<UUEPhotoModeWidget> PhotoModeWidgetClass;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Input")
+	TObjectPtr<UInputMappingContext> PhotoMappingContext;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Input")
+	TObjectPtr<UInputAction> PhotoCaptureAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Input")
+	TObjectPtr<UInputAction> PhotoZoomAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera|Input")
+	TObjectPtr<UInputAction> PhotoLookAction;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta=(ClampMin="20", ClampMax="100"))
+	float PhotoWideFOV = 80.f;
+	UPROPERTY(EditDefaultsOnly, Category = "Camera", meta=(ClampMin="10", ClampMax="80"))
+	float PhotoTeleFOV = 20.f;
 	virtual void BeginPlay() override;
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void SetupInputComponent() override;
@@ -139,6 +182,33 @@ public:
 	void AddSystemMessage(const FString& Text);
 
 private:
+	void BindPhotoInput(class UEnhancedInputComponent* EnhancedInputComponent);
+	void TickPhotoMode(float DeltaSeconds);
+	void HideGameplayUIForPhoto();
+	void RefreshPhotoInput();
+	bool IsNearPhotoBoundary() const;
+	void HandlePhotoZoom(const FInputActionValue& Value);
+	void HandlePhotoLookStarted();
+	void HandlePhotoLookStopped();
+	void OnPhotoProcessed();
+	UPROPERTY(Transient)
+	TObjectPtr<UUEPhotoModeWidget> PhotoWidget;
+	TMap<TWeakObjectPtr<UUserWidget>, ESlateVisibility> PhotoHiddenWidgets;
+	TMap<TWeakObjectPtr<UUserWidget>, float> PhotoHiddenWorldWidgets;
+	TArray<TWeakObjectPtr<UUserWidget>> PhotoPreviousWindowOrder;
+	TWeakObjectPtr<APawn> PhotoPawn;
+	TWeakObjectPtr<UCameraComponent> PhotoCamera;
+	TWeakObjectPtr<AUEGoldenrodCity> PhotoCity;
+	bool bPhotoMode = false;
+	bool bPhotoLookHeld = false;
+	bool bInCombat = false;
+	bool bPhotoSavedHUD = true;
+	bool bPhotoSavedClickEvents = false;
+	bool bPhotoSavedMouseOverEvents = false;
+	float PhotoZoom = 0.f;
+	float PhotoOriginalFOV = 90.f;
+	FString PendingPhotoFilename;
+	FDelegateHandle PhotoProcessedHandle;
 	void HandleEscape();
 	void HandleGameViewportClick();
 	void CloseOptionsMenu();

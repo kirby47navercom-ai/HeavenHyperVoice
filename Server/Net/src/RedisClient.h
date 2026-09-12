@@ -21,6 +21,13 @@ struct redisContext;
 
 namespace heaven::net {
 
+// 명령 인자로 쓸 숫자. std::to_string 을 직접 부르면 폭이 좁은 정수에서
+// 오버로드가 여럿 맞아 모호해진다.
+template <typename T>
+inline std::string arg(T value) {
+    return std::to_string(value);
+}
+
 struct RedisSettings {
     std::string host = "127.0.0.1";
     std::uint16_t port = 6379;
@@ -46,6 +53,16 @@ public:
 
     // 응답 내용을 보지 않는 명령. 성공 여부만 돌려준다.
     bool command(const std::vector<std::string>& arguments);
+
+    // Lua 스크립트 한 번. 실패하면 빈 문자열이고 what 을 달아 경고를 남긴다.
+    //
+    // 여러 키를 함께 바꾸는 연산은 전부 이걸로 보낸다. KEYS 는 쓰지 않고 키를
+    // 스크립트 안에서 만든다 — 단일 노드 전제다 (PartyStore.h 주석 참고).
+    // 클러스터로 가면 KEYS[] 로 넘기도록 여기를 고치면 된다.
+    //
+    // 오류를 삼키면 기능이 조용히 안 되는 것으로만 보이므로 여기서 남긴다.
+    std::string eval(const char* what, const char* script,
+                     const std::vector<std::string>& arguments);
 
     const std::string& target() const { return target_; }
     const std::string& lastError() const { return lastError_; }

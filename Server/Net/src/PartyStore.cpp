@@ -11,12 +11,10 @@ namespace heaven::party {
 
 namespace {
 
-// uint32_t 를 넘기면 uint64_t 와 int 오버로드가 똑같이 맞아 모호해진다.
-// 하나로 합친다.
-template <typename T>
-std::string text(T value) {
-    return std::to_string(value);
-}
+using net::arg;
+
+// 스크립트가 실패했을 때 경고에 붙는 이름.
+constexpr const char* kWhat = "party script";
 
 // 숫자를 읽고 커서를 옮긴다. 실패하면 false.
 bool readNumber(const std::string& raw, std::size_t& at, char terminator, std::uint64_t& out) {
@@ -185,29 +183,11 @@ std::vector<std::uint64_t> PartyView::accountIds() const {
     return ids;
 }
 
-std::string PartyStore::eval(const char* script, const std::vector<std::string>& args) {
-    std::vector<std::string> command;
-    command.reserve(args.size() + 3);
-    command.emplace_back("EVAL");
-    command.emplace_back(script);
-    command.emplace_back("0");  // KEYS 없음. 단일 노드 전제 (헤더 주석 참고)
-    for (const std::string& arg : args) {
-        command.push_back(arg);
-    }
-
-    const auto reply = redis_.commandForString(command);
-    if (!reply.has_value() && !redis_.lastError().empty()) {
-        // Lua 오류를 삼키면 파티가 조용히 안 되는 것으로만 보인다.
-        spdlog::warn("party script failed: {}", redis_.lastError());
-    }
-    return reply.value_or(std::string{});
-}
-
 std::uint64_t PartyStore::partyIdOf(std::uint64_t accountId) {
     if (accountId == 0) {
         return 0;
     }
-    const auto reply = redis_.commandForString({"GET", "party:member:" + text(accountId)});
+    const auto reply = redis_.commandForString({"GET", "party:member:" + arg(accountId)});
     if (!reply.has_value()) {
         return 0;
     }
@@ -222,7 +202,7 @@ PartyView PartyStore::findById(std::uint64_t partyId) {
     if (partyId == 0) {
         return {};
     }
-    return parseParty(eval(kFindScript, {text(partyId)}));
+    return parseParty(redis_.eval(kWhat, kFindScript, {arg(partyId)}));
 }
 
 PartyView PartyStore::find(std::uint64_t accountId) {
@@ -236,10 +216,10 @@ InviteResult PartyStore::invite(std::uint64_t inviter, const std::string& invite
         return InviteResult::Failed;
     }
 
-    const std::string reply = eval(
-        kInviteScript, {text(inviter), inviterNickname, text(target), text(kMemberTtlSeconds),
-                        text(kInviteTtlSeconds), text(static_cast<int>(kMaxMembers)),
-                        text(kPartyTtlSeconds)});
+    const std::string reply = redis_.eval(
+        kWhat, kInviteScript,
+        {arg(inviter), inviterNickname, arg(target), arg(kMemberTtlSeconds),
+         arg(kInviteTtlSeconds), arg(static_cast<int>(kMaxMembers)), arg(kPartyTtlSeconds)});
 
     if (reply == "FULL") {
         return InviteResult::Full;
@@ -268,8 +248,9 @@ AcceptResult PartyStore::accept(std::uint64_t accountId, const std::string& nick
     }
 
     const std::string reply =
-        eval(kAcceptScript, {text(accountId), nickname, text(partyId), text(kMemberTtlSeconds),
-                             text(static_cast<int>(kMaxMembers)), text(kPartyTtlSeconds)});
+        redis_.eval(kWhat, kAcceptScript,
+                    {arg(accountId), nickname, arg(partyId), arg(kMemberTtlSeconds),
+                     arg(static_cast<int>(kMaxMembers)), arg(kPartyTtlSeconds)});
 
     if (reply == "NOINVITE") return AcceptResult::NoInvite;
     if (reply == "BUSY") return AcceptResult::AlreadyInParty;
@@ -285,14 +266,14 @@ void PartyStore::decline(std::uint64_t accountId, std::uint64_t partyId) {
     if (accountId == 0 || partyId == 0) {
         return;
     }
-    redis_.command({"HDEL", "party:invite:" + text(accountId), text(partyId)});
+    redis_.command({"HDEL", "party:invite:" + arg(accountId), arg(partyId)});
 }
 
 std::uint64_t PartyStore::leave(std::uint64_t accountId) {
     if (accountId == 0) {
         return 0;
     }
-    const std::string reply = eval(kLeaveScript, {text(accountId)});
+    const std::string reply = redis_.eval(kWhat, kLeaveScript, {arg(accountId)});
     std::uint64_t id = 0;
     if (std::from_chars(reply.data(), reply.data() + reply.size(), id).ec != std::errc{}) {
         return 0;
@@ -304,15 +285,16 @@ void PartyStore::touch(std::uint64_t accountId) {
     if (accountId == 0) {
         return;
     }
-    eval(kTouchScript, {text(accountId), text(kMemberTtlSeconds), text(kPartyTtlSeconds)});
+    redis_.eval(kWhat, kTouchScript,
+                {arg(accountId), arg(kMemberTtlSeconds), arg(kPartyTtlSeconds)});
 }
 
 bool PartyStore::openEntry(std::uint64_t partyId, std::uint32_t instanceType) {
     if (partyId == 0) {
         return false;
     }
-    return redis_.command({"SET", "party:" + text(partyId) + ":enter:" + text(instanceType), "1",
-                           "EX", text(kEnterTtlSeconds)});
+    return redis_.command({"SET", "party:" + arg(partyId) + ":enter:" + arg(instanceType), "1",
+                           "EX", arg(kEnterTtlSeconds)});
 }
 
 bool PartyStore::entryOpen(std::uint64_t partyId, std::uint32_t instanceType) {
@@ -321,7 +303,7 @@ bool PartyStore::entryOpen(std::uint64_t partyId, std::uint32_t instanceType) {
     }
     // EXISTS 는 정수 응답이라 commandForString 이 nullopt 를 준다. GET 을 쓴다.
     const auto reply =
-        redis_.commandForString({"GET", "party:" + text(partyId) + ":enter:" + text(instanceType)});
+        redis_.commandForString({"GET", "party:" + arg(partyId) + ":enter:" + arg(instanceType)});
     return reply.has_value();
 }
 
@@ -330,9 +312,9 @@ std::uint32_t PartyStore::claimRoom(std::uint64_t partyId, std::uint32_t instanc
     if (partyId == 0) {
         return fallbackRoomId;
     }
-    const std::string reply = eval(
-        kClaimRoomScript,
-        {text(partyId), text(instanceType), text(fallbackRoomId), text(kRoomTtlSeconds)});
+    const std::string reply = redis_.eval(
+        kWhat, kClaimRoomScript,
+        {arg(partyId), arg(instanceType), arg(fallbackRoomId), arg(kRoomTtlSeconds)});
 
     std::uint64_t room = 0;
     if (std::from_chars(reply.data(), reply.data() + reply.size(), room).ec != std::errc{} ||

@@ -107,6 +107,8 @@ void AUEInstancePortal::HandleBeginOverlap(UPrimitiveComponent* /*OverlappedComp
 	}
 
 	UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this);
+	if (const AUEPlayerController* Controller = Cast<AUEPlayerController>(PlayerCharacter->GetController());
+		Controller && Controller->IsPhotoModeActive()) return;
 	if (!FieldClientSubsystem)
 	{
 		return;

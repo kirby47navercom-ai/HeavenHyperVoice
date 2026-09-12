@@ -1,7 +1,5 @@
 #include "InstancePresence.h"
 
-#include <spdlog/spdlog.h>
-
 #include <charconv>
 
 #include "RedisClient.h"
@@ -10,10 +8,10 @@ namespace heaven::instancechat {
 
 namespace {
 
-template <typename T>
-std::string text(T value) {
-    return std::to_string(value);
-}
+using net::arg;
+
+// 스크립트가 실패했을 때 경고에 붙는 이름.
+constexpr const char* kWhat = "instance presence script";
 
 // ARGV: accountId, "<type>:<roomId>", ttl
 constexpr const char* kEnterScript = R"lua(
@@ -52,37 +50,21 @@ return table.concat(ids, ',')
 
 }  // namespace
 
-std::string InstancePresence::eval(const char* script, const std::vector<std::string>& args) {
-    std::vector<std::string> command;
-    command.reserve(args.size() + 3);
-    command.emplace_back("EVAL");
-    command.emplace_back(script);
-    command.emplace_back("0");  // KEYS 없음. 단일 노드 전제 (헤더 주석 참고)
-    for (const std::string& arg : args) {
-        command.push_back(arg);
-    }
-
-    const auto reply = redis_.commandForString(command);
-    if (!reply.has_value() && !redis_.lastError().empty()) {
-        spdlog::warn("instance presence script failed: {}", redis_.lastError());
-    }
-    return reply.value_or(std::string{});
-}
-
 void InstancePresence::enter(std::uint64_t accountId, std::uint32_t instanceType,
                              std::uint32_t roomId) {
     if (accountId == 0) {
         return;
     }
-    const std::string room = text(instanceType) + ":" + text(roomId);
-    eval(kEnterScript, {text(accountId), room, text(kPresenceTtlSeconds)});
+    const std::string room = arg(instanceType) + ":" + arg(roomId);
+    redis_.eval(kWhat, kEnterScript,
+                {arg(accountId), room, arg(kPresenceTtlSeconds)});
 }
 
 void InstancePresence::leave(std::uint64_t accountId) {
     if (accountId == 0) {
         return;
     }
-    eval(kLeaveScript, {text(accountId)});
+    redis_.eval(kWhat, kLeaveScript, {arg(accountId)});
 }
 
 std::vector<std::uint64_t> InstancePresence::roommates(std::uint64_t accountId) {
@@ -91,7 +73,7 @@ std::vector<std::uint64_t> InstancePresence::roommates(std::uint64_t accountId) 
         return ids;
     }
 
-    const std::string raw = eval(kRoommatesScript, {text(accountId)});
+    const std::string raw = redis_.eval(kWhat, kRoommatesScript, {arg(accountId)});
     std::size_t at = 0;
     while (at < raw.size()) {
         const std::size_t comma = raw.find(',', at);

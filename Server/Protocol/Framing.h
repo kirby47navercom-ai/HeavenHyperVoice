@@ -18,7 +18,6 @@ using Bytes = std::vector<std::uint8_t>;
 inline constexpr std::uint32_t kMaxBodyBytes = 64u * 1024u;
 inline constexpr std::size_t kHeaderBytes = 4;
 
-// FlatBufferBuilder 결과에 길이 접두사를 붙여 전송 가능한 프레임으로 만든다.
 inline Bytes finishFrame(flatbuffers::FlatBufferBuilder& fbb) {
     const std::uint32_t len = fbb.GetSize();
     Bytes frame;

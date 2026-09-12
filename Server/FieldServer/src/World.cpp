@@ -74,6 +74,12 @@ Position World::resolvePosition(const Position& position) const {
             resolved.y = grounded.y;
             resolved.z = grounded.z;
         }
+        else if (map_->canStandAt(proto::kSpawnX, proto::kSpawnY, map_->agent(), &grounded)) {
+            // 이전 맵에 저장된 위치가 건물이나 바다가 되었으면 중앙 시작점으로 복귀한다.
+            resolved.x = grounded.x;
+            resolved.y = grounded.y;
+            resolved.z = grounded.z;
+        }
     }
     return resolved;
 }

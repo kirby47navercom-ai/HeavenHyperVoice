@@ -154,4 +154,30 @@ bool RedisClient::command(const std::vector<std::string>& arguments) {
     return executeLocked(arguments, [](void*) {});
 }
 
+std::string RedisClient::eval(const char* what, const char* script,
+                              const std::vector<std::string>& arguments) {
+    std::vector<std::string> command;
+    command.reserve(arguments.size() + 3);
+    command.emplace_back("EVAL");
+    command.emplace_back(script);
+    command.emplace_back("0");  // KEYS 없음. 단일 노드 전제 (헤더 주석 참고)
+    for (const std::string& argument : arguments) {
+        command.push_back(argument);
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::string value;
+    // 빈 문자열은 실패가 아니다. 스크립트 여럿이 "없음" 을 그렇게 돌려준다.
+    if (!executeLocked(command, [&value](void* raw) {
+            auto* reply = static_cast<redisReply*>(raw);
+            if (reply->type == REDIS_REPLY_STRING) {
+                value = std::string(reply->str, reply->len);
+            }
+        })) {
+        // Lua 오류를 삼키면 기능이 조용히 안 되는 것으로만 보인다.
+        spdlog::warn("{} failed: {}", what, lastError_);
+    }
+    return value;
+}
+
 }  // namespace heaven::net

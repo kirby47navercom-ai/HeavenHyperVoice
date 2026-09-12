@@ -78,10 +78,6 @@ private:
                      std::uint16_t partnerSpecies, const proto::AppearanceInfo& appearance,
                      std::uint64_t partyId);
 
-    static void sendPartyState(const InstanceContext& context, TlsSession& session,
-                               std::uint64_t accountId, std::uint64_t characterId,
-                               bool ok, std::string_view message);
-
     const InstanceContext& context_;
 
     std::mutex mutex_;
