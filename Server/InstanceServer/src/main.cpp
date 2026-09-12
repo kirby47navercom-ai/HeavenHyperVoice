@@ -51,13 +51,10 @@ struct Options {
     // 방을 돌리는 스레드. 0 이면 하드웨어 동시성의 절반, 최소 1.
     unsigned tickThreads = 0;
 
-    // 지형 파일 없이 받아줄 종류. 검사 없이 뜬다.
-    std::string types;
-
     heaven::instance::RoomSettings rooms;
 
     // 종류마다 다른 지형. --instance-map <type>=<path> 로 하나씩 붙인다.
-    std::map<std::uint32_t, std::string> maps;
+    std::map<std::uint32_t, std::string> maps{{1, "maps/collision/Stage/Filed.hhvcollision"}};
 
     // 종류마다 나올 야생 종족. --instance-species <type>=<dex,dex,...>
     std::map<std::uint32_t, std::string> species;
@@ -89,12 +86,10 @@ void printUsage() {
                  "                        Dex numbers. Raid bosses are refused. Without it\n"
                  "                        every non-boss species in the table can spawn.\n"
                  "  --instance-map <t=p>  terrain for one instance type, repeatable.\n"
-                 "                        e.g. --instance-map 1=maps/instance-1.txt\n"
+                 "                        e.g. --instance-map 1=maps/collision/Stage/Filed.hhvcollision\n"
                  "                        Listing a type here is enough to accept it.\n"
-                 "  --instance-types <l>  extra types with no terrain, comma separated.\n"
-                 "                        A type in neither option is refused - without\n"
-                 "                        that a client could open unlimited rooms.\n"
-                 "                        Default when both are empty: type 1, no terrain.\n"
+                 "                        Unregistered types are refused.\n"
+                 "                        Default: type 1 uses the Filed collision map.\n"
                  "  --room-capacity <n>   players per room (default 20)\n"
                  "  --max-rooms <n>       rooms per type, 0 = unlimited (default 0)\n"
                  "  --room-idle <n>       seconds an empty room is kept before it closes\n"
@@ -119,25 +114,13 @@ void printUsage() {
                  "                        database. The client sends its own name and id.\n";
 }
 
-std::vector<std::uint32_t> parseTypes(const std::string& list) {
-    std::vector<std::uint32_t> out;
-    std::istringstream stream(list);
-    std::string item;
-    while (std::getline(stream, item, ',')) {
-        if (!item.empty()) {
-            out.push_back(static_cast<std::uint32_t>(std::stoul(item)));
-        }
-    }
-    return out;
-}
-
 // 맵이 조용히 아무 일도 안 하는 흔한 두 경우를 기동 때 잡는다.
 // 둘 다 문법은 멀쩡해서 로드는 성공하고, 그래서 알아채기 어렵다.
 // "401,403,387" 같은 도감번호 목록을 서버 내부 번호로 바꾼다.
 //
-// 맵 파일이 아니라 옵션으로 받는다. .hhvmap 은 지형 전용이고 모르는 줄을
-// 거부하므로, 게임 규칙을 거기 끼워 넣으면 Nav 가 종족을 알아야 한다.
-std::vector<std::uint16_t> parseWildSpecies(const std::string& list) {
+// 맵 파일이 아니라 옵션으로 받는다. 공통 충돌 파일 은 지형 전용이고 모르는 줄을
+// 거부하므로, 게임 규칙을 거기 끼워 넣으면 이동 코어가 종족을 알아야 한다.
+std::vector<std::uint16_t> parseWildSpecies(const std::string &list) {
     std::vector<std::uint16_t> out;
     std::istringstream stream(list);
     std::string item;
@@ -146,16 +129,14 @@ std::vector<std::uint16_t> parseWildSpecies(const std::string& list) {
             continue;
         }
         const int dex = std::stoi(item);
-        const heaven::proto::SpeciesBase* species =
+        const heaven::proto::SpeciesBase *species =
             heaven::proto::findSpeciesByDex(static_cast<std::uint16_t>(dex));
         if (species == nullptr) {
-            throw std::runtime_error("unknown dex " + std::to_string(dex) +
-                                     " in --instance-species");
+            throw std::runtime_error("unknown dex " + std::to_string(dex) + " in --instance-species");
         }
         // 보스는 레이드에서만 만나야 한다.
         if (!heaven::proto::isWildSpawnable(static_cast<std::uint16_t>(dex))) {
-            throw std::runtime_error("dex " + std::to_string(dex) + " (" +
-                                     std::string(species->name) +
+            throw std::runtime_error("dex " + std::to_string(dex) + " (" + std::string(species->name) +
                                      ") is a raid boss and cannot spawn in the wild");
         }
         out.push_back(species->id);
@@ -163,24 +144,23 @@ std::vector<std::uint16_t> parseWildSpecies(const std::string& list) {
     return out;
 }
 
-// 스폰이 navmesh 밖이면 그 방은 아무도 못 움직인다. 기동 때 잡는다.
-void warnIfSpawnUnreachable(std::uint32_t type, const heaven::Map& map) {
-    if (!map.loaded() || !map.hasNavMesh()) {
+// 스폰이 shared collision 밖이면 그 방은 아무도 못 움직인다. 기동 때 잡는다.
+void warnIfSpawnUnreachable(std::uint32_t type, const heaven::Map &map) {
+    if (!map.loaded()) {
         return;
     }
-    if (!map.canStandAt(heaven::instance::kSpawnX, heaven::instance::kSpawnY, map.agent(),
-                        nullptr)) {
-        spdlog::warn("instance type {}: spawn point ({:.0f}, {:.0f}) is not on the navmesh; "
+    if (!map.canStandAt(heaven::instance::kSpawnX, heaven::instance::kSpawnY, map.agent(), nullptr)) {
+        spdlog::warn("instance type {}: spawn point ({:.0f}, {:.0f}) is not on the shared collision; "
                      "nobody will be able to move",
                      type, heaven::instance::kSpawnX, heaven::instance::kSpawnY);
     }
 }
 
-Options parseArgs(int argc, char** argv) {
+Options parseArgs(int argc, char **argv) {
     Options options;
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
-        const auto next = [&](const char* name) -> std::string {
+        const auto next = [&](const char *name) -> std::string {
             if (i + 1 >= argc) {
                 throw std::runtime_error(std::string("missing value for ") + name);
             }
@@ -203,8 +183,6 @@ Options parseArgs(int argc, char** argv) {
             options.dbThreads = static_cast<unsigned>(std::stoi(next("--db-threads")));
         } else if (arg == "--tick-threads") {
             options.tickThreads = static_cast<unsigned>(std::stoi(next("--tick-threads")));
-        } else if (arg == "--instance-types") {
-            options.types = next("--instance-types");
         } else if (arg == "--room-capacity") {
             options.rooms.capacity = std::stoi(next("--room-capacity"));
         } else if (arg == "--max-rooms") {
@@ -221,8 +199,7 @@ Options parseArgs(int argc, char** argv) {
             const std::string pair = next("--instance-species");
             const std::size_t equals = pair.find('=');
             if (equals == 0 || equals == std::string::npos || equals + 1 >= pair.size()) {
-                throw std::runtime_error("--instance-species wants <type>=<dex,dex,...>, got " +
-                                         pair);
+                throw std::runtime_error("--instance-species wants <type>=<dex,dex,...>, got " + pair);
             }
             options.species[static_cast<std::uint32_t>(std::stoul(pair.substr(0, equals)))] =
                 pair.substr(equals + 1);
@@ -256,16 +233,15 @@ Options parseArgs(int argc, char** argv) {
     return options;
 }
 
-}  // namespace
+} // namespace
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     try {
         Options options = parseArgs(argc, argv);
         heaven::net::initLogging(options.verbose, "instance");
 
-
-        const auto files = heaven::net::resolveServerFiles(
-            options.certFile, options.keyFile, options.authPubFile, "ticket public key");
+        const auto files = heaven::net::resolveServerFiles(options.certFile, options.keyFile,
+                                                           options.authPubFile, "ticket public key");
 
         heaven::net::TlsContext tls(files.certificate, files.privateKey);
 
@@ -281,10 +257,9 @@ int main(int argc, char** argv) {
             if (const auto password = heaven::net::databasePassword()) {
                 db.password = *password;
             } else {
-                throw std::runtime_error(
-                    "no database password available.\n"
-                    "  Store it once: LoginServer.exe --save-db-password\n"
-                    "  Or set HHV_DB_PASSWORD for this shell.");
+                throw std::runtime_error("no database password available.\n"
+                                         "  Store it once: LoginServer.exe --save-db-password\n"
+                                         "  Or set HHV_DB_PASSWORD for this shell.");
             }
             characters = std::make_unique<heaven::data::OdbcStore>(db);
         }
@@ -297,24 +272,23 @@ int main(int argc, char** argv) {
         std::map<std::uint32_t, std::unique_ptr<heaven::Map>> terrain;
         std::map<std::uint32_t, heaven::instance::InstanceType> types;
 
-        for (const auto& [type, path] : options.maps) {
-            auto collision = std::make_unique<heaven::Map>();
+        for (const auto &[type, path] : options.maps) {
+            auto collision = std::make_unique<heaven::Map>(heaven::instance::kWorldOriginOffset);
             std::string mapError;
-            const std::string resolved =
-                heaven::net::resolveResourcePath(path, "instance map");
+            const std::string resolved = heaven::net::resolveResourcePath(path, "instance map");
             if (!collision->loadFromFile(resolved, mapError)) {
                 throw std::runtime_error("instance " + std::to_string(type) + " map: " + mapError);
             }
-            spdlog::info("instance type {}: {} (ground {}, wall {}, walkable polys {})",
-                         type, resolved, collision->groundCount(), collision->wallCount(),
-                         collision->walkablePolyCount());
+            spdlog::info("instance type {}: {} (core triangles {}, hash {})", type, resolved,
+                         collision->triangleCount(), collision->collision().hash());
             warnIfSpawnUnreachable(type, *collision);
 
             types[type].map = collision.get();
             types[type].wildSpecies = parseWildSpecies(options.species[type]);
             if (types[type].wildSpecies.empty()) {
                 spdlog::warn("instance type {}: no --instance-species; every non-boss "
-                             "species in the table can spawn", type);
+                             "species in the table can spawn",
+                             type);
             } else {
                 std::string names;
                 for (const std::uint16_t id : types[type].wildSpecies) {
@@ -326,21 +300,6 @@ int main(int argc, char** argv) {
                 spdlog::info("instance type {}: wild species = {}", type, names);
             }
             terrain[type] = std::move(collision);
-        }
-
-        // 지형 없이 받아줄 종류. 이미 맵이 붙은 종류를 또 적으면 무시된다.
-        for (const std::uint32_t type : parseTypes(options.types)) {
-            if (types.count(type) == 0) {
-                types[type].wildSpecies = parseWildSpecies(options.species[type]);
-                spdlog::warn("instance type {}: no terrain, nothing blocks movement", type);
-            }
-        }
-
-        // 둘 다 비었으면 1 번을 지형 없이 연다. 종류가 하나도 없으면 아무도
-        // 못 들어오는 서버가 되는데, 그건 실수지 설정이 아니다.
-        if (types.empty()) {
-            types[1];
-            spdlog::warn("no --instance-map or --instance-types; opening type 1 with no terrain");
         }
 
         if (options.rooms.wildPerRoom > 0) {
@@ -360,20 +319,17 @@ int main(int argc, char** argv) {
             heaven::net::RedisSettings redisSettings;
             redisSettings.host = options.redisHost;
             redisSettings.port = options.redisPort;
-            if (const auto stored =
-                    heaven::net::readStoredPassword(heaven::net::kRedisCredentialTarget)) {
+            if (const auto stored = heaven::net::readStoredPassword(heaven::net::kRedisCredentialTarget)) {
                 redisSettings.password = *stored;
             }
             redis = std::make_unique<heaven::net::RedisClient>(redisSettings);
             if (!redis->connect()) {
-                spdlog::warn("party store unavailable at {}: {}", redis->target(),
-                             redis->lastError());
+                spdlog::warn("party store unavailable at {}: {}", redis->target(), redis->lastError());
                 spdlog::warn("parties will not be grouped; everyone enters on their own");
                 redis.reset();
             } else {
                 party = std::make_unique<heaven::party::PartyStore>(*redis);
-                presence =
-                    std::make_unique<heaven::instancechat::InstancePresence>(*redis);
+                presence = std::make_unique<heaven::instancechat::InstancePresence>(*redis);
             }
         }
 
@@ -390,7 +346,7 @@ int main(int argc, char** argv) {
         serverOptions.port = options.port;
         serverOptions.workerThreads = options.threads;
 
-        heaven::net::TlsServer server(serverOptions, tls, [&context](heaven::net::TlsSession&) {
+        heaven::net::TlsServer server(serverOptions, tls, [&context](heaven::net::TlsSession &) {
             return std::make_unique<heaven::instance::InstanceHandler>(context);
         });
 
@@ -405,32 +361,27 @@ int main(int argc, char** argv) {
         }
 
         spdlog::info("InstanceServer listening on port {} (TLS, IOCP)", options.port);
-        spdlog::info("ticket public key: {} (key_id={}, audience={})", files.ticketKey,
-                     options.keyId, heaven::proto::kAudienceInstance);
+        spdlog::info("ticket public key: {} (key_id={}, audience={})", files.ticketKey, options.keyId,
+                     heaven::proto::kAudienceInstance);
         {
             std::string list;
-            for (const auto& [type, entry] : types) {
+            for (const auto &[type, entry] : types) {
                 if (!list.empty()) {
                     list += ", ";
                 }
                 list += std::to_string(type);
-                list += entry.map != nullptr ? " (terrain)" : " (no terrain)";
+                list += " (shared core)";
             }
             spdlog::info("instance types: {}", list);
         }
-        spdlog::info("rooms: {} players each, {} per type, empty for {}s then closed",
-                     options.rooms.capacity,
-                     options.rooms.maxRoomsPerType == 0
-                         ? std::string("unlimited")
-                         : std::to_string(options.rooms.maxRoomsPerType),
+        spdlog::info("rooms: {} players each, {} per type, empty for {}s then closed", options.rooms.capacity,
+                     options.rooms.maxRoomsPerType == 0 ? std::string("unlimited")
+                                                        : std::to_string(options.rooms.maxRoomsPerType),
                      options.rooms.emptyLinger.count());
-        spdlog::info("wild pokemon: {} per room, Lua BT {}, {} tick thread(s)",
-                     options.rooms.wildPerRoom,
-                     options.rooms.wildPerRoom > 0 ? options.rooms.wildAiScript : "disabled",
-                     tickThreads);
+        spdlog::info("wild pokemon: {} per room, Lua BT {}, {} tick thread(s)", options.rooms.wildPerRoom,
+                     options.rooms.wildPerRoom > 0 ? options.rooms.wildAiScript : "disabled", tickThreads);
         spdlog::info("characters: {} ({} db threads)",
-                     characters ? characters->describe() : "disabled (--dev-no-auth)",
-                     options.dbThreads);
+                     characters ? characters->describe() : "disabled (--dev-no-auth)", options.dbThreads);
         if (options.devNoAuth) {
             spdlog::warn("--dev-no-auth: ANY client may enter with a name of its choosing.");
         }
@@ -468,7 +419,7 @@ int main(int argc, char** argv) {
         server.run();
 
         running.store(false, std::memory_order_release);
-        for (std::thread& ticker : tickers) {
+        for (std::thread &ticker : tickers) {
             ticker.join();
         }
 
@@ -476,7 +427,7 @@ int main(int argc, char** argv) {
         // 큐만 비워 대기 중인 입장 처리가 끝나게 한다.
         dbQueue.stop();
         return 0;
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         spdlog::error("fatal: {}", e.what());
         return 1;
     }

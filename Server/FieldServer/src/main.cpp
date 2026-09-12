@@ -37,9 +37,7 @@ struct Options {
     unsigned dbThreads = 2;
 
     // 서버 이동 맵. 기본 필드 레벨(Goldenrod)과 같은 추출 파일을 쓴다.
-    // 끄고 싶으면 --no-map 을 명시한다.
-    std::string mapFile = "maps/Goldenrod.hhvmap";
-
+    std::string mapFile = "maps/collision/Environments/Goldenrod_R03/Maps/L_Goldenrod.hhvcollision";
 
     std::string redisHost = "127.0.0.1";
     std::uint16_t redisPort = 6379;
@@ -67,8 +65,8 @@ void printUsage() {
                  "  --threads <n>       IOCP worker threads (default: hardware concurrency)\n"
                  "  --db-threads <n>    threads for position load/save (default 2; entering\n"
                  "                      and leaving only, so fewer than the login server)\n"
-                 "  --map <path>        server nav map (default maps/Goldenrod.hhvmap)\n"
-                 "  --no-map            disable field map checks and partner pathfinding\n"
+                 "  --map <path>        server nav map (default "
+                 "maps/collision/Environments/Goldenrod_R03/Maps/L_Goldenrod.hhvcollision)\n"
                  "  --redis-host <h>    default 127.0.0.1\n"
                  "  --redis-port <n>    default 6379\n"
                  "  --no-redis          skip the position cache; load and save via the DB only\n"
@@ -94,11 +92,11 @@ void printUsage() {
                  "  --forget-redis-password  remove the stored password.\n";
 }
 
-Options parseArgs(int argc, char** argv) {
+Options parseArgs(int argc, char **argv) {
     Options options;
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg = argv[i];
-        const auto next = [&](const char* name) -> std::string {
+        const auto next = [&](const char *name) -> std::string {
             if (i + 1 >= argc) {
                 throw std::runtime_error(std::string("missing value for ") + name);
             }
@@ -121,8 +119,6 @@ Options parseArgs(int argc, char** argv) {
             options.dbThreads = static_cast<unsigned>(std::stoi(next("--db-threads")));
         } else if (arg == "--map") {
             options.mapFile = next("--map");
-        } else if (arg == "--no-map") {
-            options.mapFile.clear();
         } else if (arg == "--redis-host") {
             options.redisHost = next("--redis-host");
         } else if (arg == "--redis-port") {
@@ -149,26 +145,24 @@ Options parseArgs(int argc, char** argv) {
     return options;
 }
 
-}  // namespace
+} // namespace
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
     try {
         const Options options = parseArgs(argc, argv);
         heaven::net::initLogging(options.verbose, "field");
 
         // 자격증명만 만지고 끝나는 경로들이다. 서버를 띄우기 전에 처리한다.
         if (options.forgetRedisPassword) {
-            return heaven::net::erasePasswordAndReport(heaven::net::kRedisCredentialTarget,
-                                                       "Redis");
+            return heaven::net::erasePasswordAndReport(heaven::net::kRedisCredentialTarget, "Redis");
         }
         if (options.saveRedisPassword) {
-            return heaven::net::storePasswordInteractive(heaven::net::kRedisCredentialTarget,
-                                                         "Redis");
+            return heaven::net::storePasswordInteractive(heaven::net::kRedisCredentialTarget, "Redis");
         }
 
-        const auto files = heaven::net::resolveServerFiles(
-            options.certFile, options.keyFile, options.authPubFile, "ticket public key");
-        const std::string& authPub = files.ticketKey;
+        const auto files = heaven::net::resolveServerFiles(options.certFile, options.keyFile,
+                                                           options.authPubFile, "ticket public key");
+        const std::string &authPub = files.ticketKey;
 
         heaven::net::TlsContext tls(files.certificate, files.privateKey);
 
@@ -184,10 +178,9 @@ int main(int argc, char** argv) {
             if (const auto password = heaven::net::databasePassword()) {
                 db.password = *password;
             } else {
-                throw std::runtime_error(
-                    "no database password available.\n"
-                    "  Store it once: LoginServer.exe --save-db-password\n"
-                    "  Or set HHV_DB_PASSWORD for this shell.");
+                throw std::runtime_error("no database password available.\n"
+                                         "  Store it once: LoginServer.exe --save-db-password\n"
+                                         "  Or set HHV_DB_PASSWORD for this shell.");
             }
             characters = std::make_unique<heaven::data::OdbcStore>(db);
         }
@@ -198,14 +191,12 @@ int main(int argc, char** argv) {
             heaven::net::RedisSettings redisSettings;
             redisSettings.host = options.redisHost;
             redisSettings.port = options.redisPort;
-            if (const auto stored =
-                    heaven::net::readStoredPassword(heaven::net::kRedisCredentialTarget)) {
+            if (const auto stored = heaven::net::readStoredPassword(heaven::net::kRedisCredentialTarget)) {
                 redisSettings.password = *stored;
             }
             redis = std::make_unique<heaven::net::RedisClient>(redisSettings);
             if (!redis->connect()) {
-                spdlog::warn("position cache unavailable at {}: {}", redis->target(),
-                             redis->lastError());
+                spdlog::warn("position cache unavailable at {}: {}", redis->target(), redis->lastError());
                 spdlog::warn("positions will be read and written through the database only");
                 redis.reset();
             }
@@ -216,7 +207,10 @@ int main(int argc, char** argv) {
 
         // 서버 이동 맵. 기본값은 PlayerTestLevel 추출 파일이다.
         // 경로를 줬는데 못 읽으면 기동을 멈춘다.
-        heaven::Map map;
+        if (options.mapFile.empty()) {
+            throw std::runtime_error("A shared collision map is required");
+        }
+        heaven::Map map(heaven::proto::kWorldSize / 2.f);
         std::string loadedMapFile;
         if (!options.mapFile.empty()) {
             loadedMapFile = heaven::net::resolveResourcePath(options.mapFile, "field map");
@@ -239,7 +233,7 @@ int main(int argc, char** argv) {
         serverOptions.port = options.port;
         serverOptions.workerThreads = options.threads;
 
-        heaven::net::TlsServer server(serverOptions, tls, [&context](heaven::net::TlsSession&) {
+        heaven::net::TlsServer server(serverOptions, tls, [&context](heaven::net::TlsSession &) {
             return std::make_unique<heaven::field::FieldHandler>(context);
         });
 
@@ -249,19 +243,14 @@ int main(int argc, char** argv) {
         spdlog::info("ticket public key: {} (key_id={}, audience={})", authPub, options.keyId,
                      heaven::proto::kAudienceField);
         spdlog::info("world {:.0f}uu, {} sectors of {:.0f}uu, view {:.0f}/{:.0f}uu, {} Hz",
-                     heaven::proto::kWorldSize, heaven::proto::kSectorCount,
-                     heaven::proto::kSectorSize, heaven::proto::kEnterRadius,
-                     heaven::proto::kExitRadius, heaven::proto::kTickHz);
+                     heaven::proto::kWorldSize, heaven::proto::kSectorCount, heaven::proto::kSectorSize,
+                     heaven::proto::kEnterRadius, heaven::proto::kExitRadius, heaven::proto::kTickHz);
         spdlog::info("characters: {} ({} db threads)",
-                     characters ? characters->describe() : "disabled (--dev-no-auth)",
-                     options.dbThreads);
+                     characters ? characters->describe() : "disabled (--dev-no-auth)", options.dbThreads);
         spdlog::info("position cache: {}", redis ? redis->target() : "disabled");
         if (map.loaded()) {
-            spdlog::info("field map: {} ({} ground triangles, {} wall triangles, {} walkable polys)",
-                         loadedMapFile, map.groundCount(), map.wallCount(),
-                         map.walkablePolyCount());
-        } else {
-            spdlog::warn("field map: disabled (--no-map). Players can walk through anything.");
+            spdlog::info("field map: {} ({} core triangles, hash {})", loadedMapFile, map.triangleCount(),
+                         map.collision().hash());
         }
         if (options.devNoAuth) {
             spdlog::warn("--dev-no-auth: ANY client may enter with a name of its choosing.");
@@ -291,14 +280,13 @@ int main(int argc, char** argv) {
                 while (running.load(std::memory_order_acquire)) {
                     {
                         std::unique_lock<std::mutex> lock(wakeMutex);
-                        wake.wait_for(lock, std::chrono::seconds(60), [&] {
-                            return !running.load(std::memory_order_acquire);
-                        });
+                        wake.wait_for(lock, std::chrono::seconds(60),
+                                      [&] { return !running.load(std::memory_order_acquire); });
                     }
                     if (!running.load(std::memory_order_acquire)) {
                         return;
                     }
-                    for (const auto& [characterId, position] : world.positions()) {
+                    for (const auto &[characterId, position] : world.positions()) {
                         heaven::field::writeRedisPosition(*redis, characterId, position);
                     }
                 }
@@ -320,7 +308,7 @@ int main(int argc, char** argv) {
         // 통째로 사라진다.
         if (characters != nullptr) {
             const auto remaining = world.positions();
-            for (const auto& [characterId, position] : remaining) {
+            for (const auto &[characterId, position] : remaining) {
                 characters->savePosition(characterId, position);
                 // 캐시를 지우지 않으면 입장 경로가 캐시를 먼저 보므로, 방금
                 // 저장한 위치가 다음 접속에서 최대 60초 전 값으로 되돌아간다.
@@ -336,7 +324,7 @@ int main(int argc, char** argv) {
         // 큐를 먼저 비워야 대기 중인 위치 저장이 끝난다.
         dbQueue.stop();
         return 0;
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
         spdlog::error("fatal: {}", e.what());
         return 1;
     }

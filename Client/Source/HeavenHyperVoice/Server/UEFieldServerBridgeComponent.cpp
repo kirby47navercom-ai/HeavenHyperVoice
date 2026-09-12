@@ -7,7 +7,6 @@
 #include "../Character/UEPlayerCharacter.h"
 #include "../Pokemon/UEPokemonSpeciesData.h"
 #include "../System/UEGameInstance.h"
-#include "UEPlayerMovementSyncComponent.h"
 
 #include "Engine/World.h"
 #include "../Movement/UECoreMovementComponent.h"
@@ -38,11 +37,12 @@ bool UUEFieldServerBridgeComponent::SendPokemonAttackRequest(int32 AttackSlot)
 {
 	(void)AttackSlot;
 	UE_LOG(LogTemp, Verbose,
-		TEXT("FieldServerBridge: pokemon attack request is waiting for a field protocol message."));
+	       TEXT("FieldServerBridge: pokemon attack request is waiting for a field protocol message."));
 	return false;
 }
 
-void UUEFieldServerBridgeComponent::ReplacePokemonPartyEntriesFromServer(TArray<FUEFieldPokemonPartyEntry> NewEntries)
+void UUEFieldServerBridgeComponent::ReplacePokemonPartyEntriesFromServer(
+    TArray<FUEFieldPokemonPartyEntry> NewEntries)
 {
 	PokemonPartyEntries = MoveTemp(NewEntries);
 	OnPokemonPartyChanged.Broadcast();
@@ -52,8 +52,9 @@ void UUEFieldServerBridgeComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	const UWorld* OwnerWorld = GetWorld();
-	if (!OwnerWorld || (OwnerWorld->WorldType != EWorldType::Game && OwnerWorld->WorldType != EWorldType::PIE))
+	const UWorld *OwnerWorld = GetWorld();
+	if (!OwnerWorld ||
+	    (OwnerWorld->WorldType != EWorldType::Game && OwnerWorld->WorldType != EWorldType::PIE))
 	{
 		SetComponentTickEnabled(false);
 		return;
@@ -62,7 +63,7 @@ void UUEFieldServerBridgeComponent::BeginPlay()
 	SetComponentTickEnabled(FieldConnection != nullptr);
 }
 
-void UUEFieldServerBridgeComponent::AttachToPlayer(AUEPlayerCharacter* PlayerCharacter)
+void UUEFieldServerBridgeComponent::AttachToPlayer(AUEPlayerCharacter *PlayerCharacter)
 {
 	if (!PlayerCharacter || PlayerCharacter->IsRemoteProxy())
 	{
@@ -81,25 +82,22 @@ void UUEFieldServerBridgeComponent::AttachToPlayer(AUEPlayerCharacter* PlayerCha
 	CachedPlayerCharacter = PlayerCharacter;
 	ResolveSyncComponents();
 	PlayerCharacter->GetCoreMovement()->OnMovementUpdated.AddDynamic(
-		this,
-		&ThisClass::HandleCharacterMovementUpdated);
+	    this, &ThisClass::HandleCharacterMovementUpdated);
 	StartFieldConnection();
 }
 
 void UUEFieldServerBridgeComponent::DetachFromPlayer()
 {
-	if (AUEPlayerCharacter* PlayerCharacter = CachedPlayerCharacter.Get())
+	if (AUEPlayerCharacter *PlayerCharacter = CachedPlayerCharacter.Get())
 	{
 		PlayerCharacter->GetCoreMovement()->OnMovementUpdated.RemoveDynamic(
-			this,
-			&ThisClass::HandleCharacterMovementUpdated);
+		    this, &ThisClass::HandleCharacterMovementUpdated);
 	}
 
 	StopFieldConnection();
 	DestroyPresentationActors();
 
 	CachedPlayerCharacter.Reset();
-	MovementSyncComponent.Reset();
 	WildPokemonSyncComponent.Reset();
 	RemotePlayerSyncComponent.Reset();
 	PartnerSyncComponent.Reset();
@@ -112,10 +110,8 @@ void UUEFieldServerBridgeComponent::EndPlay(const EEndPlayReason::Type EndPlayRe
 	Super::EndPlay(EndPlayReason);
 }
 
-void UUEFieldServerBridgeComponent::TickComponent(
-	float DeltaTime,
-	ELevelTick TickType,
-	FActorComponentTickFunction* ThisTickFunction)
+void UUEFieldServerBridgeComponent::TickComponent(float DeltaTime, ELevelTick TickType,
+                                                  FActorComponentTickFunction *ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
@@ -127,13 +123,12 @@ void UUEFieldServerBridgeComponent::TickComponent(
 
 void UUEFieldServerBridgeComponent::ResolveSyncComponents()
 {
-	AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter();
+	AUEPlayerCharacter *PlayerCharacter = GetPlayerCharacter();
 	if (!PlayerCharacter)
 	{
 		return;
 	}
 
-	MovementSyncComponent = PlayerCharacter->GetMovementSyncComponent();
 	WildPokemonSyncComponent = PlayerCharacter->FindComponentByClass<UUEFieldWildPokemonSyncComponent>();
 	RemotePlayerSyncComponent = PlayerCharacter->FindComponentByClass<UUEFieldRemotePlayerSyncComponent>();
 	PartnerSyncComponent = PlayerCharacter->FindComponentByClass<UUEFieldPartnerSyncComponent>();
@@ -149,19 +144,16 @@ void UUEFieldServerBridgeComponent::ResolveSyncComponents()
 	}
 }
 
-void UUEFieldServerBridgeComponent::StartConnection(const FString& Service, uint32 InstanceType)
+void UUEFieldServerBridgeComponent::StartConnection(const FString &Service, uint32 InstanceType)
 {
-	if (const AUEPlayerCharacter* Player = GetPlayerCharacter(); Player && Player->bLocalMovementTest)
-	{
-		return;
-	}
 	if (FieldConnection)
 	{
 		return;
 	}
 
-	const UWorld* OwnerWorld = GetWorld();
-	if (!OwnerWorld || (OwnerWorld->WorldType != EWorldType::Game && OwnerWorld->WorldType != EWorldType::PIE))
+	const UWorld *OwnerWorld = GetWorld();
+	if (!OwnerWorld ||
+	    (OwnerWorld->WorldType != EWorldType::Game && OwnerWorld->WorldType != EWorldType::PIE))
 	{
 		return;
 	}
@@ -169,59 +161,45 @@ void UUEFieldServerBridgeComponent::StartConnection(const FString& Service, uint
 	if (!GetPlayerCharacter())
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("FieldServerBridge: no attached local player; field connection is delayed."));
+		       TEXT("FieldServerBridge: no attached local player; field connection is delayed."));
 		return;
 	}
 
 	if (FieldServerHost.IsEmpty() || FieldServerPort <= 0)
 	{
 		UE_LOG(LogTemp, Error,
-			TEXT("FieldServerBridge: FieldServerHost or FieldServerPort is not configured."));
+		       TEXT("FieldServerBridge: FieldServerHost or FieldServerPort is not configured."));
 		return;
 	}
 
 	ResolveSyncComponents();
-	if (!MovementSyncComponent.IsValid())
-	{
-		UE_LOG(LogTemp, Error,
-			TEXT("FieldServerBridge: PlayerMovementSyncComponent is missing; local player corrections are disabled."));
-	}
 	if (!WildPokemonSyncComponent.IsValid())
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("FieldServerBridge: FieldWildPokemonSyncComponent is missing; wild entities will be ignored."));
+		       TEXT("FieldServerBridge: FieldWildPokemonSyncComponent is missing; wild entities will be "
+		            "ignored."));
 	}
 	if (!RemotePlayerSyncComponent.IsValid())
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("FieldServerBridge: FieldRemotePlayerSyncComponent is missing; remote players will be ignored."));
+		       TEXT("FieldServerBridge: FieldRemotePlayerSyncComponent is missing; remote players will be "
+		            "ignored."));
 	}
 
 	FieldConnection = std::make_unique<FHHVFieldConnection>();
-	FieldConnection->OnEnterAck = [this](uint64 EntityId, float ServerX, float ServerY, float ServerZ,
-		float Facing, uint32 RoomId, float OriginOffset)
-	{
-		HandleFieldEnterAck(EntityId, ServerX, ServerY, ServerZ, Facing, RoomId, OriginOffset);
+	GetPlayerCharacter()->GetCoreMovement()->WaitForNetworkSimulation();
+	FieldConnection->OnEnterAck = [this](const FHHVFieldEventData &Event) { HandleFieldEnterAck(Event); };
+	FieldConnection->OnCorrection = [this](uint32 Sequence, const hhv::movement::State &State) {
+		GetPlayerCharacter()->GetCoreMovement()->AcknowledgeNetworkInput(Sequence, State);
 	};
-	FieldConnection->OnCorrection = [this](uint32 Sequence, float ServerX, float ServerY, float ServerZ,
-		float Facing)
-	{
-		HandleFieldCorrection(Sequence, ServerX, ServerY, ServerZ, Facing);
-	};
-	FieldConnection->OnSnapshot = [this](const FHHVFieldSnapshot& Snapshot)
-	{
+	FieldConnection->OnSnapshot = [this](const FHHVFieldSnapshot &Snapshot) {
 		HandleFieldSnapshot(Snapshot);
 	};
-	FieldConnection->OnDisconnected = [this](const FString& Reason)
-	{
-		HandleFieldDisconnected(Reason);
-	};
-	FieldConnection->OnPartyState = [this](const FHHVFieldPartyState& State)
-	{
+	FieldConnection->OnDisconnected = [this](const FString &Reason) { HandleFieldDisconnected(Reason); };
+	FieldConnection->OnPartyState = [this](const FHHVFieldPartyState &State) {
 		HandleFieldPartyState(State);
 	};
-	FieldConnection->OnPartnerChanged = [this](uint64 EntityId, uint16 PartnerDex)
-	{
+	FieldConnection->OnPartnerChanged = [this](uint64 EntityId, uint16 PartnerDex) {
 		HandleFieldPartnerChanged(EntityId, PartnerDex);
 	};
 
@@ -258,17 +236,16 @@ void UUEFieldServerBridgeComponent::StartConnection(const FString& Service, uint
 	Settings.DevCharacterId = ResolvedCharacterId;
 	Settings.InstanceType = InstanceType;
 
-	if (const UWorld* World = GetWorld())
+	if (const UWorld *World = GetWorld())
 	{
-		if (const UUEGameInstance* GameInstance = Cast<UUEGameInstance>(World->GetGameInstance()))
+		if (const UUEGameInstance *GameInstance = Cast<UUEGameInstance>(World->GetGameInstance()))
 		{
 			FString TicketHost;
 			int32 TicketPort = 0;
 			TArray<uint8> Ticket;
 			// 서비스마다 티켓이 따로 서명돼 있다. 필드 티켓으로 인스턴스에
 			// 들어가려 하면 서버가 audience 불일치로 거절한다.
-			if (GameInstance->GetServiceEndpoint(Service, TicketHost, TicketPort, Ticket)
-				&& Ticket.Num() > 0)
+			if (GameInstance->GetServiceEndpoint(Service, TicketHost, TicketPort, Ticket) && Ticket.Num() > 0)
 			{
 				Settings.Host = TicketHost;
 				Settings.Port = TicketPort;
@@ -281,8 +258,8 @@ void UUEFieldServerBridgeComponent::StartConnection(const FString& Service, uint
 	CurrentRoomId = 0;
 	FieldConnection->Start(Settings);
 
-	UE_LOG(LogTemp, Display, TEXT("FieldServerBridge: connecting to %s %s:%d as %s (id %llu)"),
-		*Service, *Settings.Host, Settings.Port, *Settings.DevName, Settings.DevCharacterId);
+	UE_LOG(LogTemp, Display, TEXT("FieldServerBridge: connecting to %s %s:%d as %s (id %llu)"), *Service,
+	       *Settings.Host, Settings.Port, *Settings.DevName, Settings.DevCharacterId);
 
 	SetComponentTickEnabled(true);
 }
@@ -315,47 +292,28 @@ void UUEFieldServerBridgeComponent::DestroyPresentationActors()
 	}
 }
 
-void UUEFieldServerBridgeComponent::HandleFieldEnterAck(
-	uint64 EntityId,
-	float ServerX,
-	float ServerY,
-	float ServerZ,
-	float Facing,
-	uint32 RoomId,
-	float OriginOffset)
+void UUEFieldServerBridgeComponent::HandleFieldEnterAck(const FHHVFieldEventData &Event)
 {
+	const uint64 EntityId = Event.EntityId;
 	LocalEntityId = EntityId;
-	CurrentRoomId = RoomId;
-
-	// 좌표 변환 기준은 서버가 알려준 값을 쓴다. 필드와 인스턴스는 월드 크기가
-	// 달라 오프셋도 다른데, ini 로 양쪽을 맞추면 언젠가 어긋나고 그때는 전원이
-	// 엉뚱한 자리에 서는 것으로만 드러난다. 아래 좌표 계산이 전부 이 값을 쓴다.
-	//
-	// 이 값보다 먼저 오는 좌표는 없다 — 서버가 EnterAck 을 Spawn 보다 앞세운다.
-	if (OriginOffset != 0.0f)
+	CurrentRoomId = Event.RoomId;
+	if (!GetPlayerCharacter()->GetCoreMovement()->BeginNetworkSimulation(Event.MovementState,
+	                                                                     Event.CollisionHash))
 	{
-		WorldOriginOffset = OriginOffset;
-	}
-
-	if (!MovementSyncComponent.IsValid())
-	{
+		FieldConnection->Shutdown();
+		HandleFieldDisconnected(TEXT("클라이언트와 서버의 충돌 맵이 다릅니다."));
 		return;
 	}
-
-	MovementSyncComponent->HandleServerEnterAck(
-		EntityId,
-		MakeEntityLocation(ServerX, ServerY, ServerZ),
-		FRotator(0.0f, Facing, 0.0f));
 
 	// EnterAck 에는 내 파트너 종족 정보가 없다. 종족은 로그인 때 고른 값을 쓰고,
 	// 실제 위치/속도는 이후 서버 스냅샷으로 덮어쓴다.
 	if (PartnerSyncComponent.IsValid())
 	{
-		if (const UWorld* World = GetWorld())
+		if (const UWorld *World = GetWorld())
 		{
-			if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(World->GetGameInstance()))
+			if (UUEGameInstance *GameInstance = Cast<UUEGameInstance>(World->GetGameInstance()))
 			{
-				const UUEPokemonSpeciesData* Species = GameInstance->GetSelectedPartnerSpecies();
+				const UUEPokemonSpeciesData *Species = GameInstance->GetSelectedPartnerSpecies();
 				if (Species && Species->DexNumber > 0)
 				{
 					PartnerSyncComponent->AddPartner(EntityId, GetPlayerCharacter(), Species->DexNumber);
@@ -365,52 +323,29 @@ void UUEFieldServerBridgeComponent::HandleFieldEnterAck(
 	}
 }
 
-void UUEFieldServerBridgeComponent::HandleFieldCorrection(
-	uint32 Sequence,
-	float ServerX,
-	float ServerY,
-	float ServerZ,
-	float Facing)
-{
-	if (!MovementSyncComponent.IsValid())
-	{
-		return;
-	}
-
-	MovementSyncComponent->HandleServerCorrection(
-		Sequence,
-		MakeEntityLocation(ServerX, ServerY, ServerZ),
-		Facing);
-}
-
-void UUEFieldServerBridgeComponent::HandleFieldSnapshot(const FHHVFieldSnapshot& Snapshot)
+void UUEFieldServerBridgeComponent::HandleFieldSnapshot(const FHHVFieldSnapshot &Snapshot)
 {
 	if (SnapshotsLogged < 20)
 	{
 		++SnapshotsLogged;
-		UE_LOG(LogTemp, Display, TEXT("[SNAP] %d: spawned=%d moved=%d despawned=%d"),
-			SnapshotsLogged,
-			Snapshot.Spawned.Num(),
-			Snapshot.Moved.Num(),
-			Snapshot.Despawned.Num());
+		UE_LOG(LogTemp, Display, TEXT("[SNAP] %d: spawned=%d moved=%d despawned=%d"), SnapshotsLogged,
+		       Snapshot.Spawned.Num(), Snapshot.Moved.Num(), Snapshot.Despawned.Num());
 	}
 
-	for (const FHHVFieldEntity& Entity : Snapshot.Spawned)
+	for (const FHHVFieldEntity &Entity : Snapshot.Spawned)
 	{
-		const FVector SpawnLocation = MakeEntityLocation(Entity.X, Entity.Y, Entity.Z);
 		if (Entity.Species == 0)
 		{
 			if (RemotePlayerSyncComponent.IsValid())
 			{
-				RemotePlayerSyncComponent->HandleRemotePlayerSpawned(Entity, SpawnLocation);
+				RemotePlayerSyncComponent->HandleRemotePlayerSpawned(Entity);
 
 				// partner_species 는 spawned 에만 실린다. 여기서 안 붙이면 다시 올 기회가 없다.
 				if (PartnerSyncComponent.IsValid() && Entity.PartnerSpecies > 0)
 				{
 					PartnerSyncComponent->AddPartner(
-						Entity.EntityId,
-						RemotePlayerSyncComponent->FindRemotePlayer(Entity.EntityId),
-						static_cast<int32>(Entity.PartnerSpecies));
+					    Entity.EntityId, RemotePlayerSyncComponent->FindRemotePlayer(Entity.EntityId),
+					    static_cast<int32>(Entity.PartnerSpecies));
 					ApplyPartnerServerState(Entity);
 				}
 			}
@@ -419,23 +354,23 @@ void UUEFieldServerBridgeComponent::HandleFieldSnapshot(const FHHVFieldSnapshot&
 
 		if (WildPokemonSyncComponent.IsValid())
 		{
-			WildPokemonSyncComponent->HandleWildPokemonSpawned(Entity, SpawnLocation);
+			WildPokemonSyncComponent->HandleWildPokemonSpawned(Entity);
 		}
 	}
 
-	for (const FHHVFieldEntity& Entity : Snapshot.Moved)
+	for (const FHHVFieldEntity &Entity : Snapshot.Moved)
 	{
-		const FVector TargetLocation = MakeEntityLocation(Entity.X, Entity.Y, Entity.Z);
 		ApplyPartnerServerState(Entity);
-		if (WildPokemonSyncComponent.IsValid() && WildPokemonSyncComponent->ContainsWildPokemon(Entity.EntityId))
+		if (WildPokemonSyncComponent.IsValid() &&
+		    WildPokemonSyncComponent->ContainsWildPokemon(Entity.EntityId))
 		{
-			WildPokemonSyncComponent->HandleWildPokemonMoved(Entity, TargetLocation);
+			WildPokemonSyncComponent->HandleWildPokemonMoved(Entity);
 			continue;
 		}
 
 		if (RemotePlayerSyncComponent.IsValid())
 		{
-			RemotePlayerSyncComponent->HandleRemotePlayerMoved(Entity, TargetLocation);
+			RemotePlayerSyncComponent->HandleRemotePlayerMoved(Entity);
 		}
 	}
 
@@ -445,7 +380,8 @@ void UUEFieldServerBridgeComponent::HandleFieldSnapshot(const FHHVFieldSnapshot&
 		{
 			PartnerSyncComponent->RemovePartner(EntityId);
 		}
-		if (WildPokemonSyncComponent.IsValid() && WildPokemonSyncComponent->HandleWildPokemonDespawned(EntityId))
+		if (WildPokemonSyncComponent.IsValid() &&
+		    WildPokemonSyncComponent->HandleWildPokemonDespawned(EntityId))
 		{
 			continue;
 		}
@@ -456,32 +392,24 @@ void UUEFieldServerBridgeComponent::HandleFieldSnapshot(const FHHVFieldSnapshot&
 	}
 }
 
-void UUEFieldServerBridgeComponent::ApplyPartnerServerState(const FHHVFieldEntity& Entity)
+void UUEFieldServerBridgeComponent::ApplyPartnerServerState(const FHHVFieldEntity &Entity)
 {
 	if (!PartnerSyncComponent.IsValid() || !Entity.bHasPartnerTransform)
 	{
 		return;
 	}
 
-	const FVector PartnerLocation = MakeEntityLocation(
-		Entity.PartnerLocation.X,
-		Entity.PartnerLocation.Y,
-		Entity.PartnerLocation.Z);
-	PartnerSyncComponent->ApplyPartnerServerState(
-		Entity.EntityId,
-		PartnerLocation,
-		Entity.PartnerVelocity,
-		FRotator(0.0f, Entity.PartnerFacing, 0.0f),
-		Entity.bPartnerTeleported, Entity.ServerTimeSeconds);
+	PartnerSyncComponent->ApplyPartnerServerState(Entity.EntityId, Entity.PartnerCoreState,
+	                                              Entity.bPartnerTeleported, Entity.ServerTimeSeconds);
 }
 
-void UUEFieldServerBridgeComponent::HandleFieldDisconnected(const FString& Reason)
+void UUEFieldServerBridgeComponent::HandleFieldDisconnected(const FString &Reason)
 {
 	UE_LOG(LogTemp, Warning, TEXT("FieldServerBridge: disconnected from %s: %s"),
-		bInInstance ? TEXT("instance") : TEXT("field"), *Reason);
+	       bInInstance ? TEXT("instance") : TEXT("field"), *Reason);
 }
 
-void UUEFieldServerBridgeComponent::HandleFieldPartyState(const FHHVFieldPartyState& State)
+void UUEFieldServerBridgeComponent::HandleFieldPartyState(const FHHVFieldPartyState &State)
 {
 	PartyState.bOk = State.bOk;
 	PartyState.Message = State.Message;
@@ -519,14 +447,14 @@ void UUEFieldServerBridgeComponent::HandleFieldPartnerChanged(uint64 EntityId, u
 		return;
 	}
 
-	AActor* Owner = EntityId == LocalEntityId
-		? static_cast<AActor*>(GetPlayerCharacter())
-		: static_cast<AActor*>(RemotePlayerSyncComponent.IsValid()
-			? RemotePlayerSyncComponent->FindRemotePlayer(EntityId)
-			: nullptr);
+	AActor *Owner = EntityId == LocalEntityId
+	                    ? static_cast<AActor *>(GetPlayerCharacter())
+	                    : static_cast<AActor *>(RemotePlayerSyncComponent.IsValid()
+	                                                ? RemotePlayerSyncComponent->FindRemotePlayer(EntityId)
+	                                                : nullptr);
 	if (Owner == nullptr)
 	{
-		return;  // 시야 밖이다. 다시 스폰될 때 partner_species 로 붙는다
+		return; // 시야 밖이다. 다시 스폰될 때 partner_species 로 붙는다
 	}
 
 	PartnerSyncComponent->AddPartner(EntityId, Owner, static_cast<int32>(PartnerDex));
@@ -545,13 +473,13 @@ void UUEFieldServerBridgeComponent::TogglePartyWidget()
 	if (!PartyWidgetClass)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("FieldServerBridge: PartyWidgetClass is not assigned; set it in DefaultGame.ini."));
+		       TEXT("FieldServerBridge: PartyWidgetClass is not assigned; set it in DefaultGame.ini."));
 		return;
 	}
 
-	const AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter();
-	APlayerController* Controller =
-		PlayerCharacter ? Cast<APlayerController>(PlayerCharacter->GetController()) : nullptr;
+	const AUEPlayerCharacter *PlayerCharacter = GetPlayerCharacter();
+	APlayerController *Controller =
+	    PlayerCharacter ? Cast<APlayerController>(PlayerCharacter->GetController()) : nullptr;
 	if (!Controller)
 	{
 		return;
@@ -564,7 +492,7 @@ void UUEFieldServerBridgeComponent::TogglePartyWidget()
 	}
 }
 
-bool UUEFieldServerBridgeComponent::SendSetParty(const TArray<int32>& DexNumbers, int32 ActiveDex)
+bool UUEFieldServerBridgeComponent::SendSetParty(const TArray<int32> &DexNumbers, int32 ActiveDex)
 {
 	if (!FieldConnection || !FieldConnection->IsInField())
 	{
@@ -582,56 +510,42 @@ bool UUEFieldServerBridgeComponent::SendSetParty(const TArray<int32>& DexNumbers
 	}
 
 	FieldConnection->SendSetParty(
-		Members, ActiveDex > 0 && ActiveDex <= MAX_uint16 ? static_cast<uint16>(ActiveDex) : 0);
+	    Members, ActiveDex > 0 && ActiveDex <= MAX_uint16 ? static_cast<uint16>(ActiveDex) : 0);
 	return true;
 }
 
-FVector UUEFieldServerBridgeComponent::MakeEntityLocation(float ServerX, float ServerY,
-	float ServerZ) const
-{
-	return FVector(ToUnrealAxis(ServerX), ToUnrealAxis(ServerY), ServerZ);
-}
-
-AUEPlayerCharacter* UUEFieldServerBridgeComponent::GetPlayerCharacter() const
+AUEPlayerCharacter *UUEFieldServerBridgeComponent::GetPlayerCharacter() const
 {
 	return CachedPlayerCharacter.Get();
 }
 
 void UUEFieldServerBridgeComponent::ReportFieldPositionNow()
 {
-	const AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter();
-	if (!PlayerCharacter || !FieldConnection || !FieldConnection->IsInField() ||
-		!MovementSyncComponent.IsValid())
+	const AUEPlayerCharacter *PlayerCharacter = GetPlayerCharacter();
+	if (!PlayerCharacter || !FieldConnection || !FieldConnection->IsInField())
 	{
 		return;
 	}
 
 	// 전송 간격을 건너뛴다. 다음 정기 전송을 기다릴 여유가 없다 — 곧 레벨이
 	// 갈리면서 이 연결이 통째로 사라진다.
-	const FUEPlayerMovementPacket MovementPacket = MovementSyncComponent->CaptureMovementPacket();
-	FieldConnection->SendMove(
-		ToServerAxis(MovementPacket.ClientPosition.X),
-		ToServerAxis(MovementPacket.ClientPosition.Y),
-		static_cast<float>(MovementPacket.ActorRotation.Yaw),
-		MovementPacket.Sequence);
+	FieldConnection->SendMove(GetPlayerCharacter()->GetCoreMovement()->TakeNetworkInputs());
 	TimeSinceLastSend = 0.0f;
 }
 
-void UUEFieldServerBridgeComponent::HandleCharacterMovementUpdated(
-	float DeltaSeconds,
-	FVector OldLocation,
-	FVector OldVelocity)
+void UUEFieldServerBridgeComponent::HandleCharacterMovementUpdated(float DeltaSeconds, FVector OldLocation,
+                                                                   FVector OldVelocity)
 {
 	(void)OldLocation;
 	(void)OldVelocity;
 
-	const AUEPlayerCharacter* PlayerCharacter = GetPlayerCharacter();
+	const AUEPlayerCharacter *PlayerCharacter = GetPlayerCharacter();
 	if (!PlayerCharacter || !PlayerCharacter->IsLocallyControlled())
 	{
 		return;
 	}
 
-	if (!FieldConnection || !FieldConnection->IsInField() || !MovementSyncComponent.IsValid())
+	if (!FieldConnection || !FieldConnection->IsInField())
 	{
 		return;
 	}
@@ -643,10 +557,5 @@ void UUEFieldServerBridgeComponent::HandleCharacterMovementUpdated(
 	}
 	TimeSinceLastSend = 0.0f;
 
-	const FUEPlayerMovementPacket MovementPacket = MovementSyncComponent->CaptureMovementPacket();
-	FieldConnection->SendMove(
-		ToServerAxis(MovementPacket.ClientPosition.X),
-		ToServerAxis(MovementPacket.ClientPosition.Y),
-		static_cast<float>(MovementPacket.ActorRotation.Yaw),
-		MovementPacket.Sequence);
+	FieldConnection->SendMove(GetPlayerCharacter()->GetCoreMovement()->TakeNetworkInputs());
 }

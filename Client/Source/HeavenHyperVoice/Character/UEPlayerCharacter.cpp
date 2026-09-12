@@ -8,7 +8,6 @@
 #include "../Server/UEFieldRemotePlayerSyncComponent.h"
 #include "../Server/UEFieldPartnerSyncComponent.h"
 #include "../Server/UEFieldWildPokemonSyncComponent.h"
-#include "../Server/UEPlayerMovementSyncComponent.h"
 #include "../System/UEGameInstance.h"
 #include "../UEGameplayTags.h"
 #include "../World/UEGoldenrodSpringArm.h"
@@ -29,235 +28,221 @@
 
 namespace
 {
-	constexpr int32 HHVMaxVisibleOutfits = 14;
-	constexpr int32 HHVFirstVisibleOutfitIndex = 1;
+constexpr int32 HHVMaxVisibleOutfits = 14;
+constexpr int32 HHVFirstVisibleOutfitIndex = 1;
 
-	void ApplyPlayerHHVSignedMorphTarget(USkeletalMeshComponent* Component, const FName MinTarget, const FName MaxTarget, float Value)
+void ApplyPlayerHHVSignedMorphTarget(USkeletalMeshComponent *Component, const FName MinTarget,
+                                     const FName MaxTarget, float Value)
+{
+	if (!Component)
 	{
-		if (!Component)
-		{
-			return;
-		}
-
-		const float ClampedValue = FMath::Clamp(Value, -1.0f, 1.0f);
-		Component->SetMorphTarget(MinTarget, ClampedValue < 0.0f ? -ClampedValue : 0.0f);
-		Component->SetMorphTarget(MaxTarget, ClampedValue > 0.0f ? ClampedValue : 0.0f);
+		return;
 	}
 
-	int32 ClampOptionIndex(int32 Index, int32 Count)
+	const float ClampedValue = FMath::Clamp(Value, -1.0f, 1.0f);
+	Component->SetMorphTarget(MinTarget, ClampedValue < 0.0f ? -ClampedValue : 0.0f);
+	Component->SetMorphTarget(MaxTarget, ClampedValue > 0.0f ? ClampedValue : 0.0f);
+}
+
+int32 ClampOptionIndex(int32 Index, int32 Count)
+{
+	return Count > 0 ? FMath::Clamp(Index, 0, Count - 1) : 0;
+}
+
+void SetPlayerHHVMaterialShownOnAllLods(USkeletalMeshComponent *Component, int32 MaterialIndex, bool bShow)
+{
+	if (!Component || MaterialIndex < 0)
 	{
-		return Count > 0 ? FMath::Clamp(Index, 0, Count - 1) : 0;
+		return;
 	}
 
-	void SetPlayerHHVMaterialShownOnAllLods(USkeletalMeshComponent* Component, int32 MaterialIndex, bool bShow)
+	USkeletalMesh *Mesh = Component->GetSkeletalMeshAsset();
+	const FSkeletalMeshRenderData *RenderData = Mesh ? Mesh->GetResourceForRendering() : nullptr;
+	if (!RenderData || RenderData->LODRenderData.IsEmpty())
 	{
-		if (!Component || MaterialIndex < 0)
-		{
-			return;
-		}
-
-		USkeletalMesh* Mesh = Component->GetSkeletalMeshAsset();
-		const FSkeletalMeshRenderData* RenderData = Mesh ? Mesh->GetResourceForRendering() : nullptr;
-		if (!RenderData || RenderData->LODRenderData.IsEmpty())
-		{
-			Component->ShowMaterialSection(MaterialIndex, MaterialIndex, bShow, 0);
-			return;
-		}
-
-		for (int32 LODIndex = 0; LODIndex < RenderData->LODRenderData.Num(); ++LODIndex)
-		{
-			const FSkeletalMeshLODRenderData& LODData = RenderData->LODRenderData[LODIndex];
-			bool bTouched = false;
-			for (int32 SectionIndex = 0; SectionIndex < LODData.RenderSections.Num(); ++SectionIndex)
-			{
-				if (LODData.RenderSections[SectionIndex].MaterialIndex == MaterialIndex)
-				{
-					Component->ShowMaterialSection(MaterialIndex, SectionIndex, bShow, LODIndex);
-					bTouched = true;
-				}
-			}
-
-			if (!bTouched)
-			{
-				Component->ShowMaterialSection(MaterialIndex, MaterialIndex, bShow, LODIndex);
-			}
-		}
+		Component->ShowMaterialSection(MaterialIndex, MaterialIndex, bShow, 0);
+		return;
 	}
 
-	FString MakeHHVMorphSafeMaterialName(const UMaterialInterface* Material)
+	for (int32 LODIndex = 0; LODIndex < RenderData->LODRenderData.Num(); ++LODIndex)
 	{
-		FString AssetName = Material ? Material->GetName() : FString();
-		for (int32 Index = 0; Index < AssetName.Len(); ++Index)
+		const FSkeletalMeshLODRenderData &LODData = RenderData->LODRenderData[LODIndex];
+		bool bTouched = false;
+		for (int32 SectionIndex = 0; SectionIndex < LODData.RenderSections.Num(); ++SectionIndex)
 		{
-			TCHAR& Character = AssetName[Index];
-			if (!FChar::IsAlnum(Character) && Character != TEXT('_'))
+			if (LODData.RenderSections[SectionIndex].MaterialIndex == MaterialIndex)
 			{
-				Character = TCHAR('_');
+				Component->ShowMaterialSection(MaterialIndex, SectionIndex, bShow, LODIndex);
+				bTouched = true;
 			}
 		}
-		return FString::Printf(TEXT("MI_MS_%s"), *AssetName);
+
+		if (!bTouched)
+		{
+			Component->ShowMaterialSection(MaterialIndex, MaterialIndex, bShow, LODIndex);
+		}
+	}
+}
+
+FString MakeHHVMorphSafeMaterialName(const UMaterialInterface *Material)
+{
+	FString AssetName = Material ? Material->GetName() : FString();
+	for (int32 Index = 0; Index < AssetName.Len(); ++Index)
+	{
+		TCHAR &Character = AssetName[Index];
+		if (!FChar::IsAlnum(Character) && Character != TEXT('_'))
+		{
+			Character = TCHAR('_');
+		}
+	}
+	return FString::Printf(TEXT("MI_MS_%s"), *AssetName);
+}
+
+void EnsurePlayerHHVSkeletalMaterialUsage(UMaterialInterface *Material)
+{
+	if (!Material)
+	{
+		return;
 	}
 
-	void EnsurePlayerHHVSkeletalMaterialUsage(UMaterialInterface* Material)
+	// 추출 머티리얼 중 SkeletalMesh/MorphTargets 사용 플래그가 빠진 것이 있어,
+	// 체형 모프 적용 뒤 회색 기본 머티리얼로 떨어지지 않게 적용 전에 확인한다.
+	Material->CheckMaterialUsage_Concurrent(MATUSAGE_SkeletalMesh);
+	Material->CheckMaterialUsage_Concurrent(MATUSAGE_MorphTargets);
+}
+
+UMaterialInterface *LoadPlayerHHVMeshLocalMaterial(const USkeletalMesh *Mesh,
+                                                   const UMaterialInterface *CurrentMaterial,
+                                                   int32 MaterialIndex, int32 MaterialCount)
+{
+	if (!Mesh)
 	{
-		if (!Material)
-		{
-			return;
-		}
-
-		// 추출 머티리얼 중 SkeletalMesh/MorphTargets 사용 플래그가 빠진 것이 있어,
-		// 체형 모프 적용 뒤 회색 기본 머티리얼로 떨어지지 않게 적용 전에 확인한다.
-		Material->CheckMaterialUsage_Concurrent(MATUSAGE_SkeletalMesh);
-		Material->CheckMaterialUsage_Concurrent(MATUSAGE_MorphTargets);
-	}
-
-	UMaterialInterface* LoadPlayerHHVMeshLocalMaterial(
-		const USkeletalMesh* Mesh,
-		const UMaterialInterface* CurrentMaterial,
-		int32 MaterialIndex,
-		int32 MaterialCount)
-	{
-		if (!Mesh)
-		{
-			return nullptr;
-		}
-
-		FString MeshObjectPath = Mesh->GetPathName();
-		int32 DotIndex = INDEX_NONE;
-		if (MeshObjectPath.FindChar(TEXT('.'), DotIndex))
-		{
-			MeshObjectPath.LeftInline(DotIndex);
-		}
-
-		const FString MeshFolder = FPaths::GetPath(MeshObjectPath);
-		const bool bIsAssetsFbxOutfitMesh =
-			MeshObjectPath.Contains(TEXT("/AssetsFBX/")) &&
-			MeshObjectPath.Contains(TEXT("/Outfit/"));
-		if (!MeshFolder.EndsWith(TEXT("/SkeletalMeshes")) && !bIsAssetsFbxOutfitMesh)
-		{
-			return nullptr;
-		}
-
-		const FString MeshOwnerFolder = FPaths::GetPath(MeshFolder);
-		const FString MaterialName = CurrentMaterial ? CurrentMaterial->GetName() : FString();
-		if (bIsAssetsFbxOutfitMesh)
-		{
-			// 의상 FBX 메쉬에는 이미 원본 /Assets/Pal 머티리얼 슬롯이 들어 있다.
-			// 같은 이름의 /AssetsFBX 로컬 머티리얼은 추출 중 깨진 경우가 있어 덮어쓰지 않는다.
-			return nullptr;
-		}
-
-		const auto LoadLocalMaterialByName = [&MeshOwnerFolder](const FString& CandidateName) -> UMaterialInterface*
-		{
-			if (CandidateName.IsEmpty())
-			{
-				return nullptr;
-			}
-
-			const FString LocalMaterialPath = FString::Printf(
-				TEXT("%s/Materials/%s.%s"),
-				*MeshOwnerFolder,
-				*CandidateName,
-				*CandidateName);
-			return LoadObject<UMaterialInterface>(nullptr, *LocalMaterialPath);
-		};
-		const auto LoadSourceOutfitMaterialByName =
-			[&MeshFolder](const FString& CandidateName, const FString& VersionFolder) -> UMaterialInterface*
-		{
-			if (CandidateName.IsEmpty() || VersionFolder.IsEmpty())
-			{
-				return nullptr;
-			}
-
-			const FString VariantFolder = FPaths::GetPath(MeshFolder);
-			const FString OutfitRootFolder = FPaths::GetPath(VariantFolder);
-			const FString SourceMaterialPath = FString::Printf(
-				TEXT("%s/%s/%s.%s"),
-				*OutfitRootFolder,
-				*VersionFolder,
-				*CandidateName,
-				*CandidateName);
-			return LoadObject<UMaterialInterface>(nullptr, *SourceMaterialPath);
-		};
-
-		FString MeshMaterialStem = Mesh->GetName();
-		MeshMaterialStem.RemoveFromStart(TEXT("SK_"));
-		if (MeshMaterialStem.EndsWith(TEXT("_2")))
-		{
-			MeshMaterialStem.LeftChopInline(2);
-		}
-
-		if (MeshMaterialStem.Contains(TEXT("Hair")))
-		{
-			// 헤어는 메쉬 기본 슬롯이 원본이다. 옷 보정 로직으로 덮으면 색과 윤곽이 틀어진다.
-			return nullptr;
-		}
-
-		const bool bSingleOutfitSlotUsesBodyMaterial =
-			MaterialIndex == 0 &&
-			MaterialCount == 1 &&
-			MaterialName.Contains(TEXT("Body")) &&
-			Mesh->GetName().Contains(TEXT("Outfit"));
-		if (bSingleOutfitSlotUsesBodyMaterial)
-		{
-			// 단일 슬롯 의상이 몸 피부 머티리얼을 물고 있으면 같은 의상 폴더의 원본 M01을 찾아 쓴다.
-			FString OutfitMaterialStem = MeshMaterialStem;
-			if (!OutfitMaterialStem.Contains(TEXT("_v")))
-			{
-				OutfitMaterialStem += TEXT("_v01");
-			}
-			FString VersionFolder = TEXT("v01");
-			const int32 VersionIndex = OutfitMaterialStem.Find(TEXT("_v"), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
-			if (VersionIndex != INDEX_NONE && OutfitMaterialStem.Len() >= VersionIndex + 4)
-			{
-				VersionFolder = OutfitMaterialStem.Mid(VersionIndex + 1, 3);
-			}
-			OutfitMaterialStem = TEXT("MI_") + OutfitMaterialStem;
-			if (UMaterialInterface* OutfitMaterial = LoadSourceOutfitMaterialByName(
-				OutfitMaterialStem + TEXT("_M01"),
-				VersionFolder))
-			{
-				return OutfitMaterial;
-			}
-			if (UMaterialInterface* OutfitMaterial = LoadLocalMaterialByName(OutfitMaterialStem + TEXT("_M01")))
-			{
-				return OutfitMaterial;
-			}
-		}
-
 		return nullptr;
 	}
 
-	void ApplyPlayerHHVOptionMaterials(
-		USkeletalMeshComponent* Component,
-		const FUEHHVCustomizationOption& Option,
-		EUEHHVGender Gender)
+	FString MeshObjectPath = Mesh->GetPathName();
+	int32 DotIndex = INDEX_NONE;
+	if (MeshObjectPath.FindChar(TEXT('.'), DotIndex))
 	{
-		if (!Component)
-		{
-			return;
-		}
-
-		return;
-		const int32 MaterialCount = 0;
-		/*
-		const int32 MaterialCount = FMath::Min(Component->GetNumMaterials(), Materials.Num());
-		for (int32 Index = 0; Index < MaterialCount; ++Index)
-		{
-			UMaterialInterface* Material = Materials[Index].Get();
-			if (!Material)
-			{
-				continue;
-			}
-
-			// 게임 캐릭터도 카탈로그가 가진 원본 머티리얼만 슬롯 순서대로 적용한다.
-			EnsurePlayerHHVSkeletalMaterialUsage(Material);
-			Component->SetMaterial(Index, Material);
-		}
-		*/
+		MeshObjectPath.LeftInline(DotIndex);
 	}
 
+	const FString MeshFolder = FPaths::GetPath(MeshObjectPath);
+	const bool bIsAssetsFbxOutfitMesh =
+	    MeshObjectPath.Contains(TEXT("/AssetsFBX/")) && MeshObjectPath.Contains(TEXT("/Outfit/"));
+	if (!MeshFolder.EndsWith(TEXT("/SkeletalMeshes")) && !bIsAssetsFbxOutfitMesh)
+	{
+		return nullptr;
+	}
+
+	const FString MeshOwnerFolder = FPaths::GetPath(MeshFolder);
+	const FString MaterialName = CurrentMaterial ? CurrentMaterial->GetName() : FString();
+	if (bIsAssetsFbxOutfitMesh)
+	{
+		// 의상 FBX 메쉬에는 이미 원본 /Assets/Pal 머티리얼 슬롯이 들어 있다.
+		// 같은 이름의 /AssetsFBX 로컬 머티리얼은 추출 중 깨진 경우가 있어 덮어쓰지 않는다.
+		return nullptr;
+	}
+
+	const auto LoadLocalMaterialByName =
+	    [&MeshOwnerFolder](const FString &CandidateName) -> UMaterialInterface * {
+		if (CandidateName.IsEmpty())
+		{
+			return nullptr;
+		}
+
+		const FString LocalMaterialPath =
+		    FString::Printf(TEXT("%s/Materials/%s.%s"), *MeshOwnerFolder, *CandidateName, *CandidateName);
+		return LoadObject<UMaterialInterface>(nullptr, *LocalMaterialPath);
+	};
+	const auto LoadSourceOutfitMaterialByName =
+	    [&MeshFolder](const FString &CandidateName, const FString &VersionFolder) -> UMaterialInterface * {
+		if (CandidateName.IsEmpty() || VersionFolder.IsEmpty())
+		{
+			return nullptr;
+		}
+
+		const FString VariantFolder = FPaths::GetPath(MeshFolder);
+		const FString OutfitRootFolder = FPaths::GetPath(VariantFolder);
+		const FString SourceMaterialPath = FString::Printf(TEXT("%s/%s/%s.%s"), *OutfitRootFolder,
+		                                                   *VersionFolder, *CandidateName, *CandidateName);
+		return LoadObject<UMaterialInterface>(nullptr, *SourceMaterialPath);
+	};
+
+	FString MeshMaterialStem = Mesh->GetName();
+	MeshMaterialStem.RemoveFromStart(TEXT("SK_"));
+	if (MeshMaterialStem.EndsWith(TEXT("_2")))
+	{
+		MeshMaterialStem.LeftChopInline(2);
+	}
+
+	if (MeshMaterialStem.Contains(TEXT("Hair")))
+	{
+		// 헤어는 메쉬 기본 슬롯이 원본이다. 옷 보정 로직으로 덮으면 색과 윤곽이 틀어진다.
+		return nullptr;
+	}
+
+	const bool bSingleOutfitSlotUsesBodyMaterial = MaterialIndex == 0 && MaterialCount == 1 &&
+	                                               MaterialName.Contains(TEXT("Body")) &&
+	                                               Mesh->GetName().Contains(TEXT("Outfit"));
+	if (bSingleOutfitSlotUsesBodyMaterial)
+	{
+		// 단일 슬롯 의상이 몸 피부 머티리얼을 물고 있으면 같은 의상 폴더의 원본 M01을 찾아 쓴다.
+		FString OutfitMaterialStem = MeshMaterialStem;
+		if (!OutfitMaterialStem.Contains(TEXT("_v")))
+		{
+			OutfitMaterialStem += TEXT("_v01");
+		}
+		FString VersionFolder = TEXT("v01");
+		const int32 VersionIndex =
+		    OutfitMaterialStem.Find(TEXT("_v"), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
+		if (VersionIndex != INDEX_NONE && OutfitMaterialStem.Len() >= VersionIndex + 4)
+		{
+			VersionFolder = OutfitMaterialStem.Mid(VersionIndex + 1, 3);
+		}
+		OutfitMaterialStem = TEXT("MI_") + OutfitMaterialStem;
+		if (UMaterialInterface *OutfitMaterial =
+		        LoadSourceOutfitMaterialByName(OutfitMaterialStem + TEXT("_M01"), VersionFolder))
+		{
+			return OutfitMaterial;
+		}
+		if (UMaterialInterface *OutfitMaterial = LoadLocalMaterialByName(OutfitMaterialStem + TEXT("_M01")))
+		{
+			return OutfitMaterial;
+		}
+	}
+
+	return nullptr;
 }
+
+void ApplyPlayerHHVOptionMaterials(USkeletalMeshComponent *Component, const FUEHHVCustomizationOption &Option,
+                                   EUEHHVGender Gender)
+{
+	if (!Component)
+	{
+		return;
+	}
+
+	return;
+	const int32 MaterialCount = 0;
+	/*
+	const int32 MaterialCount = FMath::Min(Component->GetNumMaterials(), Materials.Num());
+	for (int32 Index = 0; Index < MaterialCount; ++Index)
+	{
+	    UMaterialInterface* Material = Materials[Index].Get();
+	    if (!Material)
+	    {
+	        continue;
+	    }
+
+	    // 게임 캐릭터도 카탈로그가 가진 원본 머티리얼만 슬롯 순서대로 적용한다.
+	    EnsurePlayerHHVSkeletalMaterialUsage(Material);
+	    Component->SetMaterial(Index, Material);
+	}
+	*/
+}
+
+} // namespace
 
 AUEPlayerCharacter::AUEPlayerCharacter()
 {
@@ -267,14 +252,14 @@ AUEPlayerCharacter::AUEPlayerCharacter()
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;
 
-    CapsuleComponent=CreateDefaultSubobject<UCapsuleComponent>(TEXT("CollisionCylinder"));
-    SetRootComponent(CapsuleComponent);
-    CapsuleComponent->SetCollisionProfileName(TEXT("Pawn"));
-    Mesh=CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh0"));
-    Mesh->SetupAttachment(CapsuleComponent);
-    Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    CoreMovement=CreateDefaultSubobject<UUECoreMovementComponent>(TEXT("CoreMovement"));
-    CoreMovement->SetUpdatedComponent(CapsuleComponent);
+	CapsuleComponent = CreateDefaultSubobject<UCapsuleComponent>(TEXT("CollisionCylinder"));
+	SetRootComponent(CapsuleComponent);
+	CapsuleComponent->SetCollisionProfileName(TEXT("Pawn"));
+	Mesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh0"));
+	Mesh->SetupAttachment(CapsuleComponent);
+	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CoreMovement = CreateDefaultSubobject<UUECoreMovementComponent>(TEXT("CoreMovement"));
+	CoreMovement->SetUpdatedComponent(CapsuleComponent);
 
 	CameraBoom = CreateDefaultSubobject<UUEGoldenrodSpringArm>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
@@ -285,14 +270,17 @@ AUEPlayerCharacter::AUEPlayerCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
-	MovementSyncComponent = CreateDefaultSubobject<UUEPlayerMovementSyncComponent>(TEXT("MovementSyncComponent"));
-	FieldWildPokemonSyncComponent = CreateDefaultSubobject<UUEFieldWildPokemonSyncComponent>(TEXT("FieldWildPokemonSyncComponent"));
-	FieldRemotePlayerSyncComponent = CreateDefaultSubobject<UUEFieldRemotePlayerSyncComponent>(TEXT("FieldRemotePlayerSyncComponent"));
-	FieldPartnerSyncComponent = CreateDefaultSubobject<UUEFieldPartnerSyncComponent>(TEXT("FieldPartnerSyncComponent"));
+	FieldWildPokemonSyncComponent =
+	    CreateDefaultSubobject<UUEFieldWildPokemonSyncComponent>(TEXT("FieldWildPokemonSyncComponent"));
+	FieldRemotePlayerSyncComponent =
+	    CreateDefaultSubobject<UUEFieldRemotePlayerSyncComponent>(TEXT("FieldRemotePlayerSyncComponent"));
+	FieldPartnerSyncComponent =
+	    CreateDefaultSubobject<UUEFieldPartnerSyncComponent>(TEXT("FieldPartnerSyncComponent"));
 
 	GetCapsuleComponent()->InitCapsuleSize(34.0f, 88.0f);
 	GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
-	GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()));
+	GetMesh()->SetRelativeLocation(
+	    FVector(0.0f, 0.0f, -GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()));
 
 	HHVBodyEquipmentMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("HHVBodyEquipmentMesh"));
 	HHVBodyEquipmentMesh->SetupAttachment(GetMesh());
@@ -308,7 +296,6 @@ AUEPlayerCharacter::AUEPlayerCharacter()
 	HHVHairMesh->SetupAttachment(GetMesh());
 	HHVHairMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	HHVHairMesh->bReceivesDecals = false;
-
 }
 
 void AUEPlayerCharacter::PlayerCharacterInit()
@@ -317,14 +304,13 @@ void AUEPlayerCharacter::PlayerCharacterInit()
 	GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
 }
 
-
 void AUEPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
-    CoreMovement->OnLanded.AddDynamic(this,&ThisClass::Landed);
-    CoreMovement->OnJumpApex.AddDynamic(this,&ThisClass::NotifyJumpApex);
-    GetMesh()->AddTickPrerequisiteComponent(CoreMovement);
+	CoreMovement->OnLanded.AddDynamic(this, &ThisClass::Landed);
+	CoreMovement->OnJumpApex.AddDynamic(this, &ThisClass::NotifyJumpApex);
+	GetMesh()->AddTickPrerequisiteComponent(CoreMovement);
 	PlayerCharacterInit();
 	ApplyPendingHHVAppearance();
 	RefreshMovementSpeed();
@@ -393,7 +379,7 @@ void AUEPlayerCharacter::ConfigureRemoteProxyMovement()
 {
 	// 좌표를 서버가 전부 지시하므로 로컬 이동 시뮬레이션은 끈다. 켜 두면
 	// 중력과 보간이 서로 밀며 캐릭터가 떨린다. 야생 포켓몬과 같은 설정이다.
-	if (UUECoreMovementComponent* MovementComponent = GetCoreMovement())
+	if (UUECoreMovementComponent *MovementComponent = GetCoreMovement())
 	{
 		MovementComponent->GravityAcceleration = 0.0f;
 		MovementComponent->SetMovementMode(EUECoreMovementMode::Disabled);
@@ -404,55 +390,36 @@ void AUEPlayerCharacter::ConfigureRemoteProxyMovement()
 	SetActorEnableCollision(false);
 }
 
-void AUEPlayerCharacter::ApplyRemoteMoveTarget(const FVector& TargetLocation,
-	const FRotator& TargetRotation, bool bTeleported)
+void AUEPlayerCharacter::ApplyRemoteCoreState(const hhv::movement::State &State, double ServerTime,
+                                              bool bTeleported)
 {
-	// 로코모션 애니메이션이 속도를 읽는다. 서버는 속도를 안 보내니 목표가
-	// 갱신된 간격으로 만들어 넣는다. 스냅샷이 20Hz 고정이라 그 값으로 나눈다.
-	constexpr float kSnapshotInterval = 1.0f / 20.0f;
-	RemoteVelocity = (TargetLocation - GetActorLocation()) / kSnapshotInterval;
-
-	RemoteTargetLocation = TargetLocation;
-	RemoteTargetRotation = TargetRotation;
-	bHasRemoteTarget = true;
-
-	// 순간이동이거나 너무 벌어졌으면 보간을 포기하고 붙인다. 시야에 막 들어온
-	// 경우가 여기다 — 안 그러면 맵 반대편에서 걸어오는 것처럼 보인다.
-	if (bTeleported || FVector::Dist(GetActorLocation(), TargetLocation) >= RemoteHardSnapDistance)
+	const FVector Location(State.position.x, State.position.y, State.position.z);
+	const FVector Velocity(State.velocity.x, State.velocity.y, State.velocity.z);
+	const FQuat Rotation = FRotator(0.f, State.facing, 0.f).Quaternion();
+	const bool bReset = bTeleported || RemoteMoveBuffer.IsEmpty() ||
+	                    FVector::Dist(GetActorLocation(), Location) >= RemoteHardSnapDistance;
+	RemoteMoveBuffer.Add({ServerTime, Location, Velocity, Rotation, State}, bReset, .1);
+	if (bReset)
 	{
-		SetActorLocation(TargetLocation, false, nullptr, ETeleportType::TeleportPhysics);
-		SetActorRotation(TargetRotation, ETeleportType::TeleportPhysics);
-		RemoteVelocity = FVector::ZeroVector;
-		bHasRemoteTarget = false;
+		CoreMovement->RenderServerState(State);
 	}
 }
 
 void AUEPlayerCharacter::UpdateRemoteProxyMovement(float DeltaSeconds)
 {
-	if (UUECoreMovementComponent* MovementComponent = GetCoreMovement())
+	FUEServerMoveSample Sample;
+	if (!RemoteMoveBuffer.Advance(DeltaSeconds, .1, Sample))
 	{
-		MovementComponent->Velocity = RemoteVelocity;
-	}
-
-	if (!bHasRemoteTarget)
-	{
-		RemoteVelocity = FVector::ZeroVector;
 		return;
 	}
 
-	const FVector NewLocation =
-		FMath::VInterpTo(GetActorLocation(), RemoteTargetLocation, DeltaSeconds, RemoteInterpSpeed);
-	const FRotator NewRotation =
-		FMath::RInterpTo(GetActorRotation(), RemoteTargetRotation, DeltaSeconds, RemoteRotationInterpSpeed);
-
-	SetActorLocation(NewLocation, false);
-	SetActorRotation(NewRotation);
-
-	if (FVector::DistSquared(NewLocation, RemoteTargetLocation) <= 1.0f)
-	{
-		SetActorLocation(RemoteTargetLocation, false);
-		bHasRemoteTarget = false;
-	}
+	auto State = Sample.CoreState;
+	State.position = {float(Sample.Location.X), float(Sample.Location.Y), float(Sample.Location.Z)};
+	State.velocity = {float(Sample.Velocity.X), float(Sample.Velocity.Y), float(Sample.Velocity.Z)};
+	State.facing = Sample.Rotation.Rotator().Yaw;
+	CoreMovement->RenderServerState(State);
+	bIsRolling = State.rollRemaining > 0;
+	bIsRunning = Sample.Velocity.Size2D() > hhv::movement::Config{}.walkSpeed + 1.f;
 }
 
 void AUEPlayerCharacter::Jump()
@@ -473,9 +440,8 @@ void AUEPlayerCharacter::NotifyJumpApex()
 	CharacterStateTag = UEGameplayTags::State_Character_Fall;
 }
 
-void AUEPlayerCharacter::Landed(const FHitResult& Hit)
+void AUEPlayerCharacter::Landed(const FHitResult &Hit)
 {
-
 
 	// 구르기용 전방 발사가 바닥에 닿을 때 별도 착지 상태로 덮어쓰지 않는다.
 	if (bIsRolling)
@@ -494,12 +460,8 @@ void AUEPlayerCharacter::Landed(const FHitResult& Hit)
 	bLandingStateActive = true;
 	CharacterStateTag = UEGameplayTags::State_Character_Landing;
 	GetWorldTimerManager().ClearTimer(LandingStateTimerHandle);
-	GetWorldTimerManager().SetTimer(
-		LandingStateTimerHandle,
-		this,
-		&ThisClass::FinishLanding,
-		LandingStateDuration,
-		false);
+	GetWorldTimerManager().SetTimer(LandingStateTimerHandle, this, &ThisClass::FinishLanding,
+	                                LandingStateDuration, false);
 }
 
 FVector AUEPlayerCharacter::GetDesiredMovementDirection() const
@@ -518,13 +480,12 @@ void AUEPlayerCharacter::SetRunning(bool bNewIsRunning)
 	RefreshMovementSpeed();
 }
 
-void AUEPlayerCharacter::SetCharacterActionState(const FGameplayTag& NewStateTag)
+void AUEPlayerCharacter::SetCharacterActionState(const FGameplayTag &NewStateTag)
 {
-	const bool bSupportedAction =
-		NewStateTag == UEGameplayTags::State_Character_Holding ||
-		NewStateTag == UEGameplayTags::State_Character_Throw ||
-		NewStateTag == UEGameplayTags::State_Character_Damage ||
-		NewStateTag == UEGameplayTags::State_Character_Death;
+	const bool bSupportedAction = NewStateTag == UEGameplayTags::State_Character_Holding ||
+	                              NewStateTag == UEGameplayTags::State_Character_Throw ||
+	                              NewStateTag == UEGameplayTags::State_Character_Damage ||
+	                              NewStateTag == UEGameplayTags::State_Character_Death;
 	if (!bSupportedAction)
 	{
 		return;
@@ -561,20 +522,18 @@ void AUEPlayerCharacter::RefreshCharacterState()
 		return;
 	}
 
-	const UUECoreMovementComponent* MovementComponent = GetCoreMovement();
+	const UUECoreMovementComponent *MovementComponent = GetCoreMovement();
 	if (MovementComponent && MovementComponent->IsFalling())
 	{
-		CharacterStateTag = GetVelocity().Z > 0.0f
-			? UEGameplayTags::State_Character_Jump
-			: UEGameplayTags::State_Character_Fall;
+		CharacterStateTag = GetVelocity().Z > 0.0f ? UEGameplayTags::State_Character_Jump
+		                                           : UEGameplayTags::State_Character_Fall;
 		return;
 	}
 
 	if (GetVelocity().SizeSquared2D() > 9.0f)
 	{
-		CharacterStateTag = bIsRunning
-			? UEGameplayTags::State_Character_Run
-			: UEGameplayTags::State_Character_Walk;
+		CharacterStateTag =
+		    bIsRunning ? UEGameplayTags::State_Character_Run : UEGameplayTags::State_Character_Walk;
 		return;
 	}
 
@@ -606,13 +565,13 @@ void AUEPlayerCharacter::CancelLanding()
 
 void AUEPlayerCharacter::RefreshMovementSpeed()
 {
-	if (UUECoreMovementComponent* MovementComponent = GetCoreMovement())
+	if (UUECoreMovementComponent *MovementComponent = GetCoreMovement())
 	{
 		MovementComponent->SetCoreRunning(bIsRunning);
 	}
 }
 
-void AUEPlayerCharacter::SetMovementInput(const FVector2D& NewMovementInput)
+void AUEPlayerCharacter::SetMovementInput(const FVector2D &NewMovementInput)
 {
 	MovementInput = NewMovementInput.GetClampedToMaxSize(1.0f);
 	if (bLandingStateActive && !MovementInput.IsNearlyZero())
@@ -625,7 +584,7 @@ void AUEPlayerCharacter::SetMovementInput(const FVector2D& NewMovementInput)
 
 void AUEPlayerCharacter::RequestPokemonToggle()
 {
-	if (UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
+	if (UUEFieldClientSubsystem *FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
 	{
 		FieldClientSubsystem->SendPokemonToggleRequest();
 	}
@@ -633,7 +592,7 @@ void AUEPlayerCharacter::RequestPokemonToggle()
 
 bool AUEPlayerCharacter::CommandPokemonAttack(int32 AttackSlot)
 {
-	if (UUEFieldClientSubsystem* FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
+	if (UUEFieldClientSubsystem *FieldClientSubsystem = UUEFieldClientSubsystem::Get(this))
 	{
 		return FieldClientSubsystem->SendPokemonAttackRequest(AttackSlot);
 	}
@@ -653,76 +612,76 @@ void AUEPlayerCharacter::ApplyLocalMovementInput()
 	AddMovementInput(DesiredDirection, InputStrength);
 }
 
-FVector AUEPlayerCharacter::GetCameraForwardAxis(const FRotator& ViewRotation) const
+FVector AUEPlayerCharacter::GetCameraForwardAxis(const FRotator &ViewRotation) const
 {
 	const FRotator CameraYawRotation(0.0f, ViewRotation.Yaw, 0.0f);
 	return FRotationMatrix(CameraYawRotation).GetUnitAxis(EAxis::X).GetSafeNormal2D();
 }
 
-FVector AUEPlayerCharacter::GetCameraRightAxis(const FRotator& ViewRotation) const
+FVector AUEPlayerCharacter::GetCameraRightAxis(const FRotator &ViewRotation) const
 {
 	const FRotator CameraYawRotation(0.0f, ViewRotation.Yaw, 0.0f);
 	return FRotationMatrix(CameraYawRotation).GetUnitAxis(EAxis::Y).GetSafeNormal2D();
 }
 
-FVector AUEPlayerCharacter::GetMoveDirectionFromInput(const FVector2D& Input, const FRotator& ViewRotation) const
+FVector AUEPlayerCharacter::GetMoveDirectionFromInput(const FVector2D &Input,
+                                                      const FRotator &ViewRotation) const
 {
 	// 입력 벡터는 X=앞/뒤, Y=좌/우로 통일한다.
-	const FVector Direction = GetCameraForwardAxis(ViewRotation) * Input.X + GetCameraRightAxis(ViewRotation) * Input.Y;
+	const FVector Direction =
+	    GetCameraForwardAxis(ViewRotation) * Input.X + GetCameraRightAxis(ViewRotation) * Input.Y;
 	return Direction.GetSafeNormal();
 }
 
-UPawnMovementComponent* AUEPlayerCharacter::GetMovementComponent() const { return CoreMovement; }
+UPawnMovementComponent *AUEPlayerCharacter::GetMovementComponent() const
+{
+	return CoreMovement;
+}
 void AUEPlayerCharacter::StopJumping()
 {
 	CoreMovement->CancelCoreJump();
 }
 
-void AUEPlayerCharacter::ApplyServerMovementCorrection(const FVector& ServerPosition, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bUseHardCorrection)
-{
-    // An authoritative state is applied directly; subsequent ticks resolve portable geometry.
-    SetActorLocationAndRotation(ServerPosition, bUseHardCorrection ? ServerRotation : GetActorRotation(),
-        false, nullptr, ETeleportType::TeleportPhysics);
-    CoreMovement->Velocity = ServerVelocity;
-    CoreMovement->OnTeleported();
-}
-
-void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearance)
+void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance &NewAppearance)
 {
 	if (!HHVCustomizationCatalog)
 	{
 		UE_LOG(LogTemp, Error,
-			TEXT("HHVCustomizationCatalog is not assigned in the PlayerCharacter Blueprint defaults."));
+		       TEXT("HHVCustomizationCatalog is not assigned in the PlayerCharacter Blueprint defaults."));
 		return;
 	}
 
 	FUEHHVAppearance Appearance = NewAppearance;
-	Appearance.BodyIndex = ClampOptionIndex(Appearance.BodyIndex, HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::Body));
+	Appearance.BodyIndex = ClampOptionIndex(
+	    Appearance.BodyIndex, HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::Body));
 	if (Appearance.BodyIndex == 0 &&
-		HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::Body) > 2)
+	    HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::Body) > 2)
 	{
 		// 0번 Body는 예전 추출 기본값이라 실제 커마에서는 쓰지 않는다.
 		// 게임 레벨로 넘어와도 커마 체형 타입은 TypeA=1, TypeB=2부터 시작한다.
 		Appearance.BodyIndex = Appearance.Gender == EUEHHVGender::TypeB ? 2 : 1;
 	}
-	Appearance.HeadIndex = ClampOptionIndex(Appearance.HeadIndex, HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::Head));
-	Appearance.HairIndex = ClampOptionIndex(Appearance.HairIndex, HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::Hair));
-	Appearance.EyeIndex = ClampOptionIndex(Appearance.EyeIndex, HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::Eyes));
-	if (Appearance.HairColor.Equals(FLinearColor::White, 0.003f) && !HHVCustomizationCatalog->HairColors.IsEmpty())
+	Appearance.HeadIndex = ClampOptionIndex(
+	    Appearance.HeadIndex, HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::Head));
+	Appearance.HairIndex = ClampOptionIndex(
+	    Appearance.HairIndex, HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::Hair));
+	Appearance.EyeIndex = ClampOptionIndex(
+	    Appearance.EyeIndex, HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::Eyes));
+	if (Appearance.HairColor.Equals(FLinearColor::White, 0.003f) &&
+	    !HHVCustomizationCatalog->HairColors.IsEmpty())
 	{
-		// 저장값이 없는 예전 커마는 흰색을 "머리색 미지정"으로 들고 있어서, 카탈로그 기본 머리색으로 보정한다.
+		// 저장값이 없는 예전 커마는 흰색을 "머리색 미지정"으로 들고 있어서, 카탈로그 기본 머리색으로
+		// 보정한다.
 		Appearance.HairColor = HHVCustomizationCatalog->HairColors[0];
 	}
 	const int32 BodyEquipmentCount =
-		HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::BodyEquipment);
+	    HHVCustomizationCatalog->GetOptionCount(EUEHHVCustomizationCategory::BodyEquipment);
 	if (BodyEquipmentCount > HHVFirstVisibleOutfitIndex)
 	{
 		// 의상 0번은 추출용 베이스라 제외하고, 실제 선택은 1~14번만 허용한다.
 		const int32 LastVisibleOutfitIndex = FMath::Min(BodyEquipmentCount - 1, HHVMaxVisibleOutfits);
-		Appearance.BodyEquipmentIndex = FMath::Clamp(
-			Appearance.BodyEquipmentIndex,
-			HHVFirstVisibleOutfitIndex,
-			LastVisibleOutfitIndex);
+		Appearance.BodyEquipmentIndex =
+		    FMath::Clamp(Appearance.BodyEquipmentIndex, HHVFirstVisibleOutfitIndex, LastVisibleOutfitIndex);
 	}
 	else
 	{
@@ -731,29 +690,27 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 
 	CurrentCustomizationGender = Appearance.Gender;
 
-	const FUEHHVCustomizationOption& Body =
-		HHVCustomizationCatalog->GetOption(EUEHHVCustomizationCategory::Body, Appearance.BodyIndex);
-	const FUEHHVCustomizationOption& Outfit =
-		HHVCustomizationCatalog->GetOption(EUEHHVCustomizationCategory::BodyEquipment, Appearance.BodyEquipmentIndex);
-	const FUEHHVCustomizationOption& Head =
-		HHVCustomizationCatalog->GetOption(EUEHHVCustomizationCategory::Head, Appearance.HeadIndex);
-	const FUEHHVCustomizationOption& Hair =
-		HHVCustomizationCatalog->GetOption(EUEHHVCustomizationCategory::Hair, Appearance.HairIndex);
-	const FUEHHVCustomizationOption& Eyes =
-		HHVCustomizationCatalog->GetOption(EUEHHVCustomizationCategory::Eyes, Appearance.EyeIndex);
+	const FUEHHVCustomizationOption &Body =
+	    HHVCustomizationCatalog->GetOption(EUEHHVCustomizationCategory::Body, Appearance.BodyIndex);
+	const FUEHHVCustomizationOption &Outfit = HHVCustomizationCatalog->GetOption(
+	    EUEHHVCustomizationCategory::BodyEquipment, Appearance.BodyEquipmentIndex);
+	const FUEHHVCustomizationOption &Head =
+	    HHVCustomizationCatalog->GetOption(EUEHHVCustomizationCategory::Head, Appearance.HeadIndex);
+	const FUEHHVCustomizationOption &Hair =
+	    HHVCustomizationCatalog->GetOption(EUEHHVCustomizationCategory::Hair, Appearance.HairIndex);
+	const FUEHHVCustomizationOption &Eyes =
+	    HHVCustomizationCatalog->GetOption(EUEHHVCustomizationCategory::Eyes, Appearance.EyeIndex);
 
-	USkeletalMesh* BaseMesh = Body.LoadMesh(Appearance.Gender);
-	USkeletalMesh* OutfitMesh = Outfit.LoadMesh(Appearance.Gender);
+	USkeletalMesh *BaseMesh = Body.LoadMesh(Appearance.Gender);
+	USkeletalMesh *OutfitMesh = Outfit.LoadMesh(Appearance.Gender);
 	const bool bSameOutfitAsBase =
-		OutfitMesh == BaseMesh || GetPathNameSafe(OutfitMesh).Equals(GetPathNameSafe(BaseMesh));
+	    OutfitMesh == BaseMesh || GetPathNameSafe(OutfitMesh).Equals(GetPathNameSafe(BaseMesh));
 	const bool bUsesSeparateOutfit = OutfitMesh && !bSameOutfitAsBase && Appearance.BodyEquipmentIndex > 0;
 	// 애니메이션 기준 메시와 체형은 항상 Body 메시가 담당한다.
 	// 선택 의상으로 기준 메시를 교체하면 의상에 없는 다리와 발이 사라진다.
-	USkeletalMesh* LeaderMesh = BaseMesh;
+	USkeletalMesh *LeaderMesh = BaseMesh;
 	const TSubclassOf<UAnimInstance> PlayerAnimationBlueprint =
-		Appearance.Gender == EUEHHVGender::TypeA
-			? TypeAAnimationClass
-			: TypeBAnimationClass;
+	    Appearance.Gender == EUEHHVGender::TypeA ? TypeAAnimationClass : TypeBAnimationClass;
 	GetMesh()->SetSkeletalMesh(LeaderMesh);
 	// 게임 레벨에서 커마 메쉬를 교체해도 플레이어 애님 블루프린트를 유지한다.
 	// 메쉬 교체 뒤 SingleNode가 남으면 블렌드스페이스가 실행되지 않는다.
@@ -791,8 +748,7 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 
 	// 메쉬를 교체할 때 이전 의상에서 숨긴 섹션 상태가 남지 않도록 먼저 모두 켠다.
 	// 그 다음 아래의 의상/피부 규칙으로 필요한 섹션만 다시 숨긴다.
-	const auto ResetHHVSectionVisibility = [](USkeletalMeshComponent* Component)
-	{
+	const auto ResetHHVSectionVisibility = [](USkeletalMeshComponent *Component) {
 		if (!Component)
 		{
 			return;
@@ -812,7 +768,8 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 	HideHHVFaceCoverSections(HHVBodyEquipmentMesh);
 	HideHHVFaceCoverSections(HHVHeadMesh);
 	HideHHVFaceCoverSections(HHVHairMesh);
-	for (USkeletalMeshComponent* Follower : {HHVBodyEquipmentMesh.Get(), HHVHeadMesh.Get(), HHVHairMesh.Get()})
+	for (USkeletalMeshComponent *Follower :
+	     {HHVBodyEquipmentMesh.Get(), HHVHeadMesh.Get(), HHVHairMesh.Get()})
 	{
 		if (Follower && Follower->GetSkeletalMeshAsset() && GetMesh()->GetSkeletalMeshAsset())
 		{
@@ -822,7 +779,8 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 			Follower->SetAnimationMode(EAnimationMode::AnimationBlueprint, true);
 			Follower->SetAnimInstanceClass(UUEFollowerAnimInstance::StaticClass());
 			Follower->ReinitializeAnimNodes();
-			if (UUEFollowerAnimInstance* FollowerInstance = Cast<UUEFollowerAnimInstance>(Follower->GetAnimInstance()))
+			if (UUEFollowerAnimInstance *FollowerInstance =
+			        Cast<UUEFollowerAnimInstance>(Follower->GetAnimInstance()))
 			{
 				FollowerInstance->SetCopyCurves(Follower == HHVHeadMesh);
 				FollowerInstance->SetUseTargetEyeReferencePose(Follower == HHVHeadMesh);
@@ -856,11 +814,12 @@ void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearanc
 	HideUnsupportedHHVAttachmentComponents();
 }
 
-float AUEPlayerCharacter::GetHHVActionDuration(const FGameplayTag& StateTag, float FallbackDuration) const
+float AUEPlayerCharacter::GetHHVActionDuration(const FGameplayTag &StateTag, float FallbackDuration) const
 {
-	const UAnimSequence* Sequence = PlayerAnimationData
-		? PlayerAnimationData->FindSequenceByTagForGender(StateTag, CurrentCustomizationGender)
-		: nullptr;
+	const UAnimSequence *Sequence =
+	    PlayerAnimationData
+	        ? PlayerAnimationData->FindSequenceByTagForGender(StateTag, CurrentCustomizationGender)
+	        : nullptr;
 	return FMath::Max(Sequence ? Sequence->GetPlayLength() : FallbackDuration, 0.01f);
 }
 
@@ -883,31 +842,26 @@ void AUEPlayerCharacter::Roll()
 	CoreMovement->RequestCoreRoll();
 	RefreshCharacterState();
 	float RollMontageDuration = 0.0f;
-	if (UUEAnimInstance* PlayerAnimInstance = Cast<UUEAnimInstance>(GetMesh()->GetAnimInstance()))
+	if (UUEAnimInstance *PlayerAnimInstance = Cast<UUEAnimInstance>(GetMesh()->GetAnimInstance()))
 	{
-		UAnimSequence* RollAnimation = nullptr;
+		UAnimSequence *RollAnimation = nullptr;
 		if (PlayerAnimationData)
 		{
-			const FUEPlayerGenderAnimationSet& AnimationSet =
-				PlayerAnimationData->GetAnimationSetForGender(CurrentCustomizationGender);
-			RollAnimation = AnimationSet.RollSequence
-				? AnimationSet.RollSequence.Get()
-				: PlayerAnimationData->RollSequence.Get();
+			const FUEPlayerGenderAnimationSet &AnimationSet =
+			    PlayerAnimationData->GetAnimationSetForGender(CurrentCustomizationGender);
+			RollAnimation = AnimationSet.RollSequence ? AnimationSet.RollSequence.Get()
+			                                          : PlayerAnimationData->RollSequence.Get();
 		}
-		RollMontageDuration = PlayerAnimInstance->PlayRollMontage(
-			RollAnimation,
-			RollAnimationPlayRate);
+		RollMontageDuration = PlayerAnimInstance->PlayRollMontage(RollAnimation, RollAnimationPlayRate);
 	}
 
 	GetWorldTimerManager().ClearTimer(RollStateTimerHandle);
 	GetWorldTimerManager().SetTimer(
-		RollStateTimerHandle,
-		this,
-		&ThisClass::FinishRoll,
-		RollMontageDuration > 0.0f
-			? RollMontageDuration
-			: GetHHVActionDuration(UEGameplayTags::State_Character_Roll, RollStateDuration),
-		false);
+	    RollStateTimerHandle, this, &ThisClass::FinishRoll,
+	    RollMontageDuration > 0.0f
+	        ? RollMontageDuration
+	        : GetHHVActionDuration(UEGameplayTags::State_Character_Roll, RollStateDuration),
+	    false);
 }
 
 void AUEPlayerCharacter::MakeAppearanceExternallyDriven()
@@ -926,7 +880,7 @@ void AUEPlayerCharacter::ApplyPendingHHVAppearance()
 	}
 
 	FUEHHVAppearance PendingAppearance;
-	UUEGameInstance* UEGameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	UUEGameInstance *UEGameInstance = Cast<UUEGameInstance>(GetGameInstance());
 	if (!UEGameInstance || !UEGameInstance->GetPendingHHVAppearance(PendingAppearance))
 	{
 		// 저장된 커마가 없으면 다른 레벨에서도 기본 착장을 반드시 입힌다.
@@ -937,7 +891,7 @@ void AUEPlayerCharacter::ApplyPendingHHVAppearance()
 	ApplyHHVAppearance(PendingAppearance);
 }
 
-void AUEPlayerCharacter::ResetHHVMaterials(USkeletalMeshComponent* Component) const
+void AUEPlayerCharacter::ResetHHVMaterials(USkeletalMeshComponent *Component) const
 {
 	if (!Component)
 	{
@@ -951,23 +905,20 @@ void AUEPlayerCharacter::ResetHHVMaterials(USkeletalMeshComponent* Component) co
 	}
 }
 
-void AUEPlayerCharacter::ApplyHHVMeshLocalMaterials(USkeletalMeshComponent* Component) const
+void AUEPlayerCharacter::ApplyHHVMeshLocalMaterials(USkeletalMeshComponent *Component) const
 {
 	if (!Component || !Component->GetSkeletalMeshAsset())
 	{
 		return;
 	}
 
-	USkeletalMesh* SkeletalMeshAsset = Component->GetSkeletalMeshAsset();
+	USkeletalMesh *SkeletalMeshAsset = Component->GetSkeletalMeshAsset();
 	for (int32 Index = 0; Index < Component->GetNumMaterials(); ++Index)
 	{
-		UMaterialInterface* CurrentMaterial = Component->GetMaterial(Index);
+		UMaterialInterface *CurrentMaterial = Component->GetMaterial(Index);
 		EnsurePlayerHHVSkeletalMaterialUsage(CurrentMaterial);
-		if (UMaterialInterface* LocalMaterial = LoadPlayerHHVMeshLocalMaterial(
-			SkeletalMeshAsset,
-			CurrentMaterial,
-			Index,
-			Component->GetNumMaterials()))
+		if (UMaterialInterface *LocalMaterial = LoadPlayerHHVMeshLocalMaterial(
+		        SkeletalMeshAsset, CurrentMaterial, Index, Component->GetNumMaterials()))
 		{
 			// 같은 메쉬 폴더의 원본 머티리얼이 있으면 그쪽을 우선 사용한다.
 			EnsurePlayerHHVSkeletalMaterialUsage(LocalMaterial);
@@ -976,7 +927,7 @@ void AUEPlayerCharacter::ApplyHHVMeshLocalMaterials(USkeletalMeshComponent* Comp
 	}
 }
 
-void AUEPlayerCharacter::ApplyHHVMorphSafeMaterials(USkeletalMeshComponent* Component) const
+void AUEPlayerCharacter::ApplyHHVMorphSafeMaterials(USkeletalMeshComponent *Component) const
 {
 	if (!Component || MorphSafeMaterialDirectory.Path.IsEmpty())
 	{
@@ -985,14 +936,11 @@ void AUEPlayerCharacter::ApplyHHVMorphSafeMaterials(USkeletalMeshComponent* Comp
 
 	for (int32 Index = 0; Index < Component->GetNumMaterials(); ++Index)
 	{
-		UMaterialInterface* OriginalMaterial = Component->GetMaterial(Index);
+		UMaterialInterface *OriginalMaterial = Component->GetMaterial(Index);
 		const FString SafeName = MakeHHVMorphSafeMaterialName(OriginalMaterial);
-		const FString SafePath = FString::Printf(
-			TEXT("%s/%s.%s"),
-			*MorphSafeMaterialDirectory.Path,
-			*SafeName,
-			*SafeName);
-		UMaterialInterface* SafeMaterial = LoadObject<UMaterialInterface>(nullptr, *SafePath);
+		const FString SafePath =
+		    FString::Printf(TEXT("%s/%s.%s"), *MorphSafeMaterialDirectory.Path, *SafeName, *SafeName);
+		UMaterialInterface *SafeMaterial = LoadObject<UMaterialInterface>(nullptr, *SafePath);
 		if (SafeMaterial)
 		{
 			// 원본 머티리얼을 부모로 둔 안전한 머티리얼을 사용해, 체형 모프 후에도 원본 텍스처를 유지한다.
@@ -1001,10 +949,8 @@ void AUEPlayerCharacter::ApplyHHVMorphSafeMaterials(USkeletalMeshComponent* Comp
 	}
 }
 
-void AUEPlayerCharacter::ApplyHHVColorToSlots(
-	USkeletalMeshComponent* Component,
-	const FLinearColor& Color,
-	const TArray<FString>& SlotContains) const
+void AUEPlayerCharacter::ApplyHHVColorToSlots(USkeletalMeshComponent *Component, const FLinearColor &Color,
+                                              const TArray<FString> &SlotContains) const
 {
 	if (!Component || Color.Equals(FLinearColor::White, 0.003f))
 	{
@@ -1018,32 +964,22 @@ void AUEPlayerCharacter::ApplyHHVColorToSlots(
 		const FString SlotIdentity = SlotName.ToLower();
 		const FString MaterialIdentity = GetPathNameSafe(Component->GetMaterial(Index)).ToLower();
 		const FString Combined = SlotIdentity + TEXT(" ") + MaterialIdentity;
-		const bool bFaceDetail =
-			Combined.Contains(TEXT("eye")) ||
-			Combined.Contains(TEXT("iris")) ||
-			Combined.Contains(TEXT("pupil")) ||
-			Combined.Contains(TEXT("sclera")) ||
-			Combined.Contains(TEXT("white")) ||
-			Combined.Contains(TEXT("highlight")) ||
-			Combined.Contains(TEXT("brow")) ||
-			Combined.Contains(TEXT("lash")) ||
-			Combined.Contains(TEXT("lid")) ||
-			Combined.Contains(TEXT("mouth")) ||
-			Combined.Contains(TEXT("nose")) ||
-			Combined.Contains(TEXT("lip")) ||
-			Combined.Contains(TEXT("teeth")) ||
-			Combined.Contains(TEXT("tongue")) ||
-			Combined.Contains(TEXT("line")) ||
-			Combined.Contains(TEXT("beard")) ||
-			Combined.Contains(TEXT("mustache")) ||
-			Combined.Contains(TEXT("moustache"));
+		const bool bFaceDetail = Combined.Contains(TEXT("eye")) || Combined.Contains(TEXT("iris")) ||
+		                         Combined.Contains(TEXT("pupil")) || Combined.Contains(TEXT("sclera")) ||
+		                         Combined.Contains(TEXT("white")) || Combined.Contains(TEXT("highlight")) ||
+		                         Combined.Contains(TEXT("brow")) || Combined.Contains(TEXT("lash")) ||
+		                         Combined.Contains(TEXT("lid")) || Combined.Contains(TEXT("mouth")) ||
+		                         Combined.Contains(TEXT("nose")) || Combined.Contains(TEXT("lip")) ||
+		                         Combined.Contains(TEXT("teeth")) || Combined.Contains(TEXT("tongue")) ||
+		                         Combined.Contains(TEXT("line")) || Combined.Contains(TEXT("beard")) ||
+		                         Combined.Contains(TEXT("mustache")) || Combined.Contains(TEXT("moustache"));
 		if (bFaceDetail)
 		{
 			continue;
 		}
 
 		bool bMatches = false;
-		for (const FString& Token : SlotContains)
+		for (const FString &Token : SlotContains)
 		{
 			if (Combined.Contains(Token.ToLower()))
 			{
@@ -1056,10 +992,12 @@ void AUEPlayerCharacter::ApplyHHVColorToSlots(
 			continue;
 		}
 
-		UMaterialInstanceDynamic* DynamicMaterial = Component->CreateDynamicMaterialInstance(Index);
+		UMaterialInstanceDynamic *DynamicMaterial = Component->CreateDynamicMaterialInstance(Index);
 		if (DynamicMaterial)
 		{
-			for (const FName ParameterName : {TEXT("TintColor"), TEXT("Color"), TEXT("BaseColor"), TEXT("Base Color"), TEXT("MainColor"), TEXT("HairColor"), TEXT("Hair Color")})
+			for (const FName ParameterName :
+			     {TEXT("TintColor"), TEXT("Color"), TEXT("BaseColor"), TEXT("Base Color"), TEXT("MainColor"),
+			      TEXT("HairColor"), TEXT("Hair Color")})
 			{
 				DynamicMaterial->SetVectorParameterValue(ParameterName, Color);
 			}
@@ -1067,10 +1005,9 @@ void AUEPlayerCharacter::ApplyHHVColorToSlots(
 	}
 }
 
-void AUEPlayerCharacter::ApplyHHVEyeMaterial(
-	USkeletalMeshComponent* Component,
-	const FUEHHVCustomizationOption& EyeOption,
-	const FLinearColor& /*EyeColor*/) const
+void AUEPlayerCharacter::ApplyHHVEyeMaterial(USkeletalMeshComponent *Component,
+                                             const FUEHHVCustomizationOption &EyeOption,
+                                             const FLinearColor & /*EyeColor*/) const
 {
 	if (!Component || !EyeOption.Material)
 	{
@@ -1089,7 +1026,7 @@ void AUEPlayerCharacter::ApplyHHVEyeMaterial(
 	}
 }
 
-bool AUEPlayerCharacter::IsHHVEyeMaterialSlot(USkeletalMeshComponent* Component, int32 MaterialIndex) const
+bool AUEPlayerCharacter::IsHHVEyeMaterialSlot(USkeletalMeshComponent *Component, int32 MaterialIndex) const
 {
 	if (!Component || MaterialIndex < 0 || MaterialIndex >= Component->GetNumMaterials())
 	{
@@ -1097,65 +1034,52 @@ bool AUEPlayerCharacter::IsHHVEyeMaterialSlot(USkeletalMeshComponent* Component,
 	}
 
 	const TArray<FName> SlotNames = Component->GetMaterialSlotNames();
-	const FString SlotName = SlotNames.IsValidIndex(MaterialIndex) ? SlotNames[MaterialIndex].ToString().ToLower() : FString();
-	const USkeletalMesh* SkeletalMeshAsset = Component->GetSkeletalMeshAsset();
-	const TArray<FSkeletalMaterial>* AssetMaterials = SkeletalMeshAsset ? &SkeletalMeshAsset->GetMaterials() : nullptr;
-	const FSkeletalMaterial* AssetMaterial =
-		AssetMaterials && AssetMaterials->IsValidIndex(MaterialIndex) ? &(*AssetMaterials)[MaterialIndex] : nullptr;
-	const FString AssetSlotName = AssetMaterial ? AssetMaterial->MaterialSlotName.ToString().ToLower() : FString();
-	const UMaterialInterface* DefaultMaterial = AssetMaterial ? AssetMaterial->MaterialInterface : nullptr;
+	const FString SlotName =
+	    SlotNames.IsValidIndex(MaterialIndex) ? SlotNames[MaterialIndex].ToString().ToLower() : FString();
+	const USkeletalMesh *SkeletalMeshAsset = Component->GetSkeletalMeshAsset();
+	const TArray<FSkeletalMaterial> *AssetMaterials =
+	    SkeletalMeshAsset ? &SkeletalMeshAsset->GetMaterials() : nullptr;
+	const FSkeletalMaterial *AssetMaterial = AssetMaterials && AssetMaterials->IsValidIndex(MaterialIndex)
+	                                             ? &(*AssetMaterials)[MaterialIndex]
+	                                             : nullptr;
+	const FString AssetSlotName =
+	    AssetMaterial ? AssetMaterial->MaterialSlotName.ToString().ToLower() : FString();
+	const UMaterialInterface *DefaultMaterial = AssetMaterial ? AssetMaterial->MaterialInterface : nullptr;
 	const FString MaterialIdentity = DefaultMaterial ? DefaultMaterial->GetName().ToLower() : FString();
 	const FString SlotIdentity = SlotName + TEXT(" ") + AssetSlotName;
 	const FString Combined = SlotIdentity + TEXT(" ") + MaterialIdentity;
 
 	const bool bExcluded =
-		MaterialIdentity.Contains(TEXT("player_head")) ||
-		MaterialIdentity.Contains(TEXT("head")) ||
-		MaterialIdentity.Contains(TEXT("skin")) ||
-		MaterialIdentity.Contains(TEXT("brow")) ||
-		MaterialIdentity.Contains(TEXT("beard")) ||
-		MaterialIdentity.Contains(TEXT("mouth")) ||
-		MaterialIdentity.Contains(TEXT("lip")) ||
-		MaterialIdentity.Contains(TEXT("nose")) ||
-		(SlotIdentity.Contains(TEXT("skin")) && !Combined.Contains(TEXT("eye"))) ||
-		Combined.Contains(TEXT("brow")) ||
-		Combined.Contains(TEXT("beard")) ||
-		Combined.Contains(TEXT("mustache")) ||
-		Combined.Contains(TEXT("moustache")) ||
-		Combined.Contains(TEXT("lash")) ||
-		Combined.Contains(TEXT("eyelash")) ||
-		Combined.Contains(TEXT("lid")) ||
-		Combined.Contains(TEXT("eyelid")) ||
-		Combined.Contains(TEXT("mouth")) ||
-		Combined.Contains(TEXT("nose")) ||
-		Combined.Contains(TEXT("lip")) ||
-		Combined.Contains(TEXT("teeth")) ||
-		Combined.Contains(TEXT("tongue")) ||
-		Combined.Contains(TEXT("line")) ||
-		Combined.Contains(TEXT("white")) ||
-		Combined.Contains(TEXT("sclera")) ||
-		Combined.Contains(TEXT("highlight")) ||
-		Combined.Contains(TEXT("hi_light"));
+	    MaterialIdentity.Contains(TEXT("player_head")) || MaterialIdentity.Contains(TEXT("head")) ||
+	    MaterialIdentity.Contains(TEXT("skin")) || MaterialIdentity.Contains(TEXT("brow")) ||
+	    MaterialIdentity.Contains(TEXT("beard")) || MaterialIdentity.Contains(TEXT("mouth")) ||
+	    MaterialIdentity.Contains(TEXT("lip")) || MaterialIdentity.Contains(TEXT("nose")) ||
+	    (SlotIdentity.Contains(TEXT("skin")) && !Combined.Contains(TEXT("eye"))) ||
+	    Combined.Contains(TEXT("brow")) || Combined.Contains(TEXT("beard")) ||
+	    Combined.Contains(TEXT("mustache")) || Combined.Contains(TEXT("moustache")) ||
+	    Combined.Contains(TEXT("lash")) || Combined.Contains(TEXT("eyelash")) ||
+	    Combined.Contains(TEXT("lid")) || Combined.Contains(TEXT("eyelid")) ||
+	    Combined.Contains(TEXT("mouth")) || Combined.Contains(TEXT("nose")) ||
+	    Combined.Contains(TEXT("lip")) || Combined.Contains(TEXT("teeth")) ||
+	    Combined.Contains(TEXT("tongue")) || Combined.Contains(TEXT("line")) ||
+	    Combined.Contains(TEXT("white")) || Combined.Contains(TEXT("sclera")) ||
+	    Combined.Contains(TEXT("highlight")) || Combined.Contains(TEXT("hi_light"));
 	if (bExcluded)
 	{
 		return false;
 	}
 
 	const bool bLooksLikeEyeSlot =
-		SlotIdentity.Contains(TEXT("mi_player_eye")) ||
-		SlotIdentity.Contains(TEXT("player_eye")) ||
-		SlotIdentity.Contains(TEXT("_eye")) ||
-		SlotIdentity.Contains(TEXT("iris")) ||
-		SlotIdentity.Contains(TEXT("pupil"));
+	    SlotIdentity.Contains(TEXT("mi_player_eye")) || SlotIdentity.Contains(TEXT("player_eye")) ||
+	    SlotIdentity.Contains(TEXT("_eye")) || SlotIdentity.Contains(TEXT("iris")) ||
+	    SlotIdentity.Contains(TEXT("pupil"));
 	const bool bHasHHVEyeMaterial =
-		MaterialIdentity.Contains(TEXT("mi_player_eye")) ||
-		MaterialIdentity.Contains(TEXT("player_eye")) ||
-		MaterialIdentity.Contains(TEXT("iris")) ||
-		MaterialIdentity.Contains(TEXT("pupil"));
+	    MaterialIdentity.Contains(TEXT("mi_player_eye")) || MaterialIdentity.Contains(TEXT("player_eye")) ||
+	    MaterialIdentity.Contains(TEXT("iris")) || MaterialIdentity.Contains(TEXT("pupil"));
 	return bLooksLikeEyeSlot && bHasHHVEyeMaterial;
 }
 
-void AUEPlayerCharacter::HideHHVFaceCoverSections(USkeletalMeshComponent* Component) const
+void AUEPlayerCharacter::HideHHVFaceCoverSections(USkeletalMeshComponent *Component) const
 {
 	if (!Component || !Component->GetSkeletalMeshAsset())
 	{
@@ -1174,20 +1098,13 @@ void AUEPlayerCharacter::HideHHVFaceCoverSections(USkeletalMeshComponent* Compon
 		const FString MaterialPath = GetPathNameSafe(Component->GetMaterial(MaterialIndex)).ToLower();
 		const FString Identity = Slot + TEXT(" ") + MaterialPath;
 		const bool bIsFaceCover =
-			Identity.Contains(TEXT("mask")) ||
-			Identity.Contains(TEXT("facecover")) ||
-			Identity.Contains(TEXT("face_cover")) ||
-			Identity.Contains(TEXT("facemask")) ||
-			Identity.Contains(TEXT("face_mask")) ||
-			Identity.Contains(TEXT("mouthcover")) ||
-			Identity.Contains(TEXT("mouth_cover")) ||
-			Identity.Contains(TEXT("nosecover")) ||
-			Identity.Contains(TEXT("nose_cover")) ||
-			Identity.Contains(TEXT("headcover")) ||
-			Identity.Contains(TEXT("head_cover")) ||
-			Identity.Contains(TEXT("headequ")) ||
-			Identity.Contains(TEXT("head_equip")) ||
-			Identity.Contains(TEXT("equip_head"));
+		    Identity.Contains(TEXT("mask")) || Identity.Contains(TEXT("facecover")) ||
+		    Identity.Contains(TEXT("face_cover")) || Identity.Contains(TEXT("facemask")) ||
+		    Identity.Contains(TEXT("face_mask")) || Identity.Contains(TEXT("mouthcover")) ||
+		    Identity.Contains(TEXT("mouth_cover")) || Identity.Contains(TEXT("nosecover")) ||
+		    Identity.Contains(TEXT("nose_cover")) || Identity.Contains(TEXT("headcover")) ||
+		    Identity.Contains(TEXT("head_cover")) || Identity.Contains(TEXT("headequ")) ||
+		    Identity.Contains(TEXT("head_equip")) || Identity.Contains(TEXT("equip_head"));
 
 		if (!bIsFaceCover)
 		{
@@ -1198,7 +1115,7 @@ void AUEPlayerCharacter::HideHHVFaceCoverSections(USkeletalMeshComponent* Compon
 	}
 }
 
-void AUEPlayerCharacter::HideHHVBaseBodyOutfitSections(USkeletalMeshComponent* Component) const
+void AUEPlayerCharacter::HideHHVBaseBodyOutfitSections(USkeletalMeshComponent *Component) const
 {
 	if (!Component || !Component->GetSkeletalMeshAsset())
 	{
@@ -1214,19 +1131,13 @@ void AUEPlayerCharacter::HideHHVBaseBodyOutfitSections(USkeletalMeshComponent* C
 		// 실제 슬롯/머티리얼 이름만 보고 옷 섹션을 판별해야 베이스 피부를 숨기지 않는다.
 		const FString MaterialName = FPaths::GetBaseFilename(MaterialPath).ToLower();
 		const FString Identity = Slot + TEXT(" ") + MaterialName;
-		const bool bIsSkinSection =
-			Identity.Contains(TEXT("body")) ||
-			Identity.Contains(TEXT("skin")) ||
-			Identity.Contains(TEXT("player_female_body")) ||
-			Identity.Contains(TEXT("player_male_body"));
-		const bool bIsOutfitSection =
-			Identity.Contains(TEXT("oldcloth")) ||
-			Identity.Contains(TEXT("cloth")) ||
-			Identity.Contains(TEXT("armor")) ||
-			Identity.Contains(TEXT("shirt")) ||
-			Identity.Contains(TEXT("pants")) ||
-			Identity.Contains(TEXT("shoe")) ||
-			Identity.Contains(TEXT("boot"));
+		const bool bIsSkinSection = Identity.Contains(TEXT("body")) || Identity.Contains(TEXT("skin")) ||
+		                            Identity.Contains(TEXT("player_female_body")) ||
+		                            Identity.Contains(TEXT("player_male_body"));
+		const bool bIsOutfitSection = Identity.Contains(TEXT("oldcloth")) ||
+		                              Identity.Contains(TEXT("cloth")) || Identity.Contains(TEXT("armor")) ||
+		                              Identity.Contains(TEXT("shirt")) || Identity.Contains(TEXT("pants")) ||
+		                              Identity.Contains(TEXT("shoe")) || Identity.Contains(TEXT("boot"));
 
 		if (!bIsOutfitSection || bIsSkinSection)
 		{
@@ -1238,7 +1149,7 @@ void AUEPlayerCharacter::HideHHVBaseBodyOutfitSections(USkeletalMeshComponent* C
 	}
 }
 
-void AUEPlayerCharacter::HideHHVEquipmentSkinSections(USkeletalMeshComponent* Component) const
+void AUEPlayerCharacter::HideHHVEquipmentSkinSections(USkeletalMeshComponent *Component) const
 {
 	if (!Component || !Component->GetSkeletalMeshAsset())
 	{
@@ -1251,11 +1162,9 @@ void AUEPlayerCharacter::HideHHVEquipmentSkinSections(USkeletalMeshComponent* Co
 		const FString Slot = SlotNames[MaterialIndex].ToString().ToLower();
 		const FString MaterialPath = GetPathNameSafe(Component->GetMaterial(MaterialIndex)).ToLower();
 		const FString Identity = Slot + TEXT(" ") + MaterialPath;
-		const bool bIsSkinSection =
-			Identity.Contains(TEXT("body")) ||
-			Identity.Contains(TEXT("skin")) ||
-			Identity.Contains(TEXT("player_female_body")) ||
-			Identity.Contains(TEXT("player_male_body"));
+		const bool bIsSkinSection = Identity.Contains(TEXT("body")) || Identity.Contains(TEXT("skin")) ||
+		                            Identity.Contains(TEXT("player_female_body")) ||
+		                            Identity.Contains(TEXT("player_male_body"));
 		if (!bIsSkinSection)
 		{
 			continue;
@@ -1268,36 +1177,27 @@ void AUEPlayerCharacter::HideHHVEquipmentSkinSections(USkeletalMeshComponent* Co
 
 void AUEPlayerCharacter::HideUnsupportedHHVAttachmentComponents() const
 {
-	TArray<USkeletalMeshComponent*> Components;
+	TArray<USkeletalMeshComponent *> Components;
 	GetComponents(Components);
 
-	for (USkeletalMeshComponent* Component : Components)
+	for (USkeletalMeshComponent *Component : Components)
 	{
-		if (!Component ||
-			Component == GetMesh() ||
-			Component == HHVBodyEquipmentMesh ||
-			Component == HHVHeadMesh ||
-			Component == HHVHairMesh)
+		if (!Component || Component == GetMesh() || Component == HHVBodyEquipmentMesh ||
+		    Component == HHVHeadMesh || Component == HHVHairMesh)
 		{
 			continue;
 		}
 
-		const FString Identity = FString::Printf(
-			TEXT("%s %s"),
-			*Component->GetName(),
-			*GetPathNameSafe(Component->GetSkeletalMeshAsset())).ToLower();
+		const FString Identity = FString::Printf(TEXT("%s %s"), *Component->GetName(),
+		                                         *GetPathNameSafe(Component->GetSkeletalMeshAsset()))
+		                             .ToLower();
 		const bool bRemovedAttachment =
-			Identity.Contains(TEXT("accessory")) ||
-			Identity.Contains(TEXT("headgear")) ||
-			Identity.Contains(TEXT("head_gear")) ||
-			Identity.Contains(TEXT("headequ")) ||
-			Identity.Contains(TEXT("head_equip")) ||
-			Identity.Contains(TEXT("equip_head")) ||
-			Identity.Contains(TEXT("glasses")) ||
-			Identity.Contains(TEXT("mask")) ||
-			Identity.Contains(TEXT("facecover")) ||
-			Identity.Contains(TEXT("hat")) ||
-			Identity.Contains(TEXT("cap"));
+		    Identity.Contains(TEXT("accessory")) || Identity.Contains(TEXT("headgear")) ||
+		    Identity.Contains(TEXT("head_gear")) || Identity.Contains(TEXT("headequ")) ||
+		    Identity.Contains(TEXT("head_equip")) || Identity.Contains(TEXT("equip_head")) ||
+		    Identity.Contains(TEXT("glasses")) || Identity.Contains(TEXT("mask")) ||
+		    Identity.Contains(TEXT("facecover")) || Identity.Contains(TEXT("hat")) ||
+		    Identity.Contains(TEXT("cap"));
 		if (!bRemovedAttachment)
 		{
 			continue;
@@ -1311,7 +1211,7 @@ void AUEPlayerCharacter::HideUnsupportedHHVAttachmentComponents() const
 	}
 }
 
-void AUEPlayerCharacter::ApplyHHVScale(const FUEHHVAppearance& /*NewAppearance*/) const
+void AUEPlayerCharacter::ApplyHHVScale(const FUEHHVAppearance & /*NewAppearance*/) const
 {
 	// 커마 체격 스케일 기능은 제거했다. 저장된 예전 값이 있어도 항상 기본 체형으로 되돌린다.
 	GetMesh()->SetRelativeScale3D(FVector::OneVector);

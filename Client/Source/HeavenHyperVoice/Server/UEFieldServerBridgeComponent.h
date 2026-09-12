@@ -45,7 +45,6 @@ struct FUEFieldPartyState
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FUEOnFieldPartyStateChanged);
 
 class UUEFieldWildPokemonSyncComponent;
-class UUEPlayerMovementSyncComponent;
 
 USTRUCT(BlueprintType)
 struct FUEFieldPokemonPartyEntry
@@ -87,11 +86,11 @@ class HEAVENHYPERVOICE_API UUEFieldServerBridgeComponent : public UActorComponen
 {
 	GENERATED_BODY()
 
-public:
+  public:
 	UUEFieldServerBridgeComponent();
 	virtual void BeginDestroy() override;
 
-	void AttachToPlayer(AUEPlayerCharacter* PlayerCharacter);
+	void AttachToPlayer(AUEPlayerCharacter *PlayerCharacter);
 	void DetachFromPlayer();
 
 	UFUNCTION(BlueprintPure, Category = "Field Server")
@@ -101,9 +100,15 @@ public:
 	bool SendPokemonAttackRequest(int32 AttackSlot);
 
 	UFUNCTION(BlueprintPure, Category = "Field Server|Pokemon")
-	TArray<FUEFieldPokemonPartyEntry> GetPokemonPartyEntries() const { return PokemonPartyEntries; }
+	TArray<FUEFieldPokemonPartyEntry> GetPokemonPartyEntries() const
+	{
+		return PokemonPartyEntries;
+	}
 
-	const TArray<FUEFieldPokemonPartyEntry>& GetCachedPokemonPartyEntries() const { return PokemonPartyEntries; }
+	const TArray<FUEFieldPokemonPartyEntry> &GetCachedPokemonPartyEntries() const
+	{
+		return PokemonPartyEntries;
+	}
 	void ReplacePokemonPartyEntriesFromServer(TArray<FUEFieldPokemonPartyEntry> NewEntries);
 
 	UPROPERTY(BlueprintAssignable, Category = "Field Server|Pokemon")
@@ -115,11 +120,14 @@ public:
 
 	/** 서버가 마지막으로 알려준 파티 상태. 화면이 열릴 때 이걸로 그린다. */
 	UFUNCTION(BlueprintPure, Category = "Field Server|Party")
-	const FUEFieldPartyState& GetPartyState() const { return PartyState; }
+	const FUEFieldPartyState &GetPartyState() const
+	{
+		return PartyState;
+	}
 
 	/** 파티와 꺼낼 한 마리를 서버에 보낸다. 응답은 OnPartyStateChanged 로 온다. */
 	UFUNCTION(BlueprintCallable, Category = "Field Server|Party")
-	bool SendSetParty(const TArray<int32>& DexNumbers, int32 ActiveDex);
+	bool SendSetParty(const TArray<int32> &DexNumbers, int32 ActiveDex);
 
 	/** 파티 화면을 켜고 끈다. 포켓몬 꺼내기 키에 걸려 있다. */
 	UFUNCTION(BlueprintCallable, Category = "Field Server|Party")
@@ -134,7 +142,10 @@ public:
 	 *
 	 * AttachToPlayer **전에** 불러야 한다. 붙는 그 자리에서 접속을 시작한다.
 	 */
-	void SetConnectionTarget(int32 InstanceType) { TargetInstanceType = InstanceType; }
+	void SetConnectionTarget(int32 InstanceType)
+	{
+		TargetInstanceType = InstanceType;
+	}
 
 	/**
 	 * 지금 위치를 서버에 즉시 한 번 보낸다. 평소 전송 간격을 무시한다.
@@ -145,20 +156,27 @@ public:
 	void ReportFieldPositionNow();
 
 	UFUNCTION(BlueprintPure, Category = "Field Server|Instance")
-	bool IsInInstance() const { return bInInstance; }
+	bool IsInInstance() const
+	{
+		return bInInstance;
+	}
 
 	/** 배정받은 방 번호. 필드에서는 0 이다. 로그와 디버깅용. */
 	UFUNCTION(BlueprintPure, Category = "Field Server|Instance")
-	int32 GetRoomId() const { return static_cast<int32>(CurrentRoomId); }
+	int32 GetRoomId() const
+	{
+		return static_cast<int32>(CurrentRoomId);
+	}
 
 	// 파티 화면. 없으면 키를 눌러도 아무 일도 없다.
 	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server|Party")
 	TSubclassOf<UUEFieldPartyWidget> PartyWidgetClass;
 
-protected:
+  protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
+	                           FActorComponentTickFunction *ThisTickFunction) override;
 
 	UFUNCTION()
 	void HandleCharacterMovementUpdated(float DeltaSeconds, FVector OldLocation, FVector OldVelocity);
@@ -166,12 +184,14 @@ protected:
 	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server")
 	FString FieldServerHost;
 
-	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server", meta = (ClampMin = "1", ClampMax = "65535"))
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server",
+	          meta = (ClampMin = "1", ClampMax = "65535"))
 	int32 FieldServerPort = 0;
 
 	// 티켓이 없는 개발 접속에서만 쓴다. 티켓이 있으면 로그인 서버가 알려준
 	// 주소를 쓰므로 이 값은 무시된다.
-	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server", meta = (ClampMin = "1", ClampMax = "65535"))
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server",
+	          meta = (ClampMin = "1", ClampMax = "65535"))
 	int32 InstanceServerPort = 9300;
 
 	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server")
@@ -185,45 +205,36 @@ protected:
 	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server", meta = (ClampMin = "0.01"))
 	float SendIntervalSeconds = 0.05f;
 
-	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server")
-	float WorldOriginOffset = 0.0f;
-
 	// 야생 포켓몬으로 스폰할 클래스. 네이티브 AUEPokemonCharacter 는 메시도
 	// 종족 카탈로그도 없어서 스폰해 봐야 보이지 않는다 — 둘 다 BP_Pokemon 이
 	// 들고 있다. Config 라서 DefaultGame.ini 에서 지정한다.
 	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server|Wild Pokemon")
 	TSubclassOf<AUEPokemonCharacter> WildPokemonClass;
 
-private:
+  private:
 	void ResolveSyncComponents();
 
 	// Service 는 "field" 또는 "instance". 티켓이 있으면 로그인 서버가 준 주소로,
 	// 없으면 설정에 박힌 개발용 주소로 붙는다.
-	void StartConnection(const FString& Service, uint32 InstanceType);
+	void StartConnection(const FString &Service, uint32 InstanceType);
 
 	// SetConnectionTarget 이 정해 둔 곳으로 붙는다.
 	void StartFieldConnection()
 	{
 		StartConnection(TargetInstanceType > 0 ? TEXT("instance") : TEXT("field"),
-			static_cast<uint32>(FMath::Max(TargetInstanceType, 0)));
+		                static_cast<uint32>(FMath::Max(TargetInstanceType, 0)));
 	}
 	void StopFieldConnection();
 	void DestroyPresentationActors();
-	void HandleFieldEnterAck(uint64 EntityId, float ServerX, float ServerY, float ServerZ, float Facing,
-		uint32 RoomId, float OriginOffset);
-	void HandleFieldCorrection(uint32 Sequence, float ServerX, float ServerY, float ServerZ, float Facing);
-	void HandleFieldSnapshot(const FHHVFieldSnapshot& Snapshot);
-	void HandleFieldDisconnected(const FString& Reason);
-	void HandleFieldPartyState(const FHHVFieldPartyState& State);
+	void HandleFieldEnterAck(const FHHVFieldEventData &Event);
+	void HandleFieldSnapshot(const FHHVFieldSnapshot &Snapshot);
+	void HandleFieldDisconnected(const FString &Reason);
+	void HandleFieldPartyState(const FHHVFieldPartyState &State);
 	void HandleFieldPartnerChanged(uint64 EntityId, uint16 PartnerDex);
-	void ApplyPartnerServerState(const FHHVFieldEntity& Entity);
-	FVector MakeEntityLocation(float ServerX, float ServerY, float ServerZ) const;
-	float ToServerAxis(double UnrealAxis) const { return static_cast<float>(UnrealAxis) + WorldOriginOffset; }
-	double ToUnrealAxis(float ServerAxis) const { return static_cast<double>(ServerAxis - WorldOriginOffset); }
-	AUEPlayerCharacter* GetPlayerCharacter() const;
+	void ApplyPartnerServerState(const FHHVFieldEntity &Entity);
+	AUEPlayerCharacter *GetPlayerCharacter() const;
 
 	TWeakObjectPtr<AUEPlayerCharacter> CachedPlayerCharacter;
-	TWeakObjectPtr<UUEPlayerMovementSyncComponent> MovementSyncComponent;
 	TWeakObjectPtr<UUEFieldWildPokemonSyncComponent> WildPokemonSyncComponent;
 	TWeakObjectPtr<UUEFieldPartnerSyncComponent> PartnerSyncComponent;
 

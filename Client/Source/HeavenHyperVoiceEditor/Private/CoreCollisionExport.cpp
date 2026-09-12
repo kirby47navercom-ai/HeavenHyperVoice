@@ -6,11 +6,13 @@
 #include "Framework/Notifications/NotificationManager.h"
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
+#include "Misc/PackageName.h"
+#include "Misc/Parse.h"
 #include "Widgets/Notifications/SNotificationList.h"
 
 namespace
 {
-void NotifyExport(const FString& Message, bool bSuccess)
+void NotifyExport(const FString &Message, bool bSuccess)
 {
 	UE_LOG(LogTemp, Display, TEXT("Shared collision export: %s"), *Message);
 
@@ -21,21 +23,22 @@ void NotifyExport(const FString& Message, bool bSuccess)
 		const auto Notification = FSlateNotificationManager::Get().AddNotification(Info);
 
 		if (Notification.IsValid())
+		{
 			Notification->SetCompletionState(bSuccess ? SNotificationItem::CS_Success
 			                                          : SNotificationItem::CS_Fail);
+		}
 	}
 }
 
 // Prepare both outputs before replacing either. Roll back the first if the second cannot be installed.
-bool SavePair(const UUECoreCollisionSubsystem& Snapshot, const FString& Client, const FString& Server)
+bool SavePair(const UUECoreCollisionSubsystem &Snapshot, const FString &Client, const FString &Server)
 {
-	auto& Files = IFileManager::Get();
+	auto &Files = IFileManager::Get();
 	const FString Suffix = TEXT(".") + FGuid::NewGuid().ToString(EGuidFormats::Digits);
 	const FString Paths[2] = {Client, Server};
 	FString Staged[2], Backups[2];
 	bool Existed[2] = {false, false};
-	auto Cleanup = [&]()
-	{
+	auto Cleanup = [&]() {
 		for (int I = 0; I < 2; ++I)
 		{
 			Files.Delete(*Staged[I], false, false, true);
@@ -72,17 +75,25 @@ bool SavePair(const UUECoreCollisionSubsystem& Snapshot, const FString& Client, 
 			for (int J = 0; J <= I; ++J)
 			{
 				if (Existed[J])
+				{
 					bRestored =
 					    (Files.Copy(*Paths[J], *Backups[J], true, false, false) == COPY_OK) && bRestored;
+				}
 				else
+				{
 					bRestored = Files.Delete(*Paths[J], false, false, true) && bRestored;
+				}
 			}
 			// Preserve backups for manual recovery if the filesystem also rejects rollback.
 			if (bRestored)
+			{
 				Cleanup();
+			}
 			else
+			{
 				UE_LOG(LogTemp, Error, TEXT("Collision export rollback failed. Recovery files: %s, %s"),
 				       *Backups[0], *Backups[1]);
+			}
 			return false;
 		}
 	}
@@ -98,11 +109,13 @@ bool UHHVCoreCollisionExportLibrary::ExportCurrentMapCollision(bool bSaveMap)
 		NotifyExport(TEXT("플레이를 종료한 뒤 공통 이동 충돌을 저장해 주세요."), false);
 		return false;
 	}
-	UWorld* World = GEditor->GetEditorWorldContext().World();
+	UWorld *World = GEditor->GetEditorWorldContext().World();
 
 	if (!World || (bSaveMap && !FEditorFileUtils::SaveDirtyPackages(false, true, false)))
+	{
 		return false;
-	auto* Snapshot = World->GetSubsystem<UUECoreCollisionSubsystem>();
+	}
+	auto *Snapshot = World->GetSubsystem<UUECoreCollisionSubsystem>();
 
 	if (!Snapshot || Snapshot->GetDefaultCollisionFile().IsEmpty())
 	{
@@ -132,9 +145,39 @@ bool UHHVCoreCollisionExportLibrary::ExportCurrentMapCollision(bool bSaveMap)
 	}
 
 	if (!Snapshot->LoadCollisionFile(Client))
+	{
 		return false;
+	}
 	NotifyExport(FString::Printf(TEXT("공통 이동 충돌 저장 완료 · 삼각형 %d개\n클라이언트: %s\n서버: %s"),
 	                             Snapshot->TriangleCount, *Client, *Server),
 	             true);
 	return true;
+}
+
+UHHVCoreCollisionExportCommandlet::UHHVCoreCollisionExportCommandlet()
+{
+	IsClient = false;
+	IsServer = false;
+	IsEditor = true;
+	LogToConsole = true;
+}
+
+int32 UHHVCoreCollisionExportCommandlet::Main(const FString &Params)
+{
+	FString Map;
+	if (!FParse::Value(*Params, TEXT("Map="), Map))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Specify -Map=/Game/path/to/map"));
+		return 1;
+	}
+
+	const FString Filename =
+	    FPackageName::LongPackageNameToFilename(Map, FPackageName::GetMapPackageExtension());
+	if (!FEditorFileUtils::LoadMap(Filename, false, true))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Cannot load map %s"), *Map);
+		return 1;
+	}
+
+	return UHHVCoreCollisionExportLibrary::ExportCurrentMapCollision(false) ? 0 : 1;
 }

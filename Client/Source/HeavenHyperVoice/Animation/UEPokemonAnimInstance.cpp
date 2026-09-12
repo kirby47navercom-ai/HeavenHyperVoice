@@ -5,7 +5,7 @@
 
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "../Movement/UECoreMovementComponent.h"
 #include "TimerManager.h"
 
 void UUEPokemonAnimInstance::NativeInitializeAnimation()
@@ -48,12 +48,13 @@ void UUEPokemonAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	// 마지막 샘플 안에서는 BlendSpace 좌표와 실제 속도가 같아서 발 미끄러짐이 줄어든다.
 	const float EffectiveWalkSpeed = FMath::Max(WalkAnimationSpeed, 1.0f);
 	const float EffectiveRunSpeed = FMath::Max(RunAnimationSpeed, EffectiveWalkSpeed + 1.0f);
-	LocomotionPlayRate = GroundSpeed > EffectiveRunSpeed
-		? FMath::Clamp(GroundSpeed / EffectiveRunSpeed, 1.0f, FMath::Max(MaxLocomotionPlayRate, 1.0f))
-		: 1.0f;
+	LocomotionPlayRate =
+	    GroundSpeed > EffectiveRunSpeed
+	        ? FMath::Clamp(GroundSpeed / EffectiveRunSpeed, 1.0f, FMath::Max(MaxLocomotionPlayRate, 1.0f))
+	        : 1.0f;
 	bIsRunning = GroundSpeed >= (EffectiveWalkSpeed + EffectiveRunSpeed) * 0.5f;
 
-	const UCharacterMovementComponent* MovementComponent = OwnerPokemon->GetCharacterMovement();
+	const UUECoreMovementComponent *MovementComponent = OwnerPokemon->GetCoreMovement();
 	bIsFalling = MovementComponent ? MovementComponent->IsFalling() : false;
 
 	const FVector MoveDirection = HorizontalVelocity.GetSafeNormal2D();
@@ -77,7 +78,7 @@ bool UUEPokemonAnimInstance::PlayFieldAnimation(EUEPokemonFieldAnimation FieldAn
 		OwnerPokemon = Cast<AUEPokemonCharacter>(TryGetPawnOwner());
 	}
 
-	const UUEPokemonSpeciesData* SpeciesData = OwnerPokemon ? OwnerPokemon->GetPokemonSpeciesData() : nullptr;
+	const UUEPokemonSpeciesData *SpeciesData = OwnerPokemon ? OwnerPokemon->GetPokemonSpeciesData() : nullptr;
 	if (!SpeciesData || FieldAnimation == EUEPokemonFieldAnimation::None)
 	{
 		return false;
@@ -154,7 +155,8 @@ bool UUEPokemonAnimInstance::PlayFieldAnimation(EUEPokemonFieldAnimation FieldAn
 
 	CurrentFieldAnimation = FieldAnimation;
 	bIsFieldAnimationPlaying = true;
-	if (FieldAnimation == EUEPokemonFieldAnimation::Eat01 || FieldAnimation == EUEPokemonFieldAnimation::Eat02)
+	if (FieldAnimation == EUEPokemonFieldAnimation::Eat01 ||
+	    FieldAnimation == EUEPokemonFieldAnimation::Eat02)
 	{
 		OwnerPokemon->PlayPokemonSoundEffect(EUEPokemonSoundEffect::Eat);
 	}
@@ -177,7 +179,7 @@ bool UUEPokemonAnimInstance::PlayAttackAnimation(EUEPokemonAttackAnimation Attac
 		OwnerPokemon = Cast<AUEPokemonCharacter>(TryGetPawnOwner());
 	}
 
-	const UUEPokemonSpeciesData* SpeciesData = OwnerPokemon ? OwnerPokemon->GetPokemonSpeciesData() : nullptr;
+	const UUEPokemonSpeciesData *SpeciesData = OwnerPokemon ? OwnerPokemon->GetPokemonSpeciesData() : nullptr;
 	if (!SpeciesData || AttackAnimation == EUEPokemonAttackAnimation::None)
 	{
 		return false;
@@ -244,13 +246,13 @@ void UUEPokemonAnimInstance::StopCurrentActionAnimation(float BlendOutTime)
 
 	if (ActiveActionMontage)
 	{
-		UAnimMontage* MontageToStop = ActiveActionMontage;
+		UAnimMontage *MontageToStop = ActiveActionMontage;
 		ActiveActionMontage = nullptr;
 		Montage_Stop(FMath::Max(BlendOutTime, 0.0f), MontageToStop);
 	}
 }
 
-void UUEPokemonAnimInstance::QueueActionSequence(UAnimSequence* Sequence, int32 LoopCount)
+void UUEPokemonAnimInstance::QueueActionSequence(UAnimSequence *Sequence, int32 LoopCount)
 {
 	// 종마다 없는 시퀀스가 다르므로 null은 대기열에 넣지 않는다.
 	if (!Sequence)
@@ -274,16 +276,11 @@ void UUEPokemonAnimInstance::PlayNextActionSequence()
 		return;
 	}
 
-	UAnimSequence* Sequence = ActionAnimationQueue[0];
+	UAnimSequence *Sequence = ActionAnimationQueue[0];
 	const int32 LoopCount = ActionAnimationLoopCounts.IsValidIndex(0) ? ActionAnimationLoopCounts[0] : 1;
-	ActiveActionMontage = PlaySlotAnimationAsDynamicMontage(
-		Sequence,
-		FieldAnimationSlotName,
-		FieldAnimationBlendInTime,
-		FieldAnimationBlendOutTime,
-		1.0f,
-		LoopCount
-	);
+	ActiveActionMontage =
+	    PlaySlotAnimationAsDynamicMontage(Sequence, FieldAnimationSlotName, FieldAnimationBlendInTime,
+	                                      FieldAnimationBlendOutTime, 1.0f, LoopCount);
 
 	if (!ActiveActionMontage)
 	{
@@ -320,7 +317,7 @@ void UUEPokemonAnimInstance::PlayNextActionSequence()
 
 void UUEPokemonAnimInstance::ScheduleNextActionSequence()
 {
-	UWorld* World = GetWorld();
+	UWorld *World = GetWorld();
 	if (!World)
 	{
 		StopFieldAnimation(0.0f);
@@ -328,8 +325,7 @@ void UUEPokemonAnimInstance::ScheduleNextActionSequence()
 	}
 
 	// Montage 종료 콜백과 NativeUpdateAnimation 바깥인 다음 게임 프레임에서 Slot 재생을 시작한다.
-	World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
-	{
+	World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]() {
 		if (bIsFieldAnimationPlaying || bIsAttackAnimationPlaying)
 		{
 			PlayNextActionSequence();
@@ -337,7 +333,7 @@ void UUEPokemonAnimInstance::ScheduleNextActionSequence()
 	}));
 }
 
-void UUEPokemonAnimInstance::HandleActionMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+void UUEPokemonAnimInstance::HandleActionMontageEnded(UAnimMontage *Montage, bool bInterrupted)
 {
 	if (Montage != ActiveActionMontage)
 	{

@@ -325,7 +325,7 @@ let pickedSpecies = 0;   // 0 = 파트너 없이 시작
 
 function show(name) {
   for (const s of document.querySelectorAll('.screen')) s.classList.toggle('active', s.id === name);
-  // 필드에서는 입력창에 포커스를 주지 않는다. WASD 가 채팅으로 들어간다.
+  // 필드 관찰 화면에서는 채팅창에 자동으로 포커스를 주지 않는다.
   const focus = { login: 'loginUser', register: 'regUser', create: 'createNick' }[name];
   if (focus) $(focus).focus();
 }
@@ -613,10 +613,9 @@ $('createNick').addEventListener('keydown', e => { if (e.key === 'Enter') doCrea
 // ----------------------------------------------------------------- 필드
 //
 // 서버는 20Hz 로 스냅샷을 보낸다. 그대로 그리면 뚝뚝 끊기므로 목표 좌표로
-// 보간한다. 내 캐릭터만은 입력 즉시 로컬에서 움직인다 (예측) — 왕복을 기다리면
-// 키를 눌러도 100ms 뒤에 반응한다.
+// 보간한다. 실제 이동 조작은 공통 C++ 코어가 있는 게임 클라이언트에서 한다.
 
-const WORLD = 51200, SECTOR = 3200, SPEED = 600;   // FieldGeometry.h 와 같은 값
+const WORLD = 51200, SECTOR = 3200;   // FieldGeometry.h 와 같은 값
 const VIEW_RADIUS = 2800;
 const PX_PER_UU = 0.13;                            // 화면 1px = 7.7uu
 
@@ -627,7 +626,6 @@ let ws = null;
 let myId = null;
 const me = { x: WORLD / 2, y: WORLD / 2, facing: 0 };
 const entities = new Map();   // id -> {x, y, facing, rx, ry, nickname, partnerSpecies}
-const keys = new Set();
 
 function resize() {
   canvas.width = canvas.clientWidth * devicePixelRatio;
@@ -643,49 +641,15 @@ function append(cls, html) {
   $('log').scrollTop = $('log').scrollHeight;
 }
 
-// --- 입력 ---
-
-addEventListener('keydown', e => {
-  if (document.activeElement === $('text')) return;
-  keys.add(e.key.toLowerCase());
-});
-addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
-addEventListener('blur', () => keys.clear());
-
-function inputVector() {
-  let dx = 0, dy = 0;
-  if (keys.has('a') || keys.has('arrowleft')) dx -= 1;
-  if (keys.has('d') || keys.has('arrowright')) dx += 1;
-  if (keys.has('w') || keys.has('arrowup')) dy -= 1;
-  if (keys.has('s') || keys.has('arrowdown')) dy += 1;
-  if (dx && dy) { dx *= 0.7071; dy *= 0.7071; }   // 대각선이 더 빠르면 안 된다
-  return [dx, dy];
-}
+// Movement is simulated in the game client by the shared C++ core.
 
 // --- 렌더 ---
 
 let lastFrame = performance.now();
 
-// 종속 포켓몬은 서버가 시뮬레이션하지 않는다. 주인 뒤를 따라다니는 것뿐이라
-// 클라가 그린다. 여기가 그 꼬리 좌표를 들고 있는 곳이다.
 function drawActor(sx, sy, facing, nickname, partnerSpecies, color, state) {
   const dpr = devicePixelRatio;
-  const trailX = sx - Math.cos(facing) * 34 * dpr;
-  const trailY = sy - Math.sin(facing) * 34 * dpr;
-  state.px = state.px === undefined ? trailX : state.px + (trailX - state.px) * 0.12;
-  state.py = state.py === undefined ? trailY : state.py + (trailY - state.py) * 0.12;
 
-  if (partnerSpecies) {
-    ctx.fillStyle = '#5fc98a';
-    ctx.beginPath();
-    ctx.arc(state.px, state.py, 7 * dpr, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#5fc98abb';
-    ctx.font = (10 * dpr) + 'px "Malgun Gothic", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(speciesName(partnerSpecies), state.px, state.py - 12 * dpr);
-  }
 
   ctx.fillStyle = color;
   ctx.beginPath();
@@ -713,14 +677,6 @@ function draw(now) {
   lastFrame = now;
   requestAnimationFrame(draw);
   if (!$('field').classList.contains('active')) return;
-
-  // 로컬 예측. 서버도 같은 속도로 상한을 건다.
-  const [dx, dy] = inputVector();
-  if (dx || dy) {
-    me.x = Math.max(0, Math.min(WORLD - 1, me.x + dx * SPEED * dt));
-    me.y = Math.max(0, Math.min(WORLD - 1, me.y + dy * SPEED * dt));
-    me.facing = Math.atan2(dy, dx);
-  }
 
   // 남들은 목표 좌표로 부드럽게 따라간다.
   for (const e of entities.values()) {
@@ -817,13 +773,6 @@ function handle(ev) {
       break;
   }
 }
-
-// 20Hz 로 위치를 보낸다. 서버가 속도 상한으로 검증한다.
-setInterval(() => {
-  if (ws && ws.readyState === 1 && $('field').classList.contains('active')) {
-    ws.send(JSON.stringify({ t: 'move', x: me.x, y: me.y, f: me.facing }));
-  }
-}, 50);
 
 $('sayForm').onsubmit = e => {
   e.preventDefault();

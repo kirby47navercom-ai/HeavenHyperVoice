@@ -10,11 +10,12 @@
 #include "UEPokemonSpeciesCatalog.h"
 
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "Engine/GameInstance.h"
 #include "Engine/SkeletalMesh.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "../Movement/UECoreMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PhysicsVolume.h"
 #include "Kismet/GameplayStatics.h"
@@ -26,6 +27,19 @@ AUEPokemonCharacter::AUEPokemonCharacter()
 {
 	PrimaryActorTick.bCanEverTick = true;
 
+	Capsule = CreateDefaultSubobject<UCapsuleComponent>(TEXT("CollisionCylinder"));
+	Capsule->InitCapsuleSize(34.f, 88.f);
+	Capsule->SetCollisionProfileName(TEXT("Pawn"));
+	SetRootComponent(Capsule);
+
+	Mesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh0"));
+	Mesh->SetupAttachment(Capsule);
+	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	CoreMovement = CreateDefaultSubobject<UUECoreMovementComponent>(TEXT("CoreMovement"));
+	CoreMovement->SetUpdatedComponent(Capsule);
+	CoreMovement->OnLanded.AddDynamic(this, &AUEPokemonCharacter::Landed);
+
 	AIControllerClass = nullptr;
 	AutoPossessAI = EAutoPossessAI::Disabled;
 
@@ -33,13 +47,13 @@ AUEPokemonCharacter::AUEPokemonCharacter()
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;
 
-	GetCharacterMovement()->bOrientRotationToMovement = true;
-	GetCharacterMovement()->RotationRate = FRotator(0.0f, 500.0f, 0.0f);
+	GetCoreMovement()->RotationSpeed = 500.f;
 	ConfigureServerDrivenMovement();
 
 	// 각 포켓몬이 자신의 ASC와 AttributeSet을 직접 소유한다.
 	// 별도 PlayerState가 없는 야생 포켓몬도 같은 방식으로 GAS를 사용할 수 있다.
-	AbilitySystemComponent = CreateDefaultSubobject<UUEAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	AbilitySystemComponent =
+	    CreateDefaultSubobject<UUEAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	AbilitySystemComponent->SetIsReplicated(true);
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
 	AttributeSet = CreateDefaultSubobject<UUEPokemonAttributeSet>(TEXT("PokemonAttributeSet"));
@@ -100,17 +114,15 @@ void AUEPokemonCharacter::Tick(float DeltaSeconds)
 
 void AUEPokemonCharacter::OnJumped_Implementation()
 {
-	Super::OnJumped_Implementation();
 	PlayPokemonSoundEffect(EUEPokemonSoundEffect::Jump);
 }
 
-void AUEPokemonCharacter::Landed(const FHitResult& Hit)
+void AUEPokemonCharacter::Landed(const FHitResult &Hit)
 {
-	Super::Landed(Hit);
 	PlayPokemonSoundEffect(EUEPokemonSoundEffect::Landing);
 }
 
-UAbilitySystemComponent* AUEPokemonCharacter::GetAbilitySystemComponent() const
+UAbilitySystemComponent *AUEPokemonCharacter::GetAbilitySystemComponent() const
 {
 	return AbilitySystemComponent;
 }
@@ -124,14 +136,16 @@ void AUEPokemonCharacter::InitializeAbilitySystem()
 
 	// 포켓몬 액터 하나가 ASC의 소유자와 실제 전투 아바타를 모두 담당한다.
 	AbilitySystemComponent->InitAbilityActorInfo(this, this);
-	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UUEPokemonAttributeSet::GetHealthAttribute())
-		.AddUObject(this, &AUEPokemonCharacter::HandleHealthChanged);
-	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UUEPokemonAttributeSet::GetMaxHealthAttribute())
-		.AddUObject(this, &AUEPokemonCharacter::HandleMaxHealthChanged);
+	AbilitySystemComponent
+	    ->GetGameplayAttributeValueChangeDelegate(UUEPokemonAttributeSet::GetHealthAttribute())
+	    .AddUObject(this, &AUEPokemonCharacter::HandleHealthChanged);
+	AbilitySystemComponent
+	    ->GetGameplayAttributeValueChangeDelegate(UUEPokemonAttributeSet::GetMaxHealthAttribute())
+	    .AddUObject(this, &AUEPokemonCharacter::HandleMaxHealthChanged);
 	bAbilitySystemInitialized = true;
 }
 
-void AUEPokemonCharacter::ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot)
+void AUEPokemonCharacter::ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnapshot &Snapshot)
 {
 	// 같은 서버 틱에서 받은 식별자, 전투 수치, 애니메이션과 이동 목표를 함께 적용한다.
 	ServerEntityId = static_cast<int64>(FMath::Max(Snapshot.PokemonId, 0));
@@ -141,18 +155,17 @@ void AUEPokemonCharacter::ApplyServerMoveSnapshot(const FUEPokemonServerMoveSnap
 	SetRenderType(Snapshot.RenderType);
 	ApplyServerStats(Snapshot.CurrentHP, Snapshot.MaxHP);
 	ApplyServerAnimationSnapshot(Snapshot);
-	ApplyServerMoveTarget(Snapshot.Location, Snapshot.Velocity, Snapshot.Rotation, Snapshot.bTeleported, Snapshot.ServerTimeSeconds);
+	ApplyServerMoveTarget(Snapshot.Location, Snapshot.Velocity, Snapshot.Rotation, Snapshot.bTeleported,
+	                      Snapshot.ServerTimeSeconds);
 }
 
-void AUEPokemonCharacter::InitializeServerEntity(
-	int64 NewServerEntityId,
-	int32 SpeciesNumber,
-	EUEPokemonRenderType NewRenderType)
+void AUEPokemonCharacter::InitializeServerEntity(int64 NewServerEntityId, int32 SpeciesNumber,
+                                                 EUEPokemonRenderType NewRenderType)
 {
 	ServerEntityId = NewServerEntityId;
 	ServerPokemonId = NewServerEntityId >= 0 && NewServerEntityId <= static_cast<int64>(MAX_int32)
-		? static_cast<int32>(NewServerEntityId)
-		: 0;
+	                      ? static_cast<int32>(NewServerEntityId)
+	                      : 0;
 	SetRenderType(NewRenderType);
 
 	if (SpeciesNumber > 0)
@@ -169,7 +182,7 @@ void AUEPokemonCharacter::InitializeServerEntity(
 	}
 }
 
-void AUEPokemonCharacter::SetPokemonSpeciesData(UUEPokemonSpeciesData* NewSpeciesData)
+void AUEPokemonCharacter::SetPokemonSpeciesData(UUEPokemonSpeciesData *NewSpeciesData)
 {
 	if (PokemonSpeciesData == NewSpeciesData)
 	{
@@ -186,7 +199,8 @@ void AUEPokemonCharacter::SetWildSpecies(int32 SpeciesNumber)
 {
 	// 서버 종족 번호는 카탈로그 조회와 디버그 식별에만 사용한다.
 	ServerSpeciesId = FName(*FString::FromInt(SpeciesNumber));
-	// 직접 값을 대입하지 않고 Setter를 통과시켜, 이미 종족 데이터가 있는 재사용 액터도 야생 울음 타이머를 다시 켠다.
+	// 직접 값을 대입하지 않고 Setter를 통과시켜, 이미 종족 데이터가 있는 재사용 액터도 야생 울음 타이머를
+	// 다시 켠다.
 	SetRenderType(EUEPokemonRenderType::Wild);
 
 	// 카탈로그에 그 종족의 실제 모델이 있으면 그걸 쓴다. 아직 에셋이 없으면
@@ -195,7 +209,7 @@ void AUEPokemonCharacter::SetWildSpecies(int32 SpeciesNumber)
 	{
 		// 배열 위치가 아니라 도감번호로 찾는다. 카탈로그에 종족을 끼워 넣어도
 		// 야생 포켓몬이 다른 종족으로 바뀌지 않는다.
-		if (UUEPokemonSpeciesData* Data = PokemonSpeciesCatalog->FindByDex(SpeciesNumber))
+		if (UUEPokemonSpeciesData *Data = PokemonSpeciesCatalog->FindByDex(SpeciesNumber))
 		{
 			// SetPokemonSpeciesData 가 메시·애니메이션까지 다 적용하고
 			// ServerSpeciesId 를 데이터 쪽 이름으로 덮는다. 착색은 그 안에서
@@ -213,7 +227,8 @@ void AUEPokemonCharacter::SetWildSpecies(int32 SpeciesNumber)
 
 FName AUEPokemonCharacter::GetPokemonSpeciesId() const
 {
-	return PokemonSpeciesData && !PokemonSpeciesData->SpeciesId.IsNone() ? PokemonSpeciesData->SpeciesId : ServerSpeciesId;
+	return PokemonSpeciesData && !PokemonSpeciesData->SpeciesId.IsNone() ? PokemonSpeciesData->SpeciesId
+	                                                                     : ServerSpeciesId;
 }
 
 FText AUEPokemonCharacter::GetPokemonDisplayName() const
@@ -252,7 +267,8 @@ void AUEPokemonCharacter::PlayFaintCry()
 		return;
 	}
 
-	// 기절 전용 후보만 사용한다. 전용 소리가 없는 종이 갑자기 일반 소리를 내지 않도록 소환 울음은 대체재로 쓰지 않는다.
+	// 기절 전용 후보만 사용한다. 전용 소리가 없는 종이 갑자기 일반 소리를 내지 않도록 소환 울음은 대체재로
+	// 쓰지 않는다.
 	PlayCrySound(SelectRandomSound(PokemonSpeciesData->FaintCries, PokemonSpeciesData->FaintCry.Get()));
 }
 
@@ -309,24 +325,53 @@ void AUEPokemonCharacter::PlayPokemonSoundEffect(EUEPokemonSoundEffect Effect)
 		return;
 	}
 
-	const TArray<TObjectPtr<USoundBase>>* Candidates = nullptr;
+	const TArray<TObjectPtr<USoundBase>> *Candidates = nullptr;
 	switch (Effect)
 	{
-	case EUEPokemonSoundEffect::Footstep: Candidates = &PokemonSpeciesData->FootstepSounds; break;
-	case EUEPokemonSoundEffect::Jump: Candidates = &PokemonSpeciesData->JumpSounds; break;
-	case EUEPokemonSoundEffect::Landing: Candidates = &PokemonSpeciesData->LandingSounds; break;
-	case EUEPokemonSoundEffect::Swim: Candidates = &PokemonSpeciesData->SwimSounds; break;
-	case EUEPokemonSoundEffect::SpecialMovement: Candidates = &PokemonSpeciesData->SpecialMovementSounds; break;
-	case EUEPokemonSoundEffect::Attack: Candidates = &PokemonSpeciesData->AttackSounds; break;
-	case EUEPokemonSoundEffect::Hit: Candidates = &PokemonSpeciesData->HitSounds; break;
-	case EUEPokemonSoundEffect::Down: Candidates = &PokemonSpeciesData->DownSounds; break;
-	case EUEPokemonSoundEffect::Faint: Candidates = &PokemonSpeciesData->FaintEffectSounds; break;
-	case EUEPokemonSoundEffect::Eat: Candidates = &PokemonSpeciesData->EatSounds; break;
-	case EUEPokemonSoundEffect::Stun: Candidates = &PokemonSpeciesData->StunSounds; break;
-	case EUEPokemonSoundEffect::Sleep: Candidates = &PokemonSpeciesData->SleepSounds; break;
-	case EUEPokemonSoundEffect::Spawn: Candidates = &PokemonSpeciesData->SpawnSounds; break;
-	case EUEPokemonSoundEffect::Despawn: Candidates = &PokemonSpeciesData->DespawnSounds; break;
-	default: break;
+	case EUEPokemonSoundEffect::Footstep:
+		Candidates = &PokemonSpeciesData->FootstepSounds;
+		break;
+	case EUEPokemonSoundEffect::Jump:
+		Candidates = &PokemonSpeciesData->JumpSounds;
+		break;
+	case EUEPokemonSoundEffect::Landing:
+		Candidates = &PokemonSpeciesData->LandingSounds;
+		break;
+	case EUEPokemonSoundEffect::Swim:
+		Candidates = &PokemonSpeciesData->SwimSounds;
+		break;
+	case EUEPokemonSoundEffect::SpecialMovement:
+		Candidates = &PokemonSpeciesData->SpecialMovementSounds;
+		break;
+	case EUEPokemonSoundEffect::Attack:
+		Candidates = &PokemonSpeciesData->AttackSounds;
+		break;
+	case EUEPokemonSoundEffect::Hit:
+		Candidates = &PokemonSpeciesData->HitSounds;
+		break;
+	case EUEPokemonSoundEffect::Down:
+		Candidates = &PokemonSpeciesData->DownSounds;
+		break;
+	case EUEPokemonSoundEffect::Faint:
+		Candidates = &PokemonSpeciesData->FaintEffectSounds;
+		break;
+	case EUEPokemonSoundEffect::Eat:
+		Candidates = &PokemonSpeciesData->EatSounds;
+		break;
+	case EUEPokemonSoundEffect::Stun:
+		Candidates = &PokemonSpeciesData->StunSounds;
+		break;
+	case EUEPokemonSoundEffect::Sleep:
+		Candidates = &PokemonSpeciesData->SleepSounds;
+		break;
+	case EUEPokemonSoundEffect::Spawn:
+		Candidates = &PokemonSpeciesData->SpawnSounds;
+		break;
+	case EUEPokemonSoundEffect::Despawn:
+		Candidates = &PokemonSpeciesData->DespawnSounds;
+		break;
+	default:
+		break;
 	}
 
 	if (Candidates)
@@ -337,24 +382,25 @@ void AUEPokemonCharacter::PlayPokemonSoundEffect(EUEPokemonSoundEffect Effect)
 
 void AUEPokemonCharacter::RefreshWildCryTimer()
 {
-	UWorld* World = GetWorld();
+	UWorld *World = GetWorld();
 	if (!World)
 	{
 		return;
 	}
 
 	World->GetTimerManager().ClearTimer(WildCryTimerHandle);
-	if (RenderType != EUEPokemonRenderType::Wild || !PokemonSpeciesData || !PokemonSpeciesData->bEnableWildCries)
+	if (RenderType != EUEPokemonRenderType::Wild || !PokemonSpeciesData ||
+	    !PokemonSpeciesData->bEnableWildCries)
 	{
 		return;
 	}
 
 	bool bHasPlayableCry = PokemonSpeciesData->SummonCry != nullptr;
-	for (const TObjectPtr<USoundBase>& Cry : PokemonSpeciesData->SummonCries)
+	for (const TObjectPtr<USoundBase> &Cry : PokemonSpeciesData->SummonCries)
 	{
 		bHasPlayableCry |= Cry != nullptr;
 	}
-	for (const TObjectPtr<USoundBase>& Cry : PokemonSpeciesData->WildCries)
+	for (const TObjectPtr<USoundBase> &Cry : PokemonSpeciesData->WildCries)
 	{
 		bHasPlayableCry |= Cry != nullptr;
 	}
@@ -366,12 +412,8 @@ void AUEPokemonCharacter::RefreshWildCryTimer()
 	// 매 개체가 서로 다른 시점에 울도록 반복 타이머 대신 다음 한 번의 대기 시간을 매번 새로 뽑는다.
 	const float MinInterval = FMath::Max(PokemonSpeciesData->WildCryMinIntervalSeconds, 0.1f);
 	const float MaxInterval = FMath::Max(PokemonSpeciesData->WildCryMaxIntervalSeconds, MinInterval);
-	World->GetTimerManager().SetTimer(
-		WildCryTimerHandle,
-		this,
-		&ThisClass::HandleWildCryTimer,
-		FMath::FRandRange(MinInterval, MaxInterval),
-		false);
+	World->GetTimerManager().SetTimer(WildCryTimerHandle, this, &ThisClass::HandleWildCryTimer,
+	                                  FMath::FRandRange(MinInterval, MaxInterval), false);
 }
 
 void AUEPokemonCharacter::HandleWildCryTimer()
@@ -380,14 +422,13 @@ void AUEPokemonCharacter::HandleWildCryTimer()
 	RefreshWildCryTimer();
 }
 
-USoundBase* AUEPokemonCharacter::SelectRandomSound(
-	const TArray<TObjectPtr<USoundBase>>& Candidates,
-	USoundBase* FallbackSound) const
+USoundBase *AUEPokemonCharacter::SelectRandomSound(const TArray<TObjectPtr<USoundBase>> &Candidates,
+                                                   USoundBase *FallbackSound) const
 {
 	// DataAsset 편집 중 생긴 빈 칸은 후보에서 제외해 nullptr가 무작위로 선택되는 일을 막는다.
-	TArray<USoundBase*> ValidSounds;
+	TArray<USoundBase *> ValidSounds;
 	ValidSounds.Reserve(Candidates.Num());
-	for (const TObjectPtr<USoundBase>& Sound : Candidates)
+	for (const TObjectPtr<USoundBase> &Sound : Candidates)
 	{
 		if (Sound)
 		{
@@ -395,43 +436,31 @@ USoundBase* AUEPokemonCharacter::SelectRandomSound(
 		}
 	}
 
-	return ValidSounds.IsEmpty()
-		? FallbackSound
-		: ValidSounds[FMath::RandRange(0, ValidSounds.Num() - 1)];
+	return ValidSounds.IsEmpty() ? FallbackSound : ValidSounds[FMath::RandRange(0, ValidSounds.Num() - 1)];
 }
 
-void AUEPokemonCharacter::PlayCrySound(USoundBase* CrySound) const
+void AUEPokemonCharacter::PlayCrySound(USoundBase *CrySound) const
 {
 	if (!CrySound || !GetRootComponent())
 	{
 		return;
 	}
 
-	const float VolumeMultiplier = PokemonSpeciesData
-		? FMath::Max(PokemonSpeciesData->CryVolumeMultiplier, 0.0f)
-		: 1.0f;
-	const float PitchMultiplier = PokemonSpeciesData
-		? FMath::Max(PokemonSpeciesData->CryPitchMultiplier, 0.01f)
-		: 1.0f;
+	const float VolumeMultiplier =
+	    PokemonSpeciesData ? FMath::Max(PokemonSpeciesData->CryVolumeMultiplier, 0.0f) : 1.0f;
+	const float PitchMultiplier =
+	    PokemonSpeciesData ? FMath::Max(PokemonSpeciesData->CryPitchMultiplier, 0.01f) : 1.0f;
 
-	// 포켓몬의 현재 위치를 따라가는 3D 소리다. DataAsset의 공용 감쇠/동시 재생 에셋으로 거리감과 겹침을 통제한다.
+	// 포켓몬의 현재 위치를 따라가는 3D 소리다. DataAsset의 공용 감쇠/동시 재생 에셋으로 거리감과 겹침을
+	// 통제한다.
 	UGameplayStatics::SpawnSoundAttached(
-		CrySound,
-		GetRootComponent(),
-		NAME_None,
-		FVector::ZeroVector,
-		FRotator::ZeroRotator,
-		EAttachLocation::KeepRelativeOffset,
-		true,
-		VolumeMultiplier,
-		PitchMultiplier,
-		0.0f,
-		PokemonSpeciesData ? PokemonSpeciesData->CryAttenuation.Get() : nullptr,
-		PokemonSpeciesData ? PokemonSpeciesData->CryConcurrency.Get() : nullptr,
-		true);
+	    CrySound, GetRootComponent(), NAME_None, FVector::ZeroVector, FRotator::ZeroRotator,
+	    EAttachLocation::KeepRelativeOffset, true, VolumeMultiplier, PitchMultiplier, 0.0f,
+	    PokemonSpeciesData ? PokemonSpeciesData->CryAttenuation.Get() : nullptr,
+	    PokemonSpeciesData ? PokemonSpeciesData->CryConcurrency.Get() : nullptr, true);
 }
 
-void AUEPokemonCharacter::PlayEffectSound(USoundBase* EffectSound) const
+void AUEPokemonCharacter::PlayEffectSound(USoundBase *EffectSound) const
 {
 	if (!EffectSound || !PokemonSpeciesData)
 	{
@@ -439,23 +468,17 @@ void AUEPokemonCharacter::PlayEffectSound(USoundBase* EffectSound) const
 	}
 
 	UGameplayStatics::PlaySoundAtLocation(
-		this,
-		EffectSound,
-		GetActorLocation(),
-		FRotator::ZeroRotator,
-		FMath::Max(PokemonSpeciesData->EffectVolumeMultiplier, 0.0f),
-		FMath::Max(PokemonSpeciesData->EffectPitchMultiplier, 0.01f),
-		0.0f,
-		PokemonSpeciesData->EffectAttenuation
-			? PokemonSpeciesData->EffectAttenuation.Get()
-			: PokemonSpeciesData->CryAttenuation.Get(),
-		PokemonSpeciesData->EffectConcurrency
-			? PokemonSpeciesData->EffectConcurrency.Get()
-			: PokemonSpeciesData->CryConcurrency.Get(),
-		this);
+	    this, EffectSound, GetActorLocation(), FRotator::ZeroRotator,
+	    FMath::Max(PokemonSpeciesData->EffectVolumeMultiplier, 0.0f),
+	    FMath::Max(PokemonSpeciesData->EffectPitchMultiplier, 0.01f), 0.0f,
+	    PokemonSpeciesData->EffectAttenuation ? PokemonSpeciesData->EffectAttenuation.Get()
+	                                          : PokemonSpeciesData->CryAttenuation.Get(),
+	    PokemonSpeciesData->EffectConcurrency ? PokemonSpeciesData->EffectConcurrency.Get()
+	                                          : PokemonSpeciesData->CryConcurrency.Get(),
+	    this);
 }
 
-void AUEPokemonCharacter::UpdateMovementSound(const FVector& PreviousLocation, const FVector& NewLocation)
+void AUEPokemonCharacter::UpdateMovementSound(const FVector &PreviousLocation, const FVector &NewLocation)
 {
 	if (!PokemonSpeciesData)
 	{
@@ -470,7 +493,7 @@ void AUEPokemonCharacter::UpdateMovementSound(const FVector& PreviousLocation, c
 	}
 	AccumulatedMovementSoundDistance = FMath::Fmod(AccumulatedMovementSoundDistance, Interval);
 
-	const APhysicsVolume* PhysicsVolume = GetPhysicsVolume();
+	const APhysicsVolume *PhysicsVolume = Capsule->GetPhysicsVolume();
 	if (PhysicsVolume && PhysicsVolume->bWaterVolume && !PokemonSpeciesData->SwimSounds.IsEmpty())
 	{
 		PlayPokemonSoundEffect(EUEPokemonSoundEffect::Swim);
@@ -487,10 +510,9 @@ void AUEPokemonCharacter::UpdateMovementSound(const FVector& PreviousLocation, c
 
 void AUEPokemonCharacter::ConfigureServerDrivenMovement()
 {
-	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	if (UUECoreMovementComponent *MovementComponent = GetCoreMovement())
 	{
-		MovementComponent->GravityScale = 0.0f;
-		MovementComponent->SetMovementMode(MOVE_None);
+		MovementComponent->SetMovementMode(EUECoreMovementMode::Disabled);
 		MovementComponent->SetComponentTickEnabled(false);
 	}
 }
@@ -502,7 +524,7 @@ void AUEPokemonCharacter::ApplyPokemonSpeciesData()
 		return;
 	}
 
-	if (USkeletalMeshComponent* MeshComponent = GetMesh())
+	if (USkeletalMeshComponent *MeshComponent = GetMesh())
 	{
 		if (PokemonSpeciesData->SkeletalMesh)
 		{
@@ -519,22 +541,19 @@ void AUEPokemonCharacter::ApplyPokemonSpeciesData()
 
 	ConfiguredMoveSpeed = PokemonSpeciesData->MoveSpeed;
 
-	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	if (UUECoreMovementComponent *MovementComponent = GetCoreMovement())
 	{
 		MovementComponent->MaxWalkSpeed = ConfiguredMoveSpeed;
 		MovementComponent->MaxStepHeight = PokemonSpeciesData->MaxStepHeight;
-		MovementComponent->SetWalkableFloorAngle(PokemonSpeciesData->WalkableFloorAngleDegrees);
+		MovementComponent->WalkableFloorAngle = PokemonSpeciesData->WalkableFloorAngleDegrees;
 		ConfigureServerDrivenMovement();
 	}
 
-	GetMesh()->SetRelativeLocation({0.0f,0.0f,-90.0f});
+	GetMesh()->SetRelativeLocation(FVector(0.f, 0.f, -GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()));
 
 	const float SpeciesMaxHealth = FMath::Max(PokemonSpeciesData->MaxHP, 1.0f);
-	InitializePokemonAttributes(
-		SpeciesMaxHealth,
-		SpeciesMaxHealth,
-		PokemonSpeciesData->BaseAttackPower,
-		PokemonSpeciesData->BaseDefense);
+	InitializePokemonAttributes(SpeciesMaxHealth, SpeciesMaxHealth, PokemonSpeciesData->BaseAttackPower,
+	                            PokemonSpeciesData->BaseDefense);
 
 	// 종족 DataAsset에 지정한 GameplayAbility를 생성 시점에 자동으로 부여한다.
 	if (bAbilitySystemInitialized && AbilitySystemComponent)
@@ -565,7 +584,7 @@ void AUEPokemonCharacter::ApplyDebugAppearance()
 	bDebugAppearanceApplied = true;
 
 	// 큐브는 BP_Pokemon 이 들고 있는 StaticMeshComponent 다. 런타임에 찾는다.
-	UStaticMeshComponent* CubeComponent = FindComponentByClass<UStaticMeshComponent>();
+	UStaticMeshComponent *CubeComponent = FindComponentByClass<UStaticMeshComponent>();
 	if (!CubeComponent)
 	{
 		return;
@@ -581,7 +600,7 @@ void AUEPokemonCharacter::ApplyDebugAppearance()
 	// BasicShapeMaterial 에는 색 파라미터가 없어 이대로는 회색 큐브다. 색이
 	// 실제로 나오게 하려면 Color(VectorParameter) 하나 있는 머티리얼을 큐브에
 	// 물리면 된다 — 아래 관례 파라미터명들을 그대로 쓰면 코드 수정이 필요 없다.
-	if (UMaterialInstanceDynamic* Dynamic = CubeComponent->CreateDynamicMaterialInstance(0))
+	if (UMaterialInstanceDynamic *Dynamic = CubeComponent->CreateDynamicMaterialInstance(0))
 	{
 		Dynamic->SetVectorParameterValue(TEXT("Color"), Color);
 		Dynamic->SetVectorParameterValue(TEXT("BaseColor"), Color);
@@ -598,18 +617,12 @@ void AUEPokemonCharacter::ApplyServerStats(float ServerCurrentHP, float ServerMa
 
 	// 외부 서버 스냅샷도 GAS 속성에 넣어 UI와 피격 델리게이트가 같은 경로로 반응하게 한다.
 	const float SafeMaxHealth = FMath::Max(ServerMaxHP, 1.0f);
-	InitializePokemonAttributes(
-		FMath::Clamp(ServerCurrentHP, 0.0f, SafeMaxHealth),
-		SafeMaxHealth,
-		GetAttackPower(),
-		GetDefense());
+	InitializePokemonAttributes(FMath::Clamp(ServerCurrentHP, 0.0f, SafeMaxHealth), SafeMaxHealth,
+	                            GetAttackPower(), GetDefense());
 }
 
-void AUEPokemonCharacter::InitializePokemonAttributes(
-	float NewCurrentHealth,
-	float NewMaxHealth,
-	float NewAttackPower,
-	float NewDefense)
+void AUEPokemonCharacter::InitializePokemonAttributes(float NewCurrentHealth, float NewMaxHealth,
+                                                      float NewAttackPower, float NewDefense)
 {
 	const float SafeMaxHealth = FMath::Max(NewMaxHealth, 1.0f);
 	const float SafeCurrentHealth = FMath::Clamp(NewCurrentHealth, 0.0f, SafeMaxHealth);
@@ -623,10 +636,14 @@ void AUEPokemonCharacter::InitializePokemonAttributes(
 	}
 
 	// SetNumericAttributeBase를 사용해야 값 변경 델리게이트와 GAS 집계기가 함께 갱신된다.
-	AbilitySystemComponent->SetNumericAttributeBase(UUEPokemonAttributeSet::GetMaxHealthAttribute(), SafeMaxHealth);
-	AbilitySystemComponent->SetNumericAttributeBase(UUEPokemonAttributeSet::GetHealthAttribute(), SafeCurrentHealth);
-	AbilitySystemComponent->SetNumericAttributeBase(UUEPokemonAttributeSet::GetAttackPowerAttribute(), FMath::Max(NewAttackPower, 0.0f));
-	AbilitySystemComponent->SetNumericAttributeBase(UUEPokemonAttributeSet::GetDefenseAttribute(), FMath::Max(NewDefense, 0.0f));
+	AbilitySystemComponent->SetNumericAttributeBase(UUEPokemonAttributeSet::GetMaxHealthAttribute(),
+	                                                SafeMaxHealth);
+	AbilitySystemComponent->SetNumericAttributeBase(UUEPokemonAttributeSet::GetHealthAttribute(),
+	                                                SafeCurrentHealth);
+	AbilitySystemComponent->SetNumericAttributeBase(UUEPokemonAttributeSet::GetAttackPowerAttribute(),
+	                                                FMath::Max(NewAttackPower, 0.0f));
+	AbilitySystemComponent->SetNumericAttributeBase(UUEPokemonAttributeSet::GetDefenseAttribute(),
+	                                                FMath::Max(NewDefense, 0.0f));
 
 	// 외부 필드 서버 코드가 기존 Getter를 그대로 사용할 수 있도록 호환용 값도 맞춘다.
 	MaxHP = AttributeSet->GetMaxHealth();
@@ -660,7 +677,8 @@ float AUEPokemonCharacter::SetPokemonHealth(float NewHealth)
 
 	if (AbilitySystemComponent && AttributeSet)
 	{
-		AbilitySystemComponent->SetNumericAttributeBase(UUEPokemonAttributeSet::GetHealthAttribute(), ClampedHealth);
+		AbilitySystemComponent->SetNumericAttributeBase(UUEPokemonAttributeSet::GetHealthAttribute(),
+		                                                ClampedHealth);
 	}
 	else
 	{
@@ -702,7 +720,7 @@ bool AUEPokemonCharacter::ActivatePokemonAbilityByTag(FGameplayTag AbilityTag)
 	return true;
 }
 
-void AUEPokemonCharacter::HandleHealthChanged(const FOnAttributeChangeData& ChangeData)
+void AUEPokemonCharacter::HandleHealthChanged(const FOnAttributeChangeData &ChangeData)
 {
 	CurrentHP = FMath::Clamp(ChangeData.NewValue, 0.0f, GetMaxHP());
 	MaxHP = AttributeSet ? AttributeSet->GetMaxHealth() : MaxHP;
@@ -728,7 +746,7 @@ void AUEPokemonCharacter::HandleHealthChanged(const FOnAttributeChangeData& Chan
 	}
 }
 
-void AUEPokemonCharacter::HandleMaxHealthChanged(const FOnAttributeChangeData& ChangeData)
+void AUEPokemonCharacter::HandleMaxHealthChanged(const FOnAttributeChangeData &ChangeData)
 {
 	MaxHP = FMath::Max(ChangeData.NewValue, 1.0f);
 
@@ -750,7 +768,8 @@ void AUEPokemonCharacter::RefreshHealthBarWidget()
 		return;
 	}
 
-	if (UUEHealthBarWidget* HealthBarWidget = Cast<UUEHealthBarWidget>(HealthBarWidgetComponent->GetUserWidgetObject()))
+	if (UUEHealthBarWidget *HealthBarWidget =
+	        Cast<UUEHealthBarWidget>(HealthBarWidgetComponent->GetUserWidgetObject()))
 	{
 		HealthBarWidget->SetDisplayName(GetPokemonDisplayName());
 		HealthBarWidget->SetHealth(GetCurrentHP(), GetMaxHP());
@@ -766,13 +785,13 @@ void AUEPokemonCharacter::RefreshHealthBarVisibility()
 
 	// 분할 화면이 아닌 현재 클라이언트의 첫 로컬 플레이어를 거리 기준으로 삼는다.
 	// 서버 소유자나 카메라 위치를 쓰면 다른 클라이언트에서 표시 결과가 달라질 수 있다.
-	const UGameInstance* Instance = GetGameInstance();
-	const APlayerController* LocalController =
-		Instance ? Instance->GetFirstLocalPlayerController(GetWorld()) : nullptr;
-	const APawn* LocalPlayer = LocalController ? LocalController->GetPawn() : nullptr;
-	const bool bVisible = LocalPlayer && HealthBarVisibleDistance > 0.0f
-		&& FVector::DistSquared(GetActorLocation(), LocalPlayer->GetActorLocation())
-			<= FMath::Square(HealthBarVisibleDistance);
+	const UGameInstance *Instance = GetGameInstance();
+	const APlayerController *LocalController =
+	    Instance ? Instance->GetFirstLocalPlayerController(GetWorld()) : nullptr;
+	const APawn *LocalPlayer = LocalController ? LocalController->GetPawn() : nullptr;
+	const bool bVisible = LocalPlayer && HealthBarVisibleDistance > 0.0f &&
+	                      FVector::DistSquared(GetActorLocation(), LocalPlayer->GetActorLocation()) <=
+	                          FMath::Square(HealthBarVisibleDistance);
 
 	if (HealthBarWidgetComponent->IsVisible() != bVisible)
 	{
@@ -787,8 +806,9 @@ void AUEPokemonCharacter::RefreshHealthBarPosition()
 		return;
 	}
 
-	UPrimitiveComponent* VisualComponent = nullptr;
-	if (USkeletalMeshComponent* MeshComponent = GetMesh(); MeshComponent && MeshComponent->GetSkeletalMeshAsset())
+	UPrimitiveComponent *VisualComponent = nullptr;
+	if (USkeletalMeshComponent *MeshComponent = GetMesh();
+	    MeshComponent && MeshComponent->GetSkeletalMeshAsset())
 	{
 		VisualComponent = MeshComponent;
 	}
@@ -805,25 +825,37 @@ void AUEPokemonCharacter::RefreshHealthBarPosition()
 	const FBoxSphereBounds Bounds = VisualComponent->Bounds;
 	const FVector WorldTop = Bounds.Origin + FVector::UpVector * Bounds.BoxExtent.Z;
 	const FVector LocalTop = GetActorTransform().InverseTransformPosition(WorldTop);
-	HealthBarWidgetComponent->SetRelativeLocation(FVector(LocalTop.X, LocalTop.Y, LocalTop.Z + HealthBarHeadOffset));
+	HealthBarWidgetComponent->SetRelativeLocation(
+	    FVector(LocalTop.X, LocalTop.Y, LocalTop.Z + HealthBarHeadOffset));
 }
 
-void AUEPokemonCharacter::ApplyServerMoveTarget(const FVector& ServerLocation, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bTeleported, double ServerTimeSeconds)
+void AUEPokemonCharacter::ApplyServerMoveTarget(const FVector &ServerLocation, const FVector &ServerVelocity,
+                                                const FRotator &ServerRotation, bool bTeleported,
+                                                double ServerTimeSeconds)
 {
+	hhv::movement::State State;
+	State.position = {float(ServerLocation.X), float(ServerLocation.Y), float(ServerLocation.Z)};
+	State.velocity = {float(ServerVelocity.X), float(ServerVelocity.Y), float(ServerVelocity.Z)};
+	State.facing = ServerRotation.Yaw;
+	State.mode = hhv::movement::Mode::Grounded;
+	ApplyCoreSnapshot(State, ServerTimeSeconds, bTeleported);
+}
+
+void AUEPokemonCharacter::ApplyCoreSnapshot(const hhv::movement::State &State, double ServerTime,
+                                            bool bTeleported)
+{
+	const FVector Location(State.position.x, State.position.y, State.position.z);
+	const FVector Velocity(State.velocity.x, State.velocity.y, State.velocity.z);
+	const FQuat Rotation = FRotator(0.f, State.facing, 0.f).Quaternion();
 	const bool bReset = bTeleported || ServerMoveBuffer.IsEmpty() ||
-		FVector::Dist(GetActorLocation(), ServerLocation) >= ServerHardSnapDistance;
-	const double SampleTime = ServerTimeSeconds > 0.0 ? ServerTimeSeconds : FPlatformTime::Seconds();
-	const FUEServerMoveSample Sample{SampleTime, ServerLocation, ServerVelocity, ServerRotation.Quaternion()};
-	if (!ServerMoveBuffer.Add(Sample, bReset, ServerSnapshotIntervalSeconds * 2.0))
+	                    FVector::Dist(GetActorLocation(), Location) >= ServerHardSnapDistance;
+	const double Time = ServerTime > 0 ? ServerTime : FPlatformTime::Seconds();
+	if (ServerMoveBuffer.Add({Time, Location, Velocity, Rotation, State}, bReset,
+	                         ServerSnapshotIntervalSeconds * 2.0) &&
+	    bReset)
 	{
-		return;
-	}
-	if (bReset)
-	{
-		SetActorLocation(ServerLocation, false, nullptr, ETeleportType::TeleportPhysics);
-		SetActorRotation(ServerRotation, ETeleportType::TeleportPhysics);
-		GetCharacterMovement()->Velocity = FVector::ZeroVector;
-		AccumulatedMovementSoundDistance = 0.0f;
+		CoreMovement->RenderServerState(State);
+		AccumulatedMovementSoundDistance = 0.f;
 	}
 }
 
@@ -839,13 +871,14 @@ void AUEPokemonCharacter::HandleServerAttackSignal(uint64 TargetEntityId, uint32
 	LastServerAttackTargetId = TargetEntityId;
 
 	PlayRandomPhysicalAttackCry();
-	if (UUEPokemonAnimInstance* PokemonAnimInstance = Cast<UUEPokemonAnimInstance>(GetMesh()->GetAnimInstance()))
+	if (UUEPokemonAnimInstance *PokemonAnimInstance =
+	        Cast<UUEPokemonAnimInstance>(GetMesh()->GetAnimInstance()))
 	{
 		PokemonAnimInstance->PlayAttackAnimation(EUEPokemonAttackAnimation::Attack01);
 	}
 }
 
-void AUEPokemonCharacter::ApplyServerAnimationSnapshot(const FUEPokemonServerMoveSnapshot& Snapshot)
+void AUEPokemonCharacter::ApplyServerAnimationSnapshot(const FUEPokemonServerMoveSnapshot &Snapshot)
 {
 	ServerAnimationState = Snapshot.AnimationState;
 
@@ -862,17 +895,21 @@ void AUEPokemonCharacter::ApplyServerAnimationSnapshot(const FUEPokemonServerMov
 	// DataAsset에 없는 시퀀스는 AnimInstance에서 자동으로 건너뛴다.
 	if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::FieldAnimationStarted)
 	{
-		if (UUEPokemonAnimInstance* PokemonAnimInstance = Cast<UUEPokemonAnimInstance>(GetMesh()->GetAnimInstance()))
+		if (UUEPokemonAnimInstance *PokemonAnimInstance =
+		        Cast<UUEPokemonAnimInstance>(GetMesh()->GetAnimInstance()))
 		{
-			PokemonAnimInstance->PlayFieldAnimation(Snapshot.FieldAnimation, Snapshot.FieldAnimationLoopCount);
+			PokemonAnimInstance->PlayFieldAnimation(Snapshot.FieldAnimation,
+			                                        Snapshot.FieldAnimationLoopCount);
 		}
 	}
 	else if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::AttackStarted)
 	{
 		// 서버가 승인한 공격 종류만 재생해 클라이언트 입력과 실제 포켓몬 상태가 어긋나지 않게 한다.
-		if (UUEPokemonAnimInstance* PokemonAnimInstance = Cast<UUEPokemonAnimInstance>(GetMesh()->GetAnimInstance()))
+		if (UUEPokemonAnimInstance *PokemonAnimInstance =
+		        Cast<UUEPokemonAnimInstance>(GetMesh()->GetAnimInstance()))
 		{
-			PokemonAnimInstance->PlayAttackAnimation(Snapshot.AttackAnimation, Snapshot.AttackAnimationLoopCount);
+			PokemonAnimInstance->PlayAttackAnimation(Snapshot.AttackAnimation,
+			                                         Snapshot.AttackAnimationLoopCount);
 		}
 	}
 	else if (Snapshot.AnimationEvent == EUEPokemonAnimationEvent::SpawnStarted)
@@ -906,7 +943,7 @@ void AUEPokemonCharacter::ApplyServerAnimationSnapshot(const FUEPokemonServerMov
 
 void AUEPokemonCharacter::UpdateServerDrivenMovement(float DeltaSeconds)
 {
-	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
+	UUECoreMovementComponent *MovementComponent = GetCoreMovement();
 	FUEServerMoveSample Sample;
 	if (!ServerMoveBuffer.Advance(DeltaSeconds, ServerSnapshotIntervalSeconds * 2.0, Sample))
 	{
@@ -918,16 +955,11 @@ void AUEPokemonCharacter::UpdateServerDrivenMovement(float DeltaSeconds)
 	}
 
 	const FVector PreviousLocation = GetActorLocation();
-	SetActorLocation(Sample.Location, false);
-	SetActorRotation(Sample.Rotation);
-
-	if (MovementComponent)
-	{
-		// 애니메이션에는 서버가 지시한 목표 속도가 아니라 화면에서 실제로 이동한 속도를 전달한다.
-		// 보간 중 남은 이동과 정지 구간까지 같은 기준을 사용해야 발이 땅에서 덜 미끄러진다.
-		const float SafeDeltaSeconds = FMath::Max(DeltaSeconds, UE_SMALL_NUMBER);
-		MovementComponent->Velocity = (GetActorLocation() - PreviousLocation) / SafeDeltaSeconds;
-	}
+	auto State = Sample.CoreState;
+	State.position = {float(Sample.Location.X), float(Sample.Location.Y), float(Sample.Location.Z)};
+	State.velocity = {float(Sample.Velocity.X), float(Sample.Velocity.Y), float(Sample.Velocity.Z)};
+	State.facing = Sample.Rotation.Rotator().Yaw;
+	CoreMovement->RenderServerState(State);
 
 	UpdateMovementSound(PreviousLocation, GetActorLocation());
 }

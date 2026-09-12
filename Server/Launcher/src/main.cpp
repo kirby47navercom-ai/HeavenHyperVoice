@@ -13,335 +13,317 @@
 #include <string_view>
 #include <vector>
 
-namespace
-{
-    struct Options
-    {
-        std::uint16_t loginPort = 9000;
-        std::uint16_t chatPort = 9100;
-        std::uint16_t fieldPort = 9200;
-        std::uint16_t instancePort = 9300;
-        std::string host = "";
+namespace {
+struct Options {
+    std::uint16_t loginPort = 9000;
+    std::uint16_t chatPort = 9100;
+    std::uint16_t fieldPort = 9200;
+    std::uint16_t instancePort = 9300;
+    std::string host = "";
 
-        // 인스턴스 방 하나에 뿌릴 야생 포켓몬 수.
-        int wildCount = 50;
+    // 인스턴스 방 하나에 뿌릴 야생 포켓몬 수.
+    int wildCount = 50;
 
-        std::string fieldMap;
-        bool disableFieldMap = false;
-        std::string instanceMap = "1=maps/Filed.hhvmap";
+    std::string fieldMap;
+    std::string instanceMap = "1=maps/collision/Stage/Filed.hhvcollision";
 
-        bool verbose = false;
-    };
+    bool verbose = false;
+};
 
-    struct Server
-    {
-        std::string name;
-        PROCESS_INFORMATION info{};
-    };
+struct Server {
+    std::string name;
+    PROCESS_INFORMATION info{};
+};
 
-    HANDLE g_job = nullptr;
+HANDLE g_job = nullptr;
 
-    // 띄운 자식들의 프로세스 핸들. 시작이 끝나면 더 바뀌지 않는다.
-    std::vector<HANDLE> g_processes;
+// 띄운 자식들의 프로세스 핸들. 시작이 끝나면 더 바뀌지 않는다.
+std::vector<HANDLE> g_processes;
 
-    // 자식이 스스로 정리할 때까지 기다리는 시간.
-    //
-    // 자식은 CREATE_NEW_PROCESS_GROUP 없이 만들어져 같은 콘솔에 붙는다. 그래서
-    // Ctrl+C 는 런처와 자식 셋에 **함께** 전달되고, 각 서버는 자기 콘솔 핸들러로
-    // 정상 종료를 시작한다. 여기서 바로 TerminateJobObject 를 부르면 그 정리가
-    // 잘려나간다 — FieldServer 는 그때 접속자 전원의 위치를 DB 에 저장한다.
-    //
-    // CTRL_CLOSE_EVENT 는 시스템이 약 5초 뒤 프로세스를 강제 종료하므로 그 안쪽으로 둔다.
-    //
-    // 끝나기 기다리는 시간 고정 4초
-    constexpr DWORD wait_time_exit_ms = 4000;
+// 자식이 스스로 정리할 때까지 기다리는 시간.
+//
+// 자식은 CREATE_NEW_PROCESS_GROUP 없이 만들어져 같은 콘솔에 붙는다. 그래서
+// Ctrl+C 는 런처와 자식 셋에 **함께** 전달되고, 각 서버는 자기 콘솔 핸들러로
+// 정상 종료를 시작한다. 여기서 바로 TerminateJobObject 를 부르면 그 정리가
+// 잘려나간다 — FieldServer 는 그때 접속자 전원의 위치를 DB 에 저장한다.
+//
+// CTRL_CLOSE_EVENT 는 시스템이 약 5초 뒤 프로세스를 강제 종료하므로 그 안쪽으로 둔다.
+//
+// 끝나기 기다리는 시간 고정 4초
+constexpr DWORD wait_time_exit_ms = 4000;
 
-    // 남은 자식이 모두 끝나기를 기다린 뒤, 그래도 살아 있으면 커널에 맡긴다.
-    void stop_server()
-    {
-        if (!g_processes.empty())
-            ::WaitForMultipleObjects(static_cast<DWORD>(g_processes.size()), g_processes.data(),
-                                     TRUE, wait_time_exit_ms);
-        if (g_job != nullptr)
-            ::TerminateJobObject(g_job, 0);
+// 남은 자식이 모두 끝나기를 기다린 뒤, 그래도 살아 있으면 커널에 맡긴다.
+void stop_server() {
+    if (!g_processes.empty()) {
+        ::WaitForMultipleObjects(static_cast<DWORD>(g_processes.size()), g_processes.data(), TRUE,
+                                 wait_time_exit_ms);
+    }
+    if (g_job != nullptr) {
+        ::TerminateJobObject(g_job, 0);
+    }
+}
+
+void printUsage() {
+    std::cout << "Launcher - starts the HeavenHyperVoice servers together\n"
+                 "\n"
+                 "  --login-port <n>  login server port (default 9000)\n"
+                 "  --chat-port <n>   chat server port (default 9100)\n"
+                 "  --field-port <n>  field server port (default 9200)\n"
+                 "  --instance-port <n>  instance server port (default 9300)\n"
+                 "  --host <h>        host advertised to clients for chat, field and\n"
+                 "                    instances (default 127.0.0.1)\n"
+                 "  --wild-count <n>  wild pokemon per instance room (default 50)\n"
+                 "  --field-map <p>   nav map for the field server (default "
+                 "maps/collision/Environments/Goldenrod_R03/Maps/L_Goldenrod.hhvcollision)\n"
+                 "  --instance-map <t=p> nav map for an instance type (default "
+                 "1=maps/collision/Stage/Filed.hhvcollision)\n"
+                 "  --verbose         pass --verbose to the servers\n"
+                 "  --help            show this message\n"
+                 "\n"
+                 "Servers are looked up next to this executable. Children are placed in a job\n"
+                 "object, so they are terminated whenever the launcher exits.\n";
+}
+
+// 런처가 도는 컴퓨터의 주소. 어댑터 목록을 훑지 않고 라우팅 테이블에 묻는다.
+// UDP connect 는 패킷을 보내지 않는다 — 목적지로 나갈 인터페이스만 정해지고,
+// 그 주소를 되읽는다. 8.8.8.8 에 접속하지 않으므로 인터넷이 끊겨 있어도 된다.
+//
+// 못 알아내면 루프백으로 둔다. 그 경우 다른 컴퓨터는 못 붙지만, 적어도
+// 이 컴퓨터에서 혼자 하는 시험은 그대로 돌아간다.
+std::string detectLocalHost() {
+    WSADATA wsa{};
+    if (::WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+        return "127.0.0.1";
     }
 
-    void printUsage()
-    {
-        std::cout << "Launcher - starts the HeavenHyperVoice servers together\n"
-            "\n"
-            "  --login-port <n>  login server port (default 9000)\n"
-            "  --chat-port <n>   chat server port (default 9100)\n"
-            "  --field-port <n>  field server port (default 9200)\n"
-            "  --instance-port <n>  instance server port (default 9300)\n"
-            "  --host <h>        host advertised to clients for chat, field and\n"
-            "                    instances (default 127.0.0.1)\n"
-            "  --wild-count <n>  wild pokemon per instance room (default 50)\n"
-            "  --field-map <p>   nav map for the field server (default maps/Goldenrod.hhvmap)\n"
-            "  --no-field-map    disable field server nav map\n"
-            "  --instance-map <t=p> nav map for an instance type (default 1=maps/Filed.hhvmap)\n"
-            "  --verbose         pass --verbose to the servers\n"
-            "  --help            show this message\n"
-            "\n"
-            "Servers are looked up next to this executable. Children are placed in a job\n"
-            "object, so they are terminated whenever the launcher exits.\n";
+    std::string host = "127.0.0.1";
+    const SOCKET probe = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (probe != INVALID_SOCKET) {
+        sockaddr_in target{};
+        target.sin_family = AF_INET;
+        target.sin_port = ::htons(53);
+        ::inet_pton(AF_INET, "8.8.8.8", &target.sin_addr);
+
+        sockaddr_in local{};
+        int length = sizeof(local);
+        char text[INET_ADDRSTRLEN]{};
+        if (::connect(probe, reinterpret_cast<sockaddr *>(&target), sizeof(target)) == 0 &&
+            ::getsockname(probe, reinterpret_cast<sockaddr *>(&local), &length) == 0 &&
+            ::inet_ntop(AF_INET, &local.sin_addr, text, sizeof(text)) != nullptr) {
+            host = text;
+        }
+        ::closesocket(probe);
     }
-    
-    // 런처가 도는 컴퓨터의 주소. 어댑터 목록을 훑지 않고 라우팅 테이블에 묻는다.
-    // UDP connect 는 패킷을 보내지 않는다 — 목적지로 나갈 인터페이스만 정해지고,
-    // 그 주소를 되읽는다. 8.8.8.8 에 접속하지 않으므로 인터넷이 끊겨 있어도 된다.
-    //
-    // 못 알아내면 루프백으로 둔다. 그 경우 다른 컴퓨터는 못 붙지만, 적어도
-    // 이 컴퓨터에서 혼자 하는 시험은 그대로 돌아간다.
-    std::string detectLocalHost()
-    {
-        WSADATA wsa{};
-        if (::WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
-            return "127.0.0.1";
 
-        std::string host = "127.0.0.1";
-        const SOCKET probe = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        if (probe != INVALID_SOCKET)
-        {
-            sockaddr_in target{};
-            target.sin_family = AF_INET;
-            target.sin_port = ::htons(53);
-            ::inet_pton(AF_INET, "8.8.8.8", &target.sin_addr);
+    ::WSACleanup();
+    return host;
+}
 
-            sockaddr_in local{};
-            int length = sizeof(local);
-            char text[INET_ADDRSTRLEN]{};
-            if (::connect(probe, reinterpret_cast<sockaddr*>(&target), sizeof(target)) == 0 &&
-                ::getsockname(probe, reinterpret_cast<sockaddr*>(&local), &length) == 0 &&
-                ::inet_ntop(AF_INET, &local.sin_addr, text, sizeof(text)) != nullptr)
-            {
-                host = text;
+Options parseArgs(int argc, char **argv) {
+    Options options;
+    for (int i = 1; i < argc; ++i) {
+        const std::string_view arg = argv[i];
+        const auto next = [&](const char *name) -> std::string {
+            if (i + 1 >= argc) {
+                throw std::runtime_error(std::string("missing value for ") + name);
             }
-            ::closesocket(probe);
+            return argv[++i];
+        };
+
+        if (arg == "--login-port") {
+            options.loginPort = static_cast<std::uint16_t>(std::stoi(next("--login-port")));
         }
 
-        ::WSACleanup();
-        return host;
-    }
-    
-    Options parseArgs(int argc, char** argv)
-    {
-        Options options;
-        for (int i = 1; i < argc; ++i){
-            const std::string_view arg = argv[i];
-            const auto next = [&](const char* name) -> std::string
-            {
-                if (i + 1 >= argc)
-                    throw std::runtime_error(std::string("missing value for ") + name);
-                return argv[++i];
-            };
-
-            if (arg == "--login-port")
-                options.loginPort = static_cast<std::uint16_t>(std::stoi(next("--login-port")));
-            
-            else if (arg == "--chat-port")
-                options.chatPort = static_cast<std::uint16_t>(std::stoi(next("--chat-port")));
-            
-            else if (arg == "--field-port")
-                options.fieldPort = static_cast<std::uint16_t>(std::stoi(next("--field-port")));
-            
-            else if (arg == "--instance-port")
-                options.instancePort = static_cast<std::uint16_t>(std::stoi(next("--instance-port")));
-            
-            else if (arg == "--host")
-                options.host = next("--host");
-            
-            else if (arg == "--wild-count")
-                options.wildCount = std::stoi(next("--wild-count"));
-
-            else if (arg == "--field-map") {
-                options.fieldMap = next("--field-map");
-                options.disableFieldMap = false;
-            }
-
-            else if (arg == "--no-field-map") {
-                options.disableFieldMap = true;
-                options.fieldMap.clear();
-            }
-
-            else if (arg == "--instance-map")
-                options.instanceMap = next("--instance-map");
-            
-            else if (arg == "--verbose" || arg == "-v")
-                options.verbose = true;
-            
-            else if (arg == "--help" || arg == "-h"){
-                printUsage();
-                std::exit(0);
-            }
-            else
-                throw std::runtime_error("unknown argument: " + std::string(arg));
-            
-        }
-        // 비어 있으면 이 컴퓨터 주소를 쓴다. --host 로 준 값이 언제나 이긴다.
-        if (options.host.empty())
-            options.host = detectLocalHost();
-        std::cout << "[launcher] advertising " << options.host << " to clients" << std::endl;
-        return options;
-    }
-
-    std::filesystem::path executableDirectory()
-    {
-        wchar_t buffer[MAX_PATH];
-        const DWORD length = ::GetModuleFileNameW(nullptr, buffer, MAX_PATH);
-        if (length == 0 || length == MAX_PATH)
-            throw std::runtime_error("GetModuleFileNameW failed");
-        
-        return std::filesystem::path(buffer).parent_path();
-    }
-
-    // SetConsoleCtrlHandler에 전달될 CallBack 함수
-    // 이벤트를 처리해 준다.
-    BOOL CALLBACK consoleHandler(DWORD signal)
-    {
-        if (signal == CTRL_C_EVENT || signal == CTRL_BREAK_EVENT || signal == CTRL_CLOSE_EVENT){
-            // 자식들도 같은 콘솔 신호를 받아 이미 정리를 시작했다. 기다렸다가 끊는다.
-            std::cout << "\n[launcher] shutting down, waiting for servers to save and exit" << std::endl;
-            stop_server();
-            return TRUE;
-        }
-        return FALSE;
-    }
-
-    // 분산된 서버를 시작해 준다.
-    Server startServer(const std::filesystem::path& exe, const std::string& commandLine,
-                      const std::string& name)
-    {
-        if (!std::filesystem::exists(exe))
-            throw std::runtime_error("server executable not found: " + exe.string() +
-                "\n  (build all targets first: cmake --build --preset debug)");
-        
-        // CreateProcessW 는 커맨드라인을 수정할 수 있으므로 쓰기 가능한 버퍼가 필요하다.
-        std::wstring wide(commandLine.begin(), commandLine.end());
-        std::vector<wchar_t> mutableCommandLine(wide.begin(), wide.end());
-        mutableCommandLine.push_back(L'\0');
-
-        STARTUPINFOW startup{};
-        startup.cb = sizeof(startup);
-
-        Server server;
-        server.name = name;
-
-        // CREATE_SUSPENDED 로 만들어 Job 에 넣은 뒤 재개한다.
-        // 그래야 자식이 Job 밖에서 손자를 만들 틈이 없다.
-        if (!::CreateProcessW(exe.wstring().c_str(), mutableCommandLine.data(), nullptr, nullptr,
-                              FALSE, CREATE_SUSPENDED, nullptr, nullptr, &startup, &server.info))
-            throw std::runtime_error("CreateProcess failed for " + name + " (error " +
-                std::to_string(::GetLastError()) + ")");
-        
-
-        if (!::AssignProcessToJobObject(g_job, server.info.hProcess)){
-            ::TerminateProcess(server.info.hProcess, 1);
-            ::CloseHandle(server.info.hThread);
-            ::CloseHandle(server.info.hProcess);
-            throw std::runtime_error("AssignProcessToJobObject failed for " + name);
+        else if (arg == "--chat-port") {
+            options.chatPort = static_cast<std::uint16_t>(std::stoi(next("--chat-port")));
         }
 
-        ::ResumeThread(server.info.hThread);
-        g_processes.push_back(server.info.hProcess);
-        std::cout << "[launcher] started " << name << " (pid " << server.info.dwProcessId << ')'
-            << std::endl;
-        return server;
+        else if (arg == "--field-port") {
+            options.fieldPort = static_cast<std::uint16_t>(std::stoi(next("--field-port")));
+        }
+
+        else if (arg == "--instance-port") {
+            options.instancePort = static_cast<std::uint16_t>(std::stoi(next("--instance-port")));
+        }
+
+        else if (arg == "--host") {
+            options.host = next("--host");
+        }
+
+        else if (arg == "--wild-count") {
+            options.wildCount = std::stoi(next("--wild-count"));
+        }
+
+        else if (arg == "--field-map") {
+            options.fieldMap = next("--field-map");
+        }
+
+        else if (arg == "--instance-map") {
+            options.instanceMap = next("--instance-map");
+        }
+
+        else if (arg == "--verbose" || arg == "-v") {
+            options.verbose = true;
+        }
+
+        else if (arg == "--help" || arg == "-h") {
+            printUsage();
+            std::exit(0);
+        } else {
+            throw std::runtime_error("unknown argument: " + std::string(arg));
+        }
     }
+    // 비어 있으면 이 컴퓨터 주소를 쓴다. --host 로 준 값이 언제나 이긴다.
+    if (options.host.empty()) {
+        options.host = detectLocalHost();
+    }
+    std::cout << "[launcher] advertising " << options.host << " to clients" << std::endl;
+    return options;
+}
+
+std::filesystem::path executableDirectory() {
+    wchar_t buffer[MAX_PATH];
+    const DWORD length = ::GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+    if (length == 0 || length == MAX_PATH) {
+        throw std::runtime_error("GetModuleFileNameW failed");
+    }
+
+    return std::filesystem::path(buffer).parent_path();
+}
+
+// SetConsoleCtrlHandler에 전달될 CallBack 함수
+// 이벤트를 처리해 준다.
+BOOL CALLBACK consoleHandler(DWORD signal) {
+    if (signal == CTRL_C_EVENT || signal == CTRL_BREAK_EVENT || signal == CTRL_CLOSE_EVENT) {
+        // 자식들도 같은 콘솔 신호를 받아 이미 정리를 시작했다. 기다렸다가 끊는다.
+        std::cout << "\n[launcher] shutting down, waiting for servers to save and exit" << std::endl;
+        stop_server();
+        return TRUE;
+    }
+    return FALSE;
+}
+
+// 분산된 서버를 시작해 준다.
+Server startServer(const std::filesystem::path &exe, const std::string &commandLine,
+                   const std::string &name) {
+    if (!std::filesystem::exists(exe)) {
+        throw std::runtime_error("server executable not found: " + exe.string() +
+                                 "\n  (build all targets first: cmake --build --preset debug)");
+    }
+
+    // CreateProcessW 는 커맨드라인을 수정할 수 있으므로 쓰기 가능한 버퍼가 필요하다.
+    std::wstring wide(commandLine.begin(), commandLine.end());
+    std::vector<wchar_t> mutableCommandLine(wide.begin(), wide.end());
+    mutableCommandLine.push_back(L'\0');
+
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+
+    Server server;
+    server.name = name;
+
+    // CREATE_SUSPENDED 로 만들어 Job 에 넣은 뒤 재개한다.
+    // 그래야 자식이 Job 밖에서 손자를 만들 틈이 없다.
+    if (!::CreateProcessW(exe.wstring().c_str(), mutableCommandLine.data(), nullptr, nullptr, FALSE,
+                          CREATE_SUSPENDED, nullptr, nullptr, &startup, &server.info)) {
+        throw std::runtime_error("CreateProcess failed for " + name + " (error " +
+                                 std::to_string(::GetLastError()) + ")");
+    }
+
+    if (!::AssignProcessToJobObject(g_job, server.info.hProcess)) {
+        ::TerminateProcess(server.info.hProcess, 1);
+        ::CloseHandle(server.info.hThread);
+        ::CloseHandle(server.info.hProcess);
+        throw std::runtime_error("AssignProcessToJobObject failed for " + name);
+    }
+
+    ::ResumeThread(server.info.hThread);
+    g_processes.push_back(server.info.hProcess);
+    std::cout << "[launcher] started " << name << " (pid " << server.info.dwProcessId << ')' << std::endl;
+    return server;
+}
 } // namespace
 
-int main(int argc, char** argv)
-{
+int main(int argc, char **argv) {
     std::vector<Server> servers;
-    try{
+    try {
         const Options options = parseArgs(argc, argv);
         const std::filesystem::path dir = executableDirectory();
 
         // JobObject 생성
         g_job = ::CreateJobObjectW(nullptr, nullptr);
-        if (g_job == nullptr)
+        if (g_job == nullptr) {
             throw std::runtime_error("CreateJobObject failed");
-        
+        }
 
         // JobObject 정책 부여
         // 런처가 사라지면 Job 핸들이 닫히고, 커널이 자식을 모두 종료한다.
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        if (!::SetInformationJobObject(g_job, JobObjectExtendedLimitInformation,
-                                       &limits, sizeof(limits)))
+        if (!::SetInformationJobObject(g_job, JobObjectExtendedLimitInformation, &limits, sizeof(limits))) {
             throw std::runtime_error("SetInformationJobObject failed");
-        
+        }
 
         ::SetConsoleCtrlHandler(consoleHandler, TRUE);
 
         const std::string verbose = options.verbose ? " --verbose" : "";
 
         const std::filesystem::path loginExe = dir / "LoginServer.exe";
-        const std::string loginArgs = "LoginServer --port " + std::to_string(options.loginPort) +
-            " --chat-host " + options.host + " --chat-port " +
-            std::to_string(options.chatPort) + " --field-host " +
-            options.host + " --field-port " +
-            std::to_string(options.fieldPort) + " --instance-host " +
-            options.host + " --instance-port " +
-            std::to_string(options.instancePort) + verbose;
+        const std::string loginArgs =
+            "LoginServer --port " + std::to_string(options.loginPort) + " --chat-host " + options.host +
+            " --chat-port " + std::to_string(options.chatPort) + " --field-host " + options.host +
+            " --field-port " + std::to_string(options.fieldPort) + " --instance-host " + options.host +
+            " --instance-port " + std::to_string(options.instancePort) + verbose;
 
         const std::filesystem::path chatExe = dir / "ChatServer.exe";
-        const std::string chatArgs =
-            "ChatServer --port " + std::to_string(options.chatPort) + verbose;
+        const std::string chatArgs = "ChatServer --port " + std::to_string(options.chatPort) + verbose;
 
         // 야생은 여기 없다. 필드는 플레이어와 파트너만 있고 전투도 없다.
         const std::filesystem::path fieldExe = dir / "FieldServer.exe";
         std::string fieldArgs = "FieldServer --port " + std::to_string(options.fieldPort);
-        if (options.disableFieldMap) {
-            fieldArgs += " --no-map";
-        } else if (!options.fieldMap.empty()) {
+        if (!options.fieldMap.empty()) {
             fieldArgs += " --map " + options.fieldMap;
         }
         fieldArgs += verbose;
 
         const std::filesystem::path instanceExe = dir / "InstanceServer.exe";
-        const std::string instanceArgs = "InstanceServer --port " +
-            std::to_string(options.instancePort) +
-            " --instance-map " +
-            options.instanceMap +
-            " --wild-per-room " +
-            std::to_string(options.wildCount) + verbose;
+        const std::string instanceArgs = "InstanceServer --port " + std::to_string(options.instancePort) +
+                                         " --instance-map " + options.instanceMap + " --wild-per-room " +
+                                         std::to_string(options.wildCount) + verbose;
 
         servers.push_back(startServer(loginExe, loginArgs, "LoginServer"));
         servers.push_back(startServer(chatExe, chatArgs, "ChatServer"));
         servers.push_back(startServer(fieldExe, fieldArgs, "FieldServer"));
         servers.push_back(startServer(instanceExe, instanceArgs, "InstanceServer"));
 
-        std::cout << "[launcher] login on " << options.loginPort << ", chat on "
-            << options.chatPort << ", field on " << options.fieldPort
-            << ", instances on " << options.instancePort
-            << ". Ctrl+C to stop all." << std::endl;
+        std::cout << "[launcher] login on " << options.loginPort << ", chat on " << options.chatPort
+                  << ", field on " << options.fieldPort << ", instances on " << options.instancePort
+                  << ". Ctrl+C to stop all." << std::endl;
 
         // 아무 자식이나 죽으면 나머지도 정리한다. 반쪽만 살아있는 상태를 만들지 않는다.
         const DWORD result = ::WaitForMultipleObjects(static_cast<DWORD>(g_processes.size()),
                                                       g_processes.data(), FALSE, INFINITE);
         const std::size_t index = result - WAIT_OBJECT_0;
-        if (index < servers.size()){
+        if (index < servers.size()) {
             DWORD exitCode = 0;
             ::GetExitCodeProcess(servers[index].info.hProcess, &exitCode);
             std::cout << "[launcher] " << servers[index].name << " exited with code " << exitCode
-                << ", stopping the rest" << std::endl;
+                      << ", stopping the rest" << std::endl;
         }
 
         // 여기서도 즉시 죽이지 않는다. Ctrl+C 로 셋이 함께 내려가는 중일 수 있고,
         // 그때 FieldServer 는 아직 위치를 저장하고 있다.
         stop_server();
 
-        for (Server& child : servers){
+        for (Server &child : servers) {
             ::CloseHandle(child.info.hThread);
             ::CloseHandle(child.info.hProcess);
         }
         ::CloseHandle(g_job);
         return 0;
-    }
-    catch (const std::exception& e){
+    } catch (const std::exception &e) {
         std::cerr << "[launcher] fatal: " << e.what() << std::endl;
-        if (g_job != nullptr){
+        if (g_job != nullptr) {
             ::TerminateJobObject(g_job, 1);
             ::CloseHandle(g_job);
         }

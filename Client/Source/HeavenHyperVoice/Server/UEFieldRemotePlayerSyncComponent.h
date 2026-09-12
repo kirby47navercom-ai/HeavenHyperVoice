@@ -19,8 +19,8 @@ public:
 
 	// 파트너를 붙일 주인을 찾는다. 없으면 nullptr.
 	AUEPlayerCharacter* FindRemotePlayer(uint64 EntityId) const;
-	void HandleRemotePlayerSpawned(const FHHVFieldEntity& Entity, const FVector& SpawnLocation);
-	void HandleRemotePlayerMoved(const FHHVFieldEntity& Entity, const FVector& TargetLocation);
+	void HandleRemotePlayerSpawned(const FHHVFieldEntity& Entity);
+	void HandleRemotePlayerMoved(const FHHVFieldEntity& Entity);
 	bool HandleRemotePlayerDespawned(uint64 EntityId);
 	void DestroyRemotePlayers();
 

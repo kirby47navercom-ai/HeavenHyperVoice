@@ -6,7 +6,6 @@
 #include <cmath>
 #include <utility>
 
-
 namespace heaven::field {
 
 namespace {
@@ -14,7 +13,7 @@ namespace {
 constexpr float kEnterRadiusSquared = proto::kEnterRadius * proto::kEnterRadius;
 constexpr float kExitRadiusSquared = proto::kExitRadius * proto::kExitRadius;
 
-fieldshared::PartnerOwnerState partnerOwnerStateOf(const Entity& entity) {
+fieldshared::PartnerOwnerState partnerOwnerStateOf(const Entity &entity) {
     return {
         {entity.position.x, entity.position.y, entity.position.z},
         {entity.velocityX, entity.velocityY, entity.velocityZ},
@@ -22,10 +21,12 @@ fieldshared::PartnerOwnerState partnerOwnerStateOf(const Entity& entity) {
     };
 }
 
-}  // namespace
+} // namespace
 
-proto::EntityView World::viewOf(const Entity& entity, bool withIdentity) {
+proto::EntityView World::viewOf(const Entity &entity, bool withIdentity) {
     proto::EntityView view;
+    view.movement = entity.movement.state;
+    view.partnerMovement = entity.partner.movement;
     view.entityId = entity.characterId;
     view.x = entity.position.x;
     view.y = entity.position.y;
@@ -54,7 +55,7 @@ proto::EntityView World::viewOf(const Entity& entity, bool withIdentity) {
     return view;
 }
 
-void World::sendTo(const Entity& entity, const proto::Bytes& frame) const {
+void World::sendTo(const Entity &entity, const proto::Bytes &frame) const {
     // TlsSession::send 는 스레드 안전하고 월드 상태를 만지지 않는다.
     // 그래서 락을 쥔 채로 불러도 순서가 뒤집히지 않는다.
     if (const auto session = entity.session.lock()) {
@@ -62,7 +63,7 @@ void World::sendTo(const Entity& entity, const proto::Bytes& frame) const {
     }
 }
 
-Position World::resolvePosition(const Position& position) const {
+Position World::resolvePosition(const Position &position) const {
     Position resolved = position;
     resolved.x = proto::clampToWorld(resolved.x);
     resolved.y = proto::clampToWorld(resolved.y);
@@ -73,8 +74,7 @@ Position World::resolvePosition(const Position& position) const {
             resolved.x = grounded.x;
             resolved.y = grounded.y;
             resolved.z = grounded.z;
-        }
-        else if (map_->canStandAt(proto::kSpawnX, proto::kSpawnY, map_->agent(), &grounded)) {
+        } else if (map_->canStandAt(proto::kSpawnX, proto::kSpawnY, map_->agent(), &grounded)) {
             // 이전 맵에 저장된 위치가 건물이나 바다가 되었으면 중앙 시작점으로 복귀한다.
             resolved.x = grounded.x;
             resolved.y = grounded.y;
@@ -85,9 +85,8 @@ Position World::resolvePosition(const Position& position) const {
 }
 
 Displaced World::enter(std::uint64_t characterId, std::uint64_t accountId, std::string nickname,
-                       std::uint16_t partnerSpecies, const proto::AppearanceInfo& appearance,
-                       const Position& position,
-                       const std::shared_ptr<TlsSession>& session) {
+                       std::uint16_t partnerSpecies, const proto::AppearanceInfo &appearance,
+                       const Position &position, const std::shared_ptr<TlsSession> &session) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     Displaced displaced;
@@ -116,10 +115,14 @@ Displaced World::enter(std::uint64_t characterId, std::uint64_t accountId, std::
     entity.mapId = position.mapId;
     entity.position = resolvePosition(position);
     entity.sector = proto::sectorIndex(entity.position.x, entity.position.y);
-    entity.lastMoveAt = std::chrono::steady_clock::now();
+    hhv::movement::State initial;
+    initial.position = {entity.position.x - (proto::kWorldSize / 2.f),
+                        entity.position.y - (proto::kWorldSize / 2.f), entity.position.z};
+    initial.facing = entity.position.facing;
+    entity.movement.reset(initial);
     if (entity.partnerSpecies != 0) {
-        fieldshared::PartnerFollower::initialize(
-            partnerOwnerStateOf(entity), entity.partnerSpecies, entity.partner, map_);
+        fieldshared::PartnerFollower::initialize(partnerOwnerStateOf(entity), entity.partnerSpecies,
+                                                 entity.partner, map_);
     }
 
     // 번호가 이미 있으면 emplace 는 아무것도 넣지 않고 기존 것을 가리킨다.
@@ -137,7 +140,7 @@ Displaced World::enter(std::uint64_t characterId, std::uint64_t accountId, std::
     return displaced;
 }
 
-std::optional<Position> World::leave(std::uint64_t characterId, const TlsSession* session) {
+std::optional<Position> World::leave(std::uint64_t characterId, const TlsSession *session) {
     std::lock_guard<std::mutex> lock(mutex_);
 
     const auto it = entities_.find(characterId);
@@ -163,7 +166,7 @@ std::optional<Position> World::leave(std::uint64_t characterId, const TlsSession
     return position;
 }
 
-void World::removeFromVisibility(Entity& self) {
+void World::removeFromVisibility(Entity &self) {
     const std::vector<std::uint64_t> gone{self.visible.begin(), self.visible.end()};
 
     // 받는 사람마다 같은 바이트열이다. 한 번만 만든다.
@@ -180,7 +183,7 @@ void World::removeFromVisibility(Entity& self) {
     self.visible.clear();
 }
 
-void World::updateVisibility(Entity& self) {
+void World::updateVisibility(Entity &self) {
     // 1) 시야에서 나간 것부터 정리한다. 섹터를 보지 않고 거리로만 판정하므로
     //    순간이동으로 후보 밖까지 튄 경우도 여기서 걸린다.
     for (auto it = self.visible.begin(); it != self.visible.end();) {
@@ -190,8 +193,7 @@ void World::updateVisibility(Entity& self) {
             continue;
         }
 
-        const float d2 = proto::distanceSquared(self.position.x, self.position.y,
-                                                other->second.position.x,
+        const float d2 = proto::distanceSquared(self.position.x, self.position.y, other->second.position.x,
                                                 other->second.position.y);
         if (d2 <= kExitRadiusSquared && other->second.mapId == self.mapId) {
             ++it;
@@ -222,10 +224,8 @@ void World::updateVisibility(Entity& self) {
                 continue;
             }
 
-
             const float d2 = proto::distanceSquared(self.position.x, self.position.y,
-                                                    other->second.position.x,
-                                                    other->second.position.y);
+                                                    other->second.position.x, other->second.position.y);
             if (d2 > kEnterRadiusSquared) {
                 continue;
             }
@@ -246,18 +246,18 @@ void World::setPartnerSpecies(std::uint64_t characterId, std::uint16_t partnerSp
 
     const auto it = entities_.find(characterId);
     if (it == entities_.end()) {
-        return;  // 아직 안 들어왔거나 이미 나갔다
+        return; // 아직 안 들어왔거나 이미 나갔다
     }
 
-    Entity& entity = it->second;
+    Entity &entity = it->second;
     if (entity.partnerSpecies == partnerSpecies) {
-        return;  // 같은 값이면 알릴 것이 없다
+        return; // 같은 값이면 알릴 것이 없다
     }
     entity.partnerSpecies = partnerSpecies;
     fieldshared::PartnerFollower::reset(entity.partner);
     if (entity.partnerSpecies != 0) {
-        fieldshared::PartnerFollower::initialize(
-            partnerOwnerStateOf(entity), entity.partnerSpecies, entity.partner, map_);
+        fieldshared::PartnerFollower::initialize(partnerOwnerStateOf(entity), entity.partnerSpecies,
+                                                 entity.partner, map_);
     }
 
     // 프레임은 한 번만 만들어 돌려 쓴다. 보는 사람 수만큼 직렬화할 이유가 없다.
@@ -270,135 +270,65 @@ void World::setPartnerSpecies(std::uint64_t characterId, std::uint16_t partnerSp
     sendTo(entity, frame);
 }
 
-void World::move(std::uint64_t characterId, float x, float y, float facing,
-                 std::uint32_t sequence) {
-    // NaN/Inf 를 먼저 막는다. clampToWorld 의 비교는 NaN 에 대해 모두 거짓이라
-    // 그대로 통과하고, sectorIndex 의 float->int 변환이 정의되지 않은 값을 내며
-    // sectors_ 를 배열 밖에서 건드리게 된다.
-    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(facing)) {
-        return;
-    }
-
+bool World::move(std::uint64_t characterId, const TlsSession *session,
+                 const std::vector<hhv::movement::PredictedInput> &inputs) {
     std::lock_guard<std::mutex> lock(mutex_);
+    const auto found = entities_.find(characterId);
+    if (found == entities_.end() || found->second.session.lock().get() != session || map_ == nullptr ||
+        !map_->loaded()) {
+        return false;
+    }
+    return found->second.movement.enqueue(inputs);
+}
 
-    const auto it = entities_.find(characterId);
-    if (it == entities_.end()) {
+void World::advancePlayers(float dt) {
+    if (map_ == nullptr || !map_->loaded()) {
         return;
     }
-    Entity& self = it->second;
 
-    // 좌표는 클램프해도 **빈도**는 막지 못한다. 회선 속도로 밀어 넣으면 월드
-    // 전역 락과 시야 재계산을 독점할 수 있어, 너무 잦은 것은 그냥 버린다.
-    // lastMoveAt 을 갱신하지 않으므로 속도 예산은 그대로 쌓인다.
-    const auto now = std::chrono::steady_clock::now();
-    if (now - self.lastMoveAt < proto::kMinMoveInterval) {
-        return;
-    }
-
-    x = proto::clampToWorld(x);
-    y = proto::clampToWorld(y);
-
-    // 속도 상한. 거절이 아니라 클램프다 — 랙 스파이크로 정상 유저를 튕기지 않는다.
-    //
-    // 지터 여유는 메시지마다 새로 주지 않고 예산으로 들고 다닌다. 상수로 주면
-    // 자주 보내는 것만으로 상한을 몇십 배 넘길 수 있다 (FieldGeometry.h 참고).
-    //
-    // 경과 시간에는 상한이 있다. 없으면 Move 를 한동안 끊었다가 한 번 보내는
-    // 것만으로 허용 거리가 그만큼 커져 맵 반대편까지 순간이동한다.
-    const float elapsed = std::min(proto::kMaxMoveElapsed,
-                                   std::chrono::duration<float>(now - self.lastMoveAt).count());
-    const float previousX = self.position.x;
-    const float previousY = self.position.y;
-    const float previousZ = self.position.z;
-    const float straight = proto::kMaxSpeed * elapsed;
-    self.slack = std::min(proto::kSpeedSlack, self.slack + proto::kSlackRefill * elapsed);
-
-    const float allowed = straight + self.slack;
-    const float distance =
-        std::sqrt(proto::distanceSquared(self.position.x, self.position.y, x, y));
-
-    const bool tooFar = distance > allowed && distance > 0.f;
-    if (tooFar) {
-        const float scale = allowed / distance;
-        x = self.position.x + (x - self.position.x) * scale;
-        y = self.position.y + (y - self.position.y) * scale;
-        self.slack = 0.f;  // 예산을 다 썼다
-        // 치터는 이걸 초당 수십 번 만든다. warn 으로 올리면 로그가 잠긴다.
-        spdlog::debug("{} moved {:.0f}uu in {:.0f}ms, clamped to {:.0f}uu", self.nickname,
-                      distance, elapsed * 1000.f, allowed);
-    } else {
-        self.slack -= std::max(0.f, distance - straight);
-    }
-
-    // navmesh 검사. 도착점만 보면 한 틱에 캡슐 지름보다 멀리 움직일 때 좁은
-    // 막힘을 지나칠 수 있으므로 Detour raycast 로 두 점 사이를 확인한다.
-    bool corrected = tooFar;
-    float z = self.position.z;
-    if (map_ != nullptr && map_->loaded()) {
-        const nav::Agent& agent = map_->agent();
-        nav::Vec3 groundedTo;
-        const nav::Vec3 from{self.position.x, self.position.y, self.position.z};
-
-        if (!map_->canStandAt(x, y, agent, &groundedTo, self.position.z) ||
-            map_->blockedAlong(from, groundedTo, agent)) {
-            spdlog::debug("{} blocked by navmesh at ({:.0f}, {:.0f})", self.nickname, x, y);
-            // 통과시키지 않고 제자리에 둔다. 밀어내기(슬라이딩)는 클라이언트
-            // 물리가 이미 하므로, 서버는 "거기 못 간다" 만 말하면 된다.
-            x = self.position.x;
-            y = self.position.y;
-            z = self.position.z;
-            corrected = true;
-        } else {
-            x = groundedTo.x;
-            y = groundedTo.y;
-            z = groundedTo.z;
+    for (auto &[characterId, entity] : entities_) {
+        if (entity.session.expired() ||
+            !entity.movement.advance(dt, hhv::movement::Config{}, map_->collision())) {
+            continue;
         }
+
+        const auto &state = entity.movement.state;
+        const auto location = map_->toServer(state.position);
+        entity.position.x = location.x;
+        entity.position.y = location.y;
+        entity.position.z = location.z;
+        entity.position.facing = state.facing;
+        entity.velocityX = state.velocity.x;
+        entity.velocityY = state.velocity.y;
+        entity.velocityZ = state.velocity.z;
+        entity.movedThisTick = true;
+        sendTo(entity, proto::encodeCorrection(entity.movement.acknowledged, state));
+
+        const int sector = proto::sectorIndex(location.x, location.y);
+        if (sector != entity.sector) {
+            sectors_[static_cast<std::size_t>(entity.sector)].erase(characterId);
+            sectors_[static_cast<std::size_t>(sector)].insert(characterId);
+            entity.sector = sector;
+        }
+        updateVisibility(entity);
     }
-
-    self.position.x = x;
-    self.position.y = y;
-    self.position.z = z;
-    self.position.facing = facing;
-    const float safeElapsed = std::max(elapsed, 1e-3f);
-    self.velocityX = (x - previousX) / safeElapsed;
-    self.velocityY = (y - previousY) / safeElapsed;
-    self.velocityZ = (z - previousZ) / safeElapsed;
-    self.lastMoveAt = now;
-    self.movedThisTick = true;
-
-    // 서버가 좌표를 고쳤을 때만 알린다. 정상 이동까지 응답하면 20Hz x 접속자
-    // 만큼 왕복이 생긴다. 클라는 이 sequence 부터 다시 예측한다.
-    if (corrected) {
-        sendTo(self, proto::encodeCorrection(sequence, x, y, z, facing));
-    }
-
-    const int sector = proto::sectorIndex(x, y);
-    if (sector != self.sector) {
-        sectors_[static_cast<std::size_t>(self.sector)].erase(characterId);
-        sectors_[static_cast<std::size_t>(sector)].insert(characterId);
-        self.sector = sector;
-    }
-
-    // Spawn/Despawn 은 틱을 기다리지 않는다. Move 가 Spawn 보다 먼저 도착하면
-    // 클라가 모르는 엔티티의 좌표를 받게 된다.
-    updateVisibility(self);
 }
 
 void World::advancePartners(float dt) {
-    for (auto& [characterId, entity] : entities_) {
+    for (auto &[characterId, entity] : entities_) {
         (void)characterId;
         const bool pendingMove = entity.partner.movedThisTick;
         const bool pendingTeleport = entity.partner.teleportedThisTick;
-        fieldshared::PartnerFollower::update(
-            dt, partnerOwnerStateOf(entity), entity.partnerSpecies, entity.partner, map_);
+        fieldshared::PartnerFollower::update(dt, partnerOwnerStateOf(entity), entity.partnerSpecies,
+                                             entity.partner, map_);
         entity.partner.movedThisTick = entity.partner.movedThisTick || pendingMove;
-        entity.partner.teleportedThisTick =
-            entity.partner.teleportedThisTick || pendingTeleport;
+        entity.partner.teleportedThisTick = entity.partner.teleportedThisTick || pendingTeleport;
     }
 }
 
 void World::tick(float dt) {
     std::lock_guard<std::mutex> lock(mutex_);
+    advancePlayers(dt);
     advancePartners(dt);
 
     // 뷰어별로 모은다. 시야 집합이 대칭이라 "나를 보는 사람" = visible 이다.
@@ -409,7 +339,7 @@ void World::tick(float dt) {
     // 클라에 흘러가서 뷰 리스트를 둔 이유가 없어진다.
     std::unordered_map<std::uint64_t, std::vector<proto::EntityView>> pending;
 
-    for (auto& [characterId, entity] : entities_) {
+    for (auto &[characterId, entity] : entities_) {
         const bool partnerMoved = entity.partner.movedThisTick;
         if (!entity.movedThisTick && !partnerMoved) {
             continue;
@@ -427,7 +357,7 @@ void World::tick(float dt) {
         }
     }
 
-    for (const auto& [viewerId, moved] : pending) {
+    for (const auto &[viewerId, moved] : pending) {
         const auto viewer = entities_.find(viewerId);
         if (viewer != entities_.end()) {
             sendTo(viewer->second, proto::encodeSnapshot({}, moved, {}));
@@ -439,7 +369,7 @@ std::vector<std::pair<std::uint64_t, Position>> World::positions() {
     std::lock_guard<std::mutex> lock(mutex_);
     std::vector<std::pair<std::uint64_t, Position>> out;
     out.reserve(entities_.size());
-    for (const auto& [characterId, entity] : entities_) {
+    for (const auto &[characterId, entity] : entities_) {
         out.emplace_back(characterId, entity.position);
     }
     return out;
@@ -450,4 +380,4 @@ std::size_t World::size() {
     return entities_.size();
 }
 
-}  // namespace heaven::field
+} // namespace heaven::field

@@ -271,6 +271,11 @@ class TriangleWorld final : public CollisionWorld
 	}
 
 public:
+	const std::vector<Triangle>& triangles() const
+	{
+		return triangles_;
+	}
+
 	void build(std::vector<Triangle> triangles)
 	{
 		triangles_.clear();

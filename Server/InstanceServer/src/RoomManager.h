@@ -67,8 +67,7 @@ struct Room {
 
 // 종류 하나의 설정. main 이 소유하고 서버보다 오래 산다.
 //
-// 종류마다 맵이 다르다 (1 번은 들판, 나중에 동굴 등이 붙는다). 맵이 없는
-// 종류는 map 이 nullptr 이고 지형 검사를 하지 않는다.
+// 종류마다 공통 충돌 맵을 등록해야 한다. 등록하지 않은 종류는 입장을 거절한다.
 struct InstanceType {
     const Map* map = nullptr;
 

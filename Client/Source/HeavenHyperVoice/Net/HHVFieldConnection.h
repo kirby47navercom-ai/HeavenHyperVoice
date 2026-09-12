@@ -10,6 +10,7 @@
 #include "CoreMinimal.h"
 #include "Containers/Queue.h"
 #include "HAL/Runnable.h"
+#include "MovementPrediction.h"
 
 #include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
 
@@ -20,6 +21,8 @@ struct bio_st;
 /** One entity as the server reported it. Nickname and species arrive on spawn only. */
 struct FHHVFieldEntity
 {
+	hhv::movement::State CoreState;
+	hhv::movement::State PartnerCoreState;
 	uint64 EntityId = 0;
 	double ServerTimeSeconds = 0.0;
 	float X = 0.0f;
@@ -88,6 +91,8 @@ enum class EHHVFieldEvent : uint8
 
 struct FHHVFieldEventData
 {
+	hhv::movement::State MovementState;
+	uint64 CollisionHash = 0;
 	EHHVFieldEvent Type = EHHVFieldEvent::Disconnected;
 	uint64 EntityId = 0;
 	uint32 RoomId = 0;
@@ -140,20 +145,23 @@ struct FHHVFieldSettings
  */
 class HEAVENHYPERVOICE_API FHHVFieldConnection : public FRunnable
 {
-public:
+  public:
 	FHHVFieldConnection() = default;
 	virtual ~FHHVFieldConnection() override;
 
-	FHHVFieldConnection(const FHHVFieldConnection&) = delete;
-	FHHVFieldConnection& operator=(const FHHVFieldConnection&) = delete;
+	FHHVFieldConnection(const FHHVFieldConnection &) = delete;
+	FHHVFieldConnection &operator=(const FHHVFieldConnection &) = delete;
 
-	void Start(const FHHVFieldSettings& InSettings);
+	void Start(const FHHVFieldSettings &InSettings);
 	void Shutdown();
 
 	/** True once EnterAck has been drained by Poll(). */
-	bool IsInField() const { return bInField; }
+	bool IsInField() const
+	{
+		return bInField;
+	}
 
-	void SendMove(float X, float Y, float Facing, uint32 Sequence);
+	void SendMove(const std::vector<hhv::movement::PredictedInput> &Inputs);
 
 	/**
 	 * 파티 구성과 꺼낼 한 마리를 정한다. 전부 도감번호다.
@@ -161,44 +169,43 @@ public:
 	 * 캐릭터 번호를 싣지 않는다 — 서버는 티켓으로 이미 누구인지 안다.
 	 * 응답은 OnPartyState 로 온다. 거절이어도 현재 상태가 함께 온다.
 	 */
-	void SendSetParty(const TArray<uint16>& DexNumbers, uint16 ActiveDex);
+	void SendSetParty(const TArray<uint16> &DexNumbers, uint16 ActiveDex);
 
 	/** Game thread. Drains the inbound queue and fires the callbacks. */
 	void Poll();
 
-	TFunction<void(uint64 EntityId, float X, float Y, float Z, float Facing, uint32 RoomId,
-		float OriginOffset)> OnEnterAck;
-	TFunction<void(uint32 Sequence, float X, float Y, float Z, float Facing)> OnCorrection;
-	TFunction<void(const FHHVFieldSnapshot& Snapshot)> OnSnapshot;
-	TFunction<void(const FString& Text)> OnNotice;
-	TFunction<void(const FHHVFieldPartyState& State)> OnPartyState;
+	TFunction<void(const FHHVFieldEventData &Event)> OnEnterAck;
+	TFunction<void(uint32 Sequence, const hhv::movement::State &State)> OnCorrection;
+	TFunction<void(const FHHVFieldSnapshot &Snapshot)> OnSnapshot;
+	TFunction<void(const FString &Text)> OnNotice;
+	TFunction<void(const FHHVFieldPartyState &State)> OnPartyState;
 	TFunction<void(uint64 EntityId, uint16 PartnerDex)> OnPartnerChanged;
-	TFunction<void(const FString& Reason)> OnDisconnected;
+	TFunction<void(const FString &Reason)> OnDisconnected;
 
-protected:
+  protected:
 	// FRunnable
 	virtual uint32 Run() override;
 	virtual void Stop() override;
 
-private:
-	bool ConnectAndHandshake(FString& OutError);
+  private:
+	bool ConnectAndHandshake(FString &OutError);
 	void CloseTls();
 	bool FlushOutbound();
-	bool ReadInbound(FString& OutError);
+	bool ReadInbound(FString &OutError);
 	void ParseAccumulated();
-	void DispatchFrame(const uint8* Data, int32 Size);
-	void PushDisconnect(const FString& Reason);
+	void DispatchFrame(const uint8 *Data, int32 Size);
+	void PushDisconnect(const FString &Reason);
 
 	FHHVFieldSettings Settings;
 
-	FRunnableThread* Thread = nullptr;
+	FRunnableThread *Thread = nullptr;
 	FThreadSafeBool bStopRequested = false;
 	FThreadSafeBool bDisconnectPushed = false;
 	bool bInField = false;
 
-	ssl_ctx_st* Ctx = nullptr;
-	ssl_st* Ssl = nullptr;
-	bio_st* Bio = nullptr;
+	ssl_ctx_st *Ctx = nullptr;
+	ssl_st *Ssl = nullptr;
+	bio_st *Bio = nullptr;
 
 	// Worker thread only.
 	TArray<uint8> RecvAccum;

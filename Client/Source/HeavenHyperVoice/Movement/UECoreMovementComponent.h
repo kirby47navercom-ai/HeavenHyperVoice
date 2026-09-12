@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PawnMovementComponent.h"
-#include "MovementReplay.h"
+#include "MovementPrediction.h"
 #include "UECoreMovementComponent.generated.h"
 
 UENUM(BlueprintType)
@@ -15,7 +15,7 @@ enum class EUECoreMovementMode : uint8
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FUECoreMovementUpdated, float, DeltaSeconds, FVector,
                                                OldLocation, FVector, OldVelocity);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FUECoreLanded, const FHitResult&, Hit);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FUECoreLanded, const FHitResult &, Hit);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FUECoreJumpApex);
 
 /** Pawn adapter. No CharacterMovement dependency or engine character physics. */
@@ -24,12 +24,16 @@ class HEAVENHYPERVOICE_API UUECoreMovementComponent : public UPawnMovementCompon
 {
 	GENERATED_BODY()
 
-public:
+  public:
 	UUECoreMovementComponent();
+	bool IsNetworkSimulationActive() const
+	{
+		return bNetworkSimulation;
+	}
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType,
-	                           FActorComponentTickFunction* TickFunction) override;
+	                           FActorComponentTickFunction *TickFunction) override;
 	virtual void StopMovementImmediately() override;
-	virtual void RequestDirectMove(const FVector& MoveVelocity, bool bForceMaxSpeed) override;
+	virtual void RequestDirectMove(const FVector &MoveVelocity, bool bForceMaxSpeed) override;
 	virtual void OnTeleported() override;
 
 	virtual float GetMaxSpeed() const override
@@ -172,20 +176,29 @@ public:
 	FFilePath CollisionFile;
 
 	UFUNCTION(BlueprintCallable, Category = "Shared Movement|Testing")
-	bool ExportCoreReplay(const FString& BasePath) const;
+	bool ExportCoreReplay(const FString &BasePath) const;
+	bool BeginNetworkSimulation(const hhv::movement::State &Initial, uint64 MapHash);
+	void AcknowledgeNetworkInput(uint32 Sequence, const hhv::movement::State &State);
+	std::vector<hhv::movement::PredictedInput> TakeNetworkInputs();
+	void WaitForNetworkSimulation();
+	void RenderServerState(const hhv::movement::State &State);
+
 	hhv::movement::Config MakeCoreConfig() const;
 
-	const hhv::movement::State& GetCoreState() const
+	const hhv::movement::State &GetCoreState() const
 	{
 		return CoreState;
 	}
 
-protected:
+  protected:
 	virtual void BeginPlay() override;
 
-private:
+  private:
 	void PublishState(bool bEvents);
 	void ResetFromActor();
+	hhv::movement::PredictionQueue Prediction;
+	bool bNetworkSimulation = false;
+	bool bWaitingForNetwork = false;
 	hhv::movement::State CoreState;
 	std::deque<hhv::movement::StepRecord> History;
 	uint32 NextSequence = 1;

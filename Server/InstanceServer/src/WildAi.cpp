@@ -256,6 +256,9 @@ WildIntent WildAi::chooseNextAction(std::uint64_t entityId, std::uint16_t specie
 }
 
 bool WildAi::beginMove(float x, float y, float z, const MoveAction& action, WildBrain& brain) {
+    if (!map_ || !map_->loaded()) {
+        return false;
+    }
     brain.targetX = action.targetX;
     brain.targetY = action.targetY;
     brain.targetZ = action.targetZ;

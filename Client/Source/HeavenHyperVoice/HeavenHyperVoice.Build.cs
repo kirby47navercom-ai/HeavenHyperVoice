@@ -9,6 +9,7 @@ public class HeavenHyperVoice : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicIncludePaths.Add(Path.GetFullPath(Path.Combine(ModuleDirectory, "../MovementCore")));
+		PrivateIncludePaths.Add(Path.Combine(ModuleDirectory, "Net/Generated"));
 
 		if (Target.Platform == UnrealTargetPlatform.Win64)
 		{

@@ -21,12 +21,12 @@
 
 두 파일은 같은 형상과 해시를 담은 동일한 바이트다. 양쪽 임시 파일과 기존 파일 백업을 준비한 뒤 교체하며, 저장 실패 시 기존 파일 복원을 시도한다. 폴더 쓰기 권한이나 읽기 전용 파일 때문에 실패하면 알림과 Output Log를 확인한다.
 
-클라이언트의 `Content/MovementCollision` 폴더는 패키징 시 추가 데이터(UFS)로 포함되도록 설정돼 있다. 서버를 다른 컴퓨터로 배포할 때는 `Server/maps/collision` 폴더도 함께 배포한다. 기존 `.hhvmap` 파일은 별도 용도이며 덮어쓰지 않는다.
+클라이언트의 `Content/MovementCollision` 폴더는 패키징 시 추가 데이터(UFS)로 포함되도록 설정돼 있다. 서버를 다른 컴퓨터로 배포할 때는 `Server/maps/collision` 폴더도 함께 배포한다. 이전 `.hhvmap` 파일과 내비게이션 추출기는 제거했다.
 
 ## 무엇을 추출하는가
 
-- 컴포넌트의 실제 Collision Presets가 **정확히 `ServerGround` 또는 `ServerWall`**인 경우만 포함한다. 부모 블루프린트에서 상속받은 프리셋도 실제 컴포넌트에 적용돼 있으면 포함된다.
-- 이름, 액터 라벨, 태그만 같은 경우는 포함하지 않는다. 다른 프리셋의 자식 컴포넌트까지 부모에 붙어 있다는 이유로 포함하지 않는다.
+- 컴포넌트의 Collision Presets 또는 Component Tags에 `ServerGround` / `ServerWall`이 있으면 포함한다. Goldenrod의 네이티브 박스는 태그를 사용한다.
+- 이름이나 액터 라벨만 같은 경우는 포함하지 않는다. 부모에 붙어 있다는 이유로 다른 자식 컴포넌트를 포함하지 않는다.
 - 충돌이 꺼진 액터/컴포넌트, Pawn, 디버그 표시 컴포넌트는 제외한다.
 - Box, StaticMesh 및 인스턴스, Landscape를 지원한다. StaticMesh는 현재 **시각 LOD0 삼각형**을 사용한다. 별도 Simple Collision과 모양이 다를 수 있다. Landscape는 단순 충돌 높이 및 구멍을 사용한다.
 - 선택된 프리셋에 지원하지 않는 형상이 있거나 추출 대상이 없으면 오류를 내고 기존 배포 파일을 유지한다.
@@ -46,11 +46,19 @@ if (!collision.load(file)) {
 // simulate(entityState, input, config, collision);
 ```
 
-이 작업은 공통 파일 생성·배포와 클라이언트 파일 로드를 연결한다. 기존 서버의 이동 루프·네트워크·내비게이션 코드는 변경하지 않는다. 실제 서버 이동에 적용할 때는 공통 코어 호출을 그 루프에 연결해야 한다. 단위 cm/Z-up, 캡슐 중심 좌표이며 기존 서버의 X/Y +25600 좌표 변환은 외부 어댑터에서 맞춰야 한다.
+필드·인스턴스 서버는 이 파일을 직접 읽어 플레이어 검증, 야생 이동, 파트너 이동에 사용한다. 서버 어댑터가 저장 좌표와 코어 좌표를 변환한다. 입장 시 클라이언트 파일 해시가 다르면 연결을 중단하므로 양쪽 파일을 함께 배포해야 한다.
 
 ## 자동화
 
 에디터 Python에서도 `unreal.HHVCoreCollisionExportLibrary.export_current_map_collision()`을 호출할 수 있다. 버튼과 같은 저장 경로 및 추출 기준을 사용한다. `save_map=False`는 이미 저장한 맵을 검사/일괄 추출할 때만 사용한다.
+
+에디터를 종료한 상태에서 `UnrealEditor-Cmd.exe <프로젝트 절대 경로> -run=HHVCoreCollisionExport -Map=/Game/Level/PlayerTestLevel -unattended -nop4 -NullRHI`로도 같은 경로에 저장할 수 있다.
+
+Goldenrod는 `/Game/Environments/Goldenrod_R03/Maps/L_Goldenrod`를 지정한다. 4,728개 삼각형을 양쪽에 동일하게 저장했다.
+
+에디터를 종료한 상태에서 `UnrealEditor-Cmd.exe <프로젝트 절대 경로> -run=HHVCoreCollisionExport -Map=/Game/Level/PlayerTestLevel -unattended -nop4 -NullRHI`로도 같은 경로에 저장할 수 있다.
+
+Goldenrod는 `/Game/Environments/Goldenrod_R03/Maps/L_Goldenrod`를 지정한다. 4,728개 삼각형을 양쪽에 동일하게 저장했다.
 
 ## 현재 생성된 데이터
 

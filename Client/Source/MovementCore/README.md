@@ -1,67 +1,47 @@
-# 클라이언트 이동 코어 실험
+# 공통 이동 코어
 
-이번 구현은 **클라이언트 플레이어의 로컬 이동 테스트**다. 서버 소스, 와이어 프로토콜, 야생 포켓몬의 이동은 변경하지 않는다. 입력 전송·실제 서버 검증은 연결하지 않는다. 최근 600틱의 입력·설정·상태를 보관하고 독립 C++ 프로그램에서 재실행해 비교한다.
+플레이어, 야생 포켓몬, 파트너, 보스의 위치는 `MovementCore.h`의 `simulate`로 계산한다. 클라이언트와 서버가 같은 소스를 직접 포함한다. 플레이어와 포켓몬은 `APawn`이며 CharacterMovement를 생성하지 않는다.
 
-## 구조
+## 입력부터 화면까지
 
-`AUEPlayerCharacter (APawn)` → `UUECoreMovementComponent (UPawnMovementComponent)` → `hhv::movement::simulate`
+1. 클라이언트 `UECoreMovementComponent`가 방향·점프·구르기를 1/60초 단위 입력으로 만든다. 입력이 없어도 정지 입력을 만들어 중력과 감속을 계산한다.
+2. `PredictionQueue`가 입력에 순번을 붙이고 공통 코어를 실행한다. 입력과 계산 결과를 큐에 남기고, 결과 위치를 즉시 화면에 표시한다.
+3. `UEFieldServerBridgeComponent`가 아직 전송하지 않은 입력과 예측 좌표를 묶어 보낸다. 한 묶음은 최대 15틱이다.
+4. 서버 `AuthoritativeQueue`가 순번과 유효값을 검사하고 같은 충돌 파일·설정·입력으로 다시 계산한다. 좌표는 비교용이다. 잘못된 좌표를 보내도 서버 위치를 그 좌표로 옮기지 않는다. 처리량은 서버 시간으로 제한한다.
+5. 서버가 확인한 순번과 전체 상태를 돌려준다. 위치뿐 아니라 속도, 낙하 여부, 바닥 법선, 구르기 잔여 시간도 포함한다.
+6. 클라이언트는 확인된 입력을 큐에서 빼고, 서버 상태에서 미확인 입력을 다시 실행한다. 응답을 기다리느라 조작이 늦어지는 문제와 서로 다른 상태에서 계산하는 문제를 함께 다룬다.
 
-플레이어는 `ACharacter`를 상속하지 않으며 `UCharacterMovementComponent`를 생성·상속·호출하지 않는다. 캡슐·메시·카메라를 직접 소유한다. 다른 기존 포켓몬 클래스의 CharacterMovement는 이번 플레이어 실험에서 교체하지 않는다.
+큐는 최대 600틱이다. 확인받지 못한 입력을 조용히 버리지 않고 큐가 가득 차면 예측을 멈춘다. 중복·누락 순번이나 잘못된 값은 서버가 거절한다. TCP 연결을 새로 열면 입장 상태와 순번도 새로 시작한다.
 
-`MovementCore.h`는 언리얼 헤더를 포함하지 않는 C++ 코드다. 입력, 설정, 상태, 충돌 질의 인터페이스만 사용하므로 향후 NPC나 포켓몬도 자기 입력을 제공할 수 있다. 길찾기·플레이어 컨트롤러·네트워크·애니메이션은 코어 밖에 있다.
+## 서버 개체와 길찾기
 
-`TriangleWorld.h`도 표준 C++17이다. BVH로 후보 삼각형을 찾고 연속 캡슐 스윕·접촉·침투를 계산한다. **게임 중에도 바로 이 구현을 사용하며 언리얼 스윕이나 Chaos 질의를 호출하지 않는다.** 코어 폴더를 그대로 복사하거나 CMake의 `HHV::MovementCore`에 연결하면 언리얼 설치 없이 서버에서 사용할 수 있다.
+Lua AI는 목적지와 행동을 고른다. `Server/Movement`의 길찾기는 공통 충돌 데이터에서 캡슐이 이동할 수 있는 경로를 찾는다. `Map::advance`는 경로 방향을 입력으로 바꾸고 같은 60Hz 코어를 실행한다. 파트너도 이 경로를 사용한다. 짧은 경유점에 접근할 때 감속해 관성으로 모서리 밖으로 나가지 않도록 한다.
 
-`UUECoreCollisionSubsystem`은 월드당 하나의 충돌 스냅샷을 공유한다. UE 컴포넌트는 입력 수집, Details 설정 변환, 결과 위치·애니메이션 상태 표시만 담당한다. 플레이어·NPC 식별자는 코어에 없다.
+다른 플레이어와 포켓몬은 서버 상태를 시간순으로 보관하고 위치·회전을 보간해 표시한다. 낙하와 구르기 상태도 서버에서 받는다. 원격 개체의 클라이언트 이동 컴포넌트는 별도로 물리 시뮬레이션하지 않는다.
 
-## 실행과 설정
+## 데이터와 설정
 
-1. 에디터를 완전히 종료한 상태에서 `HeavenHyperVoiceEditor`를 빌드한다. 기본 클래스 변경이 있으므로 Live Coding만으로 반영하지 않는다.
-2. 플레이어가 있는 테스트 레벨을 열어 플레이한다. 기존 `BP_PlayerCharacter`의 네이티브 부모 이름은 유지된다.
-3. 플레이어의 **Character → Movement Test → Local Movement Test**는 기본으로 켜져 있다. 이 상태에서는 필드/인스턴스 연결 시작을 건너뛰어 기존 서버 좌표 보정이 로컬 이동 실험을 방해하지 않는다.
-4. **도구(Tools) → 공통 이동 충돌 저장**으로 `ServerGround`/`ServerWall` 프리셋 형상을 미리 추출한다. 클라이언트와 서버 데이터 폴더에 같은 파일을 저장한다. **Collision File**을 비워두면 `Content/MovementCollision/<맵 패키지 경로>.hhvcollision`을 자동으로 읽는다. PIE에서도 장면을 자동 추출하지 않는다. [자세한 저장 방법](MAP_EXPORT.md)을 참고한다.
-5. 플레이어 블루프린트의 **CoreMovement** 컴포넌트를 선택하고 **Shared Movement** 항목을 수정한다. 캡슐 크기는 **CollisionCylinder**에서 수정한다.
+- `TriangleWorld.h`는 표준 C++ 충돌 구현이며 언리얼 Chaos 질의를 사용하지 않는다.
+- 클라이언트 `Content/MovementCollision`과 서버 `maps/collision`에는 같은 `.hhvcollision` 파일을 배포한다. [추출 방법](MAP_EXPORT.md).
+- 입장 시 코어 버전과 맵 해시를 확인한다. 구버전 클라이언트와 새 서버는 함께 사용할 수 없다.
+- 네트워크 플레이어는 양쪽에서 기본 `Config`를 사용한다. Blueprint의 로컬 이동 시험용 속도·중력 변경은 네트워크 규칙을 바꾸지 않는다. 규칙을 바꾸려면 공통 설정과 양쪽 실행 파일을 함께 갱신한다.
+- 단위는 cm, Z-up, 캡슐 중심 좌표다. 저장/시야 계산의 XY 오프셋은 외부 어댑터에서만 적용한다. 필드 25600, 인스턴스 153600이다.
+- 정적 지형만 포함한다. 이동 발판, 동적 장애물, 다른 Pawn 충돌, 수영·비행·루트 모션 이동은 아직 지원하지 않는다.
+- float 계산이므로 다른 CPU/컴파일러 사이의 비트 단위 일치를 보장하지 않는다. 새로운 서버 플랫폼에서는 실제 재실행 검증이 필요하다.
 
-| 설정 | 초기값 | 의미 |
-|---|---:|---|
-| Max Walk Speed / Core Run Speed | 260 / 390 cm/s | 걷기 / 달리기 |
-| Max Acceleration | 2048 cm/s² | 입력 가속 |
-| Braking Deceleration Walking / Ground Friction | 2048 / 8 | 지상 감속 |
-| Jump Z Velocity / Gravity Acceleration | 420 / 980 | 점프 초기 속도 / 중력 |
-| Air Control | 0.35 | 공중 방향 조작 |
-| Max Step Height / Walkable Floor Angle | 45 cm / 44° | 계단 / 경사 제한 |
-| Floor Snap Distance / Contact Skin | 3 / 0.1 cm | 바닥 탐색 / 접촉 여유 |
-| Terminal Fall Speed | 4000 cm/s | 낙하 속도 제한 |
-| Rotation Speed | 540°/s | 입력 방향으로 회전 |
-| Core Roll Speed / Core Roll Duration | 600 / 0.6초 | 구르기 이동 |
+## 코드 위치
 
-이동은 1/60초 고정 간격으로 처리한다. 한 프레임의 누적 시간은 최대 0.25초로 제한한다. 심한 멈춤 후 모든 시간을 따라잡는 대신 과도한 반복 계산을 제한하는 초기 정책이다. 현재 별도의 화면 보간은 없으므로 고주사율에서 60Hz 위치 갱신이 보일 수 있다.
-
-## 애니메이션 블루프린트 연결
-
-애니메이션 블루프린트 에셋은 자동 수정하지 않는다. 기존 `Get Character Movement` 또는 `Character` 전용 노드는 직접 교체한다.
-
-`Try Get Pawn Owner` → `Cast to UEPlayerCharacter` → **Get Core Movement**에서 다음 값을 읽을 수 있다.
-
-| 값 / 함수 | 용도 |
+| 파일 | 역할 |
 |---|---|
-| Pawn의 Get Velocity / 컴포넌트의 Velocity | 이동 속도, Z 속도 |
-| Get Current Acceleration / Acceleration | 입력 가속 방향·크기 |
-| Is Moving On Ground | 접지 여부 |
-| Is Falling | 공중 여부: 상승과 하강 모두 true |
-| Movement Mode | Grounded / Falling / Disabled |
-| Floor Normal | 현재 바닥 방향 |
-| Is Wall Sliding | 이번 이동의 벽 미끄러짐 |
-| Is Core Rolling | 코어 구르기 진행 여부 |
-| On Landed / On Jump Apex / On Movement Updated | 착지 / 정점 / 이동 갱신 이벤트 |
+| MovementCore.h | 고정 시간 이동, 접지, 점프, 구르기 |
+| TriangleWorld.h | 삼각형 충돌과 바닥 질의 |
+| MovementPrediction.h | 클라이언트 예측 큐와 서버 검증 큐 |
+| MovementWire.h | 전체 상태와 입력의 공통 직렬화 |
+| MovementReplay.h | 저장된 기록의 독립 재실행 |
+| Server/Movement/src/Map.cpp | 서버 좌표 변환과 AI 입력 시뮬레이션 |
+| Server/Movement/src/Path.cpp | 같은 충돌 형상을 사용하는 길찾기 |
 
-점프 상승은 `Is Falling && Velocity.Z > 0`, 낙하 하강은 `Is Falling && Velocity.Z <= 0`으로 나눈다. 기존 플레이어의 `IsRunning`, `GetMovementInput`, `GetCharacterStateTag`도 유지한다. 네이티브 `UUEAnimInstance`가 값을 읽는 경로만 새 컴포넌트로 바꿨다.
-
-## 테스트와 현재 범위
-
-언리얼 자동 테스트: `HHV.Movement.Core` (평지·점프·30/60/120FPS·벽·모서리·계단·경사·낭떠러지·플레이어 컴포넌트 구성). 기존 `HHV.Movement`의 좌표 보정/보간 테스트도 빌드 대상으로 유지한다.
-
-언리얼 없이 코어만 실행:
+## 검증 실행
 
 ```text
 cmake -S Client/Source/MovementCore -B Client/Intermediate/CoreMovement
@@ -69,65 +49,31 @@ cmake --build Client/Intermediate/CoreMovement --config Debug
 ctest --test-dir Client/Intermediate/CoreMovement -C Debug --output-on-failure
 ```
 
-게임과 독립 실행 테스트는 둘 다 `TriangleWorld.h`의 동일한 구현을 사용한다.
+언리얼 자동 테스트 이름은 `HHV.Movement`다. `Export Core Replay`로 저장한 `.hhvreplay`와 `.hhvcollision` 쌍은 독립 `MovementReplay` 실행 파일로 검증할 수 있다.
 
-### 클라이언트 기록 재실행
-
-플레이 중 CoreMovement의 Blueprint 함수 **Export Core Replay**를 호출한다. Base Path를 비우면 `Client/Saved/CoreMovement/LastReplay.hhvcollision`과 `.hhvreplay`가 생성된다. 최근 600틱을 보관하며 순간이동·강제 속도/모드 변경·정지·충돌 데이터 변경 시 기록을 초기화한다. 별도 전송은 하지 않는다.
+서버를 `BUILD_TESTING=ON`으로 빌드하면 `FieldMovementTests`와 `MovementNetworkTest`가 생성된다. 후자는 별도로 실행한 로컬 `--dev-no-auth` 서버를 대상으로 한다.
 
 ```text
-Client/Intermediate/CoreMovement/Debug/MovementReplay.exe Client/Saved/CoreMovement/LastReplay.hhvcollision Client/Saved/CoreMovement/LastReplay.hhvreplay
+FieldMovementTests.exe maps/collision/Stage/Filed.hhvcollision
+MovementNetworkTest.exe 9200 maps/collision/Environments/Goldenrod_R03/Maps/L_Goldenrod.hhvcollision
+MovementNetworkTest.exe 9300 maps/collision/Stage/Filed.hhvcollision 1
 ```
 
-독립 프로그램은 시작 상태에서 모든 입력을 순서대로 시뮬레이션한다. 매 틱의 위치·속도·가속도·바닥 법선·회전·구르기·이동 모드·벽 상태를 기록과 비교하며, 오차 또는 잘못된 버전/맵 해시/입력 순서를 만나면 실패한다. 비교 허용값은 실수 항목 0.001, 열거형·불리언·틱 수는 정확 일치다. 테스트 파일은 서버의 신뢰할 수 없는 입력 처리 프로토콜이 아니다.
+네트워크 검사는 360틱의 입력 재현, 점프·구르기 상태, 위조 좌표 무시, 확인 큐 제거, 중복 입력 거절을 확인한다.
 
-### 순수 C++ 호스트에 연결
+## main 통합 검증 (2026-09-13)
 
-```cpp
-#include "TriangleWorld.h"
-#include <fstream>
+- Windows/MSVC 서버 Debug·Release 빌드와 UE 5.8 Development Editor 빌드 성공.
+- 독립 코어 CTest 4개, 언리얼 `HHV.Movement` 9개 통과. PlayerTestLevel 경사와 모서리 검사를 포함한다.
+- 실제 Filed·Goldenrod 충돌 파일에서 경로·파트너 추적 검사 통과.
+- 필드·인스턴스 실제 TLS 접속에서 360틱 재현, 점프·구르기, 위조 좌표, 순번 확인, 중복 입력 거절 통과.
+- 12마리 야생 포켓몬의 실제 이동과 전체 코어 상태 수신 확인.
+- 인스턴스 방 분할·격리·종류 분리·잘못된 종류 거절·빈 방 회수 통과.
+- 플레이어·포켓몬·애니메이션 Blueprint 5개 재컴파일 및 저장. 플레이어와 포켓몬의 CharacterMovement 부재 확인.
 
-hhv::movement::TriangleWorld world;
-std::ifstream file("PlayerTestLevel.hhvcollision");
-if (!world.load(file)) return; // 호스트에서 오류 처리
-hhv::movement::Config config;
-hhv::movement::State state;
-state.position = {0, 0, 88.1f};
-hhv::movement::Input input{1, 1.f, 0.f, 0};
-hhv::movement::simulate(state, input, config, world); // 정확히 1/60초
-```
+포탈은 서버 위치로 입장한 뒤 한 번 트리거 밖에 있어야 활성화된다. 복귀 위치가 포탈 안이어도 즉시 재입장하지 않으며, 임의 순간이동 좌표를 서버에 보내지 않는다.
 
-CMake에서 `add_subdirectory(path/to/MovementCore)` 후 `target_link_libraries(host PRIVATE HHV::MovementCore)`를 사용한다. 서버에 넣을 때 테스트 실행 파일이 필요 없다면 `HHV_MOVEMENT_BUILD_TESTS=OFF`로 설정한다. 코어는 네트워크나 OS API, UE 타입, 물리 엔진 라이브러리를 요구하지 않는다. 엔티티마다 `State`를 소유하고 여러 엔티티가 읽기 전용 `TriangleWorld`를 공유할 수 있다. `build/load`는 시뮬레이션 스레드와 동시에 호출하지 않는다.
-
-### 충돌 파일과 좌표 규약
-
-- `.hhvcollision`은 버전·삼각형 수·형상 해시와 월드 좌표 삼각형을 담는다. float 왕복 정밀도를 보존하는 텍스트이며 잘못된 파일을 읽으면 기존 월드를 유지한다.
-- 단위 cm, Z 위쪽, 위치는 캡슐 중심이다. **기존 서버의 X/Y +25600 오프셋을 코어 안에서 적용하지 않는다.** 실제 서버 연결 시 외부 어댑터에서 입력/출력 좌표를 변환하거나 호스트 모두 동일한 원점을 사용해야 한다. 기존 navmesh `.hhvmap`은 이 파일과 서로 다른 형식이다.
-- 같은 버전의 코드·충돌 파일·설정·초기 상태·틱별 입력이 재실행 조건이다. float 기반이므로 서로 다른 CPU/컴파일러의 비트 단위 결정성을 보장하지 않는다. fast-math를 끄고 실제 서버 플랫폼에서도 재실행 허용오차를 검증해야 한다.
-- 에디터 변환은 Pawn을 제외한 `ServerGround`/`ServerWall` Collision Presets 컴포넌트만 대상으로 한다. 이름·태그로 대상을 확장하지 않는다. Box, StaticMesh LOD0(인스턴스별 변환 포함), Landscape의 단순 충돌 높이/구멍을 지원한다. StaticMesh는 **시각 LOD0 형상**을 공통 충돌 형상으로 쓰므로 기존 UE의 단순 충돌 모양과 다를 수 있다. 지원하지 않는 차단 컴포넌트는 오류를 내고 변환을 중단한다. 필요하면 Box/StaticMesh 프록시를 배치한다.
-- 스냅샷은 정적 지형이다. 이동 발판·동적 장애물·다른 Pawn은 포함하지 않는다. 장면 변경 후 **공통 이동 충돌 저장** 메뉴로 다시 추출한다. 클라이언트 파일은 패키징 데이터에 포함되고 서버 파일은 `Server/maps/collision`에 함께 저장한다. 서버 실행부 연결은 별도 단계다.
-
-초기 범위는 정적 지형의 걷기·달리기·가속·감속·점프·낙하·착지·벽 미끄러짐·모서리·계단·경사·간단한 침투 복구다. 이동 발판 운반, 수영/비행/웅크리기, 물체 밀기, 루트 모션 이동, 네트워크 재시뮬레이션은 구현하지 않았다. 기존 구르기 몽타주는 표시용이며 위치는 코어가 결정한다.
-
-## 검증
-
-`HHV.Movement` 자동 테스트는 이동 기능과 실제 컴포넌트 연결을 검사한다. `PortableCollisionReplay`는 형상 변환 후 언리얼 바닥/벽 충돌을 비활성화하고도 코어가 충돌하는지 검증하며, 독립 실행 검사용 기록을 저장한다. `Wall`, `Step`, `Slope`, `PortableReplay`의 `.hhvcollision`/`.hhvreplay` 쌍은 `Client/Saved/CoreMovement`에 생성된다.
-
-자동 테스트는 화면을 렌더링하지 않는 환경에서 실행한다. 최종 애니메이션 블루프린트 연결과 화면에서의 조작감 조정은 별도로 진행한다.
-
-검증 기록 (2026-09-11, Windows/MSVC):
-
-- Unreal Engine 5.8 Development Editor 빌드 성공.
-- `HHV.Movement` 6개 성공, 경고/실패 0개.
-- 독립 CMake/CTest 성공. 클라이언트가 내보낸 Wall 120틱, Step 100틱, Slope 130틱, PortableReplay 130틱을 독립 실행 파일로 검증해 전부 일치.
-- 실제 `PlayerTestLevel`에서 624개 삼각형을 변환하고 독립 실행 파일에서 같은 해시로 로드 확인.
-- `Server/` 소스 변경 없음. Linux 등 다른 호스트에서의 빌드/재실행은 아직 실행하지 않았음.
-
-### PIE 시작 시 정지 문제 회귀 검사
-
-`HHV.Movement.Core.IgnoreGameplayDebuggerRendering`은 PIE에서 생성되는 실제 GameplayDebugger 렌더링 컴포넌트를 추가한 상태로 충돌 스냅샷 준비와 접지·이동·회전·점프를 검사한다. 디버그 표시 컴포넌트는 차단 플래그가 있더라도 지형 수집에서 제외한다. 지원하지 않는 실제 장애물의 오류 처리는 유지한다.
-
-2026-09-12 검증: 수정 전 재현 테스트 실패 확인, 수정 후 Editor 빌드 성공 및 `HHV.Movement` 7개 성공(경고/실패 0개).
+이 검사는 화면을 렌더링하지 않는 자동 검사다. 실제 화면에서의 조작감·애니메이션 평가는 별도로 필요하다.
 
 ### 경사와 모서리 접지 개선 (이동 코어 버전 2)
 

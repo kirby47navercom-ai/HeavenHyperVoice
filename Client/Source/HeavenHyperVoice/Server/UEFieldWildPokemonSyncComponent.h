@@ -17,8 +17,8 @@ public:
 
 	void SetWildPokemonClass(TSubclassOf<AUEPokemonCharacter> InWildPokemonClass);
 	bool ContainsWildPokemon(uint64 EntityId) const;
-	void HandleWildPokemonSpawned(const FHHVFieldEntity& Entity, const FVector& SpawnLocation);
-	void HandleWildPokemonMoved(const FHHVFieldEntity& Entity, const FVector& TargetLocation);
+	void HandleWildPokemonSpawned(const FHHVFieldEntity& Entity);
+	void HandleWildPokemonMoved(const FHHVFieldEntity& Entity);
 	bool HandleWildPokemonDespawned(uint64 EntityId);
 	void DestroyWildPokemons();
 

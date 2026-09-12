@@ -31,22 +31,22 @@ using net::TlsSession;
 
 // 세션마다 바뀌지 않는 것들. main 이 소유하고 서버보다 오래 산다.
 struct InstanceContext {
-    RoomManager* rooms = nullptr;
-    const proto::PublicKeyRing* keys = nullptr;
+    RoomManager *rooms = nullptr;
+    const proto::PublicKeyRing *keys = nullptr;
 
     // 파트너와 파티를 읽는다. 위치는 안 읽는다 — 인스턴스는 스폰 지점 고정이다.
-    data::CharacterStore* characters = nullptr;
-    net::WorkQueue* dbQueue = nullptr;
+    data::CharacterStore *characters = nullptr;
+    net::WorkQueue *dbQueue = nullptr;
 
     // 플레이어 파티. Redis 가 없으면 nullptr 이고, 그때는 파티 제약 없이
     // 예전처럼 각자 들어간다.
     //
     // **여기서는 읽기만 한다.** 파티를 바꾸는 것은 ChatServer 뿐이다.
-    party::PartyStore* party = nullptr;
+    party::PartyStore *party = nullptr;
 
     // 누가 어느 방에 있는지. ChatServer 가 인스턴스 채팅을 이걸로 보낸다.
     // 여기서만 쓴다 — 채팅 서버는 읽기만 한다.
-    instancechat::InstancePresence* presence = nullptr;
+    instancechat::InstancePresence *presence = nullptr;
 
     // 개발용. 티켓 검증과 DB 를 모두 건너뛰고 Enter 의 dev_* 를 그대로 믿는다.
     // 이때 characters 는 nullptr 이다.
@@ -54,31 +54,31 @@ struct InstanceContext {
 };
 
 class InstanceHandler : public FrameHandler {
-public:
-    explicit InstanceHandler(const InstanceContext& context) : context_(context) {}
+  public:
+    explicit InstanceHandler(const InstanceContext &context) : context_(context) {}
 
-    bool onFrame(TlsSession& session, const proto::Bytes& body) override;
-    void onClosed(TlsSession& session) override;
+    bool onFrame(TlsSession &session, const proto::Bytes &body) override;
+    void onClosed(TlsSession &session) override;
 
-private:
+  private:
     enum class Stage { AwaitingEnter, Entering, InRoom, Done };
 
-    bool handleEnter(TlsSession& session, const HeavenField::Enter& request);
-    bool enterWithoutAuth(TlsSession& session, const HeavenField::Enter& request);
+    bool handleEnter(TlsSession &session, const HeavenField::Enter &request);
+    bool enterWithoutAuth(TlsSession &session, const HeavenField::Enter &request);
     // 방을 인자로 받는다. onFrame 이 stage 와 함께 한 락 안에서 집어온 것이라
     // 널이 아님이 보장된다 — 멤버를 여기서 다시 읽으면 그 사이에 onClosed 가
     // 끼어들어 널이 될 수 있다 (아래 room_ 주석 참고).
-    void handleMove(Room& room, const HeavenField::Move& request);
-    bool handleSetParty(TlsSession& session, Room& room, const HeavenField::SetParty& request);
+    bool handleMove(TlsSession &session, Room &room, const HeavenField::Move &request);
+    bool handleSetParty(TlsSession &session, Room &room, const HeavenField::SetParty &request);
 
     // 방을 배정하고 월드에 넣는다. 락을 쥐지 않은 상태에서 부를 것.
     // 실패하면 사유를 보내고 false — 호출자가 연결을 끊는다.
     // partyId 가 0 이 아니면 그 파티가 이미 잡아 둔 방으로 들어간다.
-    bool placeInRoom(const std::shared_ptr<TlsSession>& self, std::uint32_t type,
-                     std::uint16_t partnerSpecies, const proto::AppearanceInfo& appearance,
+    bool placeInRoom(const std::shared_ptr<TlsSession> &self, std::uint32_t type,
+                     std::uint16_t partnerSpecies, const proto::AppearanceInfo &appearance,
                      std::uint64_t partyId);
 
-    const InstanceContext& context_;
+    const InstanceContext &context_;
 
     std::mutex mutex_;
     Stage stage_ = Stage::AwaitingEnter;
@@ -96,7 +96,7 @@ private:
     // 세션 정리를 시작할 수 있다 — 여기서 널로 만들면 그 순간 프레임 처리가
     // 널을 역참조한다. 대신 stage_ 를 Done 으로 올리고, 방 자체는
     // RoomManager 의 회수 유예(최소 1초) 안에서 계속 유효하다.
-    Room* room_ = nullptr;
+    Room *room_ = nullptr;
 };
 
-}  // namespace heaven::instance
+} // namespace heaven::instance

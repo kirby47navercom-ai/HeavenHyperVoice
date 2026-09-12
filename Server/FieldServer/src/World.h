@@ -32,7 +32,6 @@
 
 namespace heaven::field {
 
-
 using net::TlsSession;
 
 // 저장소와 같은 모양을 쓴다. 입장할 때 읽고 퇴장할 때 그대로 넘긴다.
@@ -57,7 +56,6 @@ struct Entity {
     // 후보를 추린 뒤 이 값으로 한 번 더 거른다.
     std::uint32_t mapId = 0;
 
-
     Position position;
     float velocityX = 0.f;
     float velocityY = 0.f;
@@ -68,16 +66,11 @@ struct Entity {
     // 반경이 균일해 대칭이다. 나를 보는 집합과 같다.
     std::unordered_set<std::uint64_t> visible;
 
-    // 속도 상한 검증용. 이동 사이 경과 시간으로 허용 거리를 낸다.
-    std::chrono::steady_clock::time_point lastMoveAt;
-
-    // 남은 지터 예산. 메시지마다 kSpeedSlack 을 새로 주면 자주 보내는 것만으로
-    // 상한을 몇십 배 넘길 수 있다 (FieldGeometry.h 참고).
-    float slack = proto::kSpeedSlack;
+    hhv::movement::AuthoritativeQueue movement;
+    float movementAccumulator = 0.f;
 
     bool movedThisTick = false;
 };
-
 
 // 입장하면서 밀려난 기존 접속. 새 접속이 그 자리를 빼앗으므로, 밀려난 쪽은
 // leave() 를 타지 못한다 — 그쪽 onClosed 가 도착할 때는 이미 월드에 없다.
@@ -92,21 +85,21 @@ struct Displaced {
 };
 
 class World {
-public:
+  public:
     // 입장. 같은 계정이 이미 있으면 그 자리를 비우고 밀려난 것을 돌려준다
     // (호출자가 내보내고 위치를 저장한다).
     // 캐릭터 단위가 아니라 계정 단위인 이유는, 한 계정으로 캐릭터 여럿을
     // 동시에 붙이는 것도 막아야 하기 때문이다.
     Displaced enter(std::uint64_t characterId, std::uint64_t accountId, std::string nickname,
-                    std::uint16_t partnerSpecies, const proto::AppearanceInfo& appearance,
-                    const Position& position, const std::shared_ptr<TlsSession>& session);
+                    std::uint16_t partnerSpecies, const proto::AppearanceInfo &appearance,
+                    const Position &position, const std::shared_ptr<TlsSession> &session);
 
     // 퇴장. 마지막 위치를 돌려준다 (저장용). 없던 엔티티면 nullopt.
     //
     // session 은 나가는 그 세션이다. 같은 캐릭터로 재접속하면 새 세션이 이미
     // 이 자리를 차지한 뒤라, 번호만 보고 지우면 살아 있는 쪽을 끊어 버린다.
     // 주인이 다르면 아무것도 하지 않고 nullopt 를 돌려준다.
-    std::optional<Position> leave(std::uint64_t characterId, const TlsSession* session);
+    std::optional<Position> leave(std::uint64_t characterId, const TlsSession *session);
 
     // 꺼내 놓은 포켓몬을 바꾼다. 나를 보고 있는 사람 전부에게 알린다.
     //
@@ -114,15 +107,20 @@ public:
     // 이 알림이 없으면 다시 스폰될 때까지 예전 파트너를 계속 본다.
     void setPartnerSpecies(std::uint64_t characterId, std::uint16_t partnerSpecies);
 
-    // 클라이언트가 보낸 좌표. 속도 상한을 넘으면 클램프한다.
-    void move(std::uint64_t characterId, float x, float y, float facing,
-              std::uint32_t sequence);
+    // Only sequential inputs from the owning session enter the authoritative queue.
+    bool move(std::uint64_t characterId, const TlsSession *session,
+              const std::vector<hhv::movement::PredictedInput> &inputs);
+    std::uint64_t collisionHash() const {
+        return map_ ? map_->collision().hash() : 0;
+    }
 
     // 서버 이동 맵. nullptr 이면 검사하지 않는다 (맵 없이 띄우는 경우).
     // 서버가 뜬 뒤로는 바뀌지 않으므로 락 없이 읽는다.
-    void setMap(const Map* map) { map_ = map; }
+    void setMap(const Map *map) {
+        map_ = map;
+    }
 
-    Position resolvePosition(const Position& position) const;
+    Position resolvePosition(const Position &position) const;
 
     // 20Hz. 이번 주기에 움직인 것들을 뷰어별로 묶어 보낸다.
     void tick(float dt);
@@ -132,15 +130,16 @@ public:
 
     std::size_t size();
 
-private:
+  private:
     // 아래 셋은 모두 mutex_ 를 쥔 채로 불린다.
-    void updateVisibility(Entity& self);
+    void updateVisibility(Entity &self);
     void advancePartners(float dt);
-    void removeFromVisibility(Entity& self);
-    void sendTo(const Entity& entity, const proto::Bytes& frame) const;
+    void advancePlayers(float dt);
+    void removeFromVisibility(Entity &self);
+    void sendTo(const Entity &entity, const proto::Bytes &frame) const;
 
     // withIdentity 는 spawned 용이다. 닉네임·파트너·외형이 그때만 실린다.
-    static proto::EntityView viewOf(const Entity& entity, bool withIdentity);
+    static proto::EntityView viewOf(const Entity &entity, bool withIdentity);
 
     // ponytail: 월드 전역 락 하나. 섹터별 락이 맞지만 접속자가 수백 명이 되기
     // 전까지는 경합이 없다. 올릴 때는 sectors_ 를 섹터별 뮤텍스로 감싸고
@@ -150,10 +149,10 @@ private:
     std::unordered_map<std::uint64_t, Entity> entities_;
     std::unordered_map<std::uint64_t, std::uint64_t> byAccount_;
 
-    const Map* map_ = nullptr;
+    const Map *map_ = nullptr;
 
     // 후보 추출 전용 공간 인덱스. 시야 판정에는 쓰이지 않는다.
     std::array<std::unordered_set<std::uint64_t>, proto::kSectorCount> sectors_;
 };
 
-}  // namespace heaven::field
+} // namespace heaven::field

@@ -1,21 +1,8 @@
-"""필드 서버의 세션 수명과 속도 상한을 확인한다.
-
-  1. 서버를 띄운다 (로그인 서버도 DB 도 필요 없다)
-       .\build\windows-x64\bin\Release\FieldServer.exe --dev-no-auth
-  2. python .\tools\test-field-session.py
-
-세 가지를 본다.
-
-  재접속   같은 캐릭터로 다시 붙으면 먼저 있던 세션이 끊긴다. 그 세션의 정리가
-           **새로 들어온 쪽**을 월드에서 지워 버리면 안 된다. 끊긴 뒤에도 새
-           세션의 이동이 관찰자에게 계속 보여야 한다.
-  퇴장     그냥 끊은 캐릭터는 관찰자 시야에서 despawn 으로 사라져야 한다.
-  속도     Move 를 최소 간격으로 계속 밀어 넣어도 실제 이동은 상한 근처여야
-           한다. 지터 여유를 메시지마다 새로 주면 여기서 몇 배가 튄다.
-
-프레임 조립은 test-field-walls.py 와 같은 방식이다 (flatc 없이 손으로).
-슬롯 번호는 field.fbs 의 선언 순서다. 새 필드는 항상 뒤에 붙일 것.
+"""Exercise session replacement, disconnects and adversarial input on a dev field server.
+For exact prediction and replay checks, use the C++ MovementNetworkTest executable.
+This test intentionally supplies false predicted positions to check server authority.
 """
+import math
 import socket
 import ssl
 import struct
@@ -33,14 +20,9 @@ OBSERVER_ID = 7001
 SUBJECT_ID = 7002
 LEAVER_ID = 7003
 
-# 서버의 kMinMoveInterval 은 10ms 다. 속도 시험은 일부러 그보다 살짝 위에서
-# 계속 밀어 넣는다 — 더 빠르면 프레임이 그냥 버려져 시험이 무의미해진다.
+# Send faster than the simulation clock to test the server-time budget.
 SPAM_INTERVAL = 0.012
-
-# FieldGeometry.h: kMaxSpeed 600 + kSlackRefill 200 = 지속 상한 800uu/s.
-# 측정 노이즈와 첫 예산(kSpeedSlack 200uu)을 감안해 넉넉히 잡는다.
-# 메시지마다 여유를 새로 주던 시절에는 여기가 4000uu/s 를 넘었다.
-SPEED_CEILING = 1600.0
+SPEED_CEILING = 500.0
 
 
 def envelope(build, tag):
@@ -56,7 +38,8 @@ def envelope(build, tag):
 def dev_enter(name, character_id):
     def build(builder):
         offset = builder.CreateString(name)
-        builder.StartObject(4)
+        builder.StartObject(6)
+        builder.PrependUint32Slot(5, 2, 0)
         builder.PrependUOffsetTRelativeSlot(1, offset, 0)  # dev_name
         builder.PrependUint64Slot(2, character_id, 0)      # dev_character_id
         builder.PrependUint16Slot(3, 0, 0)                 # dev_partner_species
@@ -64,13 +47,21 @@ def dev_enter(name, character_id):
     return build
 
 
-def move(x, y, facing, sequence):
+def move(x, y, sequence):
     def build(builder):
-        builder.StartObject(4)
-        builder.PrependFloat32Slot(0, x, 0.0)
-        builder.PrependFloat32Slot(1, y, 0.0)
-        builder.PrependFloat32Slot(2, facing, 0.0)
-        builder.PrependUint32Slot(3, sequence, 0)
+        builder.StartObject(7)
+        builder.PrependUint32Slot(0, sequence, 0)
+        builder.PrependFloat32Slot(1, x, 0.0)
+        builder.PrependFloat32Slot(2, y, 0.0)
+        builder.PrependUint8Slot(3, 2, 0)
+        # Deliberately false evidence: movement must still come only from input.
+        builder.PrependFloat32Slot(4, 999999.0, 0.0)
+        frame = builder.EndObject()
+        builder.StartVector(4, 1, 4)
+        builder.PrependUOffsetTRelative(frame)
+        frames = builder.EndVector()
+        builder.StartObject(1)
+        builder.PrependUOffsetTRelativeSlot(0, frames, 0)
         return builder.EndObject()
     return build
 
@@ -118,6 +109,7 @@ class Client:
 
         self.character_id = character_id
         self.spawn = None
+        self.origin_offset = 0.0
         self.position = None      # 마지막 Correction 이 알려준 서버 기준 좌표
         self.sequence = 0
         self.alive = True
@@ -130,9 +122,12 @@ class Client:
     def _read(self):
         try:
             while True:
-                header = self.sock.recv(4)
-                if len(header) < 4:
-                    return
+                header = b""
+                while len(header) < 4:
+                    chunk = self.sock.recv(4 - len(header))
+                    if not chunk:
+                        return
+                    header += chunk
                 size = struct.unpack("<I", header)[0]
                 buf = b""
                 while len(buf) < size:
@@ -155,9 +150,11 @@ class Client:
             self.spawn = (scalar(payload, 1, Float32Flags, 0.0),
                           scalar(payload, 2, Float32Flags, 0.0))
             self.position = self.spawn
+            self.origin_offset = scalar(payload, 6, Float32Flags, 0.0)
         elif tag == CORRECTION:
-            self.position = (scalar(payload, 1, Float32Flags, 0.0),
-                             scalar(payload, 2, Float32Flags, 0.0))
+            state = child(payload, 1)
+            self.position = (scalar(state, 0, Float32Flags, 0.0) + self.origin_offset,
+                             scalar(state, 1, Float32Flags, 0.0) + self.origin_offset)
         elif tag == SNAPSHOT:
             now = time.time()
             with self.lock:
@@ -178,7 +175,10 @@ class Client:
 
     def step(self, x, y):
         self.sequence += 1
-        self.send(envelope(move(x, y, 0.0, self.sequence), MOVE))
+        dx = x - self.position[0]
+        dy = y - self.position[1]
+        distance = max(math.hypot(dx, dy), 1.0)
+        self.send(envelope(move(dx / distance, dy / distance, self.sequence), MOVE))
 
     def close(self):
         try:

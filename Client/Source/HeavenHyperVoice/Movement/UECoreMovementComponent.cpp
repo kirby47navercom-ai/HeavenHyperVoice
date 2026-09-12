@@ -10,7 +10,7 @@ namespace
 {
 using namespace hhv::movement;
 
-Vec3 CoreVector(const FVector& V)
+Vec3 CoreVector(const FVector &V)
 {
 	return {float(V.X), float(V.Y), float(V.Z)};
 }
@@ -40,14 +40,18 @@ void UUECoreMovementComponent::BeginPlay()
 	Super::BeginPlay();
 	// Character input is gathered in actor Tick; consume it in the same frame.
 	if (PawnOwner)
+	{
 		AddTickPrerequisiteActor(PawnOwner);
+	}
 	ResetFromActor();
 }
 
 void UUECoreMovementComponent::ResetFromActor()
 {
 	if (!PawnOwner)
+	{
 		return;
+	}
 	hhv::movement::State State;
 	State.position = CoreVector(PawnOwner->GetActorLocation());
 	State.velocity = CoreVector(Velocity);
@@ -62,6 +66,10 @@ void UUECoreMovementComponent::ResetFromActor()
 
 hhv::movement::Config UUECoreMovementComponent::MakeCoreConfig() const
 {
+	if (bNetworkSimulation)
+	{
+		return hhv::movement::Config{};
+	}
 	hhv::movement::Config C;
 
 	if (PawnOwner)
@@ -89,35 +97,55 @@ hhv::movement::Config UUECoreMovementComponent::MakeCoreConfig() const
 }
 
 void UUECoreMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType,
-                                             FActorComponentTickFunction* TickFunction)
+                                             FActorComponentTickFunction *TickFunction)
 {
 	// UPawnMovementComponent handles component bookkeeping only, with no character physics.
 	Super::TickComponent(DeltaTime, TickType, TickFunction);
 
 	if (!PawnOwner || !Cast<UCapsuleComponent>(UpdatedComponent) || !IsActive() ||
 	    ShouldSkipUpdate(DeltaTime))
+	{
 		return;
+	}
 	const FVector Input = ConsumeInputVector().GetClampedToMaxSize(1);
+	if (bWaitingForNetwork)
+	{
+		return;
+	}
 
 	if (MovementMode == EUECoreMovementMode::Disabled)
+	{
 		return;
+	}
 
 	if (!PawnOwner->GetController() && !bRunWithoutController)
+	{
 		return;
+	}
 
-	if (!UpdatedComponent->GetComponentLocation().Equals(UEVector(CoreState.position), .01f))
+	if (!bNetworkSimulation &&
+	    !UpdatedComponent->GetComponentLocation().Equals(UEVector(CoreState.position), .01f))
+	{
 		ResetFromActor();
+	}
 
 	if (hhv::movement::length(CoreState.velocity - CoreVector(Velocity)) > .0001f)
+	{
 		History.clear();
-	CoreState.velocity = CoreVector(Velocity);
+	}
+	if (!bNetworkSimulation)
+	{
+		CoreState.velocity = CoreVector(Velocity);
+	}
 	const FVector OldLocation = UpdatedComponent->GetComponentLocation(), OldVelocity = Velocity;
 	Accumulator = FMath::Clamp(Accumulator + DeltaTime, 0.f, .25f);
-	auto* SharedWorld = GetWorld()->GetSubsystem<UUECoreCollisionSubsystem>();
+	auto *SharedWorld = GetWorld()->GetSubsystem<UUECoreCollisionSubsystem>();
 
 	if (!SharedWorld || !SharedWorld->EnsureReady(CollisionFile.FilePath))
+	{
 		return;
-	const auto& Collision = *SharedWorld->GetCollision();
+	}
+	const auto &Collision = *SharedWorld->GetCollision();
 
 	if (CollisionHash != Collision.hash())
 	{
@@ -130,16 +158,31 @@ void UUECoreMovementComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 	while (Accumulator + 1e-7f >= hhv::movement::FixedDt && Steps++ < 15)
 	{
 		hhv::movement::Input Command;
-		Command.sequence = NextSequence++;
 		Command.x = Input.X;
 		Command.y = Input.Y;
 		Command.buttons = PendingButtons | (bRunRequested ? hhv::movement::Run : 0);
 		const auto Before = CoreState;
-		hhv::movement::simulate(CoreState, Command, Config, Collision);
-		History.push_back({Command, Config, Before, CoreState});
+		if (bNetworkSimulation)
+		{
+			if (!Prediction.predict(Command, Config, Collision))
+			{
+				Accumulator = 0;
+				break;
+			}
+			CoreState = Prediction.state;
+			History.push_back(Prediction.history.back());
+		}
+		else
+		{
+			Command.sequence = NextSequence++;
+			hhv::movement::simulate(CoreState, Command, Config, Collision);
+			History.push_back({Command, Config, Before, CoreState});
+		}
 
 		if (History.size() > 600)
+		{
 			History.pop_front();
+		}
 		PendingButtons = 0;
 		Accumulator -= hhv::movement::FixedDt;
 		PublishState(true);
@@ -150,8 +193,10 @@ void UUECoreMovementComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 void UUECoreMovementComponent::PublishState(bool bEvents)
 {
 	if (!PawnOwner || !UpdatedComponent)
+	{
 		return;
-	const auto& S = CoreState;
+	}
+	const auto &S = CoreState;
 	const bool bWasFalling = IsFalling();
 	const float OldZ = Velocity.Z;
 	Velocity = UEVector(S.velocity);
@@ -176,7 +221,9 @@ void UUECoreMovementComponent::PublishState(bool bEvents)
 	}
 
 	if (bEvents && bWasFalling && OldZ > 0 && Velocity.Z <= 0)
+	{
 		OnJumpApex.Broadcast();
+	}
 }
 
 void UUECoreMovementComponent::SetMovementMode(EUECoreMovementMode NewMode)
@@ -199,7 +246,7 @@ void UUECoreMovementComponent::StopMovementImmediately()
 	UpdateComponentVelocity();
 }
 
-void UUECoreMovementComponent::RequestDirectMove(const FVector& MoveVelocity, bool bForceMaxSpeed)
+void UUECoreMovementComponent::RequestDirectMove(const FVector &MoveVelocity, bool bForceMaxSpeed)
 {
 	AddInputVector(
 	    MoveVelocity.GetSafeNormal() *
@@ -211,22 +258,87 @@ void UUECoreMovementComponent::OnTeleported()
 	ResetFromActor();
 }
 
-bool UUECoreMovementComponent::ExportCoreReplay(const FString& BasePath) const
+bool UUECoreMovementComponent::ExportCoreReplay(const FString &BasePath) const
 {
-	const auto* SharedWorld = GetWorld()->GetSubsystem<UUECoreCollisionSubsystem>();
+	const auto *SharedWorld = GetWorld()->GetSubsystem<UUECoreCollisionSubsystem>();
 
 	if (!SharedWorld || !SharedWorld->GetCollision() ||
 	    SharedWorld->GetCollision()->hash() != CollisionHash || History.empty())
+	{
 		return false;
+	}
 	const FString Path =
 	    BasePath.IsEmpty() ? FPaths::ProjectSavedDir() / TEXT("CoreMovement/LastReplay") : BasePath;
 
 	if (!SharedWorld->SaveCollisionFile(Path + TEXT(".hhvcollision")))
+	{
 		return false;
+	}
 	std::ostringstream Stream;
 
 	if (!hhv::movement::saveReplay(Stream, CollisionHash, History))
+	{
 		return false;
+	}
 	return FFileHelper::SaveStringToFile(UTF8_TO_TCHAR(Stream.str().c_str()), *(Path + TEXT(".hhvreplay")),
 	                                     FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
+}
+
+void UUECoreMovementComponent::WaitForNetworkSimulation()
+{
+	bWaitingForNetwork = true;
+	bNetworkSimulation = false;
+	Accumulator = 0;
+	PendingButtons = 0;
+}
+
+bool UUECoreMovementComponent::BeginNetworkSimulation(const hhv::movement::State &Initial, uint64 MapHash)
+{
+	auto *World = GetWorld()->GetSubsystem<UUECoreCollisionSubsystem>();
+	if (!World || !World->EnsureReady(CollisionFile.FilePath) || World->GetCollision()->hash() != MapHash)
+	{
+		UE_LOG(LogTemp, Error,
+		       TEXT("Movement collision mismatch: client and server must use the same exported map."));
+		return false;
+	}
+
+	bNetworkSimulation = true;
+	bWaitingForNetwork = false;
+	CollisionHash = MapHash;
+	Prediction.reset(Initial);
+	CoreState = Initial;
+	History.clear();
+	Accumulator = 0;
+	PendingButtons = 0;
+	NextSequence = 1;
+	PublishState(false);
+	return true;
+}
+
+void UUECoreMovementComponent::AcknowledgeNetworkInput(uint32 Sequence, const hhv::movement::State &State)
+{
+	const auto *World = GetWorld()->GetSubsystem<UUECoreCollisionSubsystem>();
+	if (bNetworkSimulation && World && World->GetCollision() &&
+	    Prediction.acknowledge(Sequence, State, *World->GetCollision()))
+	{
+		if (!hhv::movement::replay::near(CoreState, Prediction.state, .0001f))
+		{
+			// A correction starts a new continuous replay segment.
+			History = Prediction.history;
+		}
+		CoreState = Prediction.state;
+		PublishState(false);
+	}
+}
+
+std::vector<hhv::movement::PredictedInput> UUECoreMovementComponent::TakeNetworkInputs()
+{
+	return bNetworkSimulation ? Prediction.takeUnsent() : std::vector<hhv::movement::PredictedInput>{};
+}
+
+void UUECoreMovementComponent::RenderServerState(const hhv::movement::State &State)
+{
+	SetComponentTickEnabled(false);
+	CoreState = State;
+	PublishState(false);
 }

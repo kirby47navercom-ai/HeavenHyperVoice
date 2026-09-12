@@ -60,6 +60,7 @@ add_dependencies(Protocol ProtocolGen)
 target_include_directories(Protocol PUBLIC
     "${_gen_dir}"
     "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${PROJECT_SOURCE_DIR}/../Client/Source/MovementCore"
 )
 
 target_link_libraries(Protocol PUBLIC

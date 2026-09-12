@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "MovementCore.h"
 
 struct FUEServerMoveSample
 {
@@ -8,14 +9,15 @@ struct FUEServerMoveSample
 	FVector Location = FVector::ZeroVector;
 	FVector Velocity = FVector::ZeroVector;
 	FQuat Rotation = FQuat::Identity;
+	hhv::movement::State CoreState;
 };
 
 // Delayed interpolation never predicts beyond the last validated server point.
 // This keeps packet jitter out of movement without extrapolating through walls.
 class FUEServerMoveBuffer
 {
-public:
-	bool Add(const FUEServerMoveSample& Sample, bool bReset, double Delay)
+  public:
+	bool Add(const FUEServerMoveSample &Sample, bool bReset, double Delay)
 	{
 		if (!FMath::IsFinite(Sample.Time) || Sample.Location.ContainsNaN() || Sample.Velocity.ContainsNaN())
 		{
@@ -31,7 +33,7 @@ public:
 			PlaybackTime = Sample.Time - Delay;
 		}
 		else if (Samples.Last().Velocity.IsNearlyZero() &&
-			Sample.Time - Samples.Last().Time > FMath::Max(Delay * 4.0, 0.5))
+		         Sample.Time - Samples.Last().Time > FMath::Max(Delay * 4.0, 0.5))
 		{
 			// A stationary entity may not have been sent for seconds. Hold its
 			// last pose until movement actually resumes instead of smearing it.
@@ -49,7 +51,7 @@ public:
 		return true;
 	}
 
-	bool Advance(double DeltaSeconds, double Delay, FUEServerMoveSample& Out)
+	bool Advance(double DeltaSeconds, double Delay, FUEServerMoveSample &Out)
 	{
 		if (Samples.IsEmpty())
 		{
@@ -73,20 +75,24 @@ public:
 			Out.Velocity = FVector::ZeroVector;
 			return true;
 		}
-		const FUEServerMoveSample& A = Samples[0];
-		const FUEServerMoveSample& B = Samples[1];
+		const FUEServerMoveSample &A = Samples[0];
+		const FUEServerMoveSample &B = Samples[1];
 		const double Duration = B.Time - A.Time;
 		const double Alpha = FMath::Clamp((PlaybackTime - A.Time) / Duration, 0.0, 1.0);
+		Out.CoreState = Alpha >= 1.0 ? B.CoreState : A.CoreState;
 		Out.Location = FMath::Lerp(A.Location, B.Location, Alpha);
 		Out.Rotation = FQuat::Slerp(A.Rotation, B.Rotation, Alpha).GetNormalized();
-		Out.Velocity = PlaybackTime >= Samples.Last().Time
-			? FVector::ZeroVector : (B.Location - A.Location) / Duration;
+		Out.Velocity =
+		    PlaybackTime >= Samples.Last().Time ? FVector::ZeroVector : (B.Location - A.Location) / Duration;
 		return true;
 	}
 
-	bool IsEmpty() const { return Samples.IsEmpty(); }
+	bool IsEmpty() const
+	{
+		return Samples.IsEmpty();
+	}
 
-private:
+  private:
 	TArray<FUEServerMoveSample> Samples;
 	double PlaybackTime = 0.0;
 };

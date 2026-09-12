@@ -10,7 +10,8 @@ UUEFieldWildPokemonSyncComponent::UUEFieldWildPokemonSyncComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
-void UUEFieldWildPokemonSyncComponent::SetWildPokemonClass(TSubclassOf<AUEPokemonCharacter> InWildPokemonClass)
+void UUEFieldWildPokemonSyncComponent::SetWildPokemonClass(
+    TSubclassOf<AUEPokemonCharacter> InWildPokemonClass)
 {
 	if (InWildPokemonClass)
 	{
@@ -23,16 +24,14 @@ bool UUEFieldWildPokemonSyncComponent::ContainsWildPokemon(uint64 EntityId) cons
 	return WildActors.Contains(EntityId);
 }
 
-void UUEFieldWildPokemonSyncComponent::HandleWildPokemonSpawned(
-	const FHHVFieldEntity& Entity,
-	const FVector& SpawnLocation)
+void UUEFieldWildPokemonSyncComponent::HandleWildPokemonSpawned(const FHHVFieldEntity& Entity)
 {
 	if (WildActors.Contains(Entity.EntityId))
 	{
 		return;
 	}
 
-	UWorld* World = GetWorld();
+	UWorld *World = GetWorld();
 	if (!World)
 	{
 		return;
@@ -43,19 +42,19 @@ void UUEFieldWildPokemonSyncComponent::HandleWildPokemonSpawned(
 	{
 		ClassToSpawn = AUEPokemonCharacter::StaticClass();
 		UE_LOG(LogTemp, Warning,
-			TEXT("FieldWildPokemonSync: WildPokemonClass is not assigned; spawning the native Pokemon class."));
+		       TEXT("FieldWildPokemonSync: WildPokemonClass is not assigned; spawning the native Pokemon "
+		            "class."));
 	}
 
-	const FTransform SpawnTransform(FRotator(0.0f, Entity.Facing, 0.0f), SpawnLocation);
-	AUEPokemonCharacter* WildActor = World->SpawnActorDeferred<AUEPokemonCharacter>(
-		ClassToSpawn,
-		SpawnTransform,
-		nullptr,
-		nullptr,
-		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	const auto& State = Entity.CoreState;
+	const FVector SpawnLocation(State.position.x, State.position.y, State.position.z);
+	const FTransform SpawnTransform(FRotator(0.0f, State.facing, 0.0f), SpawnLocation);
+	AUEPokemonCharacter *WildActor = World->SpawnActorDeferred<AUEPokemonCharacter>(
+	    ClassToSpawn, SpawnTransform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 	if (!WildActor)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("FieldWildPokemonSync: wild entity %llu spawn failed"), Entity.EntityId);
+		UE_LOG(LogTemp, Warning, TEXT("FieldWildPokemonSync: wild entity %llu spawn failed"),
+		       Entity.EntityId);
 		return;
 	}
 
@@ -63,35 +62,31 @@ void UUEFieldWildPokemonSyncComponent::HandleWildPokemonSpawned(
 	WildActor->AIControllerClass = nullptr;
 	WildActor->FinishSpawning(SpawnTransform);
 	WildActor->SetActorEnableCollision(false);
-	WildActor->InitializeServerEntity(static_cast<int64>(Entity.EntityId), static_cast<int32>(Entity.Species), EUEPokemonRenderType::Wild);
+	WildActor->InitializeServerEntity(static_cast<int64>(Entity.EntityId), static_cast<int32>(Entity.Species),
+	                                  EUEPokemonRenderType::Wild);
 	if (Entity.MaxHP > 0)
 	{
 		WildActor->ApplyServerStats(Entity.CurrentHP, Entity.MaxHP);
 	}
+	WildActor->ApplyCoreSnapshot(Entity.CoreState, Entity.ServerTimeSeconds, true);
 	WildActors.Add(Entity.EntityId, WildActor);
 }
 
-void UUEFieldWildPokemonSyncComponent::HandleWildPokemonMoved(
-	const FHHVFieldEntity& Entity,
-	const FVector& TargetLocation)
+void UUEFieldWildPokemonSyncComponent::HandleWildPokemonMoved(const FHHVFieldEntity& Entity)
 {
-	const TWeakObjectPtr<AUEPokemonCharacter>* Found = WildActors.Find(Entity.EntityId);
+	const TWeakObjectPtr<AUEPokemonCharacter> *Found = WildActors.Find(Entity.EntityId);
 	if (!Found || !Found->IsValid())
 	{
 		return;
 	}
 
-	AUEPokemonCharacter* WildActor = Found->Get();
+	AUEPokemonCharacter *WildActor = Found->Get();
 	if (Entity.MaxHP > 0)
 	{
 		WildActor->ApplyServerStats(Entity.CurrentHP, Entity.MaxHP);
 	}
 
-	WildActor->ApplyServerMoveTarget(
-		TargetLocation,
-		Entity.Velocity,
-		FRotator(0.0f, Entity.Facing, 0.0f),
-		/*bTeleported=*/false, Entity.ServerTimeSeconds);
+	WildActor->ApplyCoreSnapshot(Entity.CoreState, Entity.ServerTimeSeconds, false);
 
 	WildActor->HandleServerAttackSignal(Entity.AttackTargetId, Entity.AttackSequence);
 }
@@ -113,7 +108,7 @@ bool UUEFieldWildPokemonSyncComponent::HandleWildPokemonDespawned(uint64 EntityI
 
 void UUEFieldWildPokemonSyncComponent::DestroyWildPokemons()
 {
-	for (TPair<uint64, TWeakObjectPtr<AUEPokemonCharacter>>& Pair : WildActors)
+	for (TPair<uint64, TWeakObjectPtr<AUEPokemonCharacter>> &Pair : WildActors)
 	{
 		if (Pair.Value.IsValid())
 		{

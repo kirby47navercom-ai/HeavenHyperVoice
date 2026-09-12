@@ -121,12 +121,7 @@ void UUEFieldClientSubsystem::EnterInstance(int32 InstanceType)
 		return;
 	}
 
-	// 필드 서버는 접속이 끊길 때 "마지막으로 받은 좌표" 를 저장한다. 포탈 위에
-	// 선 채로 떠나면 그 자리가 저장되고, 다음 접속에 거기서 살아나면서 포탈
-	// 겹침이 다시 터져 인스턴스로 끌려 들어간다.
-	//
-	// 포탈이 이미 캐릭터를 밖으로 밀어 놓았으므로, 그 좌표를 한 번 더 보내
-	// 서버가 그것을 마지막으로 알게 한다.
+	// 아직 전송하지 않은 공통 코어 입력을 연결 종료 전에 보낸다.
 	if (FieldServerBridgeComponent)
 	{
 		FieldServerBridgeComponent->ReportFieldPositionNow();

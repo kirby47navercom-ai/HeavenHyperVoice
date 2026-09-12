@@ -20,45 +20,52 @@
 
 namespace
 {
-bool HasSharedCollisionPreset(const UPrimitiveComponent* Component)
+bool HasSharedCollisionPreset(const UPrimitiveComponent *Component)
 {
 	FName Profile = Component->GetCollisionProfileName();
 	bool bQueryEnabled = Component->IsQueryCollisionEnabled();
 	// ULandscapeComponent is render-only (NoCollision). The instance settings belong to
 	// ALandscapeProxy; collision geometry comes from its heightfield component.
-	if (const auto* RenderLandscape = Cast<ULandscapeComponent>(Component))
+	if (const auto *RenderLandscape = Cast<ULandscapeComponent>(Component))
 	{
-		const auto* Landscape = Cast<ALandscapeProxy>(Component->GetOwner());
+		const auto *Landscape = Cast<ALandscapeProxy>(Component->GetOwner());
 
 		if (!Landscape)
+		{
 			return false;
+		}
 		Profile = Landscape->BodyInstance.GetCollisionProfileName();
 		bQueryEnabled = CollisionEnabledHasQuery(Landscape->BodyInstance.GetCollisionEnabled());
-		const auto* Heightfield = RenderLandscape->GetCollisionComponent();
+		const auto *Heightfield = RenderLandscape->GetCollisionComponent();
 		// Missing geometry should reach the exporter and produce an error, not vanish silently.
 		if (Heightfield && (!Heightfield->IsRegistered() || !Heightfield->IsQueryCollisionEnabled()))
+		{
 			return false;
+		}
 	}
 
-	return bQueryEnabled && (Profile == FName(TEXT("ServerGround")) || Profile == FName(TEXT("ServerWall")));
+	const bool bSharedProfile =
+	    Profile == FName(TEXT("ServerGround")) || Profile == FName(TEXT("ServerWall"));
+	const bool bSharedTag =
+	    Component->ComponentHasTag(TEXT("ServerGround")) || Component->ComponentHasTag(TEXT("ServerWall"));
+	return bQueryEnabled && (bSharedProfile || bSharedTag);
 }
 
-void AddTriangle(std::vector<hhv::movement::Triangle>& Data, const FVector& A, const FVector& B,
-                 const FVector& C)
+void AddTriangle(std::vector<hhv::movement::Triangle> &Data, const FVector &A, const FVector &B,
+                 const FVector &C)
 {
 	if (FVector::CrossProduct(B - A, C - A).SizeSquared() < 1.e-8)
-		return;
-	auto V = [](const FVector& P)
 	{
-		return hhv::movement::Vec3{float(P.X), float(P.Y), float(P.Z)};
-	};
+		return;
+	}
+	auto V = [](const FVector &P) { return hhv::movement::Vec3{float(P.X), float(P.Y), float(P.Z)}; };
 	Data.push_back({V(A), V(B), V(C)});
 }
 
-void AddBoxGeometry(const UBoxComponent* Box, std::vector<hhv::movement::Triangle>& Data)
+void AddBoxGeometry(const UBoxComponent *Box, std::vector<hhv::movement::Triangle> &Data)
 {
 	const FVector Extent = Box->GetUnscaledBoxExtent();
-	const FTransform& Transform = Box->GetComponentTransform();
+	const FTransform &Transform = Box->GetComponentTransform();
 	const FVector Corners[] = {
 	    FVector(-Extent.X, -Extent.Y, -Extent.Z), FVector(Extent.X, -Extent.Y, -Extent.Z),
 	    FVector(Extent.X, Extent.Y, -Extent.Z),   FVector(-Extent.X, Extent.Y, -Extent.Z),
@@ -75,16 +82,16 @@ void AddBoxGeometry(const UBoxComponent* Box, std::vector<hhv::movement::Triangl
 	const int32 Faces[][3] = {{0, 2, 1}, {0, 3, 2}, {4, 5, 6}, {4, 6, 7}, {0, 1, 5}, {0, 5, 4},
 	                          {1, 2, 6}, {1, 6, 5}, {2, 3, 7}, {2, 7, 6}, {3, 0, 4}, {3, 4, 7}};
 
-	for (const int32* Face : Faces)
+	for (const int32 *Face : Faces)
 	{
 		AddTriangle(Data, V[Face[0]], V[Face[1]], V[Face[2]]);
 	}
 }
 
-bool AddStaticMeshGeometry(const UStaticMeshComponent* Component, const FTransform& Transform,
-                           std::vector<hhv::movement::Triangle>& Data)
+bool AddStaticMeshGeometry(const UStaticMeshComponent *Component, const FTransform &Transform,
+                           std::vector<hhv::movement::Triangle> &Data)
 {
-	const UStaticMesh* StaticMesh = Component->GetStaticMesh();
+	const UStaticMesh *StaticMesh = Component->GetStaticMesh();
 
 	if (StaticMesh == nullptr || StaticMesh->GetRenderData() == nullptr ||
 	    StaticMesh->GetRenderData()->LODResources.IsEmpty())
@@ -92,8 +99,8 @@ bool AddStaticMeshGeometry(const UStaticMeshComponent* Component, const FTransfo
 		return false;
 	}
 
-	const FStaticMeshLODResources& LOD = StaticMesh->GetRenderData()->LODResources[0];
-	const FPositionVertexBuffer& PositionBuffer = LOD.VertexBuffers.PositionVertexBuffer;
+	const FStaticMeshLODResources &LOD = StaticMesh->GetRenderData()->LODResources[0];
+	const FPositionVertexBuffer &PositionBuffer = LOD.VertexBuffers.PositionVertexBuffer;
 
 	if (PositionBuffer.GetNumVertices() == 0 || LOD.IndexBuffer.GetNumIndices() < 3)
 	{
@@ -135,7 +142,7 @@ bool AddStaticMeshGeometry(const UStaticMeshComponent* Component, const FTransfo
 	return static_cast<int32>(Data.size()) > Before;
 }
 
-bool AddLandscapeGeometry(ULandscapeComponent* Component, std::vector<hhv::movement::Triangle>& Data)
+bool AddLandscapeGeometry(ULandscapeComponent *Component, std::vector<hhv::movement::Triangle> &Data)
 {
 #if WITH_EDITOR
 	if (Component == nullptr)
@@ -143,7 +150,7 @@ bool AddLandscapeGeometry(ULandscapeComponent* Component, std::vector<hhv::movem
 		return false;
 	}
 
-	ULandscapeHeightfieldCollisionComponent* Collision = Component->GetCollisionComponent();
+	ULandscapeHeightfieldCollisionComponent *Collision = Component->GetCollisionComponent();
 
 	if (!Collision || Collision->CollisionSizeQuads <= 0)
 	{
@@ -160,16 +167,16 @@ bool AddLandscapeGeometry(ULandscapeComponent* Component, std::vector<hhv::movem
 	{
 		return false;
 	}
-	const uint16* Heights = static_cast<const uint16*>(Collision->CollisionHeightData.LockReadOnly());
+	const uint16 *Heights = static_cast<const uint16 *>(Collision->CollisionHeightData.LockReadOnly());
 
 	if (!Heights)
 	{
 		Collision->CollisionHeightData.Unlock();
 		return false;
 	}
-	const uint8* Layers =
+	const uint8 *Layers =
 	    Collision->DominantLayerData.GetElementCount() >= SampleOffset + VertexCount * VertexCount
-	        ? static_cast<const uint8*>(Collision->DominantLayerData.LockReadOnly())
+	        ? static_cast<const uint8 *>(Collision->DominantLayerData.LockReadOnly())
 	        : nullptr;
 	const int32 VisibilityLayer =
 	    Collision->ComponentLayerInfos.IndexOfByKey(ALandscapeProxy::VisibilityLayer);
@@ -199,10 +206,10 @@ bool AddLandscapeGeometry(ULandscapeComponent* Component, std::vector<hhv::movem
 			{
 				continue;
 			}
-			const FVector& A = Vertices[Y * VertexCount + X];
-			const FVector& B = Vertices[Y * VertexCount + X + 1];
-			const FVector& C = Vertices[(Y + 1) * VertexCount + X];
-			const FVector& D = Vertices[(Y + 1) * VertexCount + X + 1];
+			const FVector &A = Vertices[Y * VertexCount + X];
+			const FVector &B = Vertices[Y * VertexCount + X + 1];
+			const FVector &C = Vertices[(Y + 1) * VertexCount + X];
+			const FVector &D = Vertices[(Y + 1) * VertexCount + X + 1];
 			// Chaos::FHeightField uses the A-D diagonal.
 			if (Transform.GetDeterminant() >= 0.0)
 			{
@@ -245,30 +252,33 @@ FString UUECoreCollisionSubsystem::GetDefaultCollisionFile() const
 	                                                              TEXT("MovementCollision") / Relative);
 }
 
-bool UUECoreCollisionSubsystem::EnsureReady(const FString& File)
+bool UUECoreCollisionSubsystem::EnsureReady(const FString &File)
 {
 	if (bReady)
+	{
 		return File.IsEmpty() || FPaths::ConvertRelativePathToFull(File) == LoadedFile;
+	}
 
 	if (bAttempted)
+	{
 		return false;
+	}
 	bAttempted = true;
 	// Play uses the exported artifact, including in PIE. Never rebuild a different world implicitly.
 	return LoadCollisionFile(File.IsEmpty() ? GetDefaultCollisionFile() : File);
 }
 
-bool UUECoreCollisionSubsystem::LoadCollisionFile(const FString& File)
+bool UUECoreCollisionSubsystem::LoadCollisionFile(const FString &File)
 {
 	FString Text;
 
 	if (File.IsEmpty() || !FFileHelper::LoadFileToString(Text, *File))
 	{
-		UE_LOG(
-		    LogTemp, Error,
-		    TEXT(
-		        "Core collision file missing: %s. In the editor use Tools > Save Shared Movement Collision, then "
-		        "restart play."),
-		    *File);
+		UE_LOG(LogTemp, Error,
+		       TEXT("Core collision file missing: %s. In the editor use Tools > Save Shared Movement "
+		            "Collision, then "
+		            "restart play."),
+		       *File);
 		return false;
 	}
 	std::istringstream Stream(TCHAR_TO_UTF8(*Text));
@@ -284,14 +294,18 @@ bool UUECoreCollisionSubsystem::LoadCollisionFile(const FString& File)
 	return true;
 }
 
-bool UUECoreCollisionSubsystem::SaveCollisionFile(const FString& File) const
+bool UUECoreCollisionSubsystem::SaveCollisionFile(const FString &File) const
 {
 	if (!bReady)
+	{
 		return false;
+	}
 	std::ostringstream Stream;
 
 	if (!Collision.save(Stream))
+	{
 		return false;
+	}
 	IFileManager::Get().MakeDirectory(*FPaths::GetPath(File), true);
 	return FFileHelper::SaveStringToFile(UTF8_TO_TCHAR(Stream.str().c_str()), *File,
 	                                     FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
@@ -301,47 +315,51 @@ bool UUECoreCollisionSubsystem::RebuildFromScene()
 {
 #if WITH_EDITOR
 	// Scene extraction happens once, before simulation. No Chaos queries are used by movers.
-	TArray<UPrimitiveComponent*> Components;
+	TArray<UPrimitiveComponent *> Components;
 
 	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
 	{
 		if (It->IsA<APawn>() || *It == GetWorld()->GetDefaultBrush() || !It->GetActorEnableCollision())
+		{
 			continue;
-		TArray<UPrimitiveComponent*> ActorComponents;
+		}
+		TArray<UPrimitiveComponent *> ActorComponents;
 		It->GetComponents(ActorComponents);
 
-		for (auto* C : ActorComponents)
+		for (auto *C : ActorComponents)
 		{
 			// PIE spawns debug renderers with primitive collision flags, but they contain no terrain.
 			// Exclude their base class without silently skipping unsupported physical obstacles.
 			if (C->IsA<UDebugDrawComponent>() || !C->IsRegistered() || !HasSharedCollisionPreset(C) ||
 			    C->IsA<ULandscapeHeightfieldCollisionComponent>())
+			{
 				continue;
+			}
 			Components.Add(C);
 		}
 	}
-	Components.Sort(
-	    [](const UPrimitiveComponent& A, const UPrimitiveComponent& B)
-	    {
-		    return A.GetPathName() < B.GetPathName();
-	    });
+	Components.Sort([](const UPrimitiveComponent &A, const UPrimitiveComponent &B) {
+		return A.GetPathName() < B.GetPathName();
+	});
 	std::vector<hhv::movement::Triangle> Geometry;
 	bool bSupported = true;
 
-	for (auto* C : Components)
+	for (auto *C : Components)
 	{
 		bool bAdded = false;
 
-		if (auto* Box = Cast<UBoxComponent>(C))
+		if (auto *Box = Cast<UBoxComponent>(C))
 		{
 			AddBoxGeometry(Box, Geometry);
 			bAdded = true;
 		}
-		else if (auto* Landscape = Cast<ULandscapeComponent>(C))
-			bAdded = AddLandscapeGeometry(Landscape, Geometry);
-		else if (auto* Mesh = Cast<UStaticMeshComponent>(C))
+		else if (auto *Landscape = Cast<ULandscapeComponent>(C))
 		{
-			if (auto* Instances = Cast<UInstancedStaticMeshComponent>(Mesh))
+			bAdded = AddLandscapeGeometry(Landscape, Geometry);
+		}
+		else if (auto *Mesh = Cast<UStaticMeshComponent>(C))
+		{
+			if (auto *Instances = Cast<UInstancedStaticMeshComponent>(Mesh))
 			{
 				bAdded = true;
 
@@ -351,41 +369,47 @@ bool UUECoreCollisionSubsystem::RebuildFromScene()
 
 					if (!Instances->GetInstanceTransform(I, Transform, true) ||
 					    !AddStaticMeshGeometry(Mesh, Transform, Geometry))
+					{
 						bAdded = false;
+					}
 				}
 			}
 			else
+			{
 				bAdded = AddStaticMeshGeometry(Mesh, Mesh->GetComponentTransform(), Geometry);
+			}
 		}
 
 		if (!bAdded)
 		{
-			UE_LOG(
-			    LogTemp, Error,
-			    TEXT(
-			        "Core collision bake: unsupported blocking component %s (%s). Use a box or static mesh proxy."),
-			    *C->GetPathName(), *C->GetClass()->GetName());
+			UE_LOG(LogTemp, Error,
+			       TEXT("Core collision bake: unsupported blocking component %s (%s). Use a box or static "
+			            "mesh proxy."),
+			       *C->GetPathName(), *C->GetClass()->GetName());
 			bSupported = false;
 		}
 	}
 
 	if (!bSupported)
+	{
 		return false;
+	}
 
 	if (Geometry.empty())
 	{
-		UE_LOG(
-		    LogTemp, Error,
-		    TEXT(
-		        "No ServerGround or ServerWall collision geometry in this map. Assign Collision Presets before "
-		        "exporting."));
+		UE_LOG(LogTemp, Error,
+		       TEXT("No ServerGround or ServerWall collision geometry in this map. Assign Collision Presets "
+		            "before "
+		            "exporting."));
 		return false;
 	}
 	hhv::movement::TriangleWorld Candidate;
 	Candidate.build(std::move(Geometry));
 
 	if (!Candidate.size())
+	{
 		return false;
+	}
 	Collision = std::move(Candidate);
 	bReady = bAttempted = true;
 	TriangleCount = static_cast<int32>(Collision.size());

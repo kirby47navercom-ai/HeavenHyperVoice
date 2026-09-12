@@ -14,11 +14,11 @@ namespace
 {
 struct FCoreTestScene
 {
-	UWorld* World;
-	APawn* Pawn;
-	UUECoreMovementComponent* Movement;
+	UWorld *World;
+	APawn *Pawn;
+	UUECoreMovementComponent *Movement;
 
-	FCoreTestScene(const TCHAR* PackagePath = nullptr)
+	FCoreTestScene(const TCHAR *PackagePath = nullptr)
 	{
 		const auto Settings = UWorld::InitializationValues()
 		                          .AllowAudioPlayback(false)
@@ -29,7 +29,7 @@ struct FCoreTestScene
 		                            PackagePath ? CreatePackage(PackagePath) : nullptr, true,
 		                            ERHIFeatureLevel::Num, &Settings);
 		Pawn = World->SpawnActor<APawn>();
-		auto* Capsule = NewObject<UCapsuleComponent>(Pawn);
+		auto *Capsule = NewObject<UCapsuleComponent>(Pawn);
 		Pawn->SetRootComponent(Capsule);
 		Capsule->InitCapsuleSize(34, 88);
 		Capsule->SetCollisionProfileName(TEXT("Pawn"));
@@ -47,10 +47,10 @@ struct FCoreTestScene
 		World->DestroyWorld(false);
 	}
 
-	UBoxComponent* Box(FVector Center, FVector Extent, FRotator Rotation = FRotator::ZeroRotator)
+	UBoxComponent *Box(FVector Center, FVector Extent, FRotator Rotation = FRotator::ZeroRotator)
 	{
-		auto* Actor = World->SpawnActor<AActor>();
-		auto* Box = NewObject<UBoxComponent>(Actor);
+		auto *Actor = World->SpawnActor<AActor>();
+		auto *Box = NewObject<UBoxComponent>(Actor);
 		Actor->SetRootComponent(Box);
 		Box->SetBoxExtent(Extent);
 		Box->SetCollisionProfileName(TEXT("ServerGround"));
@@ -76,7 +76,9 @@ struct FCoreTestScene
 	void Advance(int Frames, FVector Input = FVector::ZeroVector, float Dt = 1.f / 60.f)
 	{
 		for (int Frame = 0; Frame < Frames; ++Frame)
+		{
 			Tick(Dt, Input);
+		}
 	}
 };
 
@@ -85,7 +87,7 @@ struct FCoreTestScene
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHHVCoreFloorTest, "HHV.Movement.Core.FloorJumpAndFrameRate",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FHHVCoreFloorTest::RunTest(const FString&)
+bool FHHVCoreFloorTest::RunTest(const FString &)
 {
 	FCoreTestScene Scene;
 	Scene.Box(FVector(0, 0, -20), FVector(3000, 3000, 20));
@@ -127,7 +129,7 @@ bool FHHVCoreFloorTest::RunTest(const FString&)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHHVCoreCollisionTest, "HHV.Movement.Core.WallStepSlopeLedge",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FHHVCoreCollisionTest::RunTest(const FString&)
+bool FHHVCoreCollisionTest::RunTest(const FString &)
 {
 	{
 		FCoreTestScene S;
@@ -186,34 +188,35 @@ bool FHHVCoreCollisionTest::RunTest(const FString&)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHHVCorePlayerTest, "HHV.Movement.Core.PlayerHasNoCharacterMovement",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FHHVCorePlayerTest::RunTest(const FString&)
+bool FHHVCorePlayerTest::RunTest(const FString &)
 {
-	const auto* Defaults = GetDefault<AUEPlayerCharacter>();
+	const auto *Defaults = GetDefault<AUEPlayerCharacter>();
 	TestEqual(TEXT("Movement is the independent Pawn component"), Defaults->GetMovementComponent(),
-	          static_cast<UPawnMovementComponent*>(Defaults->GetCoreMovement()));
+	          static_cast<UPawnMovementComponent *>(Defaults->GetCoreMovement()));
 	TestNotNull(TEXT("Capsule retained"), Defaults->GetCapsuleComponent());
 	TestNotNull(TEXT("Mesh retained"), Defaults->GetMesh());
-	TArray<UActorComponent*> Components;
+	TArray<UActorComponent *> Components;
 	Defaults->GetComponents(Components);
 
-	for (auto* Component : Components)
+	for (auto *Component : Components)
 	{
-		for (UClass* Class = Component->GetClass(); Class; Class = Class->GetSuperClass())
+		for (UClass *Class = Component->GetClass(); Class; Class = Class->GetSuperClass())
+		{
 			TestNotEqual(TEXT("No CharacterMovement in player component inheritance"), Class->GetName(),
 			             FString(TEXT("CharacterMovementComponent")));
+		}
 	}
-	TestTrue(TEXT("Local movement test defaults to no field connection"), Defaults->bLocalMovementTest);
 	return true;
 }
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHHVPortableCollisionTest, "HHV.Movement.Core.PortableCollisionReplay",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FHHVPortableCollisionTest::RunTest(const FString&)
+bool FHHVPortableCollisionTest::RunTest(const FString &)
 {
 	FCoreTestScene S;
-	auto* Floor = S.Box(FVector(0, 0, -20), FVector(3000, 3000, 20));
-	auto* Wall = S.Box(FVector(250, 0, 250), FVector(1, 1000, 250));
-	auto* Snapshot = S.World->GetSubsystem<UUECoreCollisionSubsystem>();
+	auto *Floor = S.Box(FVector(0, 0, -20), FVector(3000, 3000, 20));
+	auto *Wall = S.Box(FVector(250, 0, 250), FVector(1, 1000, 250));
+	auto *Snapshot = S.World->GetSubsystem<UUECoreCollisionSubsystem>();
 	const FString Base = FPaths::ProjectSavedDir() / TEXT("CoreMovement/PortableReplay");
 	TestTrue(TEXT("Save canonical snapshot"), Snapshot->SaveCollisionFile(Base + TEXT(".hhvcollision")));
 	// No engine collision remains. The player must still stand, jump and hit the wall.
@@ -234,26 +237,30 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHHVCoreDebugRenderingTest,
                                  "HHV.Movement.Core.IgnoreGameplayDebuggerRendering",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FHHVCoreDebugRenderingTest::RunTest(const FString&)
+bool FHHVCoreDebugRenderingTest::RunTest(const FString &)
 {
 	FCoreTestScene S;
 	// PIE spawns this component at runtime; an editor-only map bake never sees it.
-	UClass* DebugClass = LoadClass<UPrimitiveComponent>(
+	UClass *DebugClass = LoadClass<UPrimitiveComponent>(
 	    nullptr, TEXT("/Script/GameplayDebugger.GameplayDebuggerRenderingComponent"));
 
 	if (!TestNotNull(TEXT("Actual PIE debugger rendering class"), DebugClass))
+	{
 		return false;
-	auto* DebugActor = S.World->SpawnActor<AActor>();
-	auto* Debug = NewObject<UPrimitiveComponent>(DebugActor, DebugClass);
+	}
+	auto *DebugActor = S.World->SpawnActor<AActor>();
+	auto *Debug = NewObject<UPrimitiveComponent>(DebugActor, DebugClass);
 	DebugActor->SetRootComponent(Debug);
 	Debug->SetCollisionProfileName(TEXT("BlockAll"));
 	Debug->RegisterComponent();
 	TestTrue(TEXT("Debug renderer advertises query collision"), Debug->IsQueryCollisionEnabled());
 	S.Box(FVector(0, 0, -20), FVector(2000, 2000, 20));
-	auto* Snapshot = S.World->GetSubsystem<UUECoreCollisionSubsystem>();
+	auto *Snapshot = S.World->GetSubsystem<UUECoreCollisionSubsystem>();
 
 	if (!TestTrue(TEXT("Debug rendering does not prevent snapshot preparation"), Snapshot->EnsureReady()))
+	{
 		return false;
+	}
 	TestEqual(TEXT("Only floor geometry is exported"), Snapshot->TriangleCount, 12);
 	S.Advance(10);
 	TestTrue(TEXT("Player leaves initial falling state"), S.Movement->IsMovingOnGround());
@@ -268,28 +275,30 @@ bool FHHVCoreDebugRenderingTest::RunTest(const FString&)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHHVCorePresetFilterTest, "HHV.Movement.Core.ExportOnlySharedPresets",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FHHVCorePresetFilterTest::RunTest(const FString&)
+bool FHHVCorePresetFilterTest::RunTest(const FString &)
 {
 	FCoreTestScene S;
 	S.Box(FVector(0, 0, -20), FVector(2000, 2000, 20));
-	auto* Wall = S.Box(FVector(150, 0, 250), FVector(1, 1000, 250));
+	auto *Wall = S.Box(FVector(150, 0, 250), FVector(1, 1000, 250));
 	Wall->SetCollisionProfileName(TEXT("ServerWall"));
-	auto* DecoyActor = S.World->SpawnActor<AActor>();
+	auto *DecoyActor = S.World->SpawnActor<AActor>();
 	DecoyActor->Tags.Add(TEXT("ServerGround"));
-	auto* Decoy = NewObject<UBoxComponent>(DecoyActor, TEXT("ServerWall_NameOnly"));
+	auto *Decoy = NewObject<UBoxComponent>(DecoyActor, TEXT("ServerWall_NameOnly"));
 	DecoyActor->SetRootComponent(Decoy);
 	Decoy->SetBoxExtent(FVector(500, 500, 500));
-	Decoy->ComponentTags.Add(TEXT("ServerWall"));
 	Decoy->SetCollisionProfileName(TEXT("BlockAll"));
 	Decoy->RegisterComponent();
-	auto* UnsupportedActor = S.World->SpawnActor<AActor>();
-	auto* Sphere = NewObject<USphereComponent>(UnsupportedActor);
+	auto *TaggedBox = S.Box(FVector(3000, 0, 100), FVector(100, 100, 100));
+	TaggedBox->SetCollisionProfileName(TEXT("BlockAll"));
+	TaggedBox->ComponentTags.Add(TEXT("ServerWall"));
+	auto *UnsupportedActor = S.World->SpawnActor<AActor>();
+	auto *Sphere = NewObject<USphereComponent>(UnsupportedActor);
 	UnsupportedActor->SetRootComponent(Sphere);
 	Sphere->SetCollisionProfileName(TEXT("BlockAll"));
 	Sphere->RegisterComponent();
-	auto* Snapshot = S.World->GetSubsystem<UUECoreCollisionSubsystem>();
-	TestTrue(TEXT("Unselected geometry and tags do not cause export failure"), Snapshot->RebuildFromScene());
-	TestEqual(TEXT("Only the two selected presets are exported"), Snapshot->TriangleCount, 24);
+	auto *Snapshot = S.World->GetSubsystem<UUECoreCollisionSubsystem>();
+	TestTrue(TEXT("Profiles and component tags select shared geometry"), Snapshot->RebuildFromScene());
+	TestEqual(TEXT("Two selected profiles and one tagged box are exported"), Snapshot->TriangleCount, 36);
 	const auto Hash = Snapshot->GetCollision()->hash();
 	S.Advance(90, FVector(1, 0, 0));
 	TestTrue(TEXT("Decoy box is ignored and selected wall blocks"),
@@ -304,16 +313,18 @@ bool FHHVCorePresetFilterTest::RunTest(const FString&)
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHHVCoreSavedMapTest, "HHV.Movement.Core.LoadSavedMapInPIE",
                                  EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
-bool FHHVCoreSavedMapTest::RunTest(const FString&)
+bool FHHVCoreSavedMapTest::RunTest(const FString &)
 {
 	// Empty live scene: this must load the exported artifact, not collect world components.
 	FCoreTestScene S(TEXT("/Game/Level/UEDPIE_77_PlayerTestLevel"));
-	auto* Snapshot = S.World->GetSubsystem<UUECoreCollisionSubsystem>();
+	auto *Snapshot = S.World->GetSubsystem<UUECoreCollisionSubsystem>();
 	TestEqual(TEXT("PIE suffix is removed but package folder is kept"), Snapshot->GetCollisionRelativePath(),
 	          FString(TEXT("Level/PlayerTestLevel.hhvcollision")));
 
 	if (!TestTrue(TEXT("Default client path loads the shipped snapshot"), Snapshot->EnsureReady()))
+	{
 		return false;
+	}
 	TestTrue(TEXT("Saved map has collision even in an empty live scene"), Snapshot->TriangleCount > 0);
 	TestEqual(TEXT("Loaded file is the map default"), Snapshot->LoadedFile,
 	          Snapshot->GetDefaultCollisionFile());
