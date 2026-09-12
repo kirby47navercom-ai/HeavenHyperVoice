@@ -19,7 +19,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "../Movement/UECoreMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
@@ -266,10 +266,14 @@ AUEPlayerCharacter::AUEPlayerCharacter()
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;
 
-	GetCharacterMovement()->bOrientRotationToMovement = true;
-	GetCharacterMovement()->bNotifyApex = true;
-	GetCharacterMovement()->RotationRate = FRotator(0.0f, 540.0f, 0.0f);
-	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
+    CapsuleComponent=CreateDefaultSubobject<UCapsuleComponent>(TEXT("CollisionCylinder"));
+    SetRootComponent(CapsuleComponent);
+    CapsuleComponent->SetCollisionProfileName(TEXT("Pawn"));
+    Mesh=CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh0"));
+    Mesh->SetupAttachment(CapsuleComponent);
+    Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    CoreMovement=CreateDefaultSubobject<UUECoreMovementComponent>(TEXT("CoreMovement"));
+    CoreMovement->SetUpdatedComponent(CapsuleComponent);
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
@@ -317,6 +321,9 @@ void AUEPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+    CoreMovement->OnLanded.AddDynamic(this,&ThisClass::Landed);
+    CoreMovement->OnJumpApex.AddDynamic(this,&ThisClass::NotifyJumpApex);
+    GetMesh()->AddTickPrerequisiteComponent(CoreMovement);
 	PlayerCharacterInit();
 	ApplyPendingHHVAppearance();
 	RefreshMovementSpeed();
@@ -385,10 +392,10 @@ void AUEPlayerCharacter::ConfigureRemoteProxyMovement()
 {
 	// 좌표를 서버가 전부 지시하므로 로컬 이동 시뮬레이션은 끈다. 켜 두면
 	// 중력과 보간이 서로 밀며 캐릭터가 떨린다. 야생 포켓몬과 같은 설정이다.
-	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	if (UUECoreMovementComponent* MovementComponent = GetCoreMovement())
 	{
-		MovementComponent->GravityScale = 0.0f;
-		MovementComponent->SetMovementMode(MOVE_None);
+		MovementComponent->GravityAcceleration = 0.0f;
+		MovementComponent->SetMovementMode(EUECoreMovementMode::Disabled);
 		MovementComponent->SetComponentTickEnabled(false);
 	}
 
@@ -421,7 +428,7 @@ void AUEPlayerCharacter::ApplyRemoteMoveTarget(const FVector& TargetLocation,
 
 void AUEPlayerCharacter::UpdateRemoteProxyMovement(float DeltaSeconds)
 {
-	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	if (UUECoreMovementComponent* MovementComponent = GetCoreMovement())
 	{
 		MovementComponent->Velocity = RemoteVelocity;
 	}
@@ -455,19 +462,19 @@ void AUEPlayerCharacter::Jump()
 	}
 
 	CancelLanding();
-	Super::Jump();
+	CoreMovement->RequestCoreJump();
 	CharacterStateTag = UEGameplayTags::State_Character_Jump;
 }
 
 void AUEPlayerCharacter::NotifyJumpApex()
 {
-	Super::NotifyJumpApex();
+
 	CharacterStateTag = UEGameplayTags::State_Character_Fall;
 }
 
 void AUEPlayerCharacter::Landed(const FHitResult& Hit)
 {
-	Super::Landed(Hit);
+
 
 	// 구르기용 전방 발사가 바닥에 닿을 때 별도 착지 상태로 덮어쓰지 않는다.
 	if (bIsRolling)
@@ -553,7 +560,7 @@ void AUEPlayerCharacter::RefreshCharacterState()
 		return;
 	}
 
-	const UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
+	const UUECoreMovementComponent* MovementComponent = GetCoreMovement();
 	if (MovementComponent && MovementComponent->IsFalling())
 	{
 		CharacterStateTag = GetVelocity().Z > 0.0f
@@ -598,9 +605,9 @@ void AUEPlayerCharacter::CancelLanding()
 
 void AUEPlayerCharacter::RefreshMovementSpeed()
 {
-	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	if (UUECoreMovementComponent* MovementComponent = GetCoreMovement())
 	{
-		MovementComponent->MaxWalkSpeed = WalkSpeed * (bIsRunning ? RunSpeedMultiplier : 1.0f);
+		MovementComponent->SetCoreRunning(bIsRunning);
 	}
 }
 
@@ -664,31 +671,19 @@ FVector AUEPlayerCharacter::GetMoveDirectionFromInput(const FVector2D& Input, co
 	return Direction.GetSafeNormal();
 }
 
+UPawnMovementComponent* AUEPlayerCharacter::GetMovementComponent() const { return CoreMovement; }
+void AUEPlayerCharacter::StopJumping()
+{
+	CoreMovement->CancelCoreJump();
+}
+
 void AUEPlayerCharacter::ApplyServerMovementCorrection(const FVector& ServerPosition, const FVector& ServerVelocity, const FRotator& ServerRotation, bool bUseHardCorrection)
 {
-	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
-	{
-		if (bUseHardCorrection)
-		{
-			FVector LandingPosition = ServerPosition;
-			if (!GetWorld()->FindTeleportSpot(this, LandingPosition, ServerRotation))
-			{
-				UE_LOG(LogTemp, Warning, TEXT("PlayerMovementSync: no collision-free correction location at %s"),
-					*ServerPosition.ToString());
-				return;
-			}
-			SetActorLocationAndRotation(LandingPosition, ServerRotation, false, nullptr, ETeleportType::TeleportPhysics);
-			MovementComponent->OnTeleported();
-		}
-		else
-		{
-			FHitResult Hit;
-			MovementComponent->SafeMoveUpdatedComponent(ServerPosition - GetActorLocation(),
-				GetActorQuat(), true, Hit);
-		}
-		MovementComponent->Velocity = ServerVelocity;
-		MovementComponent->bForceNextFloorCheck = true;
-	}
+    // An authoritative state is applied directly; subsequent ticks resolve portable geometry.
+    SetActorLocationAndRotation(ServerPosition, bUseHardCorrection ? ServerRotation : GetActorRotation(),
+        false, nullptr, ETeleportType::TeleportPhysics);
+    CoreMovement->Velocity = ServerVelocity;
+    CoreMovement->OnTeleported();
 }
 
 void AUEPlayerCharacter::ApplyHHVAppearance(const FUEHHVAppearance& NewAppearance)
@@ -884,6 +879,7 @@ void AUEPlayerCharacter::Roll()
 
 	CancelLanding();
 	bIsRolling = true;
+	CoreMovement->RequestCoreRoll();
 	RefreshCharacterState();
 	float RollMontageDuration = 0.0f;
 	if (UUEAnimInstance* PlayerAnimInstance = Cast<UUEAnimInstance>(GetMesh()->GetAnimInstance()))

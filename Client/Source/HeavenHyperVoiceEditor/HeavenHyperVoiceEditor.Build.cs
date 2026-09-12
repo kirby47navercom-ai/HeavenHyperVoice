@@ -19,7 +19,7 @@ public class HeavenHyperVoiceEditor : ModuleRules
 		{
 			"HeavenHyperVoice",
 			"Landscape",
-			"UnrealEd", "UMG", "UMGEditor", "Slate", "SlateCore", "Kismet", "KismetCompiler",
+			"ToolMenus", "UnrealEd", "UMG", "UMGEditor", "Slate", "SlateCore", "Kismet", "KismetCompiler",
 			"AssetRegistry", "MeshDescription", "StaticMeshDescription"
 		});
 	}

@@ -8,6 +8,7 @@ public class HeavenHyperVoice : ModuleRules
 	public HeavenHyperVoice(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        PublicIncludePaths.Add(Path.GetFullPath(Path.Combine(ModuleDirectory, "../MovementCore")));
 	
 		PublicDependencyModuleNames.AddRange(new string[]
 		{

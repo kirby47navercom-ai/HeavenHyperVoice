@@ -5,7 +5,7 @@
 #include "../Character/UEPlayerCharacter.h"
 #include "../Server/UEPlayerMovementSyncComponent.h"
 #include "Engine/World.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "../Movement/UECoreMovementComponent.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHHVSnapshotSlopeTest, "HHV.Movement.SnapshotSlopeAndJitter",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -71,7 +71,7 @@ bool FHHVPlayerCorrectionTest::RunTest(const FString& Parameters)
 	const auto Second = Sync->CaptureMovementPacket();
 	Player->SetActorLocation(FVector(120, 0, 510));
 	Player->SetActorRotation(FRotator(0, 90, 0));
-	Player->GetCharacterMovement()->Velocity = FVector(100, 0, -30);
+	Player->GetCoreMovement()->Velocity = FVector(100, 0, -30);
 	Sync->HandleServerCorrection(First.Sequence, FVector(80, 0, -12000), 0);
 	TestEqual(TEXT("Retain movement since acknowledged packet"), Player->GetActorLocation().X, 100.0);
 	TestEqual(TEXT("Do not force grounded Z onto falling character"), Player->GetActorLocation().Z, 510.0);

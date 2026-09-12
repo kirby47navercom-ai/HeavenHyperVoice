@@ -10,7 +10,7 @@
 #include "UEPlayerMovementSyncComponent.h"
 
 #include "Engine/World.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "../Movement/UECoreMovementComponent.h"
 #include "HAL/PlatformMisc.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Crc.h"
@@ -80,7 +80,7 @@ void UUEFieldServerBridgeComponent::AttachToPlayer(AUEPlayerCharacter* PlayerCha
 	DetachFromPlayer();
 	CachedPlayerCharacter = PlayerCharacter;
 	ResolveSyncComponents();
-	PlayerCharacter->OnCharacterMovementUpdated.AddDynamic(
+	PlayerCharacter->GetCoreMovement()->OnMovementUpdated.AddDynamic(
 		this,
 		&ThisClass::HandleCharacterMovementUpdated);
 	StartFieldConnection();
@@ -90,7 +90,7 @@ void UUEFieldServerBridgeComponent::DetachFromPlayer()
 {
 	if (AUEPlayerCharacter* PlayerCharacter = CachedPlayerCharacter.Get())
 	{
-		PlayerCharacter->OnCharacterMovementUpdated.RemoveDynamic(
+		PlayerCharacter->GetCoreMovement()->OnMovementUpdated.RemoveDynamic(
 			this,
 			&ThisClass::HandleCharacterMovementUpdated);
 	}
@@ -151,6 +151,10 @@ void UUEFieldServerBridgeComponent::ResolveSyncComponents()
 
 void UUEFieldServerBridgeComponent::StartConnection(const FString& Service, uint32 InstanceType)
 {
+	if (const AUEPlayerCharacter* Player = GetPlayerCharacter(); Player && Player->bLocalMovementTest)
+	{
+		return;
+	}
 	if (FieldConnection)
 	{
 		return;

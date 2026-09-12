@@ -6,7 +6,7 @@
 #include "../UEGameplayTags.h"
 
 #include "Animation/AnimMontage.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "../Movement/UECoreMovementComponent.h"
 
 void UUEAnimInstance::NativeInitializeAnimation()
 {
@@ -72,7 +72,7 @@ void UUEAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 
 	const FVector Velocity = OwnerCharacter->GetVelocity();
 	const FVector HorizontalVelocity(Velocity.X, Velocity.Y, 0.0f);
-	const UCharacterMovementComponent* MovementComponent = OwnerCharacter->GetCharacterMovement();
+	const UUECoreMovementComponent* MovementComponent = OwnerCharacter->GetCoreMovement();
 	const bool bMovementIsFalling = MovementComponent && MovementComponent->IsFalling();
 	const bool bWasMovementFalling = bIsJumping || bIsFalling;
 	GroundSpeed = HorizontalVelocity.Size();
@@ -83,7 +83,7 @@ void UUEAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	bIsWalking = CharacterStateTag == UEGameplayTags::State_Character_Walk;
 	bIsRunning = CharacterStateTag == UEGameplayTags::State_Character_Run;
 	bIsRolling = CharacterStateTag == UEGameplayTags::State_Character_Roll;
-	// 점프 상태는 태그 갱신 시점이 아니라 실제 CharacterMovement 공중 상태를 기준으로 판정한다.
+	// 점프 상태는 태그 갱신 시점이 아니라 실제 이동 코어 공중 상태를 기준으로 판정한다.
 	bIsJumping = bMovementIsFalling && Velocity.Z > 0.0f;
 	bIsFalling = bMovementIsFalling && Velocity.Z <= 0.0f;
 	bIsLanding = !bMovementIsFalling &&

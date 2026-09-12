@@ -2,13 +2,15 @@
 
 #include "CoreMinimal.h"
 #include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
-#include "GameFramework/Character.h"
+#include "GameFramework/Pawn.h"
 #include "GameplayTagContainer.h"
 #include "UObject/SoftObjectPath.h"
 #include "TimerManager.h"
 #include "UEPlayerCharacter.generated.h"
 
 class UAnimInstance;
+class UCapsuleComponent;
+class UUECoreMovementComponent;
 class UCameraComponent;
 class UAnimSequence;
 class USpringArmComponent;
@@ -21,16 +23,31 @@ class UUEPlayerAnimationDataAsset;
 class UUEPlayerMovementSyncComponent;
 
 UCLASS(Blueprintable)
-class HEAVENHYPERVOICE_API AUEPlayerCharacter : public ACharacter
+class HEAVENHYPERVOICE_API AUEPlayerCharacter : public APawn
 {
 	GENERATED_BODY()
 
 public:
 	AUEPlayerCharacter();
 
+    // Test the local core without legacy server position corrections.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Character|Movement Test")
+    bool bLocalMovementTest = true;
+
 	virtual void Tick(float DeltaSeconds) override;
-	virtual void Jump() override;
-	virtual void Landed(const FHitResult& Hit) override;
+    UFUNCTION(BlueprintCallable, Category="Character|Movement")
+    void Jump();
+    UFUNCTION(BlueprintCallable, Category="Character|Movement")
+    void StopJumping();
+    UFUNCTION()
+    void Landed(const FHitResult& Hit);
+    UFUNCTION(BlueprintPure, Category="Character|Movement")
+    UUECoreMovementComponent* GetCoreMovement() const { return CoreMovement; }
+    virtual UPawnMovementComponent* GetMovementComponent() const override;
+    UFUNCTION(BlueprintPure, Category="Character")
+    UCapsuleComponent* GetCapsuleComponent() const { return CapsuleComponent; }
+    UFUNCTION(BlueprintPure, Category="Character")
+    USkeletalMeshComponent* GetMesh() const { return Mesh; }
 
 	// --- 다른 플레이어를 그리는 복제본 ---
 	//
@@ -120,7 +137,8 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	virtual void NotifyJumpApex() override;
+    UFUNCTION()
+    void NotifyJumpApex();
 
 	void ApplyLocalMovementInput();
 	FVector GetCameraForwardAxis(const FRotator& ViewRotation) const;
@@ -128,6 +146,13 @@ protected:
 	FVector GetMoveDirectionFromInput(const FVector2D& Input, const FRotator& ViewRotation) const;
 
 protected:
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Character|Collision")
+    TObjectPtr<UCapsuleComponent> CapsuleComponent;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Character|Mesh")
+    TObjectPtr<USkeletalMeshComponent> Mesh;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Character|Movement")
+    TObjectPtr<UUECoreMovementComponent> CoreMovement;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Character|Camera")
 	TObjectPtr<USpringArmComponent> CameraBoom = nullptr;
 
@@ -170,12 +195,6 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
 	TSubclassOf<UAnimInstance> TypeBAnimationClass;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Movement", meta = (ClampMin = "0.0"))
-	float WalkSpeed = 260.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character|Movement", meta = (ClampMin = "1.0"))
-	float RunSpeedMultiplier = 1.5f;
 
 private:
 	void ConfigureRemoteProxyMovement();
