@@ -284,12 +284,15 @@ bool UUECoreMovementComponent::ExportCoreReplay(const FString &BasePath) const
 	                                     FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM);
 }
 
-void UUECoreMovementComponent::WaitForNetworkSimulation()
+void UUECoreMovementComponent::PrepareForNetworkSimulation(bool bAllowLocalSimulation)
 {
-	bWaitingForNetwork = true;
+	bWaitingForNetwork = !bAllowLocalSimulation;
 	bNetworkSimulation = false;
-	Accumulator = 0;
-	PendingButtons = 0;
+
+	// Keep the displayed position and velocity, but discard the old connection's inputs.
+	ResetFromActor();
+	Prediction.reset(CoreState);
+	NextSequence = 1;
 }
 
 bool UUECoreMovementComponent::BeginNetworkSimulation(const hhv::movement::State &Initial, uint64 MapHash)

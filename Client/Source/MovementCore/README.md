@@ -21,6 +21,20 @@ Lua AI는 목적지와 행동을 고른다. `Server/Movement`의 길찾기는 �
 
 ## 데이터와 설정
 
+### 임시 개발용 오프라인 이동
+
+`Client/Config/DefaultGame.ini`의 `UEFieldServerBridgeComponent` 설정에서
+`bAllowOfflineMovementForDevelopment=True`이면 서버 접속 중이거나 접속이 끊겨도
+클라이언트 공통 코어로 이동한다. 오프라인 입력은 서버로 보내지 않는다.
+서버 입장에 성공하면 서버가 준 위치·속도·이동 상태에서 새 입력 큐를 시작하므로,
+오프라인에서 움직인 위치와 서버 위치가 다르면 서버 위치로 이동한다.
+
+나중에 이 값을 `False`로 바꾸면 서버 입장이 완료돼야 움직이는 방식으로 돌아간다.
+Shipping 빌드는 이 설정과 관계없이 임시 오프라인 이동을 사용하지 않는다.
+로컬 충돌 파일은 계속 필요하며, 포켓몬·파티 등 서버 기능을 대신 실행하는 옵션은 아니다.
+
+### 공통 규칙
+
 - `TriangleWorld.h`는 표준 C++ 충돌 구현이며 언리얼 Chaos 질의를 사용하지 않는다.
 - 클라이언트 `Content/MovementCollision`과 서버 `maps/collision`에는 같은 `.hhvcollision` 파일을 배포한다. [추출 방법](MAP_EXPORT.md).
 - 입장 시 코어 버전과 맵 해시를 확인한다. 구버전 클라이언트와 새 서버는 함께 사용할 수 없다.

@@ -180,7 +180,8 @@ class HEAVENHYPERVOICE_API UUECoreMovementComponent : public UPawnMovementCompon
 	bool BeginNetworkSimulation(const hhv::movement::State &Initial, uint64 MapHash);
 	void AcknowledgeNetworkInput(uint32 Sequence, const hhv::movement::State &State);
 	std::vector<hhv::movement::PredictedInput> TakeNetworkInputs();
-	void WaitForNetworkSimulation();
+	// Development may continue local simulation while waiting for server admission.
+	void PrepareForNetworkSimulation(bool bAllowLocalSimulation);
 	void RenderServerState(const hhv::movement::State &State);
 
 	hhv::movement::Config MakeCoreConfig() const;

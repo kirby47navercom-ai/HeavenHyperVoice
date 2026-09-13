@@ -246,6 +246,10 @@ class HEAVENHYPERVOICE_API UUEFieldServerBridgeComponent : public UActorComponen
 	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server", meta = (ClampMin = "0.01"))
 	float SendIntervalSeconds = 0.05f;
 
+	// Temporary development fallback. Disable in DefaultGame.ini to require server admission.
+	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server|Development")
+	bool bAllowOfflineMovementForDevelopment = false;
+
 	// 야생 포켓몬으로 스폰할 클래스. 네이티브 AUEPokemonCharacter 는 메시도
 	// 종족 카탈로그도 없어서 스폰해 봐야 보이지 않는다 — 둘 다 BP_Pokemon 이
 	// 들고 있다. Config 라서 DefaultGame.ini 에서 지정한다.
@@ -253,6 +257,7 @@ class HEAVENHYPERVOICE_API UUEFieldServerBridgeComponent : public UActorComponen
 	TSubclassOf<AUEPokemonCharacter> WildPokemonClass;
 
   private:
+	bool ShouldAllowOfflineMovement() const;
 	void ResolveSyncComponents();
 
 	// Service 는 "field" 또는 "instance". 티켓이 있으면 로그인 서버가 준 주소로,

@@ -165,6 +165,8 @@ void UUEFieldServerBridgeComponent::StartConnection(const FString &Service, uint
 		return;
 	}
 
+	GetPlayerCharacter()->GetCoreMovement()->PrepareForNetworkSimulation(ShouldAllowOfflineMovement());
+
 	if (FieldServerHost.IsEmpty() || FieldServerPort <= 0)
 	{
 		UE_LOG(LogTemp, Error,
@@ -187,7 +189,6 @@ void UUEFieldServerBridgeComponent::StartConnection(const FString &Service, uint
 	}
 
 	FieldConnection = std::make_unique<FHHVFieldConnection>();
-	GetPlayerCharacter()->GetCoreMovement()->WaitForNetworkSimulation();
 	FieldConnection->OnEnterAck = [this](const FHHVFieldEventData &Event) { HandleFieldEnterAck(Event); };
 	FieldConnection->OnCorrection = [this](uint32 Sequence, const hhv::movement::State &State) {
 		GetPlayerCharacter()->GetCoreMovement()->AcknowledgeNetworkInput(Sequence, State);
@@ -333,6 +334,12 @@ void UUEFieldServerBridgeComponent::HandleFieldEnterAck(const FHHVFieldEventData
 
 void UUEFieldServerBridgeComponent::HandleFieldSnapshot(const FHHVFieldSnapshot &Snapshot)
 {
+	const AUEPlayerCharacter* Player = GetPlayerCharacter();
+	if (!Player || !Player->GetCoreMovement()->IsNetworkSimulationActive())
+	{
+		return;
+	}
+
 	if (SnapshotsLogged < 20)
 	{
 		++SnapshotsLogged;
@@ -411,10 +418,27 @@ void UUEFieldServerBridgeComponent::ApplyPartnerServerState(const FHHVFieldEntit
 	                                              Entity.bPartnerTeleported, Entity.ServerTimeSeconds);
 }
 
+bool UUEFieldServerBridgeComponent::ShouldAllowOfflineMovement() const
+{
+#if UE_BUILD_SHIPPING
+	return false;
+#else
+	return bAllowOfflineMovementForDevelopment;
+#endif
+}
+
 void UUEFieldServerBridgeComponent::HandleFieldDisconnected(const FString &Reason)
 {
 	UE_LOG(LogTemp, Warning, TEXT("FieldServerBridge: disconnected from %s: %s"),
 	       bInInstance ? TEXT("instance") : TEXT("field"), *Reason);
+
+	if (AUEPlayerCharacter* Player = GetPlayerCharacter())
+	{
+		Player->GetCoreMovement()->PrepareForNetworkSimulation(ShouldAllowOfflineMovement());
+	}
+	LocalEntityId = 0;
+	CurrentRoomId = 0;
+	DestroyPresentationActors();
 }
 
 void UUEFieldServerBridgeComponent::HandleFieldPartyState(const FHHVFieldPartyState &State)

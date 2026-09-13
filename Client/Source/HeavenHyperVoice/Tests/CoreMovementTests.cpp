@@ -330,4 +330,71 @@ bool FHHVCoreSavedMapTest::RunTest(const FString &)
 	          Snapshot->GetDefaultCollisionFile());
 	return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHHVOfflineMovementTest, "HHV.Movement.Core.DevelopmentOfflineFallback",
+                                 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FHHVOfflineMovementTest::RunTest(const FString&)
+{
+	FCoreTestScene Scene(TEXT("/Game/Level/UEDPIE_3_PlayerTestLevel"));
+	Scene.Reset(FVector(0, 0, 92));
+	auto* Collision = Scene.World->GetSubsystem<UUECoreCollisionSubsystem>();
+	if (!TestTrue(TEXT("Load the actual PlayerTestLevel collision"), Collision->EnsureReady()))
+	{
+		return false;
+	}
+
+	// Starting without an EnterAck must still run gravity, walking and jumping.
+	Scene.Movement->PrepareForNetworkSimulation(true);
+	Scene.Advance(180);
+	TestTrue(TEXT("Offline startup lands"), Scene.Movement->IsMovingOnGround());
+	const FVector BeforeWalk = Scene.Pawn->GetActorLocation();
+	Scene.Advance(60, FVector(1, 0, 0));
+	TestTrue(TEXT("Offline input moves the pawn"), Scene.Pawn->GetActorLocation().X > BeforeWalk.X + 200);
+	TestTrue(TEXT("Offline inputs are not sent"), Scene.Movement->TakeNetworkInputs().empty());
+	Scene.Movement->RequestCoreJump();
+	Scene.Advance(1);
+	TestTrue(TEXT("Offline jump starts"), Scene.Movement->IsFalling() && Scene.Movement->Velocity.Z > 0);
+	Scene.Advance(120);
+	TestTrue(TEXT("Offline jump lands"), Scene.Movement->IsMovingOnGround());
+
+	const auto ServerState = Scene.Movement->GetCoreState();
+	const uint64 MapHash = Collision->GetCollision()->hash();
+	TestTrue(TEXT("Server admission replaces offline state"),
+	         Scene.Movement->BeginNetworkSimulation(ServerState, MapHash));
+	Scene.Advance(6, FVector(1, 0, 0));
+	const auto NetworkInputs = Scene.Movement->TakeNetworkInputs();
+	if (TestEqual(TEXT("Only connected ticks enter the network queue"), NetworkInputs.size(), size_t(6)))
+	{
+		TestEqual(TEXT("Offline ticks do not consume network sequence numbers"),
+		          NetworkInputs.front().input.sequence, uint32(1));
+	}
+
+	// A disconnect must discard unacknowledged input and keep the current location.
+	const FVector BeforeDisconnect = Scene.Pawn->GetActorLocation();
+	Scene.Movement->PrepareForNetworkSimulation(true);
+	TestEqual(TEXT("Disconnect does not teleport"), Scene.Pawn->GetActorLocation(), BeforeDisconnect);
+	TestFalse(TEXT("Disconnect ends network simulation"), Scene.Movement->IsNetworkSimulationActive());
+	TestTrue(TEXT("Disconnected queue is empty"), Scene.Movement->TakeNetworkInputs().empty());
+	Scene.Advance(60, FVector(1, 0, 0));
+	TestTrue(TEXT("Walking continues after disconnect"),
+	         Scene.Pawn->GetActorLocation().X > BeforeDisconnect.X + 200);
+	const FVector LocalPosition = Scene.Pawn->GetActorLocation();
+	Scene.Movement->AcknowledgeNetworkInput(6, ServerState);
+	TestEqual(TEXT("An old acknowledgement cannot move the offline pawn"),
+	          Scene.Pawn->GetActorLocation(), LocalPosition);
+
+	// The switch remains reversible: strict mode waits for server admission.
+	Scene.Movement->PrepareForNetworkSimulation(false);
+	Scene.Advance(60, FVector(1, 0, 0));
+	TestEqual(TEXT("Fallback disabled requires server admission"), Scene.Pawn->GetActorLocation(), LocalPosition);
+	TestTrue(TEXT("Admission resumes strict mode"), Scene.Movement->BeginNetworkSimulation(ServerState, MapHash));
+	Scene.Advance(1, FVector(1, 0, 0));
+	const auto ReconnectedInputs = Scene.Movement->TakeNetworkInputs();
+	if (TestEqual(TEXT("New connection has only new input"), ReconnectedInputs.size(), size_t(1)))
+	{
+		TestEqual(TEXT("New connection restarts sequence numbers"),
+		          ReconnectedInputs.front().input.sequence, uint32(1));
+	}
+	return true;
+}
 #endif
