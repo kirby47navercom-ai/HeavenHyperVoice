@@ -55,6 +55,7 @@ void AUEInstancePortal::BeginPlay()
 	// 반지름은 에디터에서 고칠 수 있으므로 생성자 값이 아니라 지금 값을 쓴다.
 	Trigger->SetSphereRadius(TriggerRadius);
 	Trigger->OnComponentBeginOverlap.AddDynamic(this, &ThisClass::HandleBeginOverlap);
+	Trigger->OnComponentEndOverlap.AddDynamic(this, &ThisClass::HandleEndOverlap);
 }
 
 void AUEInstancePortal::Tick(float DeltaSeconds)
@@ -80,6 +81,24 @@ void AUEInstancePortal::HandleBeginOverlap(UPrimitiveComponent* /*OverlappedComp
 	AActor* OtherActor, UPrimitiveComponent* /*OtherComponent*/, int32 /*OtherBodyIndex*/,
 	bool /*bFromSweep*/, const FHitResult& /*SweepResult*/)
 {
+	AUEPlayerCharacter* Player = Cast<AUEPlayerCharacter>(OtherActor);
+	if (!bArmed || bTravelStarted || bPromptedForOverlap || !Player || Player->IsRemoteProxy() || !Player->IsLocallyControlled()) return;
+	AUEPlayerController* Controller = Cast<AUEPlayerController>(Player->GetController());
+	if (Controller && Controller->CanInteractWithWorld())
+		bPromptedForOverlap = Controller->ShowPortalConfirmation(this);
+}
+
+void AUEInstancePortal::HandleEndOverlap(UPrimitiveComponent*, AActor* OtherActor,
+	UPrimitiveComponent*, int32)
+{
+	const AUEPlayerCharacter* Player = Cast<AUEPlayerCharacter>(OtherActor);
+	if (Player && Player->IsLocallyControlled() && !Trigger->IsOverlappingActor(Player))
+		bPromptedForOverlap = false;
+}
+
+void AUEInstancePortal::ConfirmTravel(AUEPlayerCharacter* OtherActor)
+{
+	if (!IsValid(OtherActor) || !Trigger->IsOverlappingActor(OtherActor)) return;
 	if (!bArmed || bTravelStarted)
 	{
 		return;

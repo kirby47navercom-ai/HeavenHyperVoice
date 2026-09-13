@@ -15,6 +15,7 @@
 
 class USphereComponent;
 class UStaticMeshComponent;
+class AUEPlayerCharacter;
 
 UCLASS()
 class HEAVENHYPERVOICE_API AUEInstancePortal : public AActor
@@ -23,6 +24,8 @@ class HEAVENHYPERVOICE_API AUEInstancePortal : public AActor
 
   public:
 	AUEInstancePortal();
+	void ConfirmTravel(AUEPlayerCharacter* PlayerCharacter);
+	bool IsEntrance() const { return InstanceType > 0; }
 
   protected:
 	virtual void BeginPlay() override;
@@ -50,6 +53,10 @@ class HEAVENHYPERVOICE_API AUEInstancePortal : public AActor
 
   private:
 	bool bArmed = false;
+	bool bPromptedForOverlap = false;
+	UFUNCTION()
+	void HandleEndOverlap(UPrimitiveComponent* Component, AActor* OtherActor,
+		UPrimitiveComponent* OtherComponent, int32 OtherBodyIndex);
 
 	UFUNCTION()
 	void HandleBeginOverlap(UPrimitiveComponent *OverlappedComponent, AActor *OtherActor,

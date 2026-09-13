@@ -29,6 +29,7 @@ class UInputMappingContext;
 class UInputAction;
 class UCameraComponent;
 class AUEGoldenrodCity;
+class AUEInstancePortal;
 
 /** 실제 플레이 레벨의 이동과 액션 입력을 처리한다. */
 UCLASS()
@@ -43,6 +44,7 @@ public:
 
 	void OpenChatInput();
 	void CloseChatInput(bool bClearDraft = true);
+	bool ShowPortalConfirmation(AUEInstancePortal* Portal);
 
 	/** 가장 최근에 선택한 창을 맨 앞으로 올린다. WBP 자식은 UEWindowWidget을 사용한다. */
 	UFUNCTION(BlueprintCallable, Category = "UI|Windows")
@@ -98,6 +100,8 @@ public:
 	void HHVLeaveInstance();
 
 protected:
+	UPROPERTY(EditDefaultsOnly, Category = "Portal|UI")
+	TSubclassOf<UUEOptionsConfirmWidget> PortalConfirmClass;
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|UI")
 	TSubclassOf<UUEPhotoModeWidget> PhotoModeWidgetClass;
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|Input")
@@ -182,6 +186,12 @@ public:
 	void AddSystemMessage(const FString& Text);
 
 private:
+	UPROPERTY(Transient)
+	TObjectPtr<UUEOptionsConfirmWidget> PortalConfirm;
+	TWeakObjectPtr<AUEInstancePortal> PendingPortal;
+	UFUNCTION()
+	void HandlePortalAction(FName ActionId);
+	void ClosePortalConfirmation();
 	void BindPhotoInput(class UEnhancedInputComponent* EnhancedInputComponent);
 	void TickPhotoMode(float DeltaSeconds);
 	void HideGameplayUIForPhoto();

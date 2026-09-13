@@ -86,6 +86,7 @@ class HEAVENHYPERVOICE_API UUEOptionsConfirmWidget : public UUEOptionsScreenWidg
 	GENERATED_BODY()
 public:
 	void SetAction(FName ActionId);
+	void SetPortalDestination(bool bEntrance);
 protected:
 	virtual void NativeConstruct() override;
 	UPROPERTY(meta = (BindWidget))

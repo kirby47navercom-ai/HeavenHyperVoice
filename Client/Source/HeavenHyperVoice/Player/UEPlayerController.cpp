@@ -78,6 +78,7 @@ void AUEPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	ExitPhotoMode();
 	bReturningToFrontend = true;
+	ClosePortalConfirmation();
 	RemoveOptionsScreen();
 	if (OptionsMenu)
 	{
@@ -274,6 +275,7 @@ void AUEPlayerController::HandleGameViewportClick()
 
 void AUEPlayerController::HandleEscape()
 {
+	if (PortalConfirm) { ClosePortalConfirmation(); return; }
 	if (bPhotoMode) { ExitPhotoMode(); return; }
 	if (bChatInputOpen) CloseChatInput();
 	else ToggleOptionsMenu();
@@ -281,6 +283,7 @@ void AUEPlayerController::HandleEscape()
 
 void AUEPlayerController::ToggleOptionsMenu()
 {
+	if (PortalConfirm) { ClosePortalConfirmation(); return; }
 	if (bPhotoMode) { ExitPhotoMode(); return; }
 	if (!IsLocalController() || bReturningToFrontend) return;
 	if (OptionsScreen)

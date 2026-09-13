@@ -143,8 +143,16 @@ void UUEOptionsConfirmWidget::SetAction(FName ActionId)
 
 void UUEOptionsConfirmWidget::Confirm()
 {
-    if (PendingAction == TEXT("Logout") || PendingAction == TEXT("CharacterSelect"))
+    if (PendingAction == TEXT("Logout") || PendingAction == TEXT("CharacterSelect") || PendingAction == TEXT("PortalTravel"))
     {
         OnScreenActionRequested.Broadcast(PendingAction);
     }
+}
+
+void UUEOptionsConfirmWidget::SetPortalDestination(bool bEntrance)
+{
+    PendingAction = TEXT("PortalTravel");
+    ConfirmTitleText->SetText(FText::FromString(bEntrance ? TEXT("필드로 이동") : TEXT("도시로 돌아가기")));
+    ConfirmMessageText->SetText(FText::FromString(bEntrance
+        ? TEXT("포탈을 통해 다음 지역으로 이동할까요?") : TEXT("탐험을 마치고 도시로 돌아갈까요?")));
 }
