@@ -211,10 +211,13 @@ table Notice {
   text:string;
 }
 
-// 서버 -> 클라. 검증한 마지막 입력 순번과 전체 상태를 항상 확인 응답한다.
+// 서버 -> 클라. sequence까지 기록을 제거하고 movement에서 나머지를 재실행한다.
+// discarded_inputs는 sequence까지 실행하지 않고 생략한 입력의 누적 수다.
+// 서버가 추측해서 진행한 미래 상태는 이 응답에 넣지 않는다.
 table Correction {
   sequence:uint;
   movement:CoreState (required);
+  discarded_inputs:ulong;
 }
 
 // 클라 -> 서버. 파티 구성과 꺼낼 한 마리를 정한다.

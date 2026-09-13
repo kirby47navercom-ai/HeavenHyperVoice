@@ -302,7 +302,11 @@ void World::advancePlayers(float dt) {
         entity.velocityY = state.velocity.y;
         entity.velocityZ = state.velocity.z;
         entity.movedThisTick = true;
-        sendTo(entity, proto::encodeCorrection(entity.movement.acknowledged, state));
+        if (entity.movement.hasCorrection()) {
+            sendTo(entity, proto::encodeCorrection(entity.movement.acknowledged,
+                                                   entity.movement.correctionState(),
+                                                   entity.movement.discardedInputs));
+        }
 
         const int sector = proto::sectorIndex(location.x, location.y);
         if (sector != entity.sector) {

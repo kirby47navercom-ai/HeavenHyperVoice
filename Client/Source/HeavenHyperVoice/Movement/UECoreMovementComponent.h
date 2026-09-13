@@ -178,7 +178,7 @@ class HEAVENHYPERVOICE_API UUECoreMovementComponent : public UPawnMovementCompon
 	UFUNCTION(BlueprintCallable, Category = "Shared Movement|Testing")
 	bool ExportCoreReplay(const FString &BasePath) const;
 	bool BeginNetworkSimulation(const hhv::movement::State &Initial, uint64 MapHash);
-	void AcknowledgeNetworkInput(uint32 Sequence, const hhv::movement::State &State);
+	void AcknowledgeNetworkInput(uint32 Sequence, const hhv::movement::State &State, uint64 DiscardedInputs = 0);
 	std::vector<hhv::movement::PredictedInput> TakeNetworkInputs();
 	// Development may continue local simulation while waiting for server admission.
 	void PrepareForNetworkSimulation(bool bAllowLocalSimulation);

@@ -190,8 +190,8 @@ void UUEFieldServerBridgeComponent::StartConnection(const FString &Service, uint
 
 	FieldConnection = std::make_unique<FHHVFieldConnection>();
 	FieldConnection->OnEnterAck = [this](const FHHVFieldEventData &Event) { HandleFieldEnterAck(Event); };
-	FieldConnection->OnCorrection = [this](uint32 Sequence, const hhv::movement::State &State) {
-		GetPlayerCharacter()->GetCoreMovement()->AcknowledgeNetworkInput(Sequence, State);
+	FieldConnection->OnCorrection = [this](uint32 Sequence, const hhv::movement::State &State, uint64 DiscardedInputs) {
+		GetPlayerCharacter()->GetCoreMovement()->AcknowledgeNetworkInput(Sequence, State, DiscardedInputs);
 	};
 	FieldConnection->OnSnapshot = [this](const FHHVFieldSnapshot &Snapshot) {
 		HandleFieldSnapshot(Snapshot);

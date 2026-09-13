@@ -297,9 +297,12 @@ int main(int argc, char **argv) {
         // 20Hz 틱. 이번 주기에 움직인 것만 뷰어별로 묶어 내보낸다.
         std::thread ticker([&] {
             const auto period = std::chrono::milliseconds(1000 / heaven::proto::kTickHz);
-            const float dt = 1.f / static_cast<float>(heaven::proto::kTickHz);
+            auto previous = std::chrono::steady_clock::now();
             while (running.load(std::memory_order_acquire)) {
-                const auto deadline = std::chrono::steady_clock::now() + period;
+                const auto now = std::chrono::steady_clock::now();
+                const float dt = std::chrono::duration<float>(now - previous).count();
+                previous = now;
+                const auto deadline = now + period;
                 world.tick(dt);
                 std::this_thread::sleep_until(deadline);
             }

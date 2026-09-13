@@ -395,11 +395,14 @@ int main(int argc, char **argv) {
         for (unsigned shard = 0; shard < tickThreads; ++shard) {
             tickers.emplace_back([&, shard, tickThreads] {
                 const auto period = std::chrono::milliseconds(1000 / heaven::instance::kTickHz);
-                const float dt = 1.f / static_cast<float>(heaven::instance::kTickHz);
+                auto previous = std::chrono::steady_clock::now();
                 float sinceReap = 0.f;
 
                 while (running.load(std::memory_order_acquire)) {
-                    const auto deadline = std::chrono::steady_clock::now() + period;
+                    const auto now = std::chrono::steady_clock::now();
+                    const float dt = std::chrono::duration<float>(now - previous).count();
+                    previous = now;
+                    const auto deadline = now + period;
                     rooms.tickShard(shard, tickThreads, dt);
 
                     // 빈 방 회수는 한 스레드만 한다. 배타 잠금이라 다른 샤드가
