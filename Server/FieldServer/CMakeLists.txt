@@ -29,3 +29,12 @@ add_custom_command(TARGET FieldServer POST_BUILD
         "$<TARGET_FILE_DIR:FieldServer>/maps"
     COMMENT "Copying field maps next to FieldServer"
 )
+
+# 뽑기 확률표. InstanceServer 의 scripts/ 와 같은 방식이다 — 실행 파일 옆에
+# 두면 재빌드 없이 고칠 수 있고, 서버는 기동할 때 읽는다.
+add_custom_command(TARGET FieldServer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/gacha"
+        "$<TARGET_FILE_DIR:FieldServer>/gacha"
+    COMMENT "Copying gacha pools next to FieldServer"
+)

@@ -15,6 +15,11 @@
 
 namespace HeavenField;
 
+// 뽑기 기계의 타입. 0 은 "안 정했다" 이고 서버가 거절한다 — 기본값이 불꽃이
+// 되면 타입을 빠뜨린 클라가 조용히 불꽃을 뽑는다.
+// Protocol/GachaPool.h 의 proto::GachaType 과 같은 값이어야 한다.
+enum GachaType : ubyte { None = 0, Fire = 1, Water = 2, Grass = 3, Normal = 4, Electric = 5 }
+
 // 클라 -> 서버. LoginServer 가 audience:"field" 로 서명한 티켓을 싣는다.
 //
 // dev_* 는 서버가 --dev-no-auth 로 떠 있을 때만 읽는다. 그 모드가 아니면
@@ -223,6 +228,52 @@ table PartnerChanged {
   partner_species:ushort;  // 도감번호. 0 이면 도로 넣었다
 }
 
+// 클라 -> 서버. 뽑기 한 번. **타입만** 보낸다.
+//
+// 무엇이 나오는지는 서버가 정한다. 후보 목록은 클라도 알고 있으므로(확률
+// 표시에 쓴다) "후보에 있는가" 만 검증하면 후보 안에서 슈퍼레어를 100%
+// 지목하는 치팅을 막을 수 없다.
+//
+// character_id 를 싣지 않는다 (SetParty 와 같은 이유 — 티켓으로 이미 안다).
+table GachaDrawRequest {
+  type:GachaType;
+}
+
+// 서버 -> 클라. 연출과 결과 화면이 쓴다.
+//
+// duplicate 가 꽝이다. 이미 해금한 종족이 나오면 토큰은 소모되고 해금은
+// 늘지 않는다. 무엇이 나왔는지는 그대로 알려준다 — 숨기면 토큰만 사라진
+// 것으로 보인다.
+table GachaDrawResponse {
+  ok:bool;
+  message:string;
+
+  // 나온 종족의 **도감번호**. 실패하면 0.
+  dex:ushort;
+
+  // 0 일반 / 1 레어 / 2 슈퍼레어. 캡슐 색이 이걸로 정해진다.
+  rarity:ubyte;
+
+  duplicate:bool;
+}
+
+// 클라 -> 서버. 토큰 한 개를 준다.
+//
+// 수급처가 아직 없어서 둔 디버그 경로다. 서버가 --allow-debug-tokens 로 떠
+// 있을 때만 처리하고, 아니면 경고를 남기고 버린다.
+table DebugGrantToken {
+}
+
+// 서버 -> 클라. 지금 토큰 보유량.
+//
+// PartyState 에 얹지 않은 이유는 PartyState 가 거절 응답으로도 나가기
+// 때문이다. 거절 경로는 캐릭터를 읽지 않아서 보유량을 모르고, 그때 0 을
+// 실으면 화면이 토큰을 잃은 것으로 본다. 입장할 때 한 번, 보유량이 바뀔
+// 때마다 한 번 나간다.
+table TokenBalance {
+  tokens:uint;
+}
+
 union Payload {
   Enter,
   EnterAck,
@@ -232,7 +283,14 @@ union Payload {
   Correction,
   SetParty,
   PartyState,
-  PartnerChanged
+  PartnerChanged,
+
+  // 뒤에만 붙인다. union 값은 와이어에 나가는 번호라 앞에 끼우면 기존
+  // 클라가 프레임을 엉뚱한 타입으로 읽는다.
+  GachaDrawRequest,
+  GachaDrawResponse,
+  DebugGrantToken,
+  TokenBalance
 }
 
 table Envelope {

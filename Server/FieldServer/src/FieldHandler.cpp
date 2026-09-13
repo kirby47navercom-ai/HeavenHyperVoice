@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <random>
 #include <sstream>
 
 namespace heaven::field {
@@ -104,6 +105,20 @@ bool FieldHandler::onFrame(TlsSession& session, const proto::Bytes& body) {
                 return false;
             }
             return handleSetParty(session, *envelope->payload_as_SetParty());
+
+        case HeavenField::Payload::GachaDrawRequest:
+            if (stage != Stage::InField) {
+                spdlog::warn("{}: gacha draw before entering the field", session.peer());
+                return false;
+            }
+            return handleGachaDraw(session, *envelope->payload_as_GachaDrawRequest());
+
+        case HeavenField::Payload::DebugGrantToken:
+            if (stage != Stage::InField) {
+                spdlog::warn("{}: debug token before entering the field", session.peer());
+                return false;
+            }
+            return handleDebugGrantToken(session);
 
         default:
             spdlog::warn("{}: unexpected field payload", session.peer());
@@ -287,6 +302,12 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
         // 이미 DB 스레드 위라 그대로 쓴다.
         fieldshared::sendPartyState(context->characters, *self, accountId, characterId, true, "");
 
+        // 뽑기 화면이 열릴 때 따로 조회하지 않게 토큰도 같이 보낸다.
+        std::uint32_t tokens = 0;
+        if (context->characters->tokenBalance(accountId, characterId, tokens)) {
+            self->send(proto::encodeTokenBalance(tokens));
+        }
+
         spdlog::info("entered: {} (character {}, {}) at ({:.0f}, {:.0f}) - {} in field",
                      character->nickname, characterId, self->peer(), start.x, start.y,
                      context->world->size());
@@ -296,6 +317,135 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
         spdlog::warn("{}: db queue full, refusing entry", session.peer());
         session.send(proto::encodeFieldNotice("서버가 혼잡합니다. 잠시 후 다시 시도해 주세요"));
         return false;
+    }
+    return true;
+}
+
+// ------------------------------------------------------------------ 뽑기
+
+bool FieldHandler::handleGachaDraw(TlsSession& session,
+                                   const HeavenField::GachaDrawRequest& request) {
+    // dev 모드에는 저장소가 없다. 해금을 남길 곳이 없으니 뽑을 것도 없다.
+    if (context_.characters == nullptr || context_.gacha == nullptr ||
+        !context_.gacha->loaded()) {
+        session.send(proto::encodeGachaResult(false, "이 서버에서는 뽑기를 할 수 없습니다", 0,
+                                              proto::GachaRarity::Normal, false));
+        return true;
+    }
+    if (!context_.characters->supportsGacha()) {
+        session.send(proto::encodeGachaResult(
+            false, "서버가 뽑기를 준비하지 못했습니다", 0, proto::GachaRarity::Normal, false));
+        return true;
+    }
+
+    const auto wireType = static_cast<std::uint8_t>(request.type());
+    if (!proto::isGachaType(wireType)) {
+        // 0 은 타입을 안 정한 것이다. 기본값으로 굴려 주지 않는다.
+        spdlog::warn("{}: gacha draw with type {}", session.peer(), wireType);
+        session.send(proto::encodeGachaResult(false, "뽑기 종류가 올바르지 않습니다", 0,
+                                              proto::GachaRarity::Normal, false));
+        return true;
+    }
+    const auto type = static_cast<proto::GachaType>(wireType);
+
+    auto self = session.shared_from_this();
+    const FieldContext* context = &context_;
+    const std::uint64_t accountId = accountId_;
+    const std::uint64_t characterId = characterId_;
+
+    // 추첨과 DB 왕복이라 IOCP 워커에서 하지 않는다.
+    const bool queued = context_.dbQueue->submit([self, context, accountId, characterId, type] {
+        // mt19937 은 스레드 안전하지 않다. DB 스레드마다 하나씩 든다.
+        // 방마다 재현이 필요한 야생 배치와 달리 뽑기는 씨앗을 고정할 이유가 없다.
+        thread_local std::mt19937 rng{std::random_device{}()};
+
+        const proto::GachaDraw rolled = context->gacha->draw(type, rng);
+        if (rolled.dex == 0) {
+            self->send(proto::encodeGachaResult(false, "뽑을 수 있는 포켓몬이 없습니다", 0,
+                                                proto::GachaRarity::Normal, false));
+            return;
+        }
+
+        std::uint32_t tokensLeft = 0;
+        const data::GachaResult result =
+            context->characters->drawGacha(accountId, characterId, rolled.dex, tokensLeft);
+
+        const char* message = nullptr;
+        switch (result) {
+            case data::GachaResult::Granted:      message = "새로운 포켓몬을 얻었습니다"; break;
+            case data::GachaResult::Duplicate:    message = "이미 가지고 있는 포켓몬입니다"; break;
+            case data::GachaResult::NoToken:      message = "포켓몬 토큰이 없습니다"; break;
+            case data::GachaResult::NotSupported: message = "이 서버에서는 뽑기를 할 수 없습니다"; break;
+            case data::GachaResult::Error:        message = "서버 오류로 뽑지 못했습니다"; break;
+        }
+
+        const bool spent = result == data::GachaResult::Granted ||
+                           result == data::GachaResult::Duplicate;
+        const bool duplicate = result == data::GachaResult::Duplicate;
+
+        // 꽝이어도 무엇이 나왔는지는 알려준다. 숨기면 토큰만 사라진 것으로 보인다.
+        self->send(proto::encodeGachaResult(spent, message, spent ? rolled.dex : std::uint16_t{0},
+                                            rolled.rarity, duplicate));
+
+        if (!spent) {
+            // 토큰이 안 나갔으면 보유량도 그대로다. 그래도 화면과 어긋나 있을 수
+            // 있으니(다른 접속이 썼을 수 있다) 진짜 값을 한 번 보낸다.
+            std::uint32_t tokens = 0;
+            if (context->characters->tokenBalance(accountId, characterId, tokens)) {
+                self->send(proto::encodeTokenBalance(tokens));
+            }
+            return;
+        }
+
+        self->send(proto::encodeTokenBalance(tokensLeft));
+
+        if (result == data::GachaResult::Granted) {
+            // 로스터가 늘었다. 파티 화면의 후보 목록을 새로 보낸다.
+            fieldshared::sendPartyState(context->characters, *self, accountId, characterId, true,
+                                        "");
+            spdlog::info("gacha: character {} unlocked dex {} ({} left)", characterId,
+                         rolled.dex, tokensLeft);
+        } else {
+            spdlog::info("gacha: character {} drew a duplicate dex {} ({} left)", characterId,
+                         rolled.dex, tokensLeft);
+        }
+    });
+
+    if (!queued) {
+        spdlog::warn("{}: db queue full, refusing gacha draw", session.peer());
+        session.send(proto::encodeGachaResult(false, "서버가 혼잡합니다", 0,
+                                              proto::GachaRarity::Normal, false));
+    }
+    return true;
+}
+
+// 토큰 수급처가 아직 없어서 둔 디버그 경로다.
+//
+// ponytail: 아무나 자기 토큰을 늘릴 수 있다. 지금은 혼자 돌리는 개발 서버라
+// 그대로 두지만, 수급처(퀘스트·상점 등)가 생기면 이 핸들러와 field.fbs 의
+// DebugGrantToken 을 **같이** 지운다. 남겨 두면 그게 곧 치트 경로다.
+bool FieldHandler::handleDebugGrantToken(TlsSession& session) {
+    if (context_.characters == nullptr) {
+        return true;
+    }
+
+    auto self = session.shared_from_this();
+    const FieldContext* context = &context_;
+    const std::uint64_t accountId = accountId_;
+    const std::uint64_t characterId = characterId_;
+
+    const bool queued = context_.dbQueue->submit([self, context, accountId, characterId] {
+        std::uint32_t tokensLeft = 0;
+        if (!context->characters->grantToken(accountId, characterId, tokensLeft)) {
+            spdlog::warn("debug token grant failed for character {}", characterId);
+            return;
+        }
+        self->send(proto::encodeTokenBalance(tokensLeft));
+        spdlog::warn("debug token granted to character {} ({} total)", characterId, tokensLeft);
+    });
+
+    if (!queued) {
+        spdlog::warn("{}: db queue full, refusing debug token", session.peer());
     }
     return true;
 }

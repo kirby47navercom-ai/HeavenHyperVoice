@@ -1,0 +1,54 @@
+# 타입별 뽑기 후보와 가중치.
+#
+# 실제 확률 = 해당 weight / 그 타입 weight 합계. 서버가 합으로 나누므로 합이
+# 얼마든 동작하지만, 1000 에 맞춰 적으면 weight 가 곧 천분율이라 읽기 쉽다.
+#
+#   entry <type> <dex> <rarity> <weight>
+#     type    fire | water | grass | normal | electric
+#     dex     전국도감번호. 서버 종족 표(Protocol/PokemonSpecies.h)에 있어야 한다.
+#     rarity  normal | rare | super   — 클라이언트의 캡슐 색이 이걸로 정해진다
+#     weight  정수. 0 이면 후보에서 빠진다.
+#
+# 기동할 때 검증한다. 종족 표에 없는 도감번호, 레이드 보스, 같은 타입에 같은
+# 도감번호, weight 합이 0 인 타입이면 서버가 뜨지 않는다.
+#
+# 초기값은 Client/Scripts/Unreal/GACHA.md 의 표와 같다.
+# 등급 합계는 일반 70% / 레어 25% / 슈퍼레어 5% 다.
+
+# ---------------------------------------------------------------------- 불꽃
+entry fire      390 normal 350   # 불꽃숭이
+entry fire      256 normal 350   # 영치코
+entry fire      323 rare   125   # 폭타
+entry fire      663 rare   125   # 파이어로
+entry fire       59 super   50   # 윈디
+
+# ------------------------------------------------------------------------ 물
+entry water     393 normal 350   # 팽도리
+entry water     657 normal 350   # 개굴반장
+entry water     693 rare   125   # 블로스터
+entry water     195 rare   125   # 누오
+entry water     130 super   50   # 갸라도스
+
+# ------------------------------------------------------------------------ 풀
+entry grass     387 normal 350   # 모부기
+entry grass     253 normal 350   # 나무돌이
+entry grass     286 rare   125   # 버섯모
+entry grass     460 rare   125   # 눈설왕
+entry grass     549 super   50   # 드레디어
+
+# ---------------------------------------------------------------------- 노말
+entry normal     52 normal 350   # 나옹
+entry normal    206 normal 350   # 노고치
+entry normal    289 rare   125   # 게을킹
+entry normal    143 rare   125   # 잠만보
+entry normal    901 super   50   # 붉은달다투곰
+
+# ---------------------------------------------------------------------- 전기
+entry electric  403 normal 350   # 꼬링크
+entry electric  702 normal 350   # 데덴네
+entry electric  417 rare   125   # 파치리스
+entry electric  181 rare   125   # 전룡
+# 로토무 6폼은 도감번호가 전부 479 다. DB 로스터가 도감번호 열쇠라
+# 폼을 구분해 저장할 수 없어서 한 마리로 둔다 — 어느 폼을 보여줄지는
+# 클라이언트가 정한다 (Docs/포켓몬_뽑기_설계.md §1).
+entry electric  479 super   50   # 로토무

@@ -10,6 +10,7 @@
 #include "FieldGeometry.h"
 #include "Appearance.h"
 #include "Framing.h"
+#include "GachaPool.h"
 #include "PokemonSpecies.h"
 #include "field_generated.h"
 
@@ -194,6 +195,23 @@ inline Bytes encodePartnerChanged(std::uint64_t entityId, std::uint16_t speciesI
     flatbuffers::FlatBufferBuilder fbb;
     auto changed = HeavenField::CreatePartnerChanged(fbb, entityId, dexOf(speciesId));
     return detail::wrapField(fbb, HeavenField::Payload::PartnerChanged, changed.Union());
+}
+
+// 뽑기 결과. dex 는 이미 도감번호다 (추첨표가 도감번호로 적혀 있다) —
+// EntityState 처럼 내부 번호를 바꿔 실을 것이 없다.
+inline Bytes encodeGachaResult(bool ok, std::string_view message, std::uint16_t dex,
+                               GachaRarity rarity, bool duplicate) {
+    flatbuffers::FlatBufferBuilder fbb;
+    auto text = fbb.CreateString(message.data(), message.size());
+    auto result = HeavenField::CreateGachaDrawResponse(
+        fbb, ok, text, dex, static_cast<std::uint8_t>(rarity), duplicate);
+    return detail::wrapField(fbb, HeavenField::Payload::GachaDrawResponse, result.Union());
+}
+
+inline Bytes encodeTokenBalance(std::uint32_t tokens) {
+    flatbuffers::FlatBufferBuilder fbb;
+    auto balance = HeavenField::CreateTokenBalance(fbb, tokens);
+    return detail::wrapField(fbb, HeavenField::Payload::TokenBalance, balance.Union());
 }
 
 inline Bytes encodeFieldNotice(std::string_view text) {

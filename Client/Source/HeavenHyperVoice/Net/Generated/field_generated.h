@@ -48,8 +48,62 @@ struct PartyStateBuilder;
 struct PartnerChanged;
 struct PartnerChangedBuilder;
 
+struct GachaDrawRequest;
+struct GachaDrawRequestBuilder;
+
+struct GachaDrawResponse;
+struct GachaDrawResponseBuilder;
+
+struct DebugGrantToken;
+struct DebugGrantTokenBuilder;
+
+struct TokenBalance;
+struct TokenBalanceBuilder;
+
 struct Envelope;
 struct EnvelopeBuilder;
+
+enum class GachaType : uint8_t {
+  None = 0,
+  Fire = 1,
+  Water = 2,
+  Grass = 3,
+  Normal = 4,
+  Electric = 5,
+  MIN = None,
+  MAX = Electric
+};
+
+inline const GachaType (&EnumValuesGachaType())[6] {
+  static const GachaType values[] = {
+    GachaType::None,
+    GachaType::Fire,
+    GachaType::Water,
+    GachaType::Grass,
+    GachaType::Normal,
+    GachaType::Electric
+  };
+  return values;
+}
+
+inline const char * const *EnumNamesGachaType() {
+  static const char * const names[7] = {
+    "None",
+    "Fire",
+    "Water",
+    "Grass",
+    "Normal",
+    "Electric",
+    nullptr
+  };
+  return names;
+}
+
+inline const char *EnumNameGachaType(GachaType e) {
+  if (::flatbuffers::IsOutRange(e, GachaType::None, GachaType::Electric)) return "";
+  const size_t index = static_cast<size_t>(e);
+  return EnumNamesGachaType()[index];
+}
 
 enum class Payload : uint8_t {
   NONE = 0,
@@ -62,11 +116,15 @@ enum class Payload : uint8_t {
   SetParty = 7,
   PartyState = 8,
   PartnerChanged = 9,
+  GachaDrawRequest = 10,
+  GachaDrawResponse = 11,
+  DebugGrantToken = 12,
+  TokenBalance = 13,
   MIN = NONE,
-  MAX = PartnerChanged
+  MAX = TokenBalance
 };
 
-inline const Payload (&EnumValuesPayload())[10] {
+inline const Payload (&EnumValuesPayload())[14] {
   static const Payload values[] = {
     Payload::NONE,
     Payload::Enter,
@@ -77,13 +135,17 @@ inline const Payload (&EnumValuesPayload())[10] {
     Payload::Correction,
     Payload::SetParty,
     Payload::PartyState,
-    Payload::PartnerChanged
+    Payload::PartnerChanged,
+    Payload::GachaDrawRequest,
+    Payload::GachaDrawResponse,
+    Payload::DebugGrantToken,
+    Payload::TokenBalance
   };
   return values;
 }
 
 inline const char * const *EnumNamesPayload() {
-  static const char * const names[11] = {
+  static const char * const names[15] = {
     "NONE",
     "Enter",
     "EnterAck",
@@ -94,13 +156,17 @@ inline const char * const *EnumNamesPayload() {
     "SetParty",
     "PartyState",
     "PartnerChanged",
+    "GachaDrawRequest",
+    "GachaDrawResponse",
+    "DebugGrantToken",
+    "TokenBalance",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNamePayload(Payload e) {
-  if (::flatbuffers::IsOutRange(e, Payload::NONE, Payload::PartnerChanged)) return "";
+  if (::flatbuffers::IsOutRange(e, Payload::NONE, Payload::TokenBalance)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesPayload()[index];
 }
@@ -143,6 +209,22 @@ template<> struct PayloadTraits<HeavenField::PartyState> {
 
 template<> struct PayloadTraits<HeavenField::PartnerChanged> {
   static const Payload enum_value = Payload::PartnerChanged;
+};
+
+template<> struct PayloadTraits<HeavenField::GachaDrawRequest> {
+  static const Payload enum_value = Payload::GachaDrawRequest;
+};
+
+template<> struct PayloadTraits<HeavenField::GachaDrawResponse> {
+  static const Payload enum_value = Payload::GachaDrawResponse;
+};
+
+template<> struct PayloadTraits<HeavenField::DebugGrantToken> {
+  static const Payload enum_value = Payload::DebugGrantToken;
+};
+
+template<> struct PayloadTraits<HeavenField::TokenBalance> {
+  static const Payload enum_value = Payload::TokenBalance;
 };
 
 template <bool B = false>
@@ -1437,6 +1519,220 @@ inline ::flatbuffers::Offset<PartnerChanged> CreatePartnerChanged(
   return builder_.Finish();
 }
 
+struct GachaDrawRequest FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef GachaDrawRequestBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_TYPE = 4
+  };
+  HeavenField::GachaType type() const {
+    return static_cast<HeavenField::GachaType>(GetField<uint8_t>(VT_TYPE, 0));
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint8_t>(verifier, VT_TYPE, 1) &&
+           verifier.EndTable();
+  }
+};
+
+struct GachaDrawRequestBuilder {
+  typedef GachaDrawRequest Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_type(HeavenField::GachaType type) {
+    fbb_.AddElement<uint8_t>(GachaDrawRequest::VT_TYPE, static_cast<uint8_t>(type), 0);
+  }
+  explicit GachaDrawRequestBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<GachaDrawRequest> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<GachaDrawRequest>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<GachaDrawRequest> CreateGachaDrawRequest(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    HeavenField::GachaType type = HeavenField::GachaType::None) {
+  GachaDrawRequestBuilder builder_(_fbb);
+  builder_.add_type(type);
+  return builder_.Finish();
+}
+
+struct GachaDrawResponse FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef GachaDrawResponseBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_OK = 4,
+    VT_MESSAGE = 6,
+    VT_DEX = 8,
+    VT_RARITY = 10,
+    VT_DUPLICATE = 12
+  };
+  bool ok() const {
+    return GetField<uint8_t>(VT_OK, 0) != 0;
+  }
+  const ::flatbuffers::String *message() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_MESSAGE);
+  }
+  uint16_t dex() const {
+    return GetField<uint16_t>(VT_DEX, 0);
+  }
+  uint8_t rarity() const {
+    return GetField<uint8_t>(VT_RARITY, 0);
+  }
+  bool duplicate() const {
+    return GetField<uint8_t>(VT_DUPLICATE, 0) != 0;
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint8_t>(verifier, VT_OK, 1) &&
+           VerifyOffset(verifier, VT_MESSAGE) &&
+           verifier.VerifyString(message()) &&
+           VerifyField<uint16_t>(verifier, VT_DEX, 2) &&
+           VerifyField<uint8_t>(verifier, VT_RARITY, 1) &&
+           VerifyField<uint8_t>(verifier, VT_DUPLICATE, 1) &&
+           verifier.EndTable();
+  }
+};
+
+struct GachaDrawResponseBuilder {
+  typedef GachaDrawResponse Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_ok(bool ok) {
+    fbb_.AddElement<uint8_t>(GachaDrawResponse::VT_OK, static_cast<uint8_t>(ok), 0);
+  }
+  void add_message(::flatbuffers::Offset<::flatbuffers::String> message) {
+    fbb_.AddOffset(GachaDrawResponse::VT_MESSAGE, message);
+  }
+  void add_dex(uint16_t dex) {
+    fbb_.AddElement<uint16_t>(GachaDrawResponse::VT_DEX, dex, 0);
+  }
+  void add_rarity(uint8_t rarity) {
+    fbb_.AddElement<uint8_t>(GachaDrawResponse::VT_RARITY, rarity, 0);
+  }
+  void add_duplicate(bool duplicate) {
+    fbb_.AddElement<uint8_t>(GachaDrawResponse::VT_DUPLICATE, static_cast<uint8_t>(duplicate), 0);
+  }
+  explicit GachaDrawResponseBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<GachaDrawResponse> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<GachaDrawResponse>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<GachaDrawResponse> CreateGachaDrawResponse(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    bool ok = false,
+    ::flatbuffers::Offset<::flatbuffers::String> message = 0,
+    uint16_t dex = 0,
+    uint8_t rarity = 0,
+    bool duplicate = false) {
+  GachaDrawResponseBuilder builder_(_fbb);
+  builder_.add_message(message);
+  builder_.add_dex(dex);
+  builder_.add_duplicate(duplicate);
+  builder_.add_rarity(rarity);
+  builder_.add_ok(ok);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<GachaDrawResponse> CreateGachaDrawResponseDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    bool ok = false,
+    const char *message = nullptr,
+    uint16_t dex = 0,
+    uint8_t rarity = 0,
+    bool duplicate = false) {
+  auto message__ = message ? _fbb.CreateString(message) : 0;
+  return HeavenField::CreateGachaDrawResponse(
+      _fbb,
+      ok,
+      message__,
+      dex,
+      rarity,
+      duplicate);
+}
+
+struct DebugGrantToken FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef DebugGrantTokenBuilder Builder;
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           verifier.EndTable();
+  }
+};
+
+struct DebugGrantTokenBuilder {
+  typedef DebugGrantToken Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  explicit DebugGrantTokenBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<DebugGrantToken> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<DebugGrantToken>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<DebugGrantToken> CreateDebugGrantToken(
+    ::flatbuffers::FlatBufferBuilder &_fbb) {
+  DebugGrantTokenBuilder builder_(_fbb);
+  return builder_.Finish();
+}
+
+struct TokenBalance FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef TokenBalanceBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_TOKENS = 4
+  };
+  uint32_t tokens() const {
+    return GetField<uint32_t>(VT_TOKENS, 0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_TOKENS, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct TokenBalanceBuilder {
+  typedef TokenBalance Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_tokens(uint32_t tokens) {
+    fbb_.AddElement<uint32_t>(TokenBalance::VT_TOKENS, tokens, 0);
+  }
+  explicit TokenBalanceBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<TokenBalance> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<TokenBalance>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<TokenBalance> CreateTokenBalance(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t tokens = 0) {
+  TokenBalanceBuilder builder_(_fbb);
+  builder_.add_tokens(tokens);
+  return builder_.Finish();
+}
+
 struct Envelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef EnvelopeBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
@@ -1476,6 +1772,18 @@ struct Envelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   }
   const HeavenField::PartnerChanged *payload_as_PartnerChanged() const {
     return payload_type() == HeavenField::Payload::PartnerChanged ? static_cast<const HeavenField::PartnerChanged *>(payload()) : nullptr;
+  }
+  const HeavenField::GachaDrawRequest *payload_as_GachaDrawRequest() const {
+    return payload_type() == HeavenField::Payload::GachaDrawRequest ? static_cast<const HeavenField::GachaDrawRequest *>(payload()) : nullptr;
+  }
+  const HeavenField::GachaDrawResponse *payload_as_GachaDrawResponse() const {
+    return payload_type() == HeavenField::Payload::GachaDrawResponse ? static_cast<const HeavenField::GachaDrawResponse *>(payload()) : nullptr;
+  }
+  const HeavenField::DebugGrantToken *payload_as_DebugGrantToken() const {
+    return payload_type() == HeavenField::Payload::DebugGrantToken ? static_cast<const HeavenField::DebugGrantToken *>(payload()) : nullptr;
+  }
+  const HeavenField::TokenBalance *payload_as_TokenBalance() const {
+    return payload_type() == HeavenField::Payload::TokenBalance ? static_cast<const HeavenField::TokenBalance *>(payload()) : nullptr;
   }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
@@ -1521,6 +1829,22 @@ template<> inline const HeavenField::PartyState *Envelope::payload_as<HeavenFiel
 
 template<> inline const HeavenField::PartnerChanged *Envelope::payload_as<HeavenField::PartnerChanged>() const {
   return payload_as_PartnerChanged();
+}
+
+template<> inline const HeavenField::GachaDrawRequest *Envelope::payload_as<HeavenField::GachaDrawRequest>() const {
+  return payload_as_GachaDrawRequest();
+}
+
+template<> inline const HeavenField::GachaDrawResponse *Envelope::payload_as<HeavenField::GachaDrawResponse>() const {
+  return payload_as_GachaDrawResponse();
+}
+
+template<> inline const HeavenField::DebugGrantToken *Envelope::payload_as<HeavenField::DebugGrantToken>() const {
+  return payload_as_DebugGrantToken();
+}
+
+template<> inline const HeavenField::TokenBalance *Envelope::payload_as<HeavenField::TokenBalance>() const {
+  return payload_as_TokenBalance();
 }
 
 struct EnvelopeBuilder {
@@ -1594,6 +1918,22 @@ inline bool VerifyPayload(::flatbuffers::VerifierTemplate<B> &verifier, const vo
     }
     case Payload::PartnerChanged: {
       auto ptr = reinterpret_cast<const HeavenField::PartnerChanged *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::GachaDrawRequest: {
+      auto ptr = reinterpret_cast<const HeavenField::GachaDrawRequest *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::GachaDrawResponse: {
+      auto ptr = reinterpret_cast<const HeavenField::GachaDrawResponse *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::DebugGrantToken: {
+      auto ptr = reinterpret_cast<const HeavenField::DebugGrantToken *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::TokenBalance: {
+      auto ptr = reinterpret_cast<const HeavenField::TokenBalance *>(obj);
       return verifier.VerifyTable(ptr);
     }
     default: return true;

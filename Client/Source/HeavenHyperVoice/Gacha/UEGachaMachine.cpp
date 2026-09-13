@@ -1,4 +1,9 @@
 #include "UEGachaMachine.h"
+
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
+
+#include "../Server/UEFieldServerBridgeComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -38,13 +43,129 @@ void AUEGachaMachine::BeginPlay()
 	ResetDraw();
 }
 
+void AUEGachaMachine::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (bSubscribed)
+	{
+		if (UUEFieldServerBridgeComponent* Bridge = FindBridge())
+		{
+			Bridge->OnGachaResult.RemoveDynamic(this, &AUEGachaMachine::HandleServerGachaResult);
+		}
+		bSubscribed = false;
+	}
+	Super::EndPlay(EndPlayReason);
+}
+
+UUEFieldServerBridgeComponent* AUEGachaMachine::FindBridge() const
+{
+	const UWorld* World = GetWorld();
+	return UUEFieldServerBridgeComponent::Find(World ? World->GetFirstPlayerController()
+	                                                 : nullptr);
+}
+
+bool AUEGachaMachine::RequestServerDraw()
+{
+	const EUEGachaType Type = Pool ? Pool->GetServerType() : EUEGachaType::None;
+	if (Type == EUEGachaType::None)
+	{
+		// 종류를 알 수 없는 기계는 서버에 물어볼 것이 없다. 기본값으로 굴려 주면
+		// 어느 기계를 돌려도 같은 타입이 나오는 것을 아무도 눈치채지 못한다.
+		StatusMessage = FText::FromString(
+			TEXT("이 기계에 뽑기 종류가 설정되지 않았습니다 (DA_Gacha_* 의 Server Type)."));
+		return false;
+	}
+
+	UUEFieldServerBridgeComponent* Bridge = FindBridge();
+	if (!Bridge)
+	{
+		StatusMessage = FText::FromString(
+			TEXT("필드 서버에 연결되어 있지 않습니다. 뽑기는 필드에서만 됩니다."));
+		return false;
+	}
+
+	if (!bSubscribed)
+	{
+		Bridge->OnGachaResult.AddDynamic(this, &AUEGachaMachine::HandleServerGachaResult);
+		bSubscribed = true;
+	}
+
+	if (!Bridge->SendGachaDraw(Type))
+	{
+		StatusMessage = FText::FromString(TEXT("필드 서버에 연결되어 있지 않습니다."));
+		return false;
+	}
+
+	bAwaitingResult = true;
+	bHasResult = false;
+	bDispenseWhenReady = false;
+	return true;
+}
+
+void AUEGachaMachine::HandleServerGachaResult(const FUEFieldGachaResult& Result)
+{
+	// 기계 다섯 대가 같은 브로드캐스트를 받는다. 뽑은 것이 자기 것일 때만 본다.
+	if (!bAwaitingResult)
+	{
+		return;
+	}
+	bAwaitingResult = false;
+
+	if (!Result.bOk)
+	{
+		// 토큰이 없거나 서버가 거절했다. 손잡이를 되돌리고 사유를 띄운다.
+		// 토큰을 클라가 임의로 복구하지 않는다 — 다음 TokenBalance 가 진짜 값이다.
+		State = EUEGachaState::Result;  // ResetDraw 가 Turning 에서 막히므로 먼저 푼다
+		ResetDraw();
+		StatusMessage = FText::FromString(Result.Message.IsEmpty()
+			? TEXT("뽑기에 실패했습니다.")
+			: Result.Message);
+		return;
+	}
+
+	// 표시 이름·초상화·등급 라벨은 데이터 에셋에 있다. 서버는 도감번호만 준다.
+	if (const FUEGachaEntry* Entry = Pool ? Pool->FindByDex(Result.Dex) : nullptr)
+	{
+		SelectedEntry = *Entry;
+	}
+	else
+	{
+		// 표에 없는 번호다. 서버 pools.txt 와 DA 가 어긋났다는 뜻이라 연출은
+		// 기본값으로 계속하고 번호만 남긴다.
+		SelectedEntry = FUEGachaEntry();
+		SelectedEntry.DexNumber = Result.Dex;
+	}
+	SelectedEntry.Rarity = Result.Rarity;
+	bHasResult = true;
+	bDuplicateResult = Result.bDuplicate;
+	UpdateStage();
+
+	if (bDispenseWhenReady)
+	{
+		bDispenseWhenReady = false;
+		BeginDispense();
+	}
+}
+
+void AUEGachaMachine::BeginDispense()
+{
+	State = EUEGachaState::Dispensing;
+	RewardBall->SetStaticMesh(BallMeshes.IsValidIndex(static_cast<int32>(SelectedEntry.Rarity)) ? BallMeshes[static_cast<int32>(SelectedEntry.Rarity)] : nullptr);
+	StatusMessage = FText::FromString(TEXT("캡슐이 나오고 있어요…"));
+}
+
 void AUEGachaMachine::ResetDraw()
 {
-	if (State == EUEGachaState::Turning || State == EUEGachaState::Dispensing) return;
+	if (State == EUEGachaState::Turning || State == EUEGachaState::Dispensing
+		|| State == EUEGachaState::Waiting) return;
 	State = EUEGachaState::Ready;
 	CompletedTurns = 0;
 	TurnDegrees = 0;
 	DispenseElapsed = 0;
+	bAwaitingResult = false;
+	bHasResult = false;
+	bDispenseWhenReady = false;
+	bDuplicateResult = false;
+	SelectedEntry = FUEGachaEntry();
 	HandlePivot->SetRelativeRotation(FRotator::ZeroRotator);
 	RewardBall->SetVisibility(false);
 	StatusMessage = FText::FromString(TEXT("손잡이를 잡고 시계 방향으로 세 바퀴 돌려 주세요"));
@@ -57,11 +178,9 @@ void AUEGachaMachine::TurnHandle(float Degrees)
 	if (State == EUEGachaState::Ready)
 	{
 		if (Degrees <= 0) return;
-		if (!Pool || !Pool->Draw(SelectedEntry))
-		{
-			StatusMessage = FText::FromString(TEXT("뽑을 수 있는 포켓몬이 없습니다. 데이터 에셋의 가중치를 확인해 주세요."));
-			return;
-		}
+		// 추첨은 서버가 한다. 첫 바퀴에 요청하는 이유는 캡슐 색이 바퀴마다
+		// 단계적으로 밝혀지기 때문이다 — 등급을 세 바퀴 전에 알아야 한다.
+		if (!RequestServerDraw()) return;
 		State = EUEGachaState::Turning;
 	}
 	// 반대로 돌리면 현재 회전량이 줄어든다. 손잡이를 앞뒤로 흔들어 횟수를 채울 수는 없다.
@@ -84,9 +203,17 @@ void AUEGachaMachine::TurnHandle(float Degrees)
 	}
 	if (CompletedTurns == 3)
 	{
-		State = EUEGachaState::Dispensing;
-		RewardBall->SetStaticMesh(BallMeshes.IsValidIndex(static_cast<int32>(SelectedEntry.Rarity)) ? BallMeshes[static_cast<int32>(SelectedEntry.Rarity)] : nullptr);
-		StatusMessage = FText::FromString(TEXT("캡슐이 나오고 있어요…"));
+		if (bHasResult)
+		{
+			BeginDispense();
+		}
+		else
+		{
+			// 서버가 아직 답을 안 줬다. 손잡이는 다 돌렸으니 기다린다.
+			State = EUEGachaState::Waiting;
+			bDispenseWhenReady = true;
+			StatusMessage = FText::FromString(TEXT("결과를 기다리는 중…"));
+		}
 	}
 }
 
@@ -159,7 +286,10 @@ void AUEGachaMachine::Tick(float DeltaSeconds)
 	if (DispenseElapsed >= 2)
 	{
 		State = EUEGachaState::Result;
-		StatusMessage = FText::FromString(TEXT("캡슐을 열었어요!"));
+		// 꽝도 무엇이 나왔는지는 보여준다. 숨기면 토큰만 사라진 것으로 보인다.
+		StatusMessage = FText::FromString(bDuplicateResult
+			? TEXT("이미 가지고 있는 포켓몬이에요!")
+			: TEXT("캡슐을 열었어요!"));
 		OnRewardRevealed.Broadcast(SelectedEntry);
 	}
 }

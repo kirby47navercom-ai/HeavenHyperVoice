@@ -356,7 +356,7 @@ int32 UHHVGachaBuildCommandlet::Main(const FString& Params)
 	TArray<UUEGachaPool*> Pools;
 	for(int32 T=0;T<5;++T)
 	{
-		auto* Pool=Asset<UUEGachaPool>(FString(TEXT("Data/DA_Gacha_"))+TypeIds[T]);Pool->MachineName=FText::FromString(TypeNames[T]);Pool->TypeColor=Colors[T];Pool->DisplayOrder=T;
+		auto* Pool=Asset<UUEGachaPool>(FString(TEXT("Data/DA_Gacha_"))+TypeIds[T]);Pool->MachineName=FText::FromString(TypeNames[T]);Pool->TypeColor=Colors[T];Pool->DisplayOrder=T;Pool->ServerType=static_cast<EUEGachaType>(T+1);
 		for(int32 I=0;I<5;++I)
 		{
 			FUEGachaEntry E;E.DisplayName=FText::FromString(Pokemon[T][I]);E.DexNumber=Dex[T][I];E.Rarity=I<2?EUEGachaRarity::Normal:I<4?EUEGachaRarity::Rare:EUEGachaRarity::SuperRare;E.Weight=I<2?35:I<4?12.5f:5;

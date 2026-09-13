@@ -137,6 +137,47 @@ void bindUInt16(SQLHSTMT statement, SQLUSMALLINT index, std::uint16_t& value, SQ
             SQL_HANDLE_STMT, statement, "SQLBindParameter(uint16)");
 }
 
+// 트랜잭션 하나. commit() 없이 빠져나가면 롤백한다.
+//
+// create() 와 setParty() 는 아직 손으로 롤백하고 있다. 그쪽은 돌아가는 코드라
+// 건드리지 않았지만, 새로 쓰는 것을 세 번째 사본으로 만들지는 않는다.
+// ponytail: 그 둘도 이걸로 옮길 것. 옮기면 명시적 rollback() 호출이 사라진다.
+class Transaction {
+public:
+    explicit Transaction(SQLHDBC dbc) : dbc_(dbc) {
+        begun_ = succeeded(SQLSetConnectAttr(dbc_, SQL_ATTR_AUTOCOMMIT,
+                                             reinterpret_cast<SQLPOINTER>(SQL_AUTOCOMMIT_OFF),
+                                             0));
+    }
+
+    ~Transaction() {
+        if (begun_ && !committed_) {
+            // 자동 커밋을 도로 켜는 것만으로는 안 된다. 드라이버에 따라 열려
+            // 있는 트랜잭션을 커밋해 버린다.
+            SQLEndTran(SQL_HANDLE_DBC, dbc_, SQL_ROLLBACK);
+        }
+        if (begun_) {
+            SQLSetConnectAttr(dbc_, SQL_ATTR_AUTOCOMMIT,
+                              reinterpret_cast<SQLPOINTER>(SQL_AUTOCOMMIT_ON), 0);
+        }
+    }
+
+    Transaction(const Transaction&) = delete;
+    Transaction& operator=(const Transaction&) = delete;
+
+    bool begun() const { return begun_; }
+
+    bool commit() {
+        committed_ = succeeded(SQLEndTran(SQL_HANDLE_DBC, dbc_, SQL_COMMIT));
+        return committed_;
+    }
+
+private:
+    SQLHDBC dbc_;
+    bool begun_ = false;
+    bool committed_ = false;
+};
+
 constexpr std::size_t kMaxTextChars = 256;
 
 // 드라이버 이름에 박힌 버전 번호. "MySQL ODBC 9.4 Unicode Driver" -> 904.
@@ -252,6 +293,12 @@ struct OdbcStore::Connection {
     SQLHSTMT clearParty = SQL_NULL_HSTMT;       // 파티를 통째로 비운다
     SQLHSTMT insertPartyMember = SQL_NULL_HSTMT;
 
+    // 포켓몬 토큰 (015). 캐릭터 조회 구문과 떨어져 있어야 한다 — 마이그레이션이
+    // 아직 안 돌았을 때 로그인까지 멈추지 않게 하려는 것이다.
+    SQLHSTMT selectTokens = SQL_NULL_HSTMT;
+    SQLHSTMT spendToken = SQL_NULL_HSTMT;
+    SQLHSTMT grantToken = SQL_NULL_HSTMT;
+
     // 모든 구문 핸들을 한 번에 돌기 위한 목록.
     std::vector<SQLHSTMT*> all() {
         return {&selectAccount,   &touchLogin,       &insertAccount,  &listCharacters,
@@ -259,7 +306,8 @@ struct OdbcStore::Connection {
                 &touchPlayed,     &selectPosition,   &updatePosition, &softDelete,
                 &findNickname,
                 &insertUnlockRow, &setUnlockBit,     &testUnlockBit,  &setActiveDex,
-                &selectParty,     &clearParty,       &insertPartyMember};
+                &selectParty,     &clearParty,       &insertPartyMember,
+                &selectTokens,    &spendToken,       &grantToken};
     }
 };
 
@@ -441,6 +489,38 @@ OdbcStore::OdbcStore(const OdbcSettings& settings) {
         }
         if (i == 0) {
             canWrite_ = writable;
+        }
+
+        // 토큰 구문은 따로 준비한다. 015 가 아직 안 돌았으면 컬럼이 없어서
+        // 여기서만 실패하고, 로그인과 캐릭터 조회는 그대로 돈다. 캐릭터 조회
+        // 구문에 컬럼을 끼워 넣었다면 그게 통째로 실패해 서버가 못 떴다.
+        bool gacha = false;
+        try {
+            prepare(connection->selectTokens,
+                    "SELECT pokemon_tokens FROM characters "
+                    "WHERE id = ? AND account_id = ? AND deleted_at IS NULL",
+                    "SQLPrepare(selectTokens)");
+            // UNSIGNED 라 0 에서 빼면 래핑한다. WHERE 의 > 0 이 그걸 막고,
+            // 영향 행 수가 곧 "토큰이 있었는가" 다.
+            prepare(connection->spendToken,
+                    "UPDATE characters SET pokemon_tokens = pokemon_tokens - 1 "
+                    "WHERE id = ? AND account_id = ? AND pokemon_tokens > 0 "
+                    "AND deleted_at IS NULL",
+                    "SQLPrepare(spendToken)");
+            prepare(connection->grantToken,
+                    "UPDATE characters SET pokemon_tokens = pokemon_tokens + 1 "
+                    "WHERE id = ? AND account_id = ? AND deleted_at IS NULL",
+                    "SQLPrepare(grantToken)");
+            gacha = true;
+        } catch (const std::exception& e) {
+            if (i == 0) {
+                spdlog::warn("pokemon gacha is unavailable: {}", e.what());
+                spdlog::warn("run tools\\apply-migrations.ps1 to apply 015_pokemon_tokens");
+            }
+        }
+        if (i == 0) {
+            // 해금 비트를 켜는 구문이 쓰기 묶음에 있다. 그것 없이는 지급을 못 한다.
+            canGacha_ = gacha && writable;
         }
 
         free_.push_back(connection.get());
@@ -1296,6 +1376,200 @@ DeleteResult OdbcStore::releasePartner(std::uint64_t accountId, std::uint64_t ch
         spdlog::error("partner release failed for character {}: {}", characterId, e.what());
         return DeleteResult::Error;
     }
+}
+
+// ------------------------------------------------------------------ 뽑기
+
+bool OdbcStore::readTokensLocked(Connection& connection, std::uint64_t accountId,
+                                 std::uint64_t characterId, std::uint32_t& out) {
+    out = 0;
+
+    std::uint64_t id = characterId;
+    std::uint64_t owner = accountId;
+    std::uint32_t tokens = 0;
+
+    try {
+        SQLLEN lengths[2] = {};
+        SQLLEN tokensLength = 0;
+        bindUInt64(connection.selectTokens, 1, id, lengths[0]);
+        bindUInt64(connection.selectTokens, 2, owner, lengths[1]);
+        require(SQLExecute(connection.selectTokens), SQL_HANDLE_STMT, connection.selectTokens,
+                "SQLExecute(selectTokens)");
+        SQLBindCol(connection.selectTokens, 1, SQL_C_ULONG, &tokens, sizeof(tokens),
+                   &tokensLength);
+        const bool found = succeeded(SQLFetch(connection.selectTokens));
+        SQLCloseCursor(connection.selectTokens);
+        if (!found) {
+            return false;
+        }
+    } catch (const std::exception& e) {
+        SQLCloseCursor(connection.selectTokens);
+        spdlog::error("token read failed for character {}: {}", characterId, e.what());
+        return false;
+    }
+
+    out = tokens;
+    return true;
+}
+
+// 추첨은 여기서 하지 않는다. 호출자가 굴린 결과를 받아 토큰을 쓰고 해금한다.
+GachaResult OdbcStore::drawGacha(std::uint64_t accountId, std::uint64_t characterId,
+                                 std::uint16_t dex, std::uint32_t& tokensLeft) {
+    tokensLeft = 0;
+    if (!canGacha_) {
+        return GachaResult::NotSupported;
+    }
+    if (dex == 0 || proto::findSpeciesByDex(dex) == nullptr) {
+        // 추첨표는 기동할 때 종족 표와 대조했다. 여기 오면 호출자가 표 밖의
+        // 번호를 준 것이고, 그대로 켜면 아무도 가리키지 않는 비트가 선다.
+        spdlog::error("gacha gave character {} an unknown dex {}", characterId, dex);
+        return GachaResult::Error;
+    }
+
+    Lease connection(*this);
+
+    Transaction transaction(connection->dbc);
+    if (!transaction.begun()) {
+        spdlog::error("could not begin a transaction: {}",
+                      diagnostics(SQL_HANDLE_DBC, connection->dbc));
+        return GachaResult::Error;
+    }
+
+    std::uint64_t id = characterId;
+    std::uint64_t owner = accountId;
+
+    // 1) 토큰을 먼저 쓴다. 추첨 뒤에 차감하면 동시 요청 두 개가 같은 토큰으로
+    //    둘 다 뽑는다. 영향 행이 0 이면 토큰이 없거나 남의 캐릭터다.
+    try {
+        SQLLEN lengths[2] = {};
+        bindUInt64(connection->spendToken, 1, id, lengths[0]);
+        bindUInt64(connection->spendToken, 2, owner, lengths[1]);
+        require(SQLExecute(connection->spendToken), SQL_HANDLE_STMT, connection->spendToken,
+                "SQLExecute(spendToken)");
+
+        SQLLEN affected = 0;
+        SQLRowCount(connection->spendToken, &affected);
+        SQLCloseCursor(connection->spendToken);
+        if (affected <= 0) {
+            return GachaResult::NoToken;
+        }
+    } catch (const std::exception& e) {
+        SQLCloseCursor(connection->spendToken);
+        spdlog::error("token spend failed for character {}: {}", characterId, e.what());
+        return GachaResult::Error;
+    }
+
+    // 2) 이미 해금한 종족인가. 이 조회의 JOIN 이 소유까지 확인한다.
+    GachaResult result = GachaResult::Granted;
+    try {
+        std::int32_t byteIndex = dex / 8;
+        std::int32_t mask = 1 << (dex % 8);
+        std::int32_t unlocked = 0;
+        SQLLEN lengths[4] = {};
+        SQLLEN unlockedLength = 0;
+
+        bindInt32(connection->testUnlockBit, 1, byteIndex, lengths[0]);
+        bindInt32(connection->testUnlockBit, 2, mask, lengths[1]);
+        bindUInt64(connection->testUnlockBit, 3, id, lengths[2]);
+        bindUInt64(connection->testUnlockBit, 4, owner, lengths[3]);
+        require(SQLExecute(connection->testUnlockBit), SQL_HANDLE_STMT,
+                connection->testUnlockBit, "SQLExecute(testUnlockBit)");
+        SQLBindCol(connection->testUnlockBit, 1, SQL_C_SLONG, &unlocked, sizeof(unlocked),
+                   &unlockedLength);
+        const bool found = succeeded(SQLFetch(connection->testUnlockBit));
+        SQLCloseCursor(connection->testUnlockBit);
+
+        if (!found) {
+            // 해금 행은 캐릭터와 함께 만들어진다 (013). 없으면 데이터가 깨졌다.
+            spdlog::error("character {} has no unlock row", characterId);
+            return GachaResult::Error;
+        }
+        if (unlocked != 0) {
+            result = GachaResult::Duplicate;
+        }
+    } catch (const std::exception& e) {
+        SQLCloseCursor(connection->testUnlockBit);
+        spdlog::error("unlock check failed for character {}: {}", characterId, e.what());
+        return GachaResult::Error;
+    }
+
+    // 3) 새것이면 비트를 켠다. 꽝이면 로스터를 건드리지 않는다.
+    if (result == GachaResult::Granted &&
+        !setUnlockBitLocked(*connection, accountId, characterId, dex)) {
+        return GachaResult::Error;
+    }
+
+    // 4) 커밋 시점의 보유량. 트랜잭션 안에서 읽으므로 방금 쓴 값이 보인다.
+    if (!readTokensLocked(*connection, accountId, characterId, tokensLeft)) {
+        return GachaResult::Error;
+    }
+
+    if (!transaction.commit()) {
+        spdlog::error("commit failed: {}", diagnostics(SQL_HANDLE_DBC, connection->dbc));
+        return GachaResult::Error;
+    }
+    return result;
+}
+
+bool OdbcStore::grantToken(std::uint64_t accountId, std::uint64_t characterId,
+                           std::uint32_t& tokensLeft) {
+    tokensLeft = 0;
+    if (!canGacha_) {
+        return false;
+    }
+
+    Lease connection(*this);
+
+    // 지급과 조회를 한 트랜잭션에 둔다. 나눠 두면 그 틈에 뽑기가 끼어들어
+    // 방금 준 토큰이 없는 것처럼 보이는 숫자가 화면에 간다.
+    Transaction transaction(connection->dbc);
+    if (!transaction.begun()) {
+        spdlog::error("could not begin a transaction: {}",
+                      diagnostics(SQL_HANDLE_DBC, connection->dbc));
+        return false;
+    }
+
+    std::uint64_t id = characterId;
+    std::uint64_t owner = accountId;
+
+    try {
+        SQLLEN lengths[2] = {};
+        bindUInt64(connection->grantToken, 1, id, lengths[0]);
+        bindUInt64(connection->grantToken, 2, owner, lengths[1]);
+        require(SQLExecute(connection->grantToken), SQL_HANDLE_STMT, connection->grantToken,
+                "SQLExecute(grantToken)");
+
+        SQLLEN affected = 0;
+        SQLRowCount(connection->grantToken, &affected);
+        SQLCloseCursor(connection->grantToken);
+        if (affected <= 0) {
+            return false;  // 없거나 남의 캐릭터다
+        }
+    } catch (const std::exception& e) {
+        SQLCloseCursor(connection->grantToken);
+        spdlog::error("token grant failed for character {}: {}", characterId, e.what());
+        return false;
+    }
+
+    if (!readTokensLocked(*connection, accountId, characterId, tokensLeft)) {
+        return false;
+    }
+    if (!transaction.commit()) {
+        spdlog::error("commit failed: {}", diagnostics(SQL_HANDLE_DBC, connection->dbc));
+        return false;
+    }
+    return true;
+}
+
+bool OdbcStore::tokenBalance(std::uint64_t accountId, std::uint64_t characterId,
+                             std::uint32_t& tokens) {
+    tokens = 0;
+    if (!canGacha_) {
+        return false;
+    }
+
+    Lease connection(*this);
+    return readTokensLocked(*connection, accountId, characterId, tokens);
 }
 
 }  // namespace heaven::data

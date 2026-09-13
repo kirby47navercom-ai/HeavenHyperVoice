@@ -188,6 +188,62 @@ DeleteResult DevStore::remove(std::uint64_t accountId, std::uint64_t characterId
     return DeleteResult::Deleted;
 }
 
+// 토큰은 캐릭터와 함께 메모리에만 있다. 프로세스가 죽으면 사라진다.
+GachaResult DevStore::drawGacha(std::uint64_t accountId, std::uint64_t characterId,
+                                std::uint16_t dex, std::uint32_t& tokensLeft) {
+    tokensLeft = 0;
+
+    const proto::SpeciesBase* species = proto::findSpeciesByDex(dex);
+    if (species == nullptr) {
+        return GachaResult::Error;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    Character* character = findLocked(accountId, characterId);
+    std::uint32_t& tokens = tokens_[characterId];
+    if (character == nullptr || tokens == 0) {
+        // 남의 캐릭터와 토큰 없음을 구분하지 않는다 (저장소 인터페이스 주석 참고).
+        return GachaResult::NoToken;
+    }
+
+    --tokens;
+    tokensLeft = tokens;
+
+    // 해금 목록은 내부 번호로 들고 있고 Character::unlocked 는 도감번호다.
+    // create() 와 같은 방식이다.
+    std::set<std::uint16_t>& unlocked = unlocks_[characterId];
+    if (!unlocked.insert(species->id).second) {
+        return GachaResult::Duplicate;
+    }
+    character->unlocked.push_back(dex);
+    return GachaResult::Granted;
+}
+
+bool DevStore::grantToken(std::uint64_t accountId, std::uint64_t characterId,
+                          std::uint32_t& tokensLeft) {
+    tokensLeft = 0;
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (findLocked(accountId, characterId) == nullptr) {
+        return false;
+    }
+    tokensLeft = ++tokens_[characterId];
+    return true;
+}
+
+bool DevStore::tokenBalance(std::uint64_t accountId, std::uint64_t characterId,
+                            std::uint32_t& tokens) {
+    tokens = 0;
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (findLocked(accountId, characterId) == nullptr) {
+        return false;
+    }
+    const auto found = tokens_.find(characterId);
+    tokens = found == tokens_.end() ? 0u : found->second;
+    return true;
+}
+
 DeleteResult DevStore::releasePartner(std::uint64_t accountId, std::uint64_t characterId) {
     std::lock_guard<std::mutex> lock(mutex_);
     Character* character = findLocked(accountId, characterId);

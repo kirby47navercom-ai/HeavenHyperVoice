@@ -22,20 +22,26 @@ float UUEGachaPool::GetEntryProbability(int32 Index) const
 		? static_cast<float>(Entries[Index].Weight / Total) : 0;
 }
 
-bool UUEGachaPool::Draw(FUEGachaEntry& Result) const
+EUEGachaType UUEGachaPool::GetServerType() const
 {
-	double Total = 0;
-	for (const auto& Entry : Entries) if (Eligible(Entry)) Total += Entry.Weight;
-	if (Total <= 0) return false;
-	double Target = FMath::FRand() * Total;
-	const FUEGachaEntry* Last = nullptr;
-	for (const auto& Entry : Entries)
+	if (ServerType != EUEGachaType::None)
 	{
-		if (!Eligible(Entry)) continue;
-		Last = &Entry;
-		Target -= Entry.Weight;
-		if (Target < 0) { Result = Entry; return true; }
+		return ServerType;
 	}
-	Result = *Last;
-	return true;
+	return DisplayOrder >= 0 && DisplayOrder < 5
+		? static_cast<EUEGachaType>(DisplayOrder + 1)
+		: EUEGachaType::None;
+}
+
+// 추첨은 서버가 한다. 여기 가중치는 화면의 확률 표시에만 쓴다.
+const FUEGachaEntry* UUEGachaPool::FindByDex(int32 Dex) const
+{
+	for (const FUEGachaEntry& Entry : Entries)
+	{
+		if (Entry.DexNumber == Dex)
+		{
+			return &Entry;
+		}
+	}
+	return nullptr;
 }

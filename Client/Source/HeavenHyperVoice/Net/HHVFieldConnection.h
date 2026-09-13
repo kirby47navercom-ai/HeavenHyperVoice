@@ -75,6 +75,22 @@ struct FHHVFieldPartyState
 	TArray<uint16> Unlocked;
 };
 
+/** 서버가 확정한 뽑기 결과. 추첨은 서버가 한다 — 클라는 타입만 보낸다. */
+struct FHHVFieldGachaResult
+{
+	bool bOk = false;
+	FString Message;
+
+	/** 나온 종족의 도감번호. 실패하면 0 이다. */
+	uint16 Dex = 0;
+
+	/** 0 일반 / 1 레어 / 2 슈퍼레어. 캡슐 색이 이걸로 정해진다. */
+	uint8 Rarity = 0;
+
+	/** 이미 갖고 있던 종족이다. 토큰은 소모되고 해금은 늘지 않았다. */
+	bool bDuplicate = false;
+};
+
 enum class EHHVFieldEvent : uint8
 {
 	EnterAck,
@@ -83,6 +99,8 @@ enum class EHHVFieldEvent : uint8
 	Notice,
 	PartyState,
 	PartnerChanged,
+	GachaResult,
+	TokenBalance,
 	Disconnected
 };
 
@@ -106,6 +124,11 @@ struct FHHVFieldEventData
 
 	// PartnerChanged 에서만 쓴다. 도감번호이고 0 이면 도로 넣었다는 뜻이다.
 	uint16 PartnerDex = 0;
+
+	FHHVFieldGachaResult Gacha;
+
+	// TokenBalance 에서만 쓴다. 지금 남은 포켓몬 토큰이다.
+	uint32 Tokens = 0;
 };
 
 struct FHHVFieldSettings
@@ -163,6 +186,20 @@ public:
 	 */
 	void SendSetParty(const TArray<uint16>& DexNumbers, uint16 ActiveDex);
 
+	/**
+	 * 뽑기 한 번. Type 은 field.fbs 의 GachaType 값이다 (1 불꽃 … 5 전기).
+	 *
+	 * 후보도 확률도 싣지 않는다. 서버가 자기 표로 굴려 결과만 알려준다 —
+	 * 후보 목록은 클라도 갖고 있어서 "후보에 있는가" 검증만으로는 후보 안에서
+	 * 최고 등급을 지목하는 것을 막을 수 없기 때문이다.
+	 *
+	 * 응답은 OnGachaResult 로, 바뀐 보유량은 OnTokenBalance 로 온다.
+	 */
+	void SendGachaDraw(uint8 Type);
+
+	/** 디버그 토큰 한 개. 서버가 --allow-debug-tokens 로 떠 있어야 통한다. */
+	void SendDebugGrantToken();
+
 	/** Game thread. Drains the inbound queue and fires the callbacks. */
 	void Poll();
 
@@ -173,6 +210,8 @@ public:
 	TFunction<void(const FString& Text)> OnNotice;
 	TFunction<void(const FHHVFieldPartyState& State)> OnPartyState;
 	TFunction<void(uint64 EntityId, uint16 PartnerDex)> OnPartnerChanged;
+	TFunction<void(const FHHVFieldGachaResult& Result)> OnGachaResult;
+	TFunction<void(uint32 Tokens)> OnTokenBalance;
 	TFunction<void(const FString& Reason)> OnDisconnected;
 
 protected:

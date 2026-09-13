@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "../Net/HHVFieldConnection.h"
+#include "../Gacha/UEGachaPool.h"
 #include "Templates/SubclassOf.h"
 
 #include <memory>
@@ -43,6 +44,12 @@ struct FUEFieldPartyState
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FUEOnFieldPartyStateChanged);
+
+// FUEFieldGachaResult 는 UEGachaPool.h 에 있다. 뽑기 기계도 UFUNCTION 인자로
+// 받아야 하는데, UHT 는 전방선언으로는 글루를 못 만들기 때문이다.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FUEOnFieldGachaResult, const FUEFieldGachaResult&,
+	Result);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FUEOnFieldTokenBalance, int32, Tokens);
 
 class UUEFieldWildPokemonSyncComponent;
 class UUEPlayerMovementSyncComponent;
@@ -91,6 +98,14 @@ public:
 	UUEFieldServerBridgeComponent();
 	virtual void BeginDestroy() override;
 
+	/**
+	 * 이 컨트롤러의 브릿지를 찾는다. 없으면 nullptr.
+	 *
+	 * UUEFieldClientSubsystem 이 **컨트롤러**에 붙인다. 폰에서만 찾으면 언제나
+	 * 못 찾고, 화면이 조용히 빈 채로 뜬다. 찾는 쪽이 여럿이라 여기 한 벌만 둔다.
+	 */
+	static UUEFieldServerBridgeComponent* Find(const APlayerController* Controller);
+
 	void AttachToPlayer(AUEPlayerCharacter* PlayerCharacter);
 	void DetachFromPlayer();
 
@@ -124,6 +139,32 @@ public:
 	/** 파티 화면을 켜고 끈다. 포켓몬 꺼내기 키에 걸려 있다. */
 	UFUNCTION(BlueprintCallable, Category = "Field Server|Party")
 	void TogglePartyWidget();
+
+	/**
+	 * 뽑기 한 번. 토큰 하나를 쓴다.
+	 *
+	 * 후보도 확률도 보내지 않는다 — 무엇이 나올지는 서버가 정한다.
+	 * 결과는 OnGachaResult, 바뀐 보유량은 OnTokenBalanceChanged 로 온다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Field Server|Gacha")
+	bool SendGachaDraw(EUEGachaType Type);
+
+	/**
+	 * 디버그 토큰 한 개. 수급처가 아직 없어서 둔 경로다.
+	 * 서버가 --allow-debug-tokens 로 떠 있어야 통하고, 아니면 조용히 무시된다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Field Server|Gacha")
+	bool SendDebugGrantToken();
+
+	/** 서버가 마지막으로 알려준 토큰 보유량. */
+	UFUNCTION(BlueprintPure, Category = "Field Server|Gacha")
+	int32 GetPokemonTokens() const { return PokemonTokens; }
+
+	UPROPERTY(BlueprintAssignable, Category = "Field Server|Gacha")
+	FUEOnFieldGachaResult OnGachaResult;
+
+	UPROPERTY(BlueprintAssignable, Category = "Field Server|Gacha")
+	FUEOnFieldTokenBalance OnTokenBalanceChanged;
 
 	/**
 	 * 다음에 붙을 곳. 0 이면 필드, 그 외에는 그 번호의 인스턴스다.
@@ -216,6 +257,8 @@ private:
 	void HandleFieldDisconnected(const FString& Reason);
 	void HandleFieldPartyState(const FHHVFieldPartyState& State);
 	void HandleFieldPartnerChanged(uint64 EntityId, uint16 PartnerDex);
+	void HandleFieldGachaResult(const FHHVFieldGachaResult& Result);
+	void HandleFieldTokenBalance(uint32 Tokens);
 	void ApplyPartnerServerState(const FHHVFieldEntity& Entity);
 	FVector MakeEntityLocation(float ServerX, float ServerY, float ServerZ) const;
 	float ToServerAxis(double UnrealAxis) const { return static_cast<float>(UnrealAxis) + WorldOriginOffset; }
@@ -231,6 +274,9 @@ private:
 	// 들고 있으면 거절당한 변경이 화면에만 남는다.
 	UPROPERTY(Transient)
 	FUEFieldPartyState PartyState;
+
+	// 서버가 알려준 값만 담는다. 클라가 직접 세지 않는다 — 권위는 DB 다.
+	int32 PokemonTokens = 0;
 
 	// 내 엔티티 번호. PartnerChanged 가 나에게 온 것인지 가리는 데 쓴다.
 	uint64 LocalEntityId = 0;

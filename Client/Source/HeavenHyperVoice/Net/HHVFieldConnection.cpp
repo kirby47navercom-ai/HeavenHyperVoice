@@ -195,6 +195,35 @@ void FHHVFieldConnection::SendSetParty(const TArray<uint16>& DexNumbers, uint16 
 	Outbound.Enqueue(FrameOf(Builder));
 }
 
+void FHHVFieldConnection::SendGachaDraw(uint8 Type)
+{
+	if (bStopRequested)
+	{
+		return;
+	}
+
+	flatbuffers::FlatBufferBuilder Builder(128);
+	const auto Request =
+		HeavenField::CreateGachaDrawRequest(Builder, static_cast<HeavenField::GachaType>(Type));
+	Builder.Finish(HeavenField::CreateEnvelope(Builder, HeavenField::Payload::GachaDrawRequest,
+		Request.Union()));
+	Outbound.Enqueue(FrameOf(Builder));
+}
+
+void FHHVFieldConnection::SendDebugGrantToken()
+{
+	if (bStopRequested)
+	{
+		return;
+	}
+
+	flatbuffers::FlatBufferBuilder Builder(64);
+	const auto Request = HeavenField::CreateDebugGrantToken(Builder);
+	Builder.Finish(HeavenField::CreateEnvelope(Builder, HeavenField::Payload::DebugGrantToken,
+		Request.Union()));
+	Outbound.Enqueue(FrameOf(Builder));
+}
+
 uint32 FHHVFieldConnection::Run()
 {
 	FString Error;
@@ -536,6 +565,29 @@ void FHHVFieldConnection::DispatchFrame(const uint8* Data, int32 Size)
 		break;
 	}
 
+	case HeavenField::Payload::GachaDrawResponse:
+	{
+		const HeavenField::GachaDrawResponse* Result = Envelope->payload_as_GachaDrawResponse();
+		Event.Type = EHHVFieldEvent::GachaResult;
+		Event.Gacha.bOk = Result->ok();
+		if (const flatbuffers::String* Message = Result->message())
+		{
+			Event.Gacha.Message = FString(UTF8_TO_TCHAR(Message->c_str()));
+		}
+		Event.Gacha.Dex = Result->dex();
+		Event.Gacha.Rarity = Result->rarity();
+		Event.Gacha.bDuplicate = Result->duplicate();
+		break;
+	}
+
+	case HeavenField::Payload::TokenBalance:
+	{
+		const HeavenField::TokenBalance* Balance = Envelope->payload_as_TokenBalance();
+		Event.Type = EHHVFieldEvent::TokenBalance;
+		Event.Tokens = Balance->tokens();
+		break;
+	}
+
 	case HeavenField::Payload::Notice:
 	{
 		const HeavenField::Notice* Notice = Envelope->payload_as_Notice();
@@ -621,6 +673,20 @@ void FHHVFieldConnection::Poll()
 			if (OnPartnerChanged)
 			{
 				OnPartnerChanged(Event.EntityId, Event.PartnerDex);
+			}
+			break;
+
+		case EHHVFieldEvent::GachaResult:
+			if (OnGachaResult)
+			{
+				OnGachaResult(Event.Gacha);
+			}
+			break;
+
+		case EHHVFieldEvent::TokenBalance:
+			if (OnTokenBalance)
+			{
+				OnTokenBalance(Event.Tokens);
 			}
 			break;
 

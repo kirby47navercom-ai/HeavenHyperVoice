@@ -108,6 +108,13 @@ public:
                          const std::vector<std::uint16_t>& dexNumbers,
                          std::uint16_t activeDex) override;
     DeleteResult releasePartner(std::uint64_t accountId, std::uint64_t characterId) override;
+    GachaResult drawGacha(std::uint64_t accountId, std::uint64_t characterId, std::uint16_t dex,
+                          std::uint32_t& tokensLeft) override;
+    bool grantToken(std::uint64_t accountId, std::uint64_t characterId,
+                    std::uint32_t& tokensLeft) override;
+    bool tokenBalance(std::uint64_t accountId, std::uint64_t characterId,
+                      std::uint32_t& tokens) override;
+    bool supportsGacha() const override { return canGacha_; }
     bool isNicknameTaken(std::string_view nickname) override;
     void touchPlayed(std::uint64_t characterId) override;
     std::optional<Position> loadPosition(std::uint64_t characterId) override;
@@ -151,6 +158,10 @@ private:
     // 조회한 캐릭터들에 파티 목록을 채운다. 커넥션을 이미 빌린 쪽에서 부른다.
     static void fillParties(Connection& connection, std::vector<Character>& characters);
 
+    // 토큰 보유량. 커넥션을 이미 빌린 쪽에서 부른다. 못 읽으면 false.
+    static bool readTokensLocked(Connection& connection, std::uint64_t accountId,
+                                 std::uint64_t characterId, std::uint32_t& out);
+
     SQLHENV env_ = SQL_NULL_HENV;
     std::string target_;
 
@@ -162,6 +173,9 @@ private:
     // INSERT 권한이 없으면 쓰기 기능만 막고 로그인은 계속 받는다.
     // 기능 하나 때문에 서버 전체가 못 뜨는 것보다 낫다.
     bool canWrite_ = false;
+
+    // 015 마이그레이션(pokemon_tokens)이 돌았는가. 안 돌았으면 뽑기만 꺼진다.
+    bool canGacha_ = false;
 
     // 계정이 없을 때도 같은 시간을 쓰기 위한 더미 해시.
     // 이게 없으면 응답 시간만으로 아이디 존재 여부를 알 수 있다.

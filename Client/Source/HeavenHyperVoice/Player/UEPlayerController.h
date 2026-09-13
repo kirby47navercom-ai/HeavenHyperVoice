@@ -251,6 +251,24 @@ private:
 	// T로 채팅창 전체를 켜고 끈다. 시야를 가리는 채팅창을 빠르게 숨길 때 쓴다.
 	void ToggleChatVisible();
 
+	// O로 뽑기 화면을 켜고 끈다.
+	//
+	// 레벨을 옮기지 않는다. 뽑기는 필드 연결로 요청하는데 레벨 이동에서 그
+	// 연결이 끊기기 때문이다 — 기계는 필드 레벨에 놓여 있어야 한다.
+	void ToggleGachaDesk();
+	void GrabGachaHandle();
+	void ReleaseGachaHandle();
+
+	// P로 포켓몬 토큰 하나를 받는다. **디버그용이다.**
+	//
+	// 수급처가 아직 없어서 둔 임시 경로다. 서버가 --allow-debug-tokens 로 떠
+	// 있어야 실제로 늘고, 아니면 요청이 조용히 버려진다. 보유량은 클라가 세지
+	// 않는다 — 서버가 TokenBalance 로 알려주는 값이 권위다.
+	//
+	// Enhanced Input 액션이 아니라 InputComponent 에 직접 붙였다. 새 액션을
+	// 만들면 에디터에서 InputData 를 고쳐야 하는데, 수급처가 생기면 지울 코드다.
+	void GrantDebugPokemonToken();
+
 	UFUNCTION()
 	void HandleChatTextCommitted(const FText& Text, ETextCommit::Type CommitMethod);
 
@@ -367,6 +385,10 @@ private:
 
 	std::unique_ptr<FHHVChatConnection> ChatConnection;
 	bool bChatInputOpen = false;
+
+	// 뽑기 조작 한 벌. 처음 O 를 누를 때 만든다.
+	UPROPERTY(Transient)
+	TObjectPtr<class UUEGachaDeskComponent> GachaDesk;
 	bool bMouseViewHeld = false;
 	bool bDraggingChat = false;
 	// T로 채팅창 전체를 감춘 상태다.

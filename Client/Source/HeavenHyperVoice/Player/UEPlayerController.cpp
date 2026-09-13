@@ -1,6 +1,8 @@
 #include "UEPlayerController.h"
 
 #include "../Character/UEPlayerCharacter.h"
+#include "../Gacha/UEGachaDesk.h"
+#include "../Server/UEFieldServerBridgeComponent.h"
 #include "../CharacterCustomization/HHV/Data/UEHHVCustomizationTypes.h"
 #include "../Data/UEDataAsset.h"
 #include "../Net/HHVChatConnection.h"
@@ -199,10 +201,70 @@ void AUEPlayerController::SetupInputComponent()
 	InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &ThisClass::HandleEscape);
 	InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &ThisClass::HandleGameViewportClick);
 	InputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &ThisClass::HandleGameViewportClick);
+	InputComponent->BindKey(EKeys::P, IE_Pressed, this, &ThisClass::GrantDebugPokemonToken);
+	InputComponent->BindKey(EKeys::O, IE_Pressed, this, &ThisClass::ToggleGachaDesk);
+	InputComponent->BindKey(EKeys::LeftMouseButton, IE_Released, this, &ThisClass::ReleaseGachaHandle);
+}
+
+void AUEPlayerController::ToggleGachaDesk()
+{
+	// 채팅을 치는 중이면 O 는 글자다.
+	if (bChatInputOpen || bPhotoMode)
+	{
+		return;
+	}
+
+	if (!GachaDesk)
+	{
+		GachaDesk = NewObject<UUEGachaDeskComponent>(this, TEXT("GachaDesk"));
+		GachaDesk->RegisterComponent();
+	}
+	GachaDesk->Toggle();
+}
+
+void AUEPlayerController::GrabGachaHandle()
+{
+	if (GachaDesk && GachaDesk->IsOpen())
+	{
+		GachaDesk->GrabHandle();
+	}
+}
+
+void AUEPlayerController::ReleaseGachaHandle()
+{
+	if (GachaDesk)
+	{
+		GachaDesk->ReleaseHandle();
+	}
+}
+
+void AUEPlayerController::GrantDebugPokemonToken()
+{
+	// 채팅을 치는 중이면 P 는 글자다. 포커스가 어긋난 순간에 토큰이 늘지 않게 막는다.
+	if (bChatInputOpen || bPhotoMode)
+	{
+		return;
+	}
+
+	UUEFieldServerBridgeComponent* Bridge = UUEFieldServerBridgeComponent::Find(this);
+	if (!Bridge)
+	{
+		return;
+	}
+
+	// 서버가 --allow-debug-tokens 없이 떠 있으면 여기서 보내도 버려진다.
+	// 늘어난 보유량은 OnTokenBalanceChanged 로 되돌아온다.
+	Bridge->SendDebugGrantToken();
 }
 
 void AUEPlayerController::HandleGameViewportClick()
 {
+	// 뽑기 화면이 떠 있으면 좌클릭은 손잡이다. 시점 조작으로 넘기지 않는다.
+	if (GachaDesk && GachaDesk->IsOpen())
+	{
+		GrabGachaHandle();
+		return;
+	}
 	if (bPhotoMode) return;
 	// UI가 클릭을 먼저 소비하므로, 게임 뷰포트까지 도달한 클릭만 채팅 선택을 해제한다.
 	// 다른 창이 열려 있다면 그 창이 입력 모드를 계속 유지한다.

@@ -41,6 +41,13 @@ public:
     DeleteResult remove(std::uint64_t accountId, std::uint64_t characterId,
                         std::string_view confirmNickname) override;
     DeleteResult releasePartner(std::uint64_t accountId, std::uint64_t characterId) override;
+    GachaResult drawGacha(std::uint64_t accountId, std::uint64_t characterId, std::uint16_t dex,
+                          std::uint32_t& tokensLeft) override;
+    bool grantToken(std::uint64_t accountId, std::uint64_t characterId,
+                    std::uint32_t& tokensLeft) override;
+    bool tokenBalance(std::uint64_t accountId, std::uint64_t characterId,
+                      std::uint32_t& tokens) override;
+    bool supportsGacha() const override { return true; }
     bool isNicknameTaken(std::string_view nickname) override;
     void touchPlayed(std::uint64_t) override {}
 
@@ -56,6 +63,10 @@ private:
     // 캐릭터 id -> 해금한 종족. 실제 저장소는 도감번호 비트맵이지만 여기서는
     // 집합이면 충분하다.
     std::map<std::uint64_t, std::set<std::uint16_t>> unlocks_;
+
+    // 캐릭터 id -> 포켓몬 토큰. 실제 저장소는 characters 의 컬럼이다.
+    std::map<std::uint64_t, std::uint32_t> tokens_;
+
     std::uint64_t nextCharacterId_ = 1;
 
     // 잠금을 이미 쥔 쪽에서 부른다.

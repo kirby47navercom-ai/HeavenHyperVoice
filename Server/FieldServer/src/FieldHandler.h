@@ -9,6 +9,7 @@
 #include "CharacterStore.h"
 #include "FieldCodec.h"
 #include "FrameHandler.h"
+#include "GachaPool.h"
 #include "RedisClient.h"
 #include "TlsSession.h"
 #include "WorkQueue.h"
@@ -28,6 +29,10 @@ struct FieldContext {
 
     // 없어도 된다. 못 붙으면 위치를 DB 에서만 읽고 쓴다.
     net::RedisClient* redis = nullptr;
+
+    // 뽑기 후보와 가중치. nullptr 이면 뽑기를 거절한다 (--no-gacha).
+    // 기동할 때 읽고 그 뒤로 바뀌지 않으므로 여러 DB 스레드가 락 없이 읽는다.
+    const proto::GachaTable* gacha = nullptr;
 
     // 개발용. 티켓 검증과 DB 를 모두 건너뛰고 Enter 의 dev_* 를 그대로 믿는다.
     // 로그인 서버 없이 필드만 클라이언트와 붙여볼 때만 켠다.
@@ -58,6 +63,8 @@ private:
     bool enterWithoutAuth(TlsSession& session, const HeavenField::Enter& request);
     void handleMove(const HeavenField::Move& request);
     bool handleSetParty(TlsSession& session, const HeavenField::SetParty& request);
+    bool handleGachaDraw(TlsSession& session, const HeavenField::GachaDrawRequest& request);
+    bool handleDebugGrantToken(TlsSession& session);
 
     // 저장소에서 파티와 해금을 다시 읽어 그대로 보낸다. DB 스레드에서 부를 것.
     const FieldContext& context_;

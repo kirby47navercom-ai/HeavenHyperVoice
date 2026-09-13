@@ -15,6 +15,7 @@
 #include <thread>
 
 #include "FieldHandler.h"
+#include "GachaPool.h"
 #include "Map.h"
 #include "OdbcStore.h"
 #include "PokemonSpecies.h"
@@ -40,6 +41,10 @@ struct Options {
     // 끄고 싶으면 --no-map 을 명시한다.
     std::string mapFile = "maps/Goldenrod.hhvmap";
 
+
+    // 뽑기 후보와 가중치. 실행 파일 옆에 복사된다 (CMakeLists 의 POST_BUILD).
+    // 경로를 줬는데 못 읽으면 기동을 멈춘다 — 맵과 같은 규칙이다.
+    std::string gachaFile = "gacha/pools.txt";
 
     std::string redisHost = "127.0.0.1";
     std::uint16_t redisPort = 6379;
@@ -69,6 +74,8 @@ void printUsage() {
                  "                      and leaving only, so fewer than the login server)\n"
                  "  --map <path>        server nav map (default maps/Goldenrod.hhvmap)\n"
                  "  --no-map            disable field map checks and partner pathfinding\n"
+                 "  --gacha-pools <p>   pokemon gacha table (default gacha/pools.txt)\n"
+                 "  --no-gacha          disable the pokemon gacha\n"
                  "  --redis-host <h>    default 127.0.0.1\n"
                  "  --redis-port <n>    default 6379\n"
                  "  --no-redis          skip the position cache; load and save via the DB only\n"
@@ -121,6 +128,10 @@ Options parseArgs(int argc, char** argv) {
             options.dbThreads = static_cast<unsigned>(std::stoi(next("--db-threads")));
         } else if (arg == "--map") {
             options.mapFile = next("--map");
+        } else if (arg == "--gacha-pools") {
+            options.gachaFile = next("--gacha-pools");
+        } else if (arg == "--no-gacha") {
+            options.gachaFile.clear();
         } else if (arg == "--no-map") {
             options.mapFile.clear();
         } else if (arg == "--redis-host") {
@@ -227,6 +238,20 @@ int main(int argc, char** argv) {
             world.setMap(&map);
         }
 
+        // 뽑기 확률표. 맵과 같은 규칙이다 — 경로를 줬는데 못 읽거나 표가
+        // 어긋나면 기동을 멈춘다. 굴려 놓고 지급할 수 없는 후보가 있으면
+        // 꽝도 아닌 조용한 실패가 되기 때문이다.
+        heaven::proto::GachaTable gacha;
+        std::string loadedGachaFile;
+        if (!options.gachaFile.empty()) {
+            loadedGachaFile =
+                heaven::net::resolveResourcePath(options.gachaFile, "gacha pool table");
+            std::string gachaError;
+            if (!gacha.loadFromFile(loadedGachaFile, gachaError)) {
+                throw std::runtime_error("gacha: " + gachaError);
+            }
+        }
+
         heaven::field::FieldContext context;
         context.world = &world;
         context.keys = &keys;
@@ -234,6 +259,7 @@ int main(int argc, char** argv) {
         context.devNoAuth = options.devNoAuth;
         context.dbQueue = &dbQueue;
         context.redis = redis.get();
+        context.gacha = gacha.loaded() ? &gacha : nullptr;
 
         heaven::net::TlsServerOptions serverOptions;
         serverOptions.port = options.port;
@@ -256,6 +282,15 @@ int main(int argc, char** argv) {
                      characters ? characters->describe() : "disabled (--dev-no-auth)",
                      options.dbThreads);
         spdlog::info("position cache: {}", redis ? redis->target() : "disabled");
+        if (gacha.loaded()) {
+            spdlog::info("gacha: {} ({})", loadedGachaFile, gacha.describe());
+            if (characters != nullptr && !characters->supportsGacha()) {
+                spdlog::warn("gacha table loaded but the database has no pokemon_tokens column.");
+                spdlog::warn("run tools\\apply-migrations.ps1 to apply 015_pokemon_tokens.");
+            }
+        } else {
+            spdlog::info("gacha: disabled (--no-gacha)");
+        }
         if (map.loaded()) {
             spdlog::info("field map: {} ({} ground triangles, {} wall triangles, {} walkable polys)",
                          loadedMapFile, map.groundCount(), map.wallCount(),

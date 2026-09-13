@@ -53,6 +53,7 @@ endforeach()
 
 add_library(Protocol STATIC
     AuthTicket.cpp
+    GachaPool.cpp
 )
 
 add_dependencies(Protocol ProtocolGen)

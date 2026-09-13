@@ -7,6 +7,7 @@
 #include "UEGachaStudio.generated.h"
 
 class AUEGachaMachine;
+class UUEGachaDeskComponent;
 class UButton;
 class UTextBlock;
 class UImage;
@@ -40,6 +41,9 @@ protected:
 	UPROPERTY(meta=(BindWidget)) TObjectPtr<UBorder> StageTwo;
 	UPROPERTY(meta=(BindWidget)) TObjectPtr<UBorder> StageThree;
 private:
+	// 소유 컨트롤러의 뽑기 컴포넌트. 뽑기방과 필드가 같은 화면을 쓴다.
+	UUEGachaDeskComponent* Desk() const;
+
 	void Select(int32 Index);
 	UFUNCTION() void Fire();
 	UFUNCTION() void Water();
@@ -50,29 +54,24 @@ private:
 	TWeakObjectPtr<AUEGachaMachine> LastMachine;
 };
 
+// 뽑기방 전용 컨트롤러. 조작은 전부 UUEGachaDeskComponent 에 있고, 여기서는
+// 들어가는 순간 열어 주고 마우스 버튼만 넘겨준다 — 필드에서는 같은 컴포넌트를
+// AUEPlayerController 가 O 키로 켰다 껐다 한다.
 UCLASS(Blueprintable)
 class HEAVENHYPERVOICE_API AUEGachaStudioController : public APlayerController
 {
 	GENERATED_BODY()
 public:
 	AUEGachaStudioController();
-	virtual void Tick(float Seconds) override;
-	void SelectMachine(int32 Index);
-	AUEGachaMachine* GetMachine() const { return CurrentMachine; }
+
+	// BP_GachaStudioController 가 이미 WBP_GachaStudio 를 넣어 둔 자리다.
+	// 컴포넌트로 그대로 넘긴다.
 	UPROPERTY(EditDefaultsOnly, Category="Gacha") TSubclassOf<UUEGachaStudioWidget> StudioWidgetClass;
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
 private:
-	void GrabHandle();
-	void ReleaseHandle();
-	bool GetCrankAngle(float& Angle) const;
-	UPROPERTY(Transient) TObjectPtr<UUEGachaStudioWidget> StudioWidget;
-	UPROPERTY(Transient) TArray<TObjectPtr<AUEGachaMachine>> Machines;
-	UPROPERTY(Transient) TObjectPtr<AUEGachaMachine> CurrentMachine;
-	bool bDragging = false;
-	float PreviousAngle = 0;
-	float CameraReadyTime = 0;
+	UPROPERTY(Transient) TObjectPtr<UUEGachaDeskComponent> Desk;
 };
 
 UCLASS(Blueprintable)

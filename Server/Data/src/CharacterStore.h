@@ -118,6 +118,29 @@ inline const char* partyMessage(PartyResult result) {
     return "알 수 없는 결과입니다";
 }
 
+// 뽑기 한 번의 결과.
+//
+// 추첨은 저장소가 하지 않는다. 저장소는 "토큰 하나를 쓰고 이 종족을 해금해라"
+// 만 받는다 — 확률은 게임 규칙이고 저장소는 그것을 모른다.
+enum class GachaResult {
+    Granted,    // 새로 해금했다
+    Duplicate,  // 이미 갖고 있었다. 꽝이며 토큰은 소모된다
+    NoToken,    // 토큰이 없거나 남의 캐릭터다. 둘 다 거절이라 구분하지 않는다
+    NotSupported,
+    Error,
+};
+
+inline const char* describe(GachaResult result) {
+    switch (result) {
+        case GachaResult::Granted:      return "unlocked";
+        case GachaResult::Duplicate:    return "already unlocked";
+        case GachaResult::NoToken:      return "no token";
+        case GachaResult::NotSupported: return "gacha is not available";
+        case GachaResult::Error:        return "internal error";
+    }
+    return "unknown result";
+}
+
 // 마지막으로 저장된 위치. 실시간 위치는 여기 없다 — 필드 서버 메모리와
 // Redis 에 있고, 이건 입장할 때 읽고 퇴장할 때 쓰는 값이다.
 //
@@ -187,6 +210,32 @@ public:
     // 필드 입장/퇴장에서 쓴다. 없는 캐릭터면 nullopt.
     virtual std::optional<Position> loadPosition(std::uint64_t characterId) = 0;
     virtual void savePosition(std::uint64_t characterId, const Position& position) = 0;
+
+    // 토큰 하나를 쓰고 dex 를 해금한다. 한 트랜잭션이다.
+    //
+    // 차감이 해금보다 **먼저**다. 읽고-확인-쓰기로 하면 DB 스레드가 둘이라 같은
+    // 토큰으로 두 번 뽑힌다. 꽝이어도 토큰은 돌려주지 않으므로 되돌릴 일이 없다.
+    //
+    // dex 는 호출자가 추첨한 결과이며 종족 표에 있는 번호여야 한다.
+    // tokensLeft 는 커밋 시점의 보유량이다 (실패해도 채운다).
+    virtual GachaResult drawGacha(std::uint64_t accountId, std::uint64_t characterId,
+                                  std::uint16_t dex, std::uint32_t& tokensLeft) = 0;
+
+    // 디버그용 토큰 지급. 수급처가 아직 없어서 둔 임시 경로다.
+    // 퀘스트나 상점이 생기면 이 메서드도 같이 지운다.
+    virtual bool grantToken(std::uint64_t accountId, std::uint64_t characterId,
+                            std::uint32_t& tokensLeft) = 0;
+
+    // 토큰 보유량. 입장할 때 한 번 읽어 화면에 띄운다.
+    //
+    // 캐릭터 조회(find/listByAccount)에 얹지 않은 이유는 015 마이그레이션이
+    // 아직 안 돌았을 때다. 조회 구문에 컬럼을 넣으면 그 구문이 통째로 실패해
+    // 로그인까지 멈춘다. 따로 두면 뽑기만 꺼진다.
+    virtual bool tokenBalance(std::uint64_t accountId, std::uint64_t characterId,
+                              std::uint32_t& tokens) = 0;
+
+    // 015 마이그레이션이 돌았고 토큰 구문이 준비됐는가.
+    virtual bool supportsGacha() const = 0;
 
     virtual bool supportsCreation() const = 0;
 };

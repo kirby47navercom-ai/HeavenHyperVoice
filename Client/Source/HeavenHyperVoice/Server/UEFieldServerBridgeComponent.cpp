@@ -220,6 +220,14 @@ void UUEFieldServerBridgeComponent::StartConnection(const FString& Service, uint
 	{
 		HandleFieldPartnerChanged(EntityId, PartnerDex);
 	};
+	FieldConnection->OnGachaResult = [this](const FHHVFieldGachaResult& Result)
+	{
+		HandleFieldGachaResult(Result);
+	};
+	FieldConnection->OnTokenBalance = [this](uint32 Tokens)
+	{
+		HandleFieldTokenBalance(Tokens);
+	};
 
 	uint64 ResolvedCharacterId = static_cast<uint64>(DevCharacterId);
 	int32 CharIdOverride = 0;
@@ -580,6 +588,67 @@ bool UUEFieldServerBridgeComponent::SendSetParty(const TArray<int32>& DexNumbers
 	FieldConnection->SendSetParty(
 		Members, ActiveDex > 0 && ActiveDex <= MAX_uint16 ? static_cast<uint16>(ActiveDex) : 0);
 	return true;
+}
+
+UUEFieldServerBridgeComponent* UUEFieldServerBridgeComponent::Find(
+	const APlayerController* Controller)
+{
+	if (!Controller)
+	{
+		return nullptr;
+	}
+
+	if (UUEFieldServerBridgeComponent* Bridge =
+			Controller->FindComponentByClass<UUEFieldServerBridgeComponent>())
+	{
+		return Bridge;
+	}
+
+	// 붙는 자리가 바뀌어도 화면이 죽지 않게 폰도 본다.
+	const APawn* Pawn = Controller->GetPawn();
+	return Pawn ? Pawn->FindComponentByClass<UUEFieldServerBridgeComponent>() : nullptr;
+}
+
+bool UUEFieldServerBridgeComponent::SendGachaDraw(EUEGachaType Type)
+{
+	if (!FieldConnection || !FieldConnection->IsInField() || Type == EUEGachaType::None)
+	{
+		return false;
+	}
+
+	FieldConnection->SendGachaDraw(static_cast<uint8>(Type));
+	return true;
+}
+
+bool UUEFieldServerBridgeComponent::SendDebugGrantToken()
+{
+	if (!FieldConnection || !FieldConnection->IsInField())
+	{
+		return false;
+	}
+
+	FieldConnection->SendDebugGrantToken();
+	return true;
+}
+
+void UUEFieldServerBridgeComponent::HandleFieldGachaResult(const FHHVFieldGachaResult& Result)
+{
+	FUEFieldGachaResult Payload;
+	Payload.bOk = Result.bOk;
+	Payload.Message = Result.Message;
+	Payload.Dex = static_cast<int32>(Result.Dex);
+	Payload.Rarity = Result.Rarity <= static_cast<uint8>(EUEGachaRarity::SuperRare)
+		? static_cast<EUEGachaRarity>(Result.Rarity)
+		: EUEGachaRarity::Normal;
+	Payload.bDuplicate = Result.bDuplicate;
+
+	OnGachaResult.Broadcast(Payload);
+}
+
+void UUEFieldServerBridgeComponent::HandleFieldTokenBalance(uint32 Tokens)
+{
+	PokemonTokens = static_cast<int32>(FMath::Min<uint32>(Tokens, MAX_int32));
+	OnTokenBalanceChanged.Broadcast(PokemonTokens);
 }
 
 FVector UUEFieldServerBridgeComponent::MakeEntityLocation(float ServerX, float ServerY,

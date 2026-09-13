@@ -210,23 +210,7 @@ void UUEFieldPartyWidget::NativeDestruct()
 
 UUEFieldServerBridgeComponent* UUEFieldPartyWidget::FindBridge() const
 {
-	APlayerController* Controller = GetOwningPlayer();
-	if (!Controller)
-	{
-		return nullptr;
-	}
-
-	// 브릿지는 UUEFieldClientSubsystem 이 **컨트롤러**에 붙인다. 폰에서만 찾으면
-	// 언제나 못 찾고, 목록이 조용히 빈 채로 뜬다.
-	if (UUEFieldServerBridgeComponent* Bridge =
-			Controller->FindComponentByClass<UUEFieldServerBridgeComponent>())
-	{
-		return Bridge;
-	}
-
-	// 붙는 자리가 바뀌어도 화면이 죽지 않게 폰도 본다.
-	APawn* Pawn = Controller->GetPawn();
-	return Pawn ? Pawn->FindComponentByClass<UUEFieldServerBridgeComponent>() : nullptr;
+	return UUEFieldServerBridgeComponent::Find(GetOwningPlayer());
 }
 
 UUEPokemonSpeciesCatalog* UUEFieldPartyWidget::ResolveCatalog() const
