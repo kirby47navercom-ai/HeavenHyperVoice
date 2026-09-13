@@ -9,10 +9,12 @@
 
 #include "Components/Border.h"
 #include "Components/Button.h"
+#include "Components/HorizontalBox.h"
 #include "Components/Image.h"
 #include "Components/PanelWidget.h"
 #include "Components/TextBlock.h"
 #include "Components/WrapBoxSlot.h"
+#include "Blueprint/WidgetTree.h"
 #include "GameFramework/PlayerController.h"
 
 void UUEFieldPartyEntryWidget::NativeConstruct()
@@ -129,6 +131,8 @@ void UUEFieldPartyWidget::NativeConstruct()
 	{
 		CloseButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleCloseClicked);
 	}
+
+	BuildTypeTabs();
 
 	if (UUEFieldServerBridgeComponent* Bridge = FindBridge())
 	{
@@ -341,6 +345,136 @@ void UUEFieldPartyWidget::HandlePartyStateChanged()
 	RebuildList();
 }
 
+namespace
+{
+	constexpr float kTypeIconSize = 34.f;
+
+	// 아이콘은 이름 규칙으로 찾는다: /Game/UI/PokemonType/T_Type_<열거형 이름>.
+	// 속성마다 경로를 적은 표를 두면 속성을 늘릴 때 두 군데를 고쳐야 하고,
+	// 한쪽만 고치면 아이콘이 조용히 사라진다. 없으면 nullptr 다.
+	UTexture2D* LoadTypeIcon(EUEPokemonType Type)
+	{
+		const UEnum* Enum = StaticEnum<EUEPokemonType>();
+		if (!Enum || Type == EUEPokemonType::None)
+		{
+			return nullptr;
+		}
+		const FString Name = Enum->GetNameStringByValue(static_cast<int64>(Type));
+		return LoadObject<UTexture2D>(
+			nullptr, *FString::Printf(TEXT("/Game/UI/PokemonType/T_Type_%s.T_Type_%s"), *Name, *Name));
+	}
+
+	// 화면에 쓰는 이름은 UENUM 의 DisplayName 이다 (불꽃, 물). 한글을 코드에
+	// 두 번 적지 않는다.
+	FText TypeDisplayName(EUEPokemonType Type)
+	{
+		const UEnum* Enum = StaticEnum<EUEPokemonType>();
+		return Enum ? Enum->GetDisplayNameTextByValue(static_cast<int64>(Type)) : FText::GetEmpty();
+	}
+}
+
+void UUEFieldPartyWidget::BuildTypeTabs()
+{
+	if (!TypeTabBar || !WidgetTree)
+	{
+		// WBP 에 자리가 없다. 탭 없이 전체 목록만 나온다.
+		return;
+	}
+
+	TypeTabBar->ClearChildren();
+	TypeTabButtons.Reset();
+
+	// AddUniqueDynamic 은 함수 이름을 컴파일 타임에 문자열로 박는다. 표에 담은
+	// 런타임 함수 포인터로는 걸 수 없어서 여섯 번 손으로 건다.
+	if (UButton* Button = MakeTypeTab(EUEPokemonType::None))
+	{
+		Button->OnClicked.AddUniqueDynamic(this, &UUEFieldPartyWidget::FilterAll);
+	}
+	if (UButton* Button = MakeTypeTab(EUEPokemonType::Fire))
+	{
+		Button->OnClicked.AddUniqueDynamic(this, &UUEFieldPartyWidget::FilterFire);
+	}
+	if (UButton* Button = MakeTypeTab(EUEPokemonType::Water))
+	{
+		Button->OnClicked.AddUniqueDynamic(this, &UUEFieldPartyWidget::FilterWater);
+	}
+	if (UButton* Button = MakeTypeTab(EUEPokemonType::Grass))
+	{
+		Button->OnClicked.AddUniqueDynamic(this, &UUEFieldPartyWidget::FilterGrass);
+	}
+	if (UButton* Button = MakeTypeTab(EUEPokemonType::Electric))
+	{
+		Button->OnClicked.AddUniqueDynamic(this, &UUEFieldPartyWidget::FilterElectric);
+	}
+	if (UButton* Button = MakeTypeTab(EUEPokemonType::Normal))
+	{
+		Button->OnClicked.AddUniqueDynamic(this, &UUEFieldPartyWidget::FilterNormal);
+	}
+
+	// 처음에는 전체가 눌려 있다.
+	SetTypeFilter(EUEPokemonType::None);
+}
+
+UButton* UUEFieldPartyWidget::MakeTypeTab(EUEPokemonType Type)
+{
+	UButton* Button = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass());
+	if (!Button)
+	{
+		return nullptr;
+	}
+
+	if (UTexture2D* Texture = LoadTypeIcon(Type))
+	{
+		UImage* Icon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+		if (Icon)
+		{
+			// 크기는 여기서 정한다. 텍스처 크기를 따라가면 탭마다 들쭉날쭉해진다.
+			Icon->SetBrushFromTexture(Texture, /*bMatchSize=*/false);
+			Icon->SetDesiredSizeOverride(FVector2D(kTypeIconSize, kTypeIconSize));
+			Button->AddChild(Icon);
+		}
+	}
+	else
+	{
+		// 전체 탭에는 아이콘이 없다. 글자로 둔다.
+		UTextBlock* Label = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+		if (Label)
+		{
+			Label->SetText(NSLOCTEXT("HHV", "PartyTypeAll", "전체"));
+			Button->AddChild(Label);
+		}
+	}
+
+	TypeTabBar->AddChild(Button);
+	TypeTabButtons.Add(Button);
+	return Button;
+}
+
+void UUEFieldPartyWidget::SetTypeFilter(EUEPokemonType Type)
+{
+	TypeFilter = Type;
+
+	// 고른 탭만 밝게 둔다. 목록 칸이 잠금을 표시하는 것과 같은 방식이다.
+	for (int32 Index = 0; Index < TypeTabButtons.Num(); ++Index)
+	{
+		if (UButton* Button = TypeTabButtons[Index])
+		{
+			const bool bSelected = Index == static_cast<int32>(Type);
+			Button->SetBackgroundColor(bSelected ? FLinearColor::White
+			                                     : FLinearColor(0.55f, 0.55f, 0.6f));
+		}
+	}
+
+	RebuildList();
+}
+
+void UUEFieldPartyWidget::FilterAll() { SetTypeFilter(EUEPokemonType::None); }
+void UUEFieldPartyWidget::FilterFire() { SetTypeFilter(EUEPokemonType::Fire); }
+void UUEFieldPartyWidget::FilterWater() { SetTypeFilter(EUEPokemonType::Water); }
+void UUEFieldPartyWidget::FilterGrass() { SetTypeFilter(EUEPokemonType::Grass); }
+void UUEFieldPartyWidget::FilterElectric() { SetTypeFilter(EUEPokemonType::Electric); }
+void UUEFieldPartyWidget::FilterNormal() { SetTypeFilter(EUEPokemonType::Normal); }
+
 void UUEFieldPartyWidget::RebuildList()
 {
 	const UUEFieldServerBridgeComponent* Bridge = FindBridge();
@@ -362,10 +496,16 @@ void UUEFieldPartyWidget::RebuildList()
 	Ordered.Reserve(Catalog->Species.Num());
 	for (UUEPokemonSpeciesData* Entry : Catalog->Species)
 	{
-		if (Entry && Entry->DexNumber > 0 && Entry->PokemonType != EUEPokemonType::None)
+		if (!Entry || Entry->DexNumber <= 0 || Entry->PokemonType == EUEPokemonType::None)
 		{
-			Ordered.Add(Entry);
+			continue;
 		}
+		// 전체 탭(None)이면 거르지 않는다.
+		if (TypeFilter != EUEPokemonType::None && Entry->PokemonType != TypeFilter)
+		{
+			continue;
+		}
+		Ordered.Add(Entry);
 	}
 
 	// 속성별로 모은 뒤 같은 속성 안에서는 도감번호 순으로 정렬한다.
@@ -384,8 +524,39 @@ void UUEFieldPartyWidget::RebuildList()
 	const TArray<int32>& Unlocked = Bridge->GetPartyState().Unlocked;
 
 	PokemonList->ClearChildren();
+
+	// 속성이 바뀌는 자리마다 머리글을 끼운다. 줄바꿈을 강제해야 머리글이 앞
+	// 구역 마지막 줄에 얹히지 않는다. 97765ba6 이 화면을 WBP 로 옮기면서 이
+	// 구역 나누기가 통째로 사라졌었다.
+	EUEPokemonType LastType = EUEPokemonType::None;
+
 	for (UUEPokemonSpeciesData* Species : Ordered)
 	{
+		const bool bStartsGroup = Species->PokemonType != LastType;
+		if (bStartsGroup && WidgetTree)
+		{
+			LastType = Species->PokemonType;
+			UHorizontalBox* Header =
+				WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
+			if (UTexture2D* Texture = LoadTypeIcon(LastType))
+			{
+				UImage* Icon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass());
+				Icon->SetBrushFromTexture(Texture, /*bMatchSize=*/false);
+				Icon->SetDesiredSizeOverride(FVector2D(kTypeIconSize, kTypeIconSize));
+				Header->AddChild(Icon);
+			}
+			UTextBlock* Name = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+			Name->SetText(TypeDisplayName(LastType));
+			Header->AddChild(Name);
+
+			if (UWrapBoxSlot* HeaderSlot = Cast<UWrapBoxSlot>(PokemonList->AddChild(Header)))
+			{
+				HeaderSlot->SetNewLine(true);
+				HeaderSlot->SetFillEmptySpace(true);
+				HeaderSlot->SetPadding(FMargin(6.0f, 12.0f, 6.0f, 4.0f));
+			}
+		}
+
 		UUEFieldPartyEntryData* Entry = NewObject<UUEFieldPartyEntryData>(this);
 		Entry->DexNumber = Species->DexNumber;
 		Entry->Species = Species;
@@ -418,6 +589,10 @@ void UUEFieldPartyWidget::RebuildList()
 		if (UWrapBoxSlot* WrapSlot = Cast<UWrapBoxSlot>(PokemonList->AddChild(EntryWidget)))
 		{
 			WrapSlot->SetPadding(FMargin(4.0f));
+
+			// 머리글 바로 뒤 칸은 새 줄에서 시작한다. 머리글이 가로로 늘어나
+			// 있어도 첫 칸이 그 옆에 끼지 않는다.
+			WrapSlot->SetNewLine(bStartsGroup);
 		}
 	}
 }

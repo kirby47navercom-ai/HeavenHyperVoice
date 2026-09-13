@@ -13,6 +13,7 @@
 // 화면과 항목 배치는 WBP_FieldParty/WBP_FieldPartyEntry에서 편집한다.
 
 #include "CoreMinimal.h"
+#include "../Pokemon/UEPokemonSpeciesData.h"  // EUEPokemonType (속성 탭)
 #include "../UI/UEWindowWidget.h"
 #include "Blueprint/UserWidget.h"
 
@@ -162,6 +163,16 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UButton> ResetButton = nullptr;
 
+	/**
+	 * 속성 탭이 들어갈 자리. WBP 에 이 이름의 패널(HorizontalBox 등)을 두면
+	 * 버튼을 코드가 채운다. 없으면 탭 없이 전체 목록만 나온다.
+	 *
+	 * 버튼을 WBP 마다 여섯 개씩 두지 않는 이유는 속성이 늘면 그만큼 또 늘기
+	 * 때문이다. 아이콘은 /Game/UI/PokemonType 의 것을 쓴다.
+	 */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UPanelWidget> TypeTabBar = nullptr;
+
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> ConfirmButton = nullptr;
 
@@ -200,6 +211,32 @@ private:
 	void HandlePartyStateChanged();
 
 	void RebuildList();
+
+	// 속성 탭을 만든다. TypeTabBar 가 없으면 아무것도 하지 않는다.
+	void BuildTypeTabs();
+
+	// 탭 버튼 하나를 만들어 바에 붙인다. OnClicked 는 호출자가 건다.
+	UButton* MakeTypeTab(EUEPokemonType Type);
+
+	// 고른 탭을 기억하고 목록을 다시 그린다.
+	void SetTypeFilter(EUEPokemonType Type);
+
+	// 탭 하나당 UFUNCTION 이 하나씩 필요하다. 동적 델리게이트는 인자를 실어
+	// 보낼 수 없어서, 눌린 버튼을 번호로 받는 방법이 없다.
+	UFUNCTION() void FilterAll();
+	UFUNCTION() void FilterFire();
+	UFUNCTION() void FilterWater();
+	UFUNCTION() void FilterGrass();
+	UFUNCTION() void FilterElectric();
+	UFUNCTION() void FilterNormal();
+
+	// 지금 고른 속성. None 은 "전체" 다 -- 속성이 None 인 종족은 애초에
+	// 목록에 오르지 않으므로 뜻이 겹치지 않는다.
+	EUEPokemonType TypeFilter = EUEPokemonType::None;
+
+	// 고른 탭을 밝게 표시하려고 들고 있는다. 순서는 전체·불꽃·물·풀·전기·노말.
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UButton>> TypeTabButtons;
 	void SetStatus(const FText& Message);
 	UUEFieldServerBridgeComponent* FindBridge() const;
 	UUEPokemonSpeciesCatalog* ResolveCatalog() const;
