@@ -59,7 +59,9 @@ async def ensure_assets():
             'bOverride_WidthOverride': True, 'bOverride_HeightOverride': True})
         await a.props(a.path_of(size['slot']), {'horizontalAlignment': 'HAlign_Center', 'verticalAlignment': 'VAlign_Center'})
         surface = await a.add(party, 'CanvasPanel', 'PanelSurface', size)
-        background = await a.panel(party, surface, 'PartyPanel', (0, 0, 1240, 900), a.color(.02, .02, .04, .94), 10)
+        # z=-1 로 깔아야 한다. panel 의 기본 z 는 1 이고 add 의 기본 z 는 0 이라,
+        # 그냥 두면 배경이 목록(z 0) 위로 올라가 클릭을 다 먹는다.
+        background = await a.panel(party, surface, 'PartyPanel', (0, 0, 1240, 900), a.color(.02, .02, .04, .94), 10, z=-1)
         await a.props(a.path_of(background['widget']), {'visibility': 'Visible'})
         await a.text(party, surface, 'TitleText', '모든 포켓몬', (30, 24, 1180, 48), 28, a.WHITE, True)
         await a.text(party, surface, 'GuideText', '눌러서 파티에 넣고 빼기 (최대 3마리) · 1 2 3 키로 꺼내고 집어넣기', (30, 79, 1180, 32), 17, a.color(.65, .65, .7))
