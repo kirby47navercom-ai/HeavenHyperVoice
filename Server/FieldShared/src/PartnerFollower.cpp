@@ -21,17 +21,17 @@ struct Spot {
     float sideSign = 1.f;
 };
 
-float distanceSquared(const nav::Vec3& a, const nav::Vec3& b) {
+float distanceSquared(const nav::Vec3 &a, const nav::Vec3 &b) {
     const float dx = a.x - b.x;
     const float dy = a.y - b.y;
     return dx * dx + dy * dy;
 }
 
-float distance2D(const nav::Vec3& a, const nav::Vec3& b) {
+float distance2D(const nav::Vec3 &a, const nav::Vec3 &b) {
     return std::sqrt(distanceSquared(a, b));
 }
 
-float length2D(const nav::Vec3& value) {
+float length2D(const nav::Vec3 &value) {
     return std::sqrt(value.x * value.x + value.y * value.y);
 }
 
@@ -49,8 +49,7 @@ nav::Vec3 rightOf(float yaw) {
     return {-forward.y, forward.x, 0.f};
 }
 
-nav::Vec3 standingSpot(const PartnerOwnerState& owner, float sideSign,
-                       const PartnerFollowConfig& config) {
+nav::Vec3 standingSpot(const PartnerOwnerState &owner, float sideSign, const PartnerFollowConfig &config) {
     const nav::Vec3 forward = forwardOf(owner.facing);
     const nav::Vec3 right = rightOf(owner.facing);
     return {
@@ -62,44 +61,41 @@ nav::Vec3 standingSpot(const PartnerOwnerState& owner, float sideSign,
     };
 }
 
-bool resolveStandable(const nav::Vec3& location, const Map* map,
-                      const PartnerFollowConfig& config, nav::Vec3& out) {
+bool resolveStandable(const nav::Vec3 &location, const Map *map, const PartnerFollowConfig &config,
+                      nav::Vec3 &out) {
     if (map == nullptr || !map->loaded()) {
-        out = location;
-        return true;
+        return false;
     }
 
-    const nav::Agent& agent = map->agent();
+    const nav::Agent &agent = map->agent();
     if (map->canStandAt(location.x, location.y, agent, &out, location.z)) {
         return true;
     }
 
-    const float searchRadius = std::max(
-        std::max(config.followForwardOffset, config.followSideOffset),
-        agent.radius * 4.f);
+    const float searchRadius =
+        std::max(std::max(config.followForwardOffset, config.followSideOffset), agent.radius * 4.f);
     return map->nearestStandable(location.x, location.y, searchRadius, agent, out, location.z);
 }
 
-Spot resolveSpot(const PartnerOwnerState& owner, float sideSign, const Map* map,
-                 const PartnerFollowConfig& config) {
+Spot resolveSpot(const PartnerOwnerState &owner, float sideSign, const Map *map,
+                 const PartnerFollowConfig &config) {
     Spot spot;
     spot.sideSign = sideSign;
-    spot.valid = resolveStandable(standingSpot(owner, sideSign, config), map, config,
-                                  spot.location);
+    spot.valid = resolveStandable(standingSpot(owner, sideSign, config), map, config, spot.location);
     return spot;
 }
 
-bool movementBlocked(const nav::Vec3& from, const nav::Vec3& to, const Map* map) {
+bool movementBlocked(const nav::Vec3 &from, const nav::Vec3 &to, const Map *map) {
     return map != nullptr && map->loaded() && map->blockedAlong(from, to, map->agent());
 }
 
-void clearPath(PartnerState& state) {
+void clearPath(PartnerState &state) {
     state.path.clear();
     state.pathIndex = 0;
     state.pathGoal = {};
 }
 
-bool stopPartner(PartnerState& state) {
+bool stopPartner(PartnerState &state) {
     const bool wasMoving = length2D(state.velocity) > kSmallDistance;
     state.velocity = {};
     state.movedThisTick = wasMoving;
@@ -108,9 +104,8 @@ bool stopPartner(PartnerState& state) {
     return wasMoving;
 }
 
-nav::Vec3 avoidOwner(const nav::Vec3& from, const nav::Vec3& to,
-                     const PartnerOwnerState& owner, float sideSign,
-                     const PartnerFollowConfig& config) {
+nav::Vec3 avoidOwner(const nav::Vec3 &from, const nav::Vec3 &to, const PartnerOwnerState &owner,
+                     float sideSign, const PartnerFollowConfig &config) {
     const float dx = to.x - from.x;
     const float dy = to.y - from.y;
     const float length = std::sqrt(dx * dx + dy * dy);
@@ -134,27 +129,23 @@ nav::Vec3 avoidOwner(const nav::Vec3& from, const nav::Vec3& to,
 
     const nav::Vec3 right = rightOf(owner.facing);
     return {
-        owner.location.x +
-            right.x * (config.ownerAvoidRadius + config.followSideOffset * 0.5f) * sideSign,
-        owner.location.y +
-            right.y * (config.ownerAvoidRadius + config.followSideOffset * 0.5f) * sideSign,
+        owner.location.x + right.x * (config.ownerAvoidRadius + config.followSideOffset * 0.5f) * sideSign,
+        owner.location.y + right.y * (config.ownerAvoidRadius + config.followSideOffset * 0.5f) * sideSign,
         owner.location.z,
     };
 }
 
-bool pathNeedsRefresh(const PartnerState& state, const nav::Vec3& goal,
-                      const PartnerFollowConfig& config) {
-    return state.path.empty() ||
-           state.pathIndex >= state.path.size() ||
+bool pathNeedsRefresh(const PartnerState &state, const nav::Vec3 &goal, const PartnerFollowConfig &config) {
+    return state.path.empty() || state.pathIndex >= state.path.size() ||
            distance2D(state.pathGoal, goal) > config.repathDistance ||
            std::abs(state.pathGoal.z - goal.z) > config.arriveDistance;
 }
 
-bool refreshPath(PartnerState& state, const nav::Vec3& goal, const Map* map,
-                 const PartnerFollowConfig& config) {
+bool refreshPath(PartnerState &state, const nav::Vec3 &goal, const Map *map,
+                 const PartnerFollowConfig &config) {
     if (map == nullptr || !map->loaded()) {
         clearPath(state);
-        return true;
+        return false;
     }
 
     if (!pathNeedsRefresh(state, goal, config)) {
@@ -174,13 +165,13 @@ bool refreshPath(PartnerState& state, const nav::Vec3& goal, const Map* map,
     return true;
 }
 
-nav::Vec3 nextPathTarget(PartnerState& state, const nav::Vec3& goal,
-                         const PartnerFollowConfig& config, const Map* map) {
+nav::Vec3 nextPathTarget(PartnerState &state, const nav::Vec3 &goal, const PartnerFollowConfig &config,
+                         const Map *map) {
     const float waypointRadius = std::max(config.waypointRadius, 1.f);
     while (state.pathIndex < state.path.size() &&
            distance2D(state.location, state.path[state.pathIndex]) <= waypointRadius) {
-        const nav::Vec3 next = state.pathIndex + 1 < state.path.size()
-            ? state.path[state.pathIndex + 1] : goal;
+        const nav::Vec3 next =
+            state.pathIndex + 1 < state.path.size() ? state.path[state.pathIndex + 1] : goal;
         if (distance2D(state.location, state.path[state.pathIndex]) > 0.5f &&
             movementBlocked(state.location, next, map)) {
             break;
@@ -194,8 +185,8 @@ nav::Vec3 nextPathTarget(PartnerState& state, const nav::Vec3& goal,
     return goal;
 }
 
-bool selectMoveTarget(PartnerState& state, const nav::Vec3& goal, const Map* map,
-                      const PartnerFollowConfig& config, nav::Vec3& out) {
+bool selectMoveTarget(PartnerState &state, const nav::Vec3 &goal, const Map *map,
+                      const PartnerFollowConfig &config, nav::Vec3 &out) {
     if (!movementBlocked(state.location, goal, map)) {
         clearPath(state);
         out = goal;
@@ -208,7 +199,7 @@ bool selectMoveTarget(PartnerState& state, const nav::Vec3& goal, const Map* map
     return !movementBlocked(state.location, out, map);
 }
 
-bool teleportPartner(PartnerState& state, const nav::Vec3& target, float facing) {
+bool teleportPartner(PartnerState &state, const nav::Vec3 &target, float facing) {
     state.location = target;
     state.velocity = {};
     state.facing = facing;
@@ -220,15 +211,14 @@ bool teleportPartner(PartnerState& state, const nav::Vec3& target, float facing)
     return true;
 }
 
-}  // namespace
+} // namespace
 
-void PartnerFollower::reset(PartnerState& state) {
+void PartnerFollower::reset(PartnerState &state) {
     state = {};
 }
 
-bool PartnerFollower::initialize(const PartnerOwnerState& owner, std::uint16_t species,
-                                 PartnerState& state, const Map* map,
-                                 const PartnerFollowConfig& config) {
+bool PartnerFollower::initialize(const PartnerOwnerState &owner, std::uint16_t species, PartnerState &state,
+                                 const Map *map, const PartnerFollowConfig &config) {
     if (species == 0) {
         reset(state);
         return false;
@@ -237,7 +227,7 @@ bool PartnerFollower::initialize(const PartnerOwnerState& owner, std::uint16_t s
     const Spot right = resolveSpot(owner, 1.f, map, config);
     const Spot left = resolveSpot(owner, -1.f, map, config);
     Spot fallback;
-    const Spot* chosen = right.valid ? &right : (left.valid ? &left : nullptr);
+    const Spot *chosen = right.valid ? &right : (left.valid ? &left : nullptr);
     if (chosen == nullptr) {
         fallback.valid = resolveStandable(owner.location, map, config, fallback.location);
         if (!fallback.valid) {
@@ -247,6 +237,13 @@ bool PartnerFollower::initialize(const PartnerOwnerState& owner, std::uint16_t s
         chosen = &fallback;
     }
 
+    if (!map || !map->loaded()) {
+        return false;
+    }
+    state.movement = {};
+    state.movement.position = map->toCore(chosen->location);
+    state.movement.facing = owner.facing;
+    state.accumulator = 0.f;
     state.initialized = true;
     state.location = chosen->location;
     state.velocity = {};
@@ -261,15 +258,14 @@ bool PartnerFollower::initialize(const PartnerOwnerState& owner, std::uint16_t s
     return true;
 }
 
-bool PartnerFollower::update(float dt, const PartnerOwnerState& owner, std::uint16_t species,
-                             PartnerState& state, const Map* map,
-                             const PartnerFollowConfig& config) {
+static bool chooseMovement(float dt, const PartnerOwnerState &owner, std::uint16_t species,
+                           PartnerState &state, const Map *map, const PartnerFollowConfig &config) {
     if (species == 0) {
-        reset(state);
+        PartnerFollower::reset(state);
         return false;
     }
     if (!state.initialized) {
-        return initialize(owner, species, state, map, config);
+        return PartnerFollower::initialize(owner, species, state, map, config);
     }
 
     state.movedThisTick = false;
@@ -277,7 +273,7 @@ bool PartnerFollower::update(float dt, const PartnerOwnerState& owner, std::uint
 
     const Spot kept = resolveSpot(owner, state.sideSign, map, config);
     const Spot other = resolveSpot(owner, -state.sideSign, map, config);
-    const Spot* chosen = nullptr;
+    const Spot *chosen = nullptr;
     if (kept.valid && other.valid) {
         chosen = &kept;
         if (distance2D(state.location, other.location) + config.sideSwitchMargin <
@@ -351,7 +347,7 @@ bool PartnerFollower::update(float dt, const PartnerOwnerState& owner, std::uint
     }
     nav::Vec3 moveTarget = target;
     if (!selectMoveTarget(state, target, map, config, moveTarget)) {
-        const Spot& alternative = chosen == &kept ? other : kept;
+        const Spot &alternative = chosen == &kept ? other : kept;
         if (alternative.valid && selectMoveTarget(state, alternative.location, map, config, moveTarget)) {
             state.sideSign = alternative.sideSign;
             target = alternative.location;
@@ -362,8 +358,7 @@ bool PartnerFollower::update(float dt, const PartnerOwnerState& owner, std::uint
         }
     }
 
-    const nav::Vec3 ownerAvoidTarget =
-        avoidOwner(state.location, moveTarget, owner, state.sideSign, config);
+    const nav::Vec3 ownerAvoidTarget = avoidOwner(state.location, moveTarget, owner, state.sideSign, config);
     if (ownerAvoidTarget.x != moveTarget.x || ownerAvoidTarget.y != moveTarget.y) {
         nav::Vec3 resolved;
         if (resolveStandable(ownerAvoidTarget, map, config, resolved) &&
@@ -386,44 +381,48 @@ bool PartnerFollower::update(float dt, const PartnerOwnerState& owner, std::uint
 
     const float ownerSpeed = length2D(owner.velocity);
     const float baseSpeed = std::max(ownerSpeed, pokemonMoveSpeed(species));
-    const float chaseSpeed = std::min(
-        baseSpeed + std::max(targetDistance - config.arriveDistance, 0.f) * config.catchUpGain,
-        config.maxFollowSpeed);
+    const float chaseSpeed =
+        std::min(baseSpeed + std::max(targetDistance - config.arriveDistance, 0.f) * config.catchUpGain,
+                 config.maxFollowSpeed);
 
-    const float safeDt = std::max(dt, 1e-3f);
-    const float step = chaseSpeed * safeDt;
-    const float ratio = step >= distance ? 1.f : step / distance;
-    nav::Vec3 next{
-        state.location.x + dx * ratio,
-        state.location.y + dy * ratio,
-        state.location.z + (moveTarget.z - state.location.z) * ratio,
-    };
-
-    if (map != nullptr && map->loaded()) {
-        nav::Vec3 grounded;
-        if (!map->canStandAt(next.x, next.y, map->agent(), &grounded, state.location.z) ||
-            map->blockedAlong(state.location, grounded, map->agent())) {
-            state.retrySeconds = config.pathRetrySeconds;
-            return blocked();
-        }
-        next = grounded;
-    }
-
-    const nav::Vec3 previous = state.location;
-    if (distance2D(previous, next) <= kSmallDistance) {
-        return blocked();
-    }
-    state.blockedSeconds = 0.f;
-    state.retrySeconds = 0.f;
-    state.location = next;
-    state.velocity = {
-        (next.x - previous.x) / safeDt,
-        (next.y - previous.y) / safeDt,
-        (next.z - previous.z) / safeDt,
-    };
-    state.facing = yawOf(dx, dy);
-    state.movedThisTick = true;
+    state.moveTarget = moveTarget;
+    state.moveSpeed = chaseSpeed;
+    state.wantsMove = true;
     return true;
 }
 
-}  // namespace heaven::fieldshared
+bool PartnerFollower::update(float dt, const PartnerOwnerState &owner, std::uint16_t species,
+                             PartnerState &state, const Map *map, const PartnerFollowConfig &config) {
+    if (!map || !map->loaded()) {
+        reset(state);
+        return false;
+    }
+
+    const auto previous = state.location;
+    const auto previousVelocity = state.velocity;
+    state.wantsMove = false;
+    const bool changed = chooseMovement(dt, owner, species, state, map, config);
+    if (!state.initialized) {
+        return changed;
+    }
+
+    if (state.teleportedThisTick) {
+        state.movement = {};
+        state.movement.position = map->toCore(state.location);
+        state.movement.facing = state.facing;
+        state.accumulator = 0.f;
+    }
+
+    if (!state.wantsMove) {
+        state.movement.facing = state.facing;
+    }
+    map->advance(state.movement, state.accumulator, dt, state.moveTarget, state.wantsMove, state.moveSpeed);
+    state.location = map->toServer(state.movement.position);
+    state.velocity = state.movement.velocity;
+    state.facing = state.movement.facing;
+    state.movedThisTick = changed || hhv::movement::length(state.location - previous) > .001f ||
+                          hhv::movement::length(state.velocity - previousVelocity) > .001f;
+    return state.movedThisTick;
+}
+
+} // namespace heaven::fieldshared

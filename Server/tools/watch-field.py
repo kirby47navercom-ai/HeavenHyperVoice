@@ -1,4 +1,4 @@
-"""필드에 누가 있고 움직이고 있는지 옆에서 지켜본다.
+r"""필드에 누가 있고 움직이고 있는지 옆에서 지켜본다.
 
   1. 서버를 띄운다
        cd Server
@@ -12,7 +12,7 @@
 못 한 것이다.
 
 관찰자는 월드 중앙에 선다. 시야는 2800uu 라 그보다 멀리 있는 사람은 안 보인다.
---at 으로 다른 곳에서 볼 수 있다.
+서버가 정한 시작 위치에서 관찰한다.
 """
 import argparse
 import socket
@@ -45,21 +45,11 @@ def envelope(build, tag):
 def dev_enter(name, character_id):
     def build(builder):
         offset = builder.CreateString(name)
-        builder.StartObject(4)
+        builder.StartObject(6)
+        builder.PrependUint32Slot(5, 2, 0)
         builder.PrependUOffsetTRelativeSlot(1, offset, 0)
         builder.PrependUint64Slot(2, character_id, 0)
         builder.PrependUint16Slot(3, 0, 0)
-        return builder.EndObject()
-    return build
-
-
-def move(x, y, facing, sequence):
-    def build(builder):
-        builder.StartObject(4)
-        builder.PrependFloat32Slot(0, x, 0.0)
-        builder.PrependFloat32Slot(1, y, 0.0)
-        builder.PrependFloat32Slot(2, facing, 0.0)
-        builder.PrependUint32Slot(3, sequence, 0)
         return builder.EndObject()
     return build
 
@@ -104,8 +94,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=9200)
-    parser.add_argument("--at", nargs=2, type=float, metavar=("X", "Y"),
-                        default=[25600.0, 25600.0], help="관찰자가 설 서버 좌표")
     args = parser.parse_args()
 
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -170,10 +158,9 @@ def main():
 
     send(envelope(dev_enter("관찰자", OBSERVER_ID), ENTER))
     time.sleep(0.5)
-    send(envelope(move(args.at[0], args.at[1], 0.0, 1), MOVE))
 
     # 살아있는 모니터라 파이프로 넘길 때도 바로 보여야 한다.
-    print(f"({args.at[0]:.0f}, {args.at[1]:.0f}) 에서 관찰 중. 시야 2800uu. Ctrl+C 로 종료.",
+    print("서버 시작 위치에서 관찰 중. Ctrl+C 로 종료.",
           flush=True)
     try:
         while True:

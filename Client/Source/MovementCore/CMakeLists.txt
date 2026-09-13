@@ -1,0 +1,36 @@
+cmake_minimum_required(VERSION 3.20)
+project(HHVMovementCore LANGUAGES CXX)
+add_library(HHVMovementCore INTERFACE)
+add_library(HHV::MovementCore ALIAS HHVMovementCore)
+target_compile_features(HHVMovementCore INTERFACE cxx_std_17)
+target_include_directories(HHVMovementCore INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+    target_compile_options(HHVMovementCore INTERFACE /fp:precise)
+else()
+    target_compile_options(HHVMovementCore INTERFACE -fno-fast-math -ffp-contract=off)
+endif()
+option(HHV_MOVEMENT_BUILD_TESTS "Build portable movement tests and replay verifier" ON)
+if(HHV_MOVEMENT_BUILD_TESTS)
+    enable_testing()
+    add_executable(PredictionTests tests/PredictionTests.cpp)
+    target_link_libraries(PredictionTests PRIVATE HHV::MovementCore)
+    add_test(NAME PredictionTests COMMAND PredictionTests)
+    add_executable(MovementCoreTests tests/MovementCoreTests.cpp)
+    target_link_libraries(MovementCoreTests PRIVATE HHV::MovementCore)
+    add_test(NAME MovementCoreTests COMMAND MovementCoreTests)
+    add_executable(MovementReplay examples/MovementReplay.cpp)
+    target_link_libraries(MovementReplay PRIVATE HHV::MovementCore)
+
+    add_executable(TerrainContactTests tests/TerrainContactTests.cpp)
+    target_link_libraries(TerrainContactTests PRIVATE HHV::MovementCore)
+    add_test(NAME TerrainContactTests COMMAND TerrainContactTests)
+
+    set(HHV_MOVEMENT_TEST_MAP
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../Content/MovementCollision/Level/PlayerTestLevel.hhvcollision"
+        CACHE FILEPATH "Optional PlayerTestLevel collision for movement regression tests")
+
+    if(EXISTS "${HHV_MOVEMENT_TEST_MAP}")
+        add_test(NAME PlayerTestLevelMovement
+            COMMAND TerrainContactTests "${HHV_MOVEMENT_TEST_MAP}")
+    endif()
+endif()

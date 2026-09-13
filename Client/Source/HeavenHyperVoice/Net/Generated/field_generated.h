@@ -15,6 +15,12 @@ static_assert(FLATBUFFERS_VERSION_MAJOR == 25 &&
 
 namespace HeavenField {
 
+struct CoreState;
+struct CoreStateBuilder;
+
+struct CoreInput;
+struct CoreInputBuilder;
+
 struct Enter;
 struct EnterBuilder;
 
@@ -232,6 +238,330 @@ bool VerifyPayload(::flatbuffers::VerifierTemplate<B> &verifier, const void *obj
 template <bool B = false>
 bool VerifyPayloadVector(::flatbuffers::VerifierTemplate<B> &verifier, const ::flatbuffers::Vector<::flatbuffers::Offset<void>> *values, const ::flatbuffers::Vector<Payload> *types);
 
+struct CoreState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef CoreStateBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_PX = 4,
+    VT_PY = 6,
+    VT_PZ = 8,
+    VT_VX = 10,
+    VT_VY = 12,
+    VT_VZ = 14,
+    VT_AX = 16,
+    VT_AY = 18,
+    VT_AZ = 20,
+    VT_NX = 22,
+    VT_NY = 24,
+    VT_NZ = 26,
+    VT_FACING = 28,
+    VT_MODE = 30,
+    VT_ROLL_TICKS = 32,
+    VT_ROLL_X = 34,
+    VT_ROLL_Y = 36,
+    VT_ROLL_Z = 38,
+    VT_WALL_SLIDING = 40
+  };
+  float px() const {
+    return GetField<float>(VT_PX, 0.0f);
+  }
+  float py() const {
+    return GetField<float>(VT_PY, 0.0f);
+  }
+  float pz() const {
+    return GetField<float>(VT_PZ, 0.0f);
+  }
+  float vx() const {
+    return GetField<float>(VT_VX, 0.0f);
+  }
+  float vy() const {
+    return GetField<float>(VT_VY, 0.0f);
+  }
+  float vz() const {
+    return GetField<float>(VT_VZ, 0.0f);
+  }
+  float ax() const {
+    return GetField<float>(VT_AX, 0.0f);
+  }
+  float ay() const {
+    return GetField<float>(VT_AY, 0.0f);
+  }
+  float az() const {
+    return GetField<float>(VT_AZ, 0.0f);
+  }
+  float nx() const {
+    return GetField<float>(VT_NX, 0.0f);
+  }
+  float ny() const {
+    return GetField<float>(VT_NY, 0.0f);
+  }
+  float nz() const {
+    return GetField<float>(VT_NZ, 0.0f);
+  }
+  float facing() const {
+    return GetField<float>(VT_FACING, 0.0f);
+  }
+  uint8_t mode() const {
+    return GetField<uint8_t>(VT_MODE, 0);
+  }
+  uint16_t roll_ticks() const {
+    return GetField<uint16_t>(VT_ROLL_TICKS, 0);
+  }
+  float roll_x() const {
+    return GetField<float>(VT_ROLL_X, 0.0f);
+  }
+  float roll_y() const {
+    return GetField<float>(VT_ROLL_Y, 0.0f);
+  }
+  float roll_z() const {
+    return GetField<float>(VT_ROLL_Z, 0.0f);
+  }
+  bool wall_sliding() const {
+    return GetField<uint8_t>(VT_WALL_SLIDING, 0) != 0;
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<float>(verifier, VT_PX, 4) &&
+           VerifyField<float>(verifier, VT_PY, 4) &&
+           VerifyField<float>(verifier, VT_PZ, 4) &&
+           VerifyField<float>(verifier, VT_VX, 4) &&
+           VerifyField<float>(verifier, VT_VY, 4) &&
+           VerifyField<float>(verifier, VT_VZ, 4) &&
+           VerifyField<float>(verifier, VT_AX, 4) &&
+           VerifyField<float>(verifier, VT_AY, 4) &&
+           VerifyField<float>(verifier, VT_AZ, 4) &&
+           VerifyField<float>(verifier, VT_NX, 4) &&
+           VerifyField<float>(verifier, VT_NY, 4) &&
+           VerifyField<float>(verifier, VT_NZ, 4) &&
+           VerifyField<float>(verifier, VT_FACING, 4) &&
+           VerifyField<uint8_t>(verifier, VT_MODE, 1) &&
+           VerifyField<uint16_t>(verifier, VT_ROLL_TICKS, 2) &&
+           VerifyField<float>(verifier, VT_ROLL_X, 4) &&
+           VerifyField<float>(verifier, VT_ROLL_Y, 4) &&
+           VerifyField<float>(verifier, VT_ROLL_Z, 4) &&
+           VerifyField<uint8_t>(verifier, VT_WALL_SLIDING, 1) &&
+           verifier.EndTable();
+  }
+};
+
+struct CoreStateBuilder {
+  typedef CoreState Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_px(float px) {
+    fbb_.AddElement<float>(CoreState::VT_PX, px, 0.0f);
+  }
+  void add_py(float py) {
+    fbb_.AddElement<float>(CoreState::VT_PY, py, 0.0f);
+  }
+  void add_pz(float pz) {
+    fbb_.AddElement<float>(CoreState::VT_PZ, pz, 0.0f);
+  }
+  void add_vx(float vx) {
+    fbb_.AddElement<float>(CoreState::VT_VX, vx, 0.0f);
+  }
+  void add_vy(float vy) {
+    fbb_.AddElement<float>(CoreState::VT_VY, vy, 0.0f);
+  }
+  void add_vz(float vz) {
+    fbb_.AddElement<float>(CoreState::VT_VZ, vz, 0.0f);
+  }
+  void add_ax(float ax) {
+    fbb_.AddElement<float>(CoreState::VT_AX, ax, 0.0f);
+  }
+  void add_ay(float ay) {
+    fbb_.AddElement<float>(CoreState::VT_AY, ay, 0.0f);
+  }
+  void add_az(float az) {
+    fbb_.AddElement<float>(CoreState::VT_AZ, az, 0.0f);
+  }
+  void add_nx(float nx) {
+    fbb_.AddElement<float>(CoreState::VT_NX, nx, 0.0f);
+  }
+  void add_ny(float ny) {
+    fbb_.AddElement<float>(CoreState::VT_NY, ny, 0.0f);
+  }
+  void add_nz(float nz) {
+    fbb_.AddElement<float>(CoreState::VT_NZ, nz, 0.0f);
+  }
+  void add_facing(float facing) {
+    fbb_.AddElement<float>(CoreState::VT_FACING, facing, 0.0f);
+  }
+  void add_mode(uint8_t mode) {
+    fbb_.AddElement<uint8_t>(CoreState::VT_MODE, mode, 0);
+  }
+  void add_roll_ticks(uint16_t roll_ticks) {
+    fbb_.AddElement<uint16_t>(CoreState::VT_ROLL_TICKS, roll_ticks, 0);
+  }
+  void add_roll_x(float roll_x) {
+    fbb_.AddElement<float>(CoreState::VT_ROLL_X, roll_x, 0.0f);
+  }
+  void add_roll_y(float roll_y) {
+    fbb_.AddElement<float>(CoreState::VT_ROLL_Y, roll_y, 0.0f);
+  }
+  void add_roll_z(float roll_z) {
+    fbb_.AddElement<float>(CoreState::VT_ROLL_Z, roll_z, 0.0f);
+  }
+  void add_wall_sliding(bool wall_sliding) {
+    fbb_.AddElement<uint8_t>(CoreState::VT_WALL_SLIDING, static_cast<uint8_t>(wall_sliding), 0);
+  }
+  explicit CoreStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<CoreState> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<CoreState>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<CoreState> CreateCoreState(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    float px = 0.0f,
+    float py = 0.0f,
+    float pz = 0.0f,
+    float vx = 0.0f,
+    float vy = 0.0f,
+    float vz = 0.0f,
+    float ax = 0.0f,
+    float ay = 0.0f,
+    float az = 0.0f,
+    float nx = 0.0f,
+    float ny = 0.0f,
+    float nz = 0.0f,
+    float facing = 0.0f,
+    uint8_t mode = 0,
+    uint16_t roll_ticks = 0,
+    float roll_x = 0.0f,
+    float roll_y = 0.0f,
+    float roll_z = 0.0f,
+    bool wall_sliding = false) {
+  CoreStateBuilder builder_(_fbb);
+  builder_.add_roll_z(roll_z);
+  builder_.add_roll_y(roll_y);
+  builder_.add_roll_x(roll_x);
+  builder_.add_facing(facing);
+  builder_.add_nz(nz);
+  builder_.add_ny(ny);
+  builder_.add_nx(nx);
+  builder_.add_az(az);
+  builder_.add_ay(ay);
+  builder_.add_ax(ax);
+  builder_.add_vz(vz);
+  builder_.add_vy(vy);
+  builder_.add_vx(vx);
+  builder_.add_pz(pz);
+  builder_.add_py(py);
+  builder_.add_px(px);
+  builder_.add_roll_ticks(roll_ticks);
+  builder_.add_wall_sliding(wall_sliding);
+  builder_.add_mode(mode);
+  return builder_.Finish();
+}
+
+struct CoreInput FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef CoreInputBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_SEQUENCE = 4,
+    VT_X = 6,
+    VT_Y = 8,
+    VT_BUTTONS = 10,
+    VT_PREDICTED_X = 12,
+    VT_PREDICTED_Y = 14,
+    VT_PREDICTED_Z = 16
+  };
+  uint32_t sequence() const {
+    return GetField<uint32_t>(VT_SEQUENCE, 0);
+  }
+  float x() const {
+    return GetField<float>(VT_X, 0.0f);
+  }
+  float y() const {
+    return GetField<float>(VT_Y, 0.0f);
+  }
+  uint8_t buttons() const {
+    return GetField<uint8_t>(VT_BUTTONS, 0);
+  }
+  float predicted_x() const {
+    return GetField<float>(VT_PREDICTED_X, 0.0f);
+  }
+  float predicted_y() const {
+    return GetField<float>(VT_PREDICTED_Y, 0.0f);
+  }
+  float predicted_z() const {
+    return GetField<float>(VT_PREDICTED_Z, 0.0f);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_SEQUENCE, 4) &&
+           VerifyField<float>(verifier, VT_X, 4) &&
+           VerifyField<float>(verifier, VT_Y, 4) &&
+           VerifyField<uint8_t>(verifier, VT_BUTTONS, 1) &&
+           VerifyField<float>(verifier, VT_PREDICTED_X, 4) &&
+           VerifyField<float>(verifier, VT_PREDICTED_Y, 4) &&
+           VerifyField<float>(verifier, VT_PREDICTED_Z, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct CoreInputBuilder {
+  typedef CoreInput Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_sequence(uint32_t sequence) {
+    fbb_.AddElement<uint32_t>(CoreInput::VT_SEQUENCE, sequence, 0);
+  }
+  void add_x(float x) {
+    fbb_.AddElement<float>(CoreInput::VT_X, x, 0.0f);
+  }
+  void add_y(float y) {
+    fbb_.AddElement<float>(CoreInput::VT_Y, y, 0.0f);
+  }
+  void add_buttons(uint8_t buttons) {
+    fbb_.AddElement<uint8_t>(CoreInput::VT_BUTTONS, buttons, 0);
+  }
+  void add_predicted_x(float predicted_x) {
+    fbb_.AddElement<float>(CoreInput::VT_PREDICTED_X, predicted_x, 0.0f);
+  }
+  void add_predicted_y(float predicted_y) {
+    fbb_.AddElement<float>(CoreInput::VT_PREDICTED_Y, predicted_y, 0.0f);
+  }
+  void add_predicted_z(float predicted_z) {
+    fbb_.AddElement<float>(CoreInput::VT_PREDICTED_Z, predicted_z, 0.0f);
+  }
+  explicit CoreInputBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<CoreInput> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<CoreInput>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<CoreInput> CreateCoreInput(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t sequence = 0,
+    float x = 0.0f,
+    float y = 0.0f,
+    uint8_t buttons = 0,
+    float predicted_x = 0.0f,
+    float predicted_y = 0.0f,
+    float predicted_z = 0.0f) {
+  CoreInputBuilder builder_(_fbb);
+  builder_.add_predicted_z(predicted_z);
+  builder_.add_predicted_y(predicted_y);
+  builder_.add_predicted_x(predicted_x);
+  builder_.add_y(y);
+  builder_.add_x(x);
+  builder_.add_sequence(sequence);
+  builder_.add_buttons(buttons);
+  return builder_.Finish();
+}
+
 struct Enter FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef EnterBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
@@ -239,7 +569,8 @@ struct Enter FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_DEV_NAME = 6,
     VT_DEV_CHARACTER_ID = 8,
     VT_DEV_PARTNER_SPECIES = 10,
-    VT_INSTANCE_TYPE = 12
+    VT_INSTANCE_TYPE = 12,
+    VT_CORE_VERSION = 14
   };
   const ::flatbuffers::Vector<uint8_t> *ticket() const {
     return GetPointer<const ::flatbuffers::Vector<uint8_t> *>(VT_TICKET);
@@ -256,6 +587,9 @@ struct Enter FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   uint32_t instance_type() const {
     return GetField<uint32_t>(VT_INSTANCE_TYPE, 0);
   }
+  uint32_t core_version() const {
+    return GetField<uint32_t>(VT_CORE_VERSION, 0);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -266,6 +600,7 @@ struct Enter FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<uint64_t>(verifier, VT_DEV_CHARACTER_ID, 8) &&
            VerifyField<uint16_t>(verifier, VT_DEV_PARTNER_SPECIES, 2) &&
            VerifyField<uint32_t>(verifier, VT_INSTANCE_TYPE, 4) &&
+           VerifyField<uint32_t>(verifier, VT_CORE_VERSION, 4) &&
            verifier.EndTable();
   }
 };
@@ -289,6 +624,9 @@ struct EnterBuilder {
   void add_instance_type(uint32_t instance_type) {
     fbb_.AddElement<uint32_t>(Enter::VT_INSTANCE_TYPE, instance_type, 0);
   }
+  void add_core_version(uint32_t core_version) {
+    fbb_.AddElement<uint32_t>(Enter::VT_CORE_VERSION, core_version, 0);
+  }
   explicit EnterBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -306,9 +644,11 @@ inline ::flatbuffers::Offset<Enter> CreateEnter(
     ::flatbuffers::Offset<::flatbuffers::String> dev_name = 0,
     uint64_t dev_character_id = 0,
     uint16_t dev_partner_species = 0,
-    uint32_t instance_type = 0) {
+    uint32_t instance_type = 0,
+    uint32_t core_version = 0) {
   EnterBuilder builder_(_fbb);
   builder_.add_dev_character_id(dev_character_id);
+  builder_.add_core_version(core_version);
   builder_.add_instance_type(instance_type);
   builder_.add_dev_name(dev_name);
   builder_.add_ticket(ticket);
@@ -322,7 +662,8 @@ inline ::flatbuffers::Offset<Enter> CreateEnterDirect(
     const char *dev_name = nullptr,
     uint64_t dev_character_id = 0,
     uint16_t dev_partner_species = 0,
-    uint32_t instance_type = 0) {
+    uint32_t instance_type = 0,
+    uint32_t core_version = 0) {
   auto ticket__ = ticket ? _fbb.CreateVector<uint8_t>(*ticket) : 0;
   auto dev_name__ = dev_name ? _fbb.CreateString(dev_name) : 0;
   return HeavenField::CreateEnter(
@@ -331,7 +672,8 @@ inline ::flatbuffers::Offset<Enter> CreateEnterDirect(
       dev_name__,
       dev_character_id,
       dev_partner_species,
-      instance_type);
+      instance_type,
+      core_version);
 }
 
 struct EnterAck FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -344,7 +686,10 @@ struct EnterAck FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_MAP_ID = 12,
     VT_ROOM_ID = 14,
     VT_WORLD_ORIGIN_OFFSET = 16,
-    VT_Z = 18
+    VT_Z = 18,
+    VT_CORE_VERSION = 20,
+    VT_COLLISION_HASH = 22,
+    VT_MOVEMENT = 24
   };
   uint64_t entity_id() const {
     return GetField<uint64_t>(VT_ENTITY_ID, 0);
@@ -370,6 +715,15 @@ struct EnterAck FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   float z() const {
     return GetField<float>(VT_Z, 0.0f);
   }
+  uint32_t core_version() const {
+    return GetField<uint32_t>(VT_CORE_VERSION, 0);
+  }
+  uint64_t collision_hash() const {
+    return GetField<uint64_t>(VT_COLLISION_HASH, 0);
+  }
+  const HeavenField::CoreState *movement() const {
+    return GetPointer<const HeavenField::CoreState *>(VT_MOVEMENT);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -381,6 +735,10 @@ struct EnterAck FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<uint32_t>(verifier, VT_ROOM_ID, 4) &&
            VerifyField<float>(verifier, VT_WORLD_ORIGIN_OFFSET, 4) &&
            VerifyField<float>(verifier, VT_Z, 4) &&
+           VerifyField<uint32_t>(verifier, VT_CORE_VERSION, 4) &&
+           VerifyField<uint64_t>(verifier, VT_COLLISION_HASH, 8) &&
+           VerifyOffsetRequired(verifier, VT_MOVEMENT) &&
+           verifier.VerifyTable(movement()) &&
            verifier.EndTable();
   }
 };
@@ -413,6 +771,15 @@ struct EnterAckBuilder {
   void add_z(float z) {
     fbb_.AddElement<float>(EnterAck::VT_Z, z, 0.0f);
   }
+  void add_core_version(uint32_t core_version) {
+    fbb_.AddElement<uint32_t>(EnterAck::VT_CORE_VERSION, core_version, 0);
+  }
+  void add_collision_hash(uint64_t collision_hash) {
+    fbb_.AddElement<uint64_t>(EnterAck::VT_COLLISION_HASH, collision_hash, 0);
+  }
+  void add_movement(::flatbuffers::Offset<HeavenField::CoreState> movement) {
+    fbb_.AddOffset(EnterAck::VT_MOVEMENT, movement);
+  }
   explicit EnterAckBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -420,6 +787,7 @@ struct EnterAckBuilder {
   ::flatbuffers::Offset<EnterAck> Finish() {
     const auto end = fbb_.EndTable(start_);
     auto o = ::flatbuffers::Offset<EnterAck>(end);
+    fbb_.Required(o, EnterAck::VT_MOVEMENT);
     return o;
   }
 };
@@ -433,9 +801,15 @@ inline ::flatbuffers::Offset<EnterAck> CreateEnterAck(
     uint32_t map_id = 0,
     uint32_t room_id = 0,
     float world_origin_offset = 0.0f,
-    float z = 0.0f) {
+    float z = 0.0f,
+    uint32_t core_version = 0,
+    uint64_t collision_hash = 0,
+    ::flatbuffers::Offset<HeavenField::CoreState> movement = 0) {
   EnterAckBuilder builder_(_fbb);
+  builder_.add_collision_hash(collision_hash);
   builder_.add_entity_id(entity_id);
+  builder_.add_movement(movement);
+  builder_.add_core_version(core_version);
   builder_.add_z(z);
   builder_.add_world_origin_offset(world_origin_offset);
   builder_.add_room_id(room_id);
@@ -449,30 +823,17 @@ inline ::flatbuffers::Offset<EnterAck> CreateEnterAck(
 struct Move FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef MoveBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
-    VT_X = 4,
-    VT_Y = 6,
-    VT_FACING = 8,
-    VT_SEQUENCE = 10
+    VT_INPUTS = 4
   };
-  float x() const {
-    return GetField<float>(VT_X, 0.0f);
-  }
-  float y() const {
-    return GetField<float>(VT_Y, 0.0f);
-  }
-  float facing() const {
-    return GetField<float>(VT_FACING, 0.0f);
-  }
-  uint32_t sequence() const {
-    return GetField<uint32_t>(VT_SEQUENCE, 0);
+  const ::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::CoreInput>> *inputs() const {
+    return GetPointer<const ::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::CoreInput>> *>(VT_INPUTS);
   }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
-           VerifyField<float>(verifier, VT_X, 4) &&
-           VerifyField<float>(verifier, VT_Y, 4) &&
-           VerifyField<float>(verifier, VT_FACING, 4) &&
-           VerifyField<uint32_t>(verifier, VT_SEQUENCE, 4) &&
+           VerifyOffsetRequired(verifier, VT_INPUTS) &&
+           verifier.VerifyVector(inputs()) &&
+           verifier.VerifyVectorOfTables(inputs()) &&
            verifier.EndTable();
   }
 };
@@ -481,17 +842,8 @@ struct MoveBuilder {
   typedef Move Table;
   ::flatbuffers::FlatBufferBuilder &fbb_;
   ::flatbuffers::uoffset_t start_;
-  void add_x(float x) {
-    fbb_.AddElement<float>(Move::VT_X, x, 0.0f);
-  }
-  void add_y(float y) {
-    fbb_.AddElement<float>(Move::VT_Y, y, 0.0f);
-  }
-  void add_facing(float facing) {
-    fbb_.AddElement<float>(Move::VT_FACING, facing, 0.0f);
-  }
-  void add_sequence(uint32_t sequence) {
-    fbb_.AddElement<uint32_t>(Move::VT_SEQUENCE, sequence, 0);
+  void add_inputs(::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::CoreInput>>> inputs) {
+    fbb_.AddOffset(Move::VT_INPUTS, inputs);
   }
   explicit MoveBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
@@ -500,22 +852,26 @@ struct MoveBuilder {
   ::flatbuffers::Offset<Move> Finish() {
     const auto end = fbb_.EndTable(start_);
     auto o = ::flatbuffers::Offset<Move>(end);
+    fbb_.Required(o, Move::VT_INPUTS);
     return o;
   }
 };
 
 inline ::flatbuffers::Offset<Move> CreateMove(
     ::flatbuffers::FlatBufferBuilder &_fbb,
-    float x = 0.0f,
-    float y = 0.0f,
-    float facing = 0.0f,
-    uint32_t sequence = 0) {
+    ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::CoreInput>>> inputs = 0) {
   MoveBuilder builder_(_fbb);
-  builder_.add_sequence(sequence);
-  builder_.add_facing(facing);
-  builder_.add_y(y);
-  builder_.add_x(x);
+  builder_.add_inputs(inputs);
   return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<Move> CreateMoveDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const std::vector<::flatbuffers::Offset<HeavenField::CoreInput>> *inputs = nullptr) {
+  auto inputs__ = inputs ? _fbb.CreateVector<::flatbuffers::Offset<HeavenField::CoreInput>>(*inputs) : 0;
+  return HeavenField::CreateMove(
+      _fbb,
+      inputs__);
 }
 
 struct Appearance FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -757,7 +1113,9 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_PARTNER_VELOCITY_Y = 46,
     VT_PARTNER_VELOCITY_Z = 48,
     VT_PARTNER_FACING = 50,
-    VT_PARTNER_TELEPORTED = 52
+    VT_PARTNER_TELEPORTED = 52,
+    VT_MOVEMENT = 54,
+    VT_PARTNER_MOVEMENT = 56
   };
   uint64_t entity_id() const {
     return GetField<uint64_t>(VT_ENTITY_ID, 0);
@@ -834,6 +1192,12 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   bool partner_teleported() const {
     return GetField<uint8_t>(VT_PARTNER_TELEPORTED, 0) != 0;
   }
+  const HeavenField::CoreState *movement() const {
+    return GetPointer<const HeavenField::CoreState *>(VT_MOVEMENT);
+  }
+  const HeavenField::CoreState *partner_movement() const {
+    return GetPointer<const HeavenField::CoreState *>(VT_PARTNER_MOVEMENT);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -864,6 +1228,10 @@ struct EntityState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<float>(verifier, VT_PARTNER_VELOCITY_Z, 4) &&
            VerifyField<float>(verifier, VT_PARTNER_FACING, 4) &&
            VerifyField<uint8_t>(verifier, VT_PARTNER_TELEPORTED, 1) &&
+           VerifyOffset(verifier, VT_MOVEMENT) &&
+           verifier.VerifyTable(movement()) &&
+           VerifyOffset(verifier, VT_PARTNER_MOVEMENT) &&
+           verifier.VerifyTable(partner_movement()) &&
            verifier.EndTable();
   }
 };
@@ -947,6 +1315,12 @@ struct EntityStateBuilder {
   void add_partner_teleported(bool partner_teleported) {
     fbb_.AddElement<uint8_t>(EntityState::VT_PARTNER_TELEPORTED, static_cast<uint8_t>(partner_teleported), 0);
   }
+  void add_movement(::flatbuffers::Offset<HeavenField::CoreState> movement) {
+    fbb_.AddOffset(EntityState::VT_MOVEMENT, movement);
+  }
+  void add_partner_movement(::flatbuffers::Offset<HeavenField::CoreState> partner_movement) {
+    fbb_.AddOffset(EntityState::VT_PARTNER_MOVEMENT, partner_movement);
+  }
   explicit EntityStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -984,10 +1358,14 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityState(
     float partner_velocity_y = 0.0f,
     float partner_velocity_z = 0.0f,
     float partner_facing = 0.0f,
-    bool partner_teleported = false) {
+    bool partner_teleported = false,
+    ::flatbuffers::Offset<HeavenField::CoreState> movement = 0,
+    ::flatbuffers::Offset<HeavenField::CoreState> partner_movement = 0) {
   EntityStateBuilder builder_(_fbb);
   builder_.add_attack_target_id(attack_target_id);
   builder_.add_entity_id(entity_id);
+  builder_.add_partner_movement(partner_movement);
+  builder_.add_movement(movement);
   builder_.add_partner_facing(partner_facing);
   builder_.add_partner_velocity_z(partner_velocity_z);
   builder_.add_partner_velocity_y(partner_velocity_y);
@@ -1040,7 +1418,9 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityStateDirect(
     float partner_velocity_y = 0.0f,
     float partner_velocity_z = 0.0f,
     float partner_facing = 0.0f,
-    bool partner_teleported = false) {
+    bool partner_teleported = false,
+    ::flatbuffers::Offset<HeavenField::CoreState> movement = 0,
+    ::flatbuffers::Offset<HeavenField::CoreState> partner_movement = 0) {
   auto nickname__ = nickname ? _fbb.CreateString(nickname) : 0;
   return HeavenField::CreateEntityState(
       _fbb,
@@ -1068,7 +1448,9 @@ inline ::flatbuffers::Offset<EntityState> CreateEntityStateDirect(
       partner_velocity_y,
       partner_velocity_z,
       partner_facing,
-      partner_teleported);
+      partner_teleported,
+      movement,
+      partner_movement);
 }
 
 struct Snapshot FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -1221,34 +1603,20 @@ struct Correction FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef CorrectionBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
     VT_SEQUENCE = 4,
-    VT_X = 6,
-    VT_Y = 8,
-    VT_FACING = 10,
-    VT_Z = 12
+    VT_MOVEMENT = 6
   };
   uint32_t sequence() const {
     return GetField<uint32_t>(VT_SEQUENCE, 0);
   }
-  float x() const {
-    return GetField<float>(VT_X, 0.0f);
-  }
-  float y() const {
-    return GetField<float>(VT_Y, 0.0f);
-  }
-  float facing() const {
-    return GetField<float>(VT_FACING, 0.0f);
-  }
-  float z() const {
-    return GetField<float>(VT_Z, 0.0f);
+  const HeavenField::CoreState *movement() const {
+    return GetPointer<const HeavenField::CoreState *>(VT_MOVEMENT);
   }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<uint32_t>(verifier, VT_SEQUENCE, 4) &&
-           VerifyField<float>(verifier, VT_X, 4) &&
-           VerifyField<float>(verifier, VT_Y, 4) &&
-           VerifyField<float>(verifier, VT_FACING, 4) &&
-           VerifyField<float>(verifier, VT_Z, 4) &&
+           VerifyOffsetRequired(verifier, VT_MOVEMENT) &&
+           verifier.VerifyTable(movement()) &&
            verifier.EndTable();
   }
 };
@@ -1260,17 +1628,8 @@ struct CorrectionBuilder {
   void add_sequence(uint32_t sequence) {
     fbb_.AddElement<uint32_t>(Correction::VT_SEQUENCE, sequence, 0);
   }
-  void add_x(float x) {
-    fbb_.AddElement<float>(Correction::VT_X, x, 0.0f);
-  }
-  void add_y(float y) {
-    fbb_.AddElement<float>(Correction::VT_Y, y, 0.0f);
-  }
-  void add_facing(float facing) {
-    fbb_.AddElement<float>(Correction::VT_FACING, facing, 0.0f);
-  }
-  void add_z(float z) {
-    fbb_.AddElement<float>(Correction::VT_Z, z, 0.0f);
+  void add_movement(::flatbuffers::Offset<HeavenField::CoreState> movement) {
+    fbb_.AddOffset(Correction::VT_MOVEMENT, movement);
   }
   explicit CorrectionBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
@@ -1279,6 +1638,7 @@ struct CorrectionBuilder {
   ::flatbuffers::Offset<Correction> Finish() {
     const auto end = fbb_.EndTable(start_);
     auto o = ::flatbuffers::Offset<Correction>(end);
+    fbb_.Required(o, Correction::VT_MOVEMENT);
     return o;
   }
 };
@@ -1286,15 +1646,9 @@ struct CorrectionBuilder {
 inline ::flatbuffers::Offset<Correction> CreateCorrection(
     ::flatbuffers::FlatBufferBuilder &_fbb,
     uint32_t sequence = 0,
-    float x = 0.0f,
-    float y = 0.0f,
-    float facing = 0.0f,
-    float z = 0.0f) {
+    ::flatbuffers::Offset<HeavenField::CoreState> movement = 0) {
   CorrectionBuilder builder_(_fbb);
-  builder_.add_z(z);
-  builder_.add_facing(facing);
-  builder_.add_y(y);
-  builder_.add_x(x);
+  builder_.add_movement(movement);
   builder_.add_sequence(sequence);
   return builder_.Finish();
 }

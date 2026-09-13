@@ -11,15 +11,15 @@
 
 ## 서버 충돌
 
-네이티브 박스의 `ServerGround` / `ServerWall` 태그를 기존 `HHVMapExport`가 읽어 `Server/maps/Goldenrod.hhvmap`을 만든다. 서버 XY는 UE XY에 25600을 더한다. 별도의 로컬 테스트 서버가 필요하지 않다.
+네이티브 박스의 `ServerGround` / `ServerWall` 태그를 `HHVCoreCollisionExport`가 읽어 클라이언트와 서버에 같은 `MovementCollision/Environments/Goldenrod_R03/Maps/L_Goldenrod.hhvcollision` 형상을 저장한다. 서버 XY는 UE XY에 25600을 더한다. 별도의 로컬 테스트 서버가 필요하지 않다.
 
 맵이나 C++ 충돌을 바꿨다면 에디터 모듈을 빌드하고 레벨을 저장한 뒤 다시 내보낸다. PowerShell에서 실행:
 
 ```powershell
-& 'C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe' 'C:\git\HeavenHyperVoice\Client\HeavenHyperVoice.uproject' -run=HHVMapExport -Map=/Game/Environments/Goldenrod_R03/Maps/L_Goldenrod '-Out=C:\git\HeavenHyperVoice\Server\maps\Goldenrod.hhvmap' -OriginOffset=25600 -unattended -nop4 -nosplash
+& 'C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor-Cmd.exe' 'C:\git\HeavenHyperVoice\Client\HeavenHyperVoice.uproject' -run=HHVCoreCollisionExport -Map=/Game/Environments/Goldenrod_R03/Maps/L_Goldenrod -unattended -nop4 -nosplash
 ```
 
-FieldServer는 기본으로 `maps/Goldenrod.hhvmap`을 읽는다. CMake 빌드는 maps 폴더를 실행 파일 옆으로 복사한다. 운영 서버에도 새 실행 파일과 맵을 함께 반영하고 재시작해야 한다. 기존 실행 인자에 `--map` 또는 Launcher의 `--field-map`이 있다면 그것이 기본값보다 우선한다.
+FieldServer는 기본으로 `maps/collision/Environments/Goldenrod_R03/Maps/L_Goldenrod.hhvcollision`을 읽는다. CMake 빌드는 maps 폴더를 실행 파일 옆으로 복사한다. 운영 서버에도 새 실행 파일과 맵을 함께 반영하고 재시작해야 한다. 기존 실행 인자에 `--map` 또는 Launcher의 `--field-map`이 있다면 그것이 기본값보다 우선한다.
 
 기존 저장 위치가 새 맵에서 걸어 다닐 수 없는 곳이면 중앙 시작점으로 보정한다. 인스턴스 서버의 전투 맵은 별도로 유지한다.
 

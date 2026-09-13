@@ -20,8 +20,8 @@ namespace heaven::instance {
 // 놀 수 있는 범위는 지름 2km 의 구다 (맵의 bounds_sphere). 월드는 그 구가
 // 어디에 놓이든 담기게 여유를 두고 3km 로 잡는다 — 좌표가 음수가 되면
 // 섹터 인덱스가 깨지므로 경계에 딱 맞추지 않는다.
-inline constexpr float kWorldSize = 307200.f;   // 3.072 km
-inline constexpr float kSectorSize = 12800.f;   // 128 m
+inline constexpr float kWorldSize = 307200.f; // 3.072 km
+inline constexpr float kSectorSize = 12800.f; // 128 m
 inline constexpr int kSectorCols = 24;
 inline constexpr int kSectorRows = 24;
 inline constexpr int kSectorCount = kSectorCols * kSectorRows;
@@ -38,15 +38,8 @@ inline constexpr float kWorldOriginOffset = kWorldSize / 2.f;
 // 필드(30m)보다 넓게 잡는다. 놀 수 있는 범위가 2km 라 30m 로는 같은 방 사람이
 // 있어도 서로 못 본다. 들어오는 반경과 나가는 반경을 다르게 두는 이유는 필드와
 // 같다 — 하나면 그 거리에서 서성이는 것만으로 매 틱 Spawn/Despawn 이 깜빡인다.
-inline constexpr float kEnterRadius = 10000.f;  // 100 m
-inline constexpr float kExitRadius = 15000.f;   // 150 m
-
-// 이동 검증. 필드와 같은 값이다 — 캐릭터 이동 속도는 맵 크기와 무관하다.
-inline constexpr float kMaxSpeed = 600.f;       // 6 m/s, 달리기
-inline constexpr float kSpeedSlack = 200.f;     // 지터 예산 상한
-inline constexpr float kSlackRefill = 200.f;    // 초당 회복량
-inline constexpr float kMaxMoveElapsed = 1.f;   // 허용 거리를 낼 때 인정하는 경과 시간 상한
-inline constexpr std::chrono::milliseconds kMinMoveInterval{10};
+inline constexpr float kEnterRadius = 10000.f; // 100 m
+inline constexpr float kExitRadius = 15000.f;  // 150 m
 
 // 스폰. 언리얼 좌표로 적고 오프셋을 더한다 — 에디터에서 읽은 값을 그대로 옮겨
 // 적을 수 있어야 하고, 서버 좌표로 바로 쓰면 맵을 볼 때마다 153600 을 암산해야
@@ -70,10 +63,8 @@ inline constexpr int kTickHz = 20;
 
 // 3×3 후보가 시야를 반드시 덮어야 한다. 이게 깨지면 후보에 없는 엔티티가
 // 시야 안에 생겨서 조용히 안 보인다.
-static_assert(kEnterRadius <= kSectorSize,
-              "시야 반경이 섹터보다 크면 3x3 후보로 부족하다");
-static_assert(kEnterRadius < kExitRadius,
-              "히스테리시스가 없으면 경계에서 Spawn/Despawn 이 깜빡인다");
+static_assert(kEnterRadius <= kSectorSize, "시야 반경이 섹터보다 크면 3x3 후보로 부족하다");
+static_assert(kEnterRadius < kExitRadius, "히스테리시스가 없으면 경계에서 Spawn/Despawn 이 깜빡인다");
 static_assert(kSectorCols * kSectorSize == kWorldSize, "격자와 월드 크기가 안 맞는다");
 
 // 경계 자체는 다음 섹터로 넘어가므로 살짝 안쪽으로 민다.
@@ -90,14 +81,13 @@ static_assert(clampToWorld(kWorldSize) < kWorldSize, "상한은 배열 안쪽으
 static_assert(clampToWorld(std::numeric_limits<float>::quiet_NaN()) == 0.f, "NaN 은 0 으로");
 
 inline constexpr int sectorIndex(float x, float y) {
-    return proto::grid::sectorIndex(x, y, kSectorSize, kSectorCols);
+    return proto::grid::sectorIndex(clampToWorld(x), clampToWorld(y), kSectorSize, kSectorCols);
 }
 
-template <typename Fn>
-inline void forEachNeighborSector(int index, Fn&& fn) {
+template <typename Fn> inline void forEachNeighborSector(int index, Fn &&fn) {
     proto::grid::forEachNeighborSector(index, kSectorCols, kSectorRows, fn);
 }
 
 using proto::grid::distanceSquared;
 
-}  // namespace heaven::instance
+} // namespace heaven::instance

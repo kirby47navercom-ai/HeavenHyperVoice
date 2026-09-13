@@ -13,11 +13,14 @@
 #include "GachaPool.h"
 #include "PokemonSpecies.h"
 #include "field_generated.h"
+#include "MovementWire.h"
 
 namespace heaven::proto {
 
 // 와이어에 실을 엔티티 하나. nickname 과 partnerSpecies 는 spawned 에서만 채운다.
 struct EntityView {
+    hhv::movement::State movement;
+    hhv::movement::State partnerMovement;
     std::uint64_t entityId = 0;
     float x = 0.f;
     float y = 0.f;
@@ -38,7 +41,7 @@ struct EntityView {
     std::string nickname;
     // 둘 다 서버 내부 번호다. 와이어로 나갈 때 도감번호로 바뀐다 (buildEntities).
     std::uint16_t partnerSpecies = 0;
-    std::uint16_t species = 0;  // 야생 포켓몬 종족. 0 이면 플레이어.
+    std::uint16_t species = 0; // 야생 포켓몬 종족. 0 이면 플레이어.
     std::uint32_t attackSequence = 0;
     std::uint64_t attackTargetId = 0;
 
@@ -55,13 +58,12 @@ struct EntityView {
 
 namespace detail {
 
-inline flatbuffers::Offset<
-    flatbuffers::Vector<flatbuffers::Offset<HeavenField::EntityState>>>
-buildEntities(flatbuffers::FlatBufferBuilder& fbb, const std::vector<EntityView>& entities) {
+inline flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<HeavenField::EntityState>>>
+buildEntities(flatbuffers::FlatBufferBuilder &fbb, const std::vector<EntityView> &entities) {
     std::vector<flatbuffers::Offset<HeavenField::EntityState>> entries;
     entries.reserve(entities.size());
 
-    for (const EntityView& entity : entities) {
+    for (const EntityView &entity : entities) {
         // 문자열은 상위 테이블을 시작하기 전에 만들어야 한다.
         flatbuffers::Offset<flatbuffers::String> nickname = 0;
         if (!entity.nickname.empty()) {
@@ -71,15 +73,20 @@ buildEntities(flatbuffers::FlatBufferBuilder& fbb, const std::vector<EntityView>
         // 하위 테이블도 상위 테이블을 시작하기 전에 만들어야 한다.
         flatbuffers::Offset<HeavenField::Appearance> appearance = 0;
         if (entity.hasAppearance) {
-            const AppearanceInfo& look = entity.appearance;
+            const AppearanceInfo &look = entity.appearance;
             appearance = HeavenField::CreateAppearance(
-                fbb, look.gender, look.body, look.head, look.hair, look.eye, look.equipment,
-                look.skinR, look.skinG, look.skinB, look.hairR, look.hairG, look.hairB,
-                look.eyeR, look.eyeG, look.eyeB, look.armVolume, look.torsoVolume,
-                look.legVolume);
+                fbb, look.gender, look.body, look.head, look.hair, look.eye, look.equipment, look.skinR,
+                look.skinG, look.skinB, look.hairR, look.hairG, look.hairB, look.eyeR, look.eyeG, look.eyeB,
+                look.armVolume, look.torsoVolume, look.legVolume);
         }
 
+        const auto movement = hhv::movement::wire::encodeState(fbb, entity.movement);
+        const auto partnerMovement = entity.hasPartnerTransform
+                                         ? hhv::movement::wire::encodeState(fbb, entity.partnerMovement)
+                                         : flatbuffers::Offset<HeavenField::CoreState>{};
         HeavenField::EntityStateBuilder builder(fbb);
+        builder.add_movement(movement);
+        builder.add_partner_movement(partnerMovement);
         builder.add_entity_id(entity.entityId);
         builder.add_x(entity.x);
         builder.add_y(entity.y);
@@ -126,13 +133,13 @@ buildEntities(flatbuffers::FlatBufferBuilder& fbb, const std::vector<EntityView>
     return fbb.CreateVector(entries);
 }
 
-inline Bytes wrapField(flatbuffers::FlatBufferBuilder& fbb, HeavenField::Payload type,
+inline Bytes wrapField(flatbuffers::FlatBufferBuilder &fbb, HeavenField::Payload type,
                        flatbuffers::Offset<void> payload) {
     fbb.Finish(HeavenField::CreateEnvelope(fbb, type, payload));
     return finishFrame(fbb);
 }
 
-}  // namespace detail
+} // namespace detail
 
 // Enter 와 Move 를 만드는 코드는 여기 없다. 서버는 그 둘을 받기만 하고,
 // 보내는 쪽은 클라이언트가 자기 인코더를 들고 있다.
@@ -140,17 +147,31 @@ inline Bytes wrapField(flatbuffers::FlatBufferBuilder& fbb, HeavenField::Payload
 // originOffset 은 클라가 좌표를 옮길 때 쓴다 (서버 = 언리얼 + offset).
 // roomId 는 인스턴스 서버만 채운다. 필드는 0 이다.
 inline Bytes encodeEnterAck(std::uint64_t entityId, float x, float y, float z, float facing,
-                            std::uint32_t mapId, float originOffset,
-                            std::uint32_t roomId = 0) {
+                            std::uint32_t mapId, float originOffset, std::uint32_t roomId,
+                            std::uint64_t collisionHash) {
     flatbuffers::FlatBufferBuilder fbb;
-    auto ack = HeavenField::CreateEnterAck(fbb, entityId, x, y, facing, mapId, roomId,
-                                           originOffset, z);
-    return detail::wrapField(fbb, HeavenField::Payload::EnterAck, ack.Union());
+    hhv::movement::State state;
+    state.position = {x - originOffset, y - originOffset, z};
+    state.facing = facing;
+    const auto movement = hhv::movement::wire::encodeState(fbb, state);
+
+    HeavenField::EnterAckBuilder builder(fbb);
+    builder.add_entity_id(entityId);
+    builder.add_x(x);
+    builder.add_y(y);
+    builder.add_z(z);
+    builder.add_facing(facing);
+    builder.add_map_id(mapId);
+    builder.add_room_id(roomId);
+    builder.add_world_origin_offset(originOffset);
+    builder.add_core_version(hhv::movement::Version);
+    builder.add_collision_hash(collisionHash);
+    builder.add_movement(movement);
+    return detail::wrapField(fbb, HeavenField::Payload::EnterAck, builder.Finish().Union());
 }
 
-inline Bytes encodeSnapshot(const std::vector<EntityView>& spawned,
-                            const std::vector<EntityView>& moved,
-                            const std::vector<std::uint64_t>& despawned) {
+inline Bytes encodeSnapshot(const std::vector<EntityView> &spawned, const std::vector<EntityView> &moved,
+                            const std::vector<std::uint64_t> &despawned) {
     flatbuffers::FlatBufferBuilder fbb;
     auto spawnedList = detail::buildEntities(fbb, spawned);
     auto movedList = detail::buildEntities(fbb, moved);
@@ -160,22 +181,21 @@ inline Bytes encodeSnapshot(const std::vector<EntityView>& spawned,
     builder.add_spawned(spawnedList);
     builder.add_moved(movedList);
     builder.add_despawned(despawnedList);
-    builder.add_server_time_seconds(std::chrono::duration<double>(
-        std::chrono::steady_clock::now().time_since_epoch()).count());
+    builder.add_server_time_seconds(
+        std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count());
     return detail::wrapField(fbb, HeavenField::Payload::Snapshot, builder.Finish().Union());
 }
 
-inline Bytes encodeCorrection(std::uint32_t sequence, float x, float y, float z, float facing) {
+inline Bytes encodeCorrection(std::uint32_t sequence, const hhv::movement::State &state) {
     flatbuffers::FlatBufferBuilder fbb;
-    auto correction = HeavenField::CreateCorrection(fbb, sequence, x, y, facing, z);
+    const auto movement = hhv::movement::wire::encodeState(fbb, state);
+    const auto correction = HeavenField::CreateCorrection(fbb, sequence, movement);
     return detail::wrapField(fbb, HeavenField::Payload::Correction, correction.Union());
 }
 
 // 파티 상태. dexNumbers 와 unlocked 는 이미 도감번호다 (저장소가 그렇게 준다).
-inline Bytes encodePartyState(bool ok, std::string_view message,
-                              const std::vector<std::uint16_t>& dexNumbers,
-                              std::uint16_t activeDex,
-                              const std::vector<std::uint16_t>& unlocked) {
+inline Bytes encodePartyState(bool ok, std::string_view message, const std::vector<std::uint16_t> &dexNumbers,
+                              std::uint16_t activeDex, const std::vector<std::uint16_t> &unlocked) {
     flatbuffers::FlatBufferBuilder fbb;
     auto text = fbb.CreateString(message.data(), message.size());
     auto party = fbb.CreateVector(dexNumbers);
@@ -222,12 +242,12 @@ inline Bytes encodeFieldNotice(std::string_view text) {
 }
 
 // 신뢰할 수 없는 입력이므로 GetRoot 전에 반드시 통과시킨다. 실패 시 nullptr.
-inline const HeavenField::Envelope* verifyFieldEnvelope(const Bytes& body) {
+inline const HeavenField::Envelope *verifyFieldEnvelope(const Bytes &body) {
     flatbuffers::Verifier verifier(body.data(), body.size());
     if (!HeavenField::VerifyEnvelopeBuffer(verifier)) {
         return nullptr;
     }
-    const HeavenField::Envelope* envelope = HeavenField::GetEnvelope(body.data());
+    const HeavenField::Envelope *envelope = HeavenField::GetEnvelope(body.data());
 
     // Verifier 는 payload_type 만 있고 payload 오프셋이 없는 프레임을 통과시킨다
     // (VerifyTable(nullptr) 이 true 다). 그대로 두면 payload_as_* 가 nullptr 을
@@ -235,4 +255,4 @@ inline const HeavenField::Envelope* verifyFieldEnvelope(const Bytes& body) {
     return envelope->payload() != nullptr ? envelope : nullptr;
 }
 
-}  // namespace heaven::proto
+} // namespace heaven::proto

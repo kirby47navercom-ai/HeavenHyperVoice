@@ -2,7 +2,7 @@
 
 #include "Animation/AnimInstance.h"
 #include "Camera/CameraComponent.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "../Movement/UECoreMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "HAL/PlatformMisc.h"
@@ -73,19 +73,19 @@ void AUEPlayerCharacter::AdvanceGameplayQA()
 	}
 
 	float CaptureDelay = 0.8f;
-	UCharacterMovementComponent* Movement = GetCharacterMovement();
+	UUECoreMovementComponent* Movement = GetCoreMovement();
 	if (GameplayQAPhase <= 2 && Movement)
 	{
 		static constexpr float QASpeeds[] = {0.0f, 260.0f, 390.0f};
 		const float Speed = QASpeeds[GameplayQAPhase];
 		// 실제 AnimInstance가 읽는 Velocity만 설정해 1D Blend Space 구간을 검증한다.
-		Movement->SetMovementMode(MOVE_Flying);
+		Movement->SetMovementMode(EUECoreMovementMode::Disabled);
 		Movement->Velocity = GetActorForwardVector() * Speed;
 		bIsRunning = GameplayQAPhase == 2;
 	}
 	else if (GameplayQAPhase == 3 && Movement)
 	{
-		Movement->SetMovementMode(MOVE_Walking);
+		Movement->SetMovementMode(EUECoreMovementMode::Grounded);
 		Movement->Velocity = FVector::ZeroVector;
 		bIsRunning = false;
 		Jump();
@@ -96,14 +96,14 @@ void AUEPlayerCharacter::AdvanceGameplayQA()
 		bLandingStateActive = false;
 		GetWorldTimerManager().ClearTimer(LandingStateTimerHandle);
 		SetActorLocation(GameplayQAStartLocation + FVector(0.0f, 0.0f, 600.0f), false, nullptr, ETeleportType::TeleportPhysics);
-		Movement->SetMovementMode(MOVE_Falling);
+		Movement->SetMovementMode(EUECoreMovementMode::Falling);
 		Movement->Velocity = FVector(0.0f, 0.0f, -100.0f);
 		CaptureDelay = 0.2f;
 	}
 	else if (GameplayQAPhase == 5 && Movement)
 	{
 		SetActorLocation(GameplayQAStartLocation, false, nullptr, ETeleportType::TeleportPhysics);
-		Movement->SetMovementMode(MOVE_Walking);
+		Movement->SetMovementMode(EUECoreMovementMode::Grounded);
 		Movement->Velocity = FVector::ZeroVector;
 		Landed(FHitResult());
 		CaptureDelay = 0.08f;
@@ -117,7 +117,7 @@ void AUEPlayerCharacter::AdvanceGameplayQA()
 		SetActorLocation(GameplayQAStartLocation, false, nullptr, ETeleportType::TeleportPhysics);
 		bLandingStateActive = false;
 		GetWorldTimerManager().ClearTimer(LandingStateTimerHandle);
-		Movement->SetMovementMode(MOVE_Walking);
+		Movement->SetMovementMode(EUECoreMovementMode::Grounded);
 		Movement->Velocity = FVector::ZeroVector;
 		Roll();
 		CaptureDelay = 0.15f;

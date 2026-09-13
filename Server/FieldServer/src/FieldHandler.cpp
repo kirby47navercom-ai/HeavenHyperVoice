@@ -21,8 +21,7 @@ std::string positionKey(std::uint64_t characterId) {
 
 // "map|x|y|z|facing". 예전 "map|x|y|facing" 도 받아준다.
 // facing 은 없어도 받아준다 (0 으로 둔다).
-std::optional<data::Position> readRedisPosition(net::RedisClient& redis,
-                                                std::uint64_t characterId) {
+std::optional<data::Position> readRedisPosition(net::RedisClient &redis, std::uint64_t characterId) {
     const auto raw = redis.commandForString({"GET", positionKey(characterId)});
     if (!raw.has_value()) {
         return std::nullopt;
@@ -51,10 +50,9 @@ std::optional<data::Position> readRedisPosition(net::RedisClient& redis,
     return position;
 }
 
-}  // namespace
+} // namespace
 
-void writeRedisPosition(net::RedisClient& redis, std::uint64_t characterId,
-                        const data::Position& position) {
+void writeRedisPosition(net::RedisClient &redis, std::uint64_t characterId, const data::Position &position) {
     // TTL 은 세션 등록보다 넉넉하게. 붙어 있는 동안 계속 갱신되고, 끊기면
     // 어차피 DB 에 저장된 뒤라 남아 있어도 해가 없다.
     redis.command({"SET", positionKey(characterId),
@@ -64,11 +62,11 @@ void writeRedisPosition(net::RedisClient& redis, std::uint64_t characterId,
                    "EX", "300"});
 }
 
-void clearRedisPosition(net::RedisClient& redis, std::uint64_t characterId) {
+void clearRedisPosition(net::RedisClient &redis, std::uint64_t characterId) {
     redis.command({"DEL", positionKey(characterId)});
 }
 
-bool FieldHandler::onFrame(TlsSession& session, const proto::Bytes& body) {
+bool FieldHandler::onFrame(TlsSession &session, const proto::Bytes &body) {
     Stage stage = Stage::Done;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -78,67 +76,65 @@ bool FieldHandler::onFrame(TlsSession& session, const proto::Bytes& body) {
         return false;
     }
 
-    const auto* envelope = proto::verifyFieldEnvelope(body);
+    const auto *envelope = proto::verifyFieldEnvelope(body);
     if (envelope == nullptr) {
         spdlog::warn("{}: malformed field frame", session.peer());
         return false;
     }
 
     switch (envelope->payload_type()) {
-        case HeavenField::Payload::Enter:
-            if (stage != Stage::AwaitingEnter) {
-                spdlog::warn("{}: duplicate Enter", session.peer());
-                return false;
-            }
-            return handleEnter(session, *envelope->payload_as_Enter());
-
-        case HeavenField::Payload::Move:
-            // 입장 중에 온 Move 는 버린다. 아직 월드에 없다.
-            if (stage == Stage::InField) {
-                handleMove(*envelope->payload_as_Move());
-            }
-            return true;
-
-        case HeavenField::Payload::SetParty:
-            if (stage != Stage::InField) {
-                spdlog::warn("{}: SetParty before entering the field", session.peer());
-                return false;
-            }
-            return handleSetParty(session, *envelope->payload_as_SetParty());
-
-        case HeavenField::Payload::GachaDrawRequest:
-            if (stage != Stage::InField) {
-                spdlog::warn("{}: gacha draw before entering the field", session.peer());
-                return false;
-            }
-            return handleGachaDraw(session, *envelope->payload_as_GachaDrawRequest());
-
-        case HeavenField::Payload::DebugGrantToken:
-            if (stage != Stage::InField) {
-                spdlog::warn("{}: debug token before entering the field", session.peer());
-                return false;
-            }
-            return handleDebugGrantToken(session);
-
-        default:
-            spdlog::warn("{}: unexpected field payload", session.peer());
+    case HeavenField::Payload::Enter:
+        if (stage != Stage::AwaitingEnter) {
+            spdlog::warn("{}: duplicate Enter", session.peer());
             return false;
+        }
+        return handleEnter(session, *envelope->payload_as_Enter());
+
+    case HeavenField::Payload::Move:
+        // 입장 중에 온 Move 는 버린다. 아직 월드에 없다.
+        if (stage == Stage::InField) {
+            return handleMove(session, *envelope->payload_as_Move());
+        }
+        return true;
+
+    case HeavenField::Payload::SetParty:
+        if (stage != Stage::InField) {
+            spdlog::warn("{}: SetParty before entering the field", session.peer());
+            return false;
+        }
+        return handleSetParty(session, *envelope->payload_as_SetParty());
+
+    case HeavenField::Payload::GachaDrawRequest:
+        if (stage != Stage::InField) {
+            spdlog::warn("{}: gacha draw before entering the field", session.peer());
+            return false;
+        }
+        return handleGachaDraw(session, *envelope->payload_as_GachaDrawRequest());
+
+    case HeavenField::Payload::DebugGrantToken:
+        if (stage != Stage::InField) {
+            spdlog::warn("{}: debug token before entering the field", session.peer());
+            return false;
+        }
+        return handleDebugGrantToken(session);
+
+    default:
+        spdlog::warn("{}: unexpected field payload", session.peer());
+        return false;
     }
 }
 
-bool FieldHandler::handleSetParty(TlsSession& session, const HeavenField::SetParty& request) {
-    World* world = context_.world;
+bool FieldHandler::handleSetParty(TlsSession &session, const HeavenField::SetParty &request) {
+    World *world = context_.world;
     const std::uint64_t characterId = characterId_;
-    return fieldshared::setParty(session, context_.characters, *context_.dbQueue, accountId_,
-                                 characterId, request,
-                                 [world, characterId](std::uint16_t speciesId) {
-                                     world->setPartnerSpecies(characterId, speciesId);
-                                 });
+    return fieldshared::setParty(
+        session, context_.characters, *context_.dbQueue, accountId_, characterId, request,
+        [world, characterId](std::uint16_t speciesId) { world->setPartnerSpecies(characterId, speciesId); });
 }
 
 // 로그인 서버 없이 필드만 붙여볼 때. 티켓도 DB 도 건너뛴다.
-bool FieldHandler::enterWithoutAuth(TlsSession& session, const HeavenField::Enter& request) {
-    const auto* name = request.dev_name();
+bool FieldHandler::enterWithoutAuth(TlsSession &session, const HeavenField::Enter &request) {
+    const auto *name = request.dev_name();
     if (name == nullptr || name->size() == 0 || name->size() > proto::kMaxNicknameBytes) {
         session.send(proto::encodeFieldNotice("dev_name 이 필요합니다"));
         return false;
@@ -165,38 +161,40 @@ bool FieldHandler::enterWithoutAuth(TlsSession& session, const HeavenField::Ente
         // 락 순서는 handler -> world 로 일관되고 반대 방향 경로는 없다.
         std::lock_guard<std::mutex> lock(mutex_);
         characterId_ = characterId;
-        accountId_ = characterId;  // 계정 개념이 없으므로 같은 값으로 둔다
+        accountId_ = characterId; // 계정 개념이 없으므로 같은 값으로 둔다
         nickname_ = name->str();
         stage_ = Stage::InField;
 
         // EnterAck 이 Spawn 보다 먼저 나가야 한다.
-        self->send(
-            proto::encodeEnterAck(characterId, start.x, start.y, start.z, start.facing, start.mapId,
-                                  proto::kWorldSize / 2.f));
+        self->send(proto::encodeEnterAck(characterId, start.x, start.y, start.z, start.facing, start.mapId,
+                                         proto::kWorldSize / 2.f, 0, context_.world->collisionHash()));
 
         // dev 경로에는 DB 가 없다. 외형은 기본값이다.
-        displaced = context_.world->enter(characterId, characterId, nickname_,
-                                          request.dev_partner_species(),
+        displaced = context_.world->enter(characterId, characterId, nickname_, request.dev_partner_species(),
                                           proto::AppearanceInfo{}, start, self);
     }
     if (displaced.session) {
-        displaced.session->send(
-            proto::encodeFieldNotice("다른 곳에서 접속하여 연결을 종료합니다"));
+        displaced.session->send(proto::encodeFieldNotice("다른 곳에서 접속하여 연결을 종료합니다"));
         displaced.session->closeAfterFlush();
     }
     // 밀려난 쪽의 위치는 저장하지 않는다. 개발 모드에는 저장소가 아예 없다.
 
-    spdlog::warn("entered WITHOUT AUTH: {} (id {}, {}) - {} in field", nickname_, characterId,
-                 session.peer(), context_.world->size());
+    spdlog::warn("entered WITHOUT AUTH: {} (id {}, {}) - {} in field", nickname_, characterId, session.peer(),
+                 context_.world->size());
     return true;
 }
 
-bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& request) {
+bool FieldHandler::handleEnter(TlsSession &session, const HeavenField::Enter &request) {
+    if (request.core_version() != hhv::movement::Version) {
+        session.send(proto::encodeFieldNotice("Movement core version mismatch"));
+        return false;
+    }
+
     if (context_.devNoAuth) {
         return enterWithoutAuth(session, request);
     }
 
-    const auto* blob = request.ticket();
+    const auto *blob = request.ticket();
     if (blob == nullptr || blob->size() == 0) {
         session.send(proto::encodeFieldNotice("입장권이 없습니다"));
         return false;
@@ -209,8 +207,7 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
 
     if (error != proto::TicketError::Ok) {
         spdlog::warn("{}: ticket rejected - {}", session.peer(), proto::describe(error));
-        session.send(proto::encodeFieldNotice(std::string("인증 실패: ") +
-                                              proto::describe(error)));
+        session.send(proto::encodeFieldNotice(std::string("인증 실패: ") + proto::describe(error)));
         return false;
     }
 
@@ -225,13 +222,12 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
 
     // 캐릭터와 위치를 읽는다. DB 왕복이라 IOCP 워커에서 하면 안 된다.
     auto self = session.shared_from_this();
-    const FieldContext* context = &context_;
-    FieldHandler* handler = this;
+    const FieldContext *context = &context_;
+    FieldHandler *handler = this;
     const std::uint64_t characterId = verified.characterId;
     const std::uint64_t accountId = verified.accountId;
 
-    const bool queued = context_.dbQueue->submit([self, context, handler, characterId,
-                                                  accountId] {
+    const bool queued = context_.dbQueue->submit([self, context, handler, characterId, accountId] {
         const auto character = context->characters->find(accountId, characterId);
         if (!character.has_value()) {
             spdlog::warn("character {} not found for account {}", characterId, accountId);
@@ -258,8 +254,7 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
             start = context->world->resolvePosition(*position);
         }
 
-        const std::uint16_t partner =
-            character->hasPartner ? character->partner.speciesId : std::uint16_t{0};
+        const std::uint16_t partner = character->hasPartner ? character->partner.speciesId : std::uint16_t{0};
 
         Displaced displaced;
         {
@@ -277,14 +272,14 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
             // EnterAck 이 Spawn 보다 먼저 나가야 한다. 클라가 자기 번호를 알기 전에
             // 남의 Spawn 을 받으면 어느 것이 자기인지 모른다.
             self->send(proto::encodeEnterAck(characterId, start.x, start.y, start.z, start.facing,
-                                             start.mapId, proto::kWorldSize / 2.f));
+                                             start.mapId, proto::kWorldSize / 2.f, 0,
+                                             context->world->collisionHash()));
 
-            displaced = context->world->enter(characterId, accountId, character->nickname,
-                                              partner, character->appearance, start, self);
+            displaced = context->world->enter(characterId, accountId, character->nickname, partner,
+                                              character->appearance, start, self);
         }
         if (displaced.session) {
-            displaced.session->send(
-                proto::encodeFieldNotice("다른 곳에서 접속하여 연결을 종료합니다"));
+            displaced.session->send(proto::encodeFieldNotice("다른 곳에서 접속하여 연결을 종료합니다"));
             displaced.session->closeAfterFlush();
         }
 
@@ -308,9 +303,8 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
             self->send(proto::encodeTokenBalance(tokens));
         }
 
-        spdlog::info("entered: {} (character {}, {}) at ({:.0f}, {:.0f}) - {} in field",
-                     character->nickname, characterId, self->peer(), start.x, start.y,
-                     context->world->size());
+        spdlog::info("entered: {} (character {}, {}) at ({:.0f}, {:.0f}) - {} in field", character->nickname,
+                     characterId, self->peer(), start.x, start.y, context->world->size());
     });
 
     if (!queued) {
@@ -321,141 +315,140 @@ bool FieldHandler::handleEnter(TlsSession& session, const HeavenField::Enter& re
     return true;
 }
 
-// ------------------------------------------------------------------ 뽑기
-
-bool FieldHandler::handleGachaDraw(TlsSession& session,
-                                   const HeavenField::GachaDrawRequest& request) {
-    // dev 모드에는 저장소가 없다. 해금을 남길 곳이 없으니 뽑을 것도 없다.
-    if (context_.characters == nullptr || context_.gacha == nullptr ||
-        !context_.gacha->loaded()) {
-        session.send(proto::encodeGachaResult(false, "이 서버에서는 뽑기를 할 수 없습니다", 0,
-                                              proto::GachaRarity::Normal, false));
-        return true;
-    }
-    if (!context_.characters->supportsGacha()) {
-        session.send(proto::encodeGachaResult(
-            false, "서버가 뽑기를 준비하지 못했습니다", 0, proto::GachaRarity::Normal, false));
-        return true;
-    }
-
-    const auto wireType = static_cast<std::uint8_t>(request.type());
-    if (!proto::isGachaType(wireType)) {
-        // 0 은 타입을 안 정한 것이다. 기본값으로 굴려 주지 않는다.
-        spdlog::warn("{}: gacha draw with type {}", session.peer(), wireType);
-        session.send(proto::encodeGachaResult(false, "뽑기 종류가 올바르지 않습니다", 0,
-                                              proto::GachaRarity::Normal, false));
-        return true;
-    }
-    const auto type = static_cast<proto::GachaType>(wireType);
-
-    auto self = session.shared_from_this();
-    const FieldContext* context = &context_;
-    const std::uint64_t accountId = accountId_;
-    const std::uint64_t characterId = characterId_;
-
-    // 추첨과 DB 왕복이라 IOCP 워커에서 하지 않는다.
-    const bool queued = context_.dbQueue->submit([self, context, accountId, characterId, type] {
-        // mt19937 은 스레드 안전하지 않다. DB 스레드마다 하나씩 든다.
-        // 방마다 재현이 필요한 야생 배치와 달리 뽑기는 씨앗을 고정할 이유가 없다.
-        thread_local std::mt19937 rng{std::random_device{}()};
-
-        const proto::GachaDraw rolled = context->gacha->draw(type, rng);
-        if (rolled.dex == 0) {
-            self->send(proto::encodeGachaResult(false, "뽑을 수 있는 포켓몬이 없습니다", 0,
-                                                proto::GachaRarity::Normal, false));
-            return;
-        }
-
-        std::uint32_t tokensLeft = 0;
-        const data::GachaResult result =
-            context->characters->drawGacha(accountId, characterId, rolled.dex, tokensLeft);
-
-        const char* message = nullptr;
-        switch (result) {
-            case data::GachaResult::Granted:      message = "새로운 포켓몬을 얻었습니다"; break;
-            case data::GachaResult::Duplicate:    message = "이미 가지고 있는 포켓몬입니다"; break;
-            case data::GachaResult::NoToken:      message = "포켓몬 토큰이 없습니다"; break;
-            case data::GachaResult::NotSupported: message = "이 서버에서는 뽑기를 할 수 없습니다"; break;
-            case data::GachaResult::Error:        message = "서버 오류로 뽑지 못했습니다"; break;
-        }
-
-        const bool spent = result == data::GachaResult::Granted ||
-                           result == data::GachaResult::Duplicate;
-        const bool duplicate = result == data::GachaResult::Duplicate;
-
-        // 꽝이어도 무엇이 나왔는지는 알려준다. 숨기면 토큰만 사라진 것으로 보인다.
-        self->send(proto::encodeGachaResult(spent, message, spent ? rolled.dex : std::uint16_t{0},
-                                            rolled.rarity, duplicate));
-
-        if (!spent) {
-            // 토큰이 안 나갔으면 보유량도 그대로다. 그래도 화면과 어긋나 있을 수
-            // 있으니(다른 접속이 썼을 수 있다) 진짜 값을 한 번 보낸다.
-            std::uint32_t tokens = 0;
-            if (context->characters->tokenBalance(accountId, characterId, tokens)) {
-                self->send(proto::encodeTokenBalance(tokens));
-            }
-            return;
-        }
-
-        self->send(proto::encodeTokenBalance(tokensLeft));
-
-        if (result == data::GachaResult::Granted) {
-            // 로스터가 늘었다. 파티 화면의 후보 목록을 새로 보낸다.
-            fieldshared::sendPartyState(context->characters, *self, accountId, characterId, true,
-                                        "");
-            spdlog::info("gacha: character {} unlocked dex {} ({} left)", characterId,
-                         rolled.dex, tokensLeft);
-        } else {
-            spdlog::info("gacha: character {} drew a duplicate dex {} ({} left)", characterId,
-                         rolled.dex, tokensLeft);
-        }
-    });
-
-    if (!queued) {
-        spdlog::warn("{}: db queue full, refusing gacha draw", session.peer());
-        session.send(proto::encodeGachaResult(false, "서버가 혼잡합니다", 0,
-                                              proto::GachaRarity::Normal, false));
-    }
-    return true;
+// ------------------------------------------------------------------ 뽑기
+
+bool FieldHandler::handleGachaDraw(TlsSession &session,
+                                   const HeavenField::GachaDrawRequest &request) {
+    // dev 모드에는 저장소가 없다. 해금을 남길 곳이 없으니 뽑을 것도 없다.
+    if (context_.characters == nullptr || context_.gacha == nullptr ||
+        !context_.gacha->loaded()) {
+        session.send(proto::encodeGachaResult(false, "이 서버에서는 뽑기를 할 수 없습니다", 0,
+                                              proto::GachaRarity::Normal, false));
+        return true;
+    }
+    if (!context_.characters->supportsGacha()) {
+        session.send(proto::encodeGachaResult(
+            false, "서버가 뽑기를 준비하지 못했습니다", 0, proto::GachaRarity::Normal, false));
+        return true;
+    }
+
+    const auto wireType = static_cast<std::uint8_t>(request.type());
+    if (!proto::isGachaType(wireType)) {
+        // 0 은 타입을 안 정한 것이다. 기본값으로 굴려 주지 않는다.
+        spdlog::warn("{}: gacha draw with type {}", session.peer(), wireType);
+        session.send(proto::encodeGachaResult(false, "뽑기 종류가 올바르지 않습니다", 0,
+                                              proto::GachaRarity::Normal, false));
+        return true;
+    }
+    const auto type = static_cast<proto::GachaType>(wireType);
+
+    auto self = session.shared_from_this();
+    const FieldContext *context = &context_;
+    const std::uint64_t accountId = accountId_;
+    const std::uint64_t characterId = characterId_;
+
+    // 추첨과 DB 왕복이라 IOCP 워커에서 하지 않는다.
+    const bool queued = context_.dbQueue->submit([self, context, accountId, characterId, type] {
+        // mt19937 은 스레드 안전하지 않다. DB 스레드마다 하나씩 든다.
+        // 방마다 재현이 필요한 야생 배치와 달리 뽑기는 씨앗을 고정할 이유가 없다.
+        thread_local std::mt19937 rng{std::random_device{}()};
+
+        const proto::GachaDraw rolled = context->gacha->draw(type, rng);
+        if (rolled.dex == 0) {
+            self->send(proto::encodeGachaResult(false, "뽑을 수 있는 포켓몬이 없습니다", 0,
+                                                proto::GachaRarity::Normal, false));
+            return;
+        }
+
+        std::uint32_t tokensLeft = 0;
+        const data::GachaResult result =
+            context->characters->drawGacha(accountId, characterId, rolled.dex, tokensLeft);
+
+        const char *message = nullptr;
+        switch (result) {
+            case data::GachaResult::Granted:      message = "새로운 포켓몬을 얻었습니다"; break;
+            case data::GachaResult::Duplicate:    message = "이미 가지고 있는 포켓몬입니다"; break;
+            case data::GachaResult::NoToken:      message = "포켓몬 토큰이 없습니다"; break;
+            case data::GachaResult::NotSupported: message = "이 서버에서는 뽑기를 할 수 없습니다"; break;
+            case data::GachaResult::Error:        message = "서버 오류로 뽑지 못했습니다"; break;
+        }
+
+        const bool spent = result == data::GachaResult::Granted ||
+                           result == data::GachaResult::Duplicate;
+        const bool duplicate = result == data::GachaResult::Duplicate;
+
+        // 꽝이어도 무엇이 나왔는지는 알려준다. 숨기면 토큰만 사라진 것으로 보인다.
+        self->send(proto::encodeGachaResult(spent, message, spent ? rolled.dex : std::uint16_t{0},
+                                            rolled.rarity, duplicate));
+
+        if (!spent) {
+            // 토큰이 안 나갔으면 보유량도 그대로다. 그래도 화면과 어긋나 있을 수
+            // 있으니(다른 접속이 썼을 수 있다) 진짜 값을 한 번 보낸다.
+            std::uint32_t tokens = 0;
+            if (context->characters->tokenBalance(accountId, characterId, tokens)) {
+                self->send(proto::encodeTokenBalance(tokens));
+            }
+            return;
+        }
+
+        self->send(proto::encodeTokenBalance(tokensLeft));
+
+        if (result == data::GachaResult::Granted) {
+            // 로스터가 늘었다. 파티 화면의 후보 목록을 새로 보낸다.
+            fieldshared::sendPartyState(context->characters, *self, accountId, characterId, true,
+                                        "");
+            spdlog::info("gacha: character {} unlocked dex {} ({} left)", characterId,
+                         rolled.dex, tokensLeft);
+        } else {
+            spdlog::info("gacha: character {} drew a duplicate dex {} ({} left)", characterId,
+                         rolled.dex, tokensLeft);
+        }
+    });
+
+    if (!queued) {
+        spdlog::warn("{}: db queue full, refusing gacha draw", session.peer());
+        session.send(proto::encodeGachaResult(false, "서버가 혼잡합니다", 0,
+                                              proto::GachaRarity::Normal, false));
+    }
+    return true;
+}
+
+// 토큰 수급처가 아직 없어서 둔 디버그 경로다.
+//
+// ponytail: 아무나 자기 토큰을 늘릴 수 있다. 지금은 혼자 돌리는 개발 서버라
+// 그대로 두지만, 수급처(퀘스트·상점 등)가 생기면 이 핸들러와 field.fbs 의
+// DebugGrantToken 을 **같이** 지운다. 남겨 두면 그게 곧 치트 경로다.
+bool FieldHandler::handleDebugGrantToken(TlsSession &session) {
+    if (context_.characters == nullptr) {
+        return true;
+    }
+
+    auto self = session.shared_from_this();
+    const FieldContext *context = &context_;
+    const std::uint64_t accountId = accountId_;
+    const std::uint64_t characterId = characterId_;
+
+    const bool queued = context_.dbQueue->submit([self, context, accountId, characterId] {
+        std::uint32_t tokensLeft = 0;
+        if (!context->characters->grantToken(accountId, characterId, tokensLeft)) {
+            spdlog::warn("debug token grant failed for character {}", characterId);
+            return;
+        }
+        self->send(proto::encodeTokenBalance(tokensLeft));
+        spdlog::warn("debug token granted to character {} ({} total)", characterId, tokensLeft);
+    });
+
+    if (!queued) {
+        spdlog::warn("{}: db queue full, refusing debug token", session.peer());
+    }
+    return true;
 }
 
-// 토큰 수급처가 아직 없어서 둔 디버그 경로다.
-//
-// ponytail: 아무나 자기 토큰을 늘릴 수 있다. 지금은 혼자 돌리는 개발 서버라
-// 그대로 두지만, 수급처(퀘스트·상점 등)가 생기면 이 핸들러와 field.fbs 의
-// DebugGrantToken 을 **같이** 지운다. 남겨 두면 그게 곧 치트 경로다.
-bool FieldHandler::handleDebugGrantToken(TlsSession& session) {
-    if (context_.characters == nullptr) {
-        return true;
-    }
-
-    auto self = session.shared_from_this();
-    const FieldContext* context = &context_;
-    const std::uint64_t accountId = accountId_;
-    const std::uint64_t characterId = characterId_;
-
-    const bool queued = context_.dbQueue->submit([self, context, accountId, characterId] {
-        std::uint32_t tokensLeft = 0;
-        if (!context->characters->grantToken(accountId, characterId, tokensLeft)) {
-            spdlog::warn("debug token grant failed for character {}", characterId);
-            return;
-        }
-        self->send(proto::encodeTokenBalance(tokensLeft));
-        spdlog::warn("debug token granted to character {} ({} total)", characterId, tokensLeft);
-    });
-
-    if (!queued) {
-        spdlog::warn("{}: db queue full, refusing debug token", session.peer());
-    }
-    return true;
+bool FieldHandler::handleMove(TlsSession &session, const HeavenField::Move &request) {
+    return context_.world->move(characterId_, &session, hhv::movement::wire::decodeInputs(request));
 }
 
-void FieldHandler::handleMove(const HeavenField::Move& request) {
-    context_.world->move(characterId_, request.x(), request.y(), request.facing(),
-                         request.sequence());
-}
-
-void FieldHandler::onClosed(TlsSession& session) {
+void FieldHandler::onClosed(TlsSession &session) {
     Stage previous = Stage::Done;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -473,8 +466,7 @@ void FieldHandler::onClosed(TlsSession& session) {
         return;
     }
 
-    spdlog::info("left: {} ({}) - {} in field", nickname_, session.peer(),
-                 context_.world->size());
+    spdlog::info("left: {} ({}) - {} in field", nickname_, session.peer(), context_.world->size());
 
     // 개발 모드에는 저장소가 없다. 위치는 프로세스와 함께 사라진다.
     if (context_.devNoAuth) {
@@ -482,7 +474,7 @@ void FieldHandler::onClosed(TlsSession& session) {
     }
 
     // DB 쓰기라 IOCP 워커에서 하지 않는다.
-    const FieldContext* context = &context_;
+    const FieldContext *context = &context_;
     const std::uint64_t characterId = characterId_;
     const data::Position position = *last;
 
@@ -494,4 +486,4 @@ void FieldHandler::onClosed(TlsSession& session) {
     });
 }
 
-}  // namespace heaven::field
+} // namespace heaven::field

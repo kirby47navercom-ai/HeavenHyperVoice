@@ -31,6 +31,11 @@ struct PartnerOwnerState {
 };
 
 struct PartnerState {
+    hhv::movement::State movement;
+    float accumulator = 0.f;
+    nav::Vec3 moveTarget;
+    float moveSpeed = 0.f;
+    bool wantsMove = false;
     bool initialized = false;
     nav::Vec3 location;
     nav::Vec3 velocity;
@@ -50,16 +55,14 @@ struct PartnerState {
 };
 
 class PartnerFollower {
-public:
-    static bool initialize(const PartnerOwnerState& owner, std::uint16_t species,
-                           PartnerState& state, const Map* map,
-                           const PartnerFollowConfig& config = {});
+  public:
+    static bool initialize(const PartnerOwnerState &owner, std::uint16_t species, PartnerState &state,
+                           const Map *map, const PartnerFollowConfig &config = {});
 
-    static bool update(float dt, const PartnerOwnerState& owner, std::uint16_t species,
-                       PartnerState& state, const Map* map,
-                       const PartnerFollowConfig& config = {});
+    static bool update(float dt, const PartnerOwnerState &owner, std::uint16_t species, PartnerState &state,
+                       const Map *map, const PartnerFollowConfig &config = {});
 
-    static void reset(PartnerState& state);
+    static void reset(PartnerState &state);
 };
 
-}  // namespace heaven::fieldshared
+} // namespace heaven::fieldshared

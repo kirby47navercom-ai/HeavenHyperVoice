@@ -289,7 +289,7 @@ inst:{instance_id}:{character_id}  hash{pet_hp, pet_x, pet_y}   (설계만, 미�
 반대쪽은 32 m 만 보인다. 은신·차단·진영 같은 대상별 규칙을 넣을 자리도 없다.
 
 ```
-이동 수신 → 속도 클램프 → 좌표·섹터 갱신
+입력 큐 수신 → 공통 코어 재실행·예측 비교 → 좌표·섹터 갱신 → 순번 확인
          → 3×3 섹터에서 후보 추출 → 거리로 판정 → 양쪽 시야 목록 갱신
 ```
 
@@ -323,7 +323,7 @@ inst:{instance_id}:{character_id}  hash{pet_hp, pet_x, pet_y}   (설계만, 미�
 시야 계산에 후보로도 안 올라간다. 접속자가 몰려도 한 방의 비용은 정원으로 묶인다.
 
 ```powershell
---instance-types <l>  받아줄 종류 목록 (기본 1). 목록에 없는 번호는 거절한다.
+--instance-map <t=p>  종류별 공통 충돌 파일. 기본 1=maps/collision/Stage/Filed.hhvcollision
 --room-capacity <n>   방 하나의 정원 (기본 20)
 --max-rooms <n>       종류당 방 개수 상한 (기본 0 = 무제한)
 --room-idle <n>       빈 방을 이만큼 두었다가 닫는다 (기본 60초)
@@ -331,8 +331,7 @@ inst:{instance_id}:{character_id}  hash{pet_hp, pet_x, pet_y}   (설계만, 미�
 --tick-threads <n>    방을 돌리는 스레드 수 (기본: 코어의 절반)
 ```
 
-`--instance-types` 가 신뢰 경계다. 이게 없으면 클라이언트가 아무 번호나 밀어
-넣는 것만으로 방을 무한히 만들어 메모리를 채운다.
+`--instance-map`에 등록한 종류만 입장할 수 있다. 충돌 파일 없이 방을 만드는 경로는 제거했다.
 
 **틱은 방마다 스레드를 띄우지 않는다.** 스레드 N 개가 방을 `id % N` 으로 나눠
 맡는다. 한 방은 언제나 같은 스레드가 돌리므로 그 방의 Lua VM 이 두 스레드에서
@@ -373,12 +372,9 @@ inst:{instance_id}:{character_id}  hash{pet_hp, pet_x, pet_y}   (설계만, 미�
 실동작은 `tools	est-wild-pokemon.py` 로 확인한다 — `--dev-no-auth` 로 띄운
 인스턴스 서버에 붙어 야생이 시야에 들어오고 실제로 움직이는지 본다.
 
-### 이동은 클램프한다
+### 이동은 같은 입력을 다시 계산한다
 
-클라이언트가 보낸 좌표를 그대로 믿으면 순간이동이 통한다. 직전 위치와 경과 시간으로
-허용 거리를 내고 넘으면 **거절이 아니라 클램프**한다 — 랙 스파이크로 정상 유저를
-튕기지 않기 위해서다. 로그는 `debug` 다. 치터는 이걸 초당 수십 번 만들어서 `warn`
-이면 로그가 잠긴다.
+클라이언트는 60Hz 입력과 예측 좌표를 보낸다. 서버는 공통 코어로 입력을 재실행하고 좌표를 비교한다. 확인한 순번과 전체 상태를 보내면 클라이언트는 확인된 입력을 제거하고 나머지를 재실행한다. 속도 상한으로 좌표를 잘라내던 검증은 제거했다. 자세한 흐름과 테스트는 [공통 이동 코어](../Client/Source/MovementCore/README.md)를 참고한다.
 
 ### 위치 저장
 
@@ -395,11 +391,9 @@ Redis 자신이 재시작하면 같이 사라진다 — "서버만 죽는" 흔�
 컬럼 기본값이 0 이라 한 번도 들어온 적 없는 캐릭터는 `(0,0)` 으로 읽히는데, 그건
 월드 모서리지 시작 지점이 아니라서 미설정으로 본다.
 
-### 종속 포켓몬은 서버가 시뮬레이션하지 않는다
+### 파트너도 서버에서 공통 코어로 이동한다
 
-주인을 따라다니므로 파생값이고, 시뮬레이션은 그 필드 서버 프로세스가 혼자 한다.
-서버는 `partner_species` 만 알려주고 클라이언트가 뒤에 그린다. 다른 프로세스가 읽을
-일(존 이동 핸드오프)이 생길 때 Redis 에 넣으면 된다.
+서버가 추적 경로를 고르고 공통 코어로 캡슐을 이동시킨다. 클라이언트에는 위치·속도·이동 상태를 보내 표시한다. 파트너 상태는 주인 위치에서 다시 만들 수 있어 별도로 DB에 저장하지 않는다.
 
 ## 중복 로그인 — 후접속 우선
 
@@ -460,13 +454,11 @@ vcpkg 경로는 CMake가 스스로 찾으므로 환경변수 설정이 필요 �
 .\build\windows-x64\bin\Debug\InstanceServer.exe --port 9300
 ```
 
-`FieldServer` 는 기본으로 `maps/PlayerTestLevel.hhvmap` 을 읽는다. 그래서
-`PlayerTestLevel` 의 플레이어/파트너 이동은 서버 navmesh 기준으로 보정된다.
-맵 없이 옛 방식으로 띄우려면 `--no-map` 을 붙인다.
+`FieldServer`의 기본 충돌 파일은 `maps/collision/Environments/Goldenrod_R03/Maps/L_Goldenrod.hhvcollision`이다. `--map`으로 다른 공통 충돌 파일을 지정할 수 있다. 클라이언트가 연 맵의 파일과 해시가 같아야 한다.
 
 `InstanceServer` 는 Lua 스크립트를 **작업 디렉터리 기준** `scripts/wild_ai.lua` 로
 찾는다. 빌드가 실행 파일 옆에 복사해 두므로 그 폴더에서 실행하거나
-`--wild-script` 에 절대 경로를 주면 된다.
+`--wild-ai-script` 에 절대 경로를 주면 된다.
 
 인증서 경로는 이 순서로 해석한다: ① 준 경로(작업 디렉터리 기준) ② **Debug 한정**
 빌드 시점에 박아둔 소스 루트. ②가 쓰이면 경고 로그가 남는다. IDE의 작업 디렉터리가
@@ -493,17 +485,14 @@ python .\tools\webclient\bridge.py     # http://127.0.0.1:8080
 늘어도 기존 카드가 자리를 옮기지 않는다. 실 수치 옆에 개체값이 `14 ·29` 처럼 붙어서
 왜 그 값인지 보인다.
 
-필드는 탑뷰 캔버스다. WASD/화살표로 움직이고 시야 반경을 원으로 그려서 **시야 목록이
-어디까지인지 눈으로 보인다.**
+브라우저 필드는 서버 스냅샷을 보여 주는 관찰 화면이다. 실제 조작은 공통 C++ 코어가 포함된 게임 클라이언트에서 한다.
 
 ```
 로그인 / 가입 / 캐릭터   POST (요청-응답)
-이동 / 스냅샷 / 채팅     WebSocket
+스냅샷 / 채팅            WebSocket
 ```
 
-20Hz 이동을 HTTP 요청 하나씩 보낼 수는 없어서 브리지에 WebSocket 을 넣었다.
-핸드셰이크와 프레이밍은 표준 라이브러리로 직접 처리한다. 20Hz 스냅샷을 그대로 그리면
-끊기므로 목표 좌표로 보간하고, 내 캐릭터만 입력 즉시 로컬에서 움직인다 (예측).
+서버 스냅샷과 채팅은 WebSocket으로 받는다. 브라우저에는 별도 이동 물리나 좌표 전송 기능을 두지 않는다.
 
 로그인이 2왕복이라 **캐릭터를 고를 때까지 로그인 소켓을 열어둔다.** 서버가 120초
 상한을 걸므로 그 사이 고르지 않으면 끊기고, 다시 로그인해야 한다.
@@ -534,8 +523,8 @@ python .\tools\webclient\bridge.py     # http://127.0.0.1:8080
 | `kMaxChatTextBytes` | 1 KiB | `Protocol/ChatCodec.h` | 한 발화가 접속자 수만큼 증폭돼 나가는 것 |
 | `kMinSayInterval` | 200 ms | `Protocol/ChatCodec.h` | 채팅 도배 |
 | `kMaxCharactersPerAccount` | 3 | `Data/src/CharacterStore.h` | 무한 캐릭터 생성 |
-| `kMaxSpeed` | 600 uu/s | `Protocol/FieldGeometry.h` | 순간이동·스피드핵 (거절이 아니라 클램프) |
-| `kMinMoveInterval` | 10 ms | `Protocol/FieldGeometry.h` | Move 도배로 월드 락을 독점하는 것 |
+| `MaxPendingInputs` | 600틱 | `MovementPrediction.h` | 미확인 입력 큐의 무한 증가 |
+| `MaxInputBatch` | 15틱 | `MovementPrediction.h` | 한 번에 보내는 입력 묶음 제한 |
 | `kEnterRadius` / `kExitRadius` | 2800 / 3200 uu | `Protocol/FieldGeometry.h` | 시야 밖 좌표 유출, 경계 깜빡임 |
 | `kMaxPendingPerThread` | 64 | `Net/src/WorkQueue.h` | 인증 큐가 무한정 자라 메모리를 채우는 것 |
 
@@ -604,8 +593,7 @@ IOCP 워커가 여럿이므로 아래 규칙을 지켜야 한다.
 - **중복 차단은 프로세스 안에서만 한다.** 각 서버가 계정 인덱스를 메모리에 들고 있다.
   같은 서비스를 여러 프로세스로 늘리면 그때 공유 레지스트리와 서버 간 통지 경로가
   필요하다. 필드와 채팅은 서로 다른 서비스라 같은 계정이 양쪽에 붙는 것이 정상이다.
-- **이동이 클라이언트 권위다.** 서버는 속도 상한만 검사한다. 벽 통과나 지형 무시는
-  막지 못한다 — 충돌 판정과 서버 권위 이동은 맵 데이터가 들어온 뒤의 일이다.
+- **충돌 데이터는 정적 스냅샷이다.** 맵을 수정하면 공통 충돌 파일을 다시 추출하고 클라이언트와 서버를 함께 갱신해야 한다. 동적 발판과 개체 간 충돌은 아직 포함하지 않는다.
 - **DB 자격증명을 가진 프로세스가 셋이다** (LoginServer, FieldServer, InstanceServer). 더 늘면
   DB 서버를 앞에 두는 편이 낫다.
 - **Memurai 설정 파일에 비밀번호가 평문으로 들어간다.** `Program Files` 는 로컬

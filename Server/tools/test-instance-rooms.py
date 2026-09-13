@@ -2,7 +2,7 @@
 
   1. 서버를 띄운다 (로그인 서버도 DB 도 필요 없다)
        .\\build\\windows-x64\\bin\\Debug\\InstanceServer.exe --dev-no-auth ^
-           --room-capacity 2 --instance-types 1,2 --wild-per-room 4 --room-idle 3
+           --room-capacity 2 --instance-map 1=maps/collision/Stage/Filed.hhvcollision --instance-map 2=maps/collision/Stage/Filed.hhvcollision --wild-per-room 4 --room-idle 3
   2. python .\\tools\\test-instance-rooms.py
 
 여섯 가지를 본다.
@@ -51,7 +51,7 @@ wait_for = _session.wait_for
 ENTER, MOVE = 1, 3
 ENTER_ACK, SNAPSHOT, NOTICE = 2, 4, 5
 
-PORT = 9300
+PORT = int(os.environ.get("HHV_INSTANCE_TEST_PORT", "9300"))
 
 # World.h 의 kWildIdBase. 야생 엔티티 번호는 여기서부터 시작한다.
 WILD_ID_BASE = 1 << 52
@@ -64,7 +64,8 @@ ROOM_IDLE = 3.0
 def dev_enter(name, character_id, instance_type):
     def build(builder):
         offset = builder.CreateString(name)
-        builder.StartObject(5)
+        builder.StartObject(6)
+        builder.PrependUint32Slot(5, 2, 0)
         builder.PrependUOffsetTRelativeSlot(1, offset, 0)       # dev_name
         builder.PrependUint64Slot(2, character_id, 0)           # dev_character_id
         builder.PrependUint16Slot(3, 0, 0)                      # dev_partner_species
@@ -86,7 +87,6 @@ class Client:
         self.room_id = None
         self.spawn = None
         self.notices = []
-        self.sequence = 0
         self.alive = True
         self.lock = threading.Lock()
         self.seen = []  # (종류, entity_id)
@@ -97,9 +97,12 @@ class Client:
     def _read(self):
         try:
             while True:
-                header = self.sock.recv(4)
-                if len(header) < 4:
-                    return
+                header = b""
+                while len(header) < 4:
+                    chunk = self.sock.recv(4 - len(header))
+                    if not chunk:
+                        return
+                    header += chunk
                 size = struct.unpack("<I", header)[0]
                 buf = b""
                 while len(buf) < size:
@@ -145,20 +148,6 @@ class Client:
     def send(self, frame):
         self.sock.sendall(struct.pack("<I", len(frame)) + frame)
 
-    def step(self, x, y):
-        self.sequence += 1
-        builder = flatbuffers.Builder(128)
-
-        def build(b):
-            b.StartObject(4)
-            b.PrependFloat32Slot(0, x, 0.0)
-            b.PrependFloat32Slot(1, y, 0.0)
-            b.PrependFloat32Slot(2, 0.0, 0.0)
-            b.PrependUint32Slot(3, self.sequence, 0)
-            return b.EndObject()
-        del builder
-        self.send(envelope(build, MOVE))
-
     def close(self):
         try:
             self.sock.close()
@@ -197,9 +186,7 @@ def main():
     check("방 분할", a.room_id == b.room_id and c.room_id != a.room_id,
           f"a={a.room_id} b={b.room_id} c={c.room_id}, 정원 {CAPACITY}")
 
-    # 같은 자리에 세워 시야 안에 반드시 들어오게 한 뒤, 스냅샷이 오길 기다린다.
-    for client in (a, b, c):
-        client.step(25600.0, 25600.0)
+    # The server places entrants at the configured spawn; clients cannot teleport there.
     time.sleep(1.0)
 
     check("같은 방은 보인다", b.character_id in a.player_ids(),

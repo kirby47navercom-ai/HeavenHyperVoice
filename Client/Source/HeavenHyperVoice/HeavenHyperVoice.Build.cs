@@ -8,6 +8,9 @@ public class HeavenHyperVoice : ModuleRules
 	public HeavenHyperVoice(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+		PublicIncludePaths.Add(Path.GetFullPath(Path.Combine(ModuleDirectory, "../MovementCore")));
+		PrivateIncludePaths.Add(Path.Combine(ModuleDirectory, "Net/Generated"));
+
 		if (Target.Platform == UnrealTargetPlatform.Win64)
 		{
 			PublicSystemLibraries.AddRange(new string[] { "Shell32.lib", "Ole32.lib" });

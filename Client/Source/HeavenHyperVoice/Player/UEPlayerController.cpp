@@ -27,7 +27,7 @@
 #include "Engine/LocalPlayer.h"
 #include "InputAction.h"
 #include "InputCoreTypes.h"
-#include "GameFramework/CharacterMovementComponent.h"
+#include "../Movement/UECoreMovementComponent.h"
 
 AUEPlayerController::AUEPlayerController()
 {
@@ -60,7 +60,7 @@ void AUEPlayerController::BeginPlay()
 	
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
-		MaxWalkSpeed = PlayerCharacter->GetCharacterMovement()->MaxWalkSpeed;
+		MaxWalkSpeed = PlayerCharacter->GetCoreMovement()->MaxWalkSpeed;
 	}
 }
 
@@ -307,7 +307,7 @@ void AUEPlayerController::ToggleOptionsMenu()
 	{
 		PlayerCharacter->SetRunning(false);
 		PlayerCharacter->StopJumping();
-		PlayerCharacter->GetCharacterMovement()->StopMovementImmediately();
+		PlayerCharacter->GetCoreMovement()->StopMovementImmediately();
 	}
 	bDraggingChat = false;
 	OptionsMenu = Menu;

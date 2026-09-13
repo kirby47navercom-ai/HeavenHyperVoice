@@ -54,7 +54,7 @@ DELETE_CHARACTER_REQUEST = 9
 RELEASE_PARTNER_REQUEST = 10
 
 CHAT_HELLO, CHAT_SAY, CHAT_NOTICE, CHAT_CHAT = 1, 2, 3, 4
-FIELD_ENTER, FIELD_ENTER_ACK, FIELD_MOVE, FIELD_SNAPSHOT, FIELD_NOTICE = 1, 2, 3, 4, 5
+FIELD_ENTER, FIELD_ENTER_ACK, FIELD_SNAPSHOT, FIELD_NOTICE = 1, 2, 4, 5
 
 
 # ----------------------------------------------------------------- FlatBuffers
@@ -128,14 +128,13 @@ def delete_character_payload(character_id, confirm_nickname):
     return build
 
 
-def move_payload(x, y, facing):
-    def build(b):
-        b.StartObject(3)
-        b.PrependFloat32Slot(0, x, 0.0)
-        b.PrependFloat32Slot(1, y, 0.0)
-        b.PrependFloat32Slot(2, facing, 0.0)
-        return b.EndObject()
-
+def field_enter_payload(ticket):
+    def build(builder):
+        blob = builder.CreateByteVector(ticket)
+        builder.StartObject(6)
+        builder.PrependUOffsetTRelativeSlot(0, blob, 0)
+        builder.PrependUint32Slot(5, 2, 0)
+        return builder.EndObject()
     return build
 
 
@@ -283,7 +282,7 @@ def exchange(sock, body, expected_tag):
 
 # ------------------------------------------------------------------ WebSocket
 #
-# 20Hz movement over one HTTP request per update would be silly. The protocol
+# Server snapshots and chat arrive over a persistent connection. The protocol
 # is small enough that the handshake and framing fit in a page.
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -437,14 +436,9 @@ class Session:
     def start_field(self, host, port, ticket):
         sock = connect(host, port)
         sock.settimeout(None)
-        send_frame(sock, envelope(ticket_payload(ticket), FIELD_ENTER))
+        send_frame(sock, envelope(field_enter_payload(ticket), FIELD_ENTER))
         self.field = sock
         threading.Thread(target=self._field_loop, args=(sock,), daemon=True).start()
-
-    def move(self, x, y, facing):
-        if self.field is None:
-            return
-        send_frame(self.field, envelope(move_payload(x, y, facing), FIELD_MOVE))
 
     def _field_loop(self, sock):
         reason = "필드 연결이 종료되었습니다"
@@ -588,10 +582,7 @@ class Handler(BaseHTTPRequestHandler):
 
                 try:
                     message = json.loads(data)
-                    if message.get("t") == "move":
-                        session.move(float(message["x"]), float(message["y"]),
-                                     float(message.get("f", 0.0)))
-                    elif message.get("t") == "say":
+                    if message.get("t") == "say":
                         session.say(message.get("text", ""))
                 except (ValueError, KeyError, OSError, RuntimeError) as e:
                     session.push("error", text=str(e))

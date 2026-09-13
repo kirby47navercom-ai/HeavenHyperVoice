@@ -1,4 +1,5 @@
 #include "HHVFieldConnection.h"
+#include "MovementWire.h"
 
 #include "HAL/PlatformProcess.h"
 #include "HAL/RunnableThread.h"
@@ -27,115 +28,117 @@ DEFINE_LOG_CATEGORY_STATIC(LogHHVField, Log, All);
 
 namespace
 {
-	/** Frames are tiny. Anything larger means the length prefix is garbage. */
-	constexpr int32 MaxFrameBytes = 64 * 1024;
+/** Frames are tiny. Anything larger means the length prefix is garbage. */
+constexpr int32 MaxFrameBytes = 64 * 1024;
 
-	/** Nothing to read most iterations, so do not spin the core. */
-	constexpr float IdleSleepSeconds = 0.005f;
+/** Nothing to read most iterations, so do not spin the core. */
+constexpr float IdleSleepSeconds = 0.005f;
 
-	FString LastOpenSslError()
+FString LastOpenSslError()
+{
+	const unsigned long Code = ERR_get_error();
+	if (Code == 0)
 	{
-		const unsigned long Code = ERR_get_error();
-		if (Code == 0)
-		{
-			return TEXT("no OpenSSL error queued");
-		}
-
-		char Buffer[256] = {};
-		ERR_error_string_n(Code, Buffer, sizeof(Buffer));
-		return FString(UTF8_TO_TCHAR(Buffer));
+		return TEXT("no OpenSSL error queued");
 	}
 
-	void ReadEntities(const flatbuffers::Vector<flatbuffers::Offset<HeavenField::EntityState>>* Source,
-		TArray<FHHVFieldEntity>& Out, double ServerTimeSeconds)
+	char Buffer[256] = {};
+	ERR_error_string_n(Code, Buffer, sizeof(Buffer));
+	return FString(UTF8_TO_TCHAR(Buffer));
+}
+
+void ReadEntities(const flatbuffers::Vector<flatbuffers::Offset<HeavenField::EntityState>> *Source,
+                  TArray<FHHVFieldEntity> &Out, double ServerTimeSeconds)
+{
+	if (Source == nullptr)
 	{
-		if (Source == nullptr)
-		{
-			return;
-		}
-
-		Out.Reserve(static_cast<int32>(Source->size()));
-		for (const HeavenField::EntityState* State : *Source)
-		{
-			if (State == nullptr)
-			{
-				continue;
-			}
-
-			FHHVFieldEntity& Entity = Out.AddDefaulted_GetRef();
-			Entity.EntityId = State->entity_id();
-			Entity.ServerTimeSeconds = ServerTimeSeconds;
-			Entity.X = State->x();
-			Entity.Y = State->y();
-			Entity.Z = State->z();
-			Entity.Velocity = FVector(State->velocity_x(), State->velocity_y(), State->velocity_z());
-			Entity.Facing = State->facing();
-			Entity.PartnerSpecies = State->partner_species();
-			Entity.Species = State->species();
-			Entity.AttackSequence = State->attack_sequence();
-			Entity.AttackTargetId = State->attack_target_id();
-			Entity.CurrentHP = State->current_hp();
-			Entity.MaxHP = State->max_hp();
-			Entity.bHasPartnerTransform = State->partner_present();
-			if (Entity.bHasPartnerTransform)
-			{
-				Entity.PartnerLocation = FVector(State->partner_x(), State->partner_y(), State->partner_z());
-				Entity.PartnerVelocity = FVector(
-					State->partner_velocity_x(),
-					State->partner_velocity_y(),
-					State->partner_velocity_z());
-				Entity.PartnerFacing = State->partner_facing();
-				Entity.bPartnerTeleported = State->partner_teleported();
-			}
-			if (const HeavenField::Appearance* Look = State->appearance())
-			{
-				Entity.bHasAppearance = true;
-				Entity.Appearance.Gender =
-					Look->gender() != 0 ? EUEHHVGender::TypeB : EUEHHVGender::TypeA;
-				Entity.Appearance.BodyIndex = Look->body();
-				Entity.Appearance.HeadIndex = Look->head();
-				Entity.Appearance.HairIndex = Look->hair();
-				Entity.Appearance.EyeIndex = Look->eye();
-				Entity.Appearance.BodyEquipmentIndex = Look->equipment();
-				Entity.Appearance.SkinColor =
-					FLinearColor(Look->skin_r(), Look->skin_g(), Look->skin_b(), 1.0f);
-				Entity.Appearance.HairColor =
-					FLinearColor(Look->hair_r(), Look->hair_g(), Look->hair_b(), 1.0f);
-				Entity.Appearance.EyeColor =
-					FLinearColor(Look->eye_r(), Look->eye_g(), Look->eye_b(), 1.0f);
-				Entity.Appearance.ArmVolume = Look->arm_volume();
-				Entity.Appearance.TorsoVolume = Look->torso_volume();
-				Entity.Appearance.LegVolume = Look->leg_volume();
-			}
-			if (const flatbuffers::String* Nickname = State->nickname())
-			{
-				Entity.Nickname = FString(UTF8_TO_TCHAR(Nickname->c_str()));
-			}
-		}
+		return;
 	}
 
-	/** Prefixes a finished FlatBuffer with its little-endian length. */
-	TArray<uint8> FrameOf(const flatbuffers::FlatBufferBuilder& Builder)
+	Out.Reserve(static_cast<int32>(Source->size()));
+	for (const HeavenField::EntityState *State : *Source)
 	{
-		const uint32 Size = Builder.GetSize();
+		if (State == nullptr)
+		{
+			continue;
+		}
 
-		TArray<uint8> Frame;
-		Frame.SetNumUninitialized(4 + static_cast<int32>(Size));
-		Frame[0] = static_cast<uint8>(Size & 0xFF);
-		Frame[1] = static_cast<uint8>((Size >> 8) & 0xFF);
-		Frame[2] = static_cast<uint8>((Size >> 16) & 0xFF);
-		Frame[3] = static_cast<uint8>((Size >> 24) & 0xFF);
-		FMemory::Memcpy(Frame.GetData() + 4, Builder.GetBufferPointer(), Size);
-		return Frame;
+		FHHVFieldEntity &Entity = Out.AddDefaulted_GetRef();
+		if (State->movement())
+		{
+			Entity.CoreState = hhv::movement::wire::decodeState(*State->movement());
+		}
+		if (State->partner_movement())
+		{
+			Entity.PartnerCoreState = hhv::movement::wire::decodeState(*State->partner_movement());
+		}
+		Entity.EntityId = State->entity_id();
+		Entity.ServerTimeSeconds = ServerTimeSeconds;
+		Entity.X = State->x();
+		Entity.Y = State->y();
+		Entity.Z = State->z();
+		Entity.Velocity = FVector(State->velocity_x(), State->velocity_y(), State->velocity_z());
+		Entity.Facing = State->facing();
+		Entity.PartnerSpecies = State->partner_species();
+		Entity.Species = State->species();
+		Entity.AttackSequence = State->attack_sequence();
+		Entity.AttackTargetId = State->attack_target_id();
+		Entity.CurrentHP = State->current_hp();
+		Entity.MaxHP = State->max_hp();
+		Entity.bHasPartnerTransform = State->partner_present();
+		if (Entity.bHasPartnerTransform)
+		{
+			Entity.PartnerLocation = FVector(State->partner_x(), State->partner_y(), State->partner_z());
+			Entity.PartnerVelocity = FVector(State->partner_velocity_x(), State->partner_velocity_y(),
+			                                 State->partner_velocity_z());
+			Entity.PartnerFacing = State->partner_facing();
+			Entity.bPartnerTeleported = State->partner_teleported();
+		}
+		if (const HeavenField::Appearance *Look = State->appearance())
+		{
+			Entity.bHasAppearance = true;
+			Entity.Appearance.Gender = Look->gender() != 0 ? EUEHHVGender::TypeB : EUEHHVGender::TypeA;
+			Entity.Appearance.BodyIndex = Look->body();
+			Entity.Appearance.HeadIndex = Look->head();
+			Entity.Appearance.HairIndex = Look->hair();
+			Entity.Appearance.EyeIndex = Look->eye();
+			Entity.Appearance.BodyEquipmentIndex = Look->equipment();
+			Entity.Appearance.SkinColor = FLinearColor(Look->skin_r(), Look->skin_g(), Look->skin_b(), 1.0f);
+			Entity.Appearance.HairColor = FLinearColor(Look->hair_r(), Look->hair_g(), Look->hair_b(), 1.0f);
+			Entity.Appearance.EyeColor = FLinearColor(Look->eye_r(), Look->eye_g(), Look->eye_b(), 1.0f);
+			Entity.Appearance.ArmVolume = Look->arm_volume();
+			Entity.Appearance.TorsoVolume = Look->torso_volume();
+			Entity.Appearance.LegVolume = Look->leg_volume();
+		}
+		if (const flatbuffers::String *Nickname = State->nickname())
+		{
+			Entity.Nickname = FString(UTF8_TO_TCHAR(Nickname->c_str()));
+		}
 	}
 }
+
+/** Prefixes a finished FlatBuffer with its little-endian length. */
+TArray<uint8> FrameOf(const flatbuffers::FlatBufferBuilder &Builder)
+{
+	const uint32 Size = Builder.GetSize();
+
+	TArray<uint8> Frame;
+	Frame.SetNumUninitialized(4 + static_cast<int32>(Size));
+	Frame[0] = static_cast<uint8>(Size & 0xFF);
+	Frame[1] = static_cast<uint8>((Size >> 8) & 0xFF);
+	Frame[2] = static_cast<uint8>((Size >> 16) & 0xFF);
+	Frame[3] = static_cast<uint8>((Size >> 24) & 0xFF);
+	FMemory::Memcpy(Frame.GetData() + 4, Builder.GetBufferPointer(), Size);
+	return Frame;
+}
+} // namespace
 
 FHHVFieldConnection::~FHHVFieldConnection()
 {
 	Shutdown();
 }
 
-void FHHVFieldConnection::Start(const FHHVFieldSettings& InSettings)
+void FHHVFieldConnection::Start(const FHHVFieldSettings &InSettings)
 {
 	if (Thread != nullptr)
 	{
@@ -165,7 +168,7 @@ void FHHVFieldConnection::Stop()
 	bStopRequested = true;
 }
 
-void FHHVFieldConnection::SendMove(float X, float Y, float Facing, uint32 Sequence)
+void FHHVFieldConnection::SendMove(const std::vector<hhv::movement::PredictedInput> &Inputs)
 {
 	if (bStopRequested)
 	{
@@ -173,12 +176,17 @@ void FHHVFieldConnection::SendMove(float X, float Y, float Facing, uint32 Sequen
 	}
 
 	flatbuffers::FlatBufferBuilder Builder(128);
-	const auto Move = HeavenField::CreateMove(Builder, X, Y, Facing, Sequence);
+	if (Inputs.empty())
+	{
+		return;
+	}
+	const auto Frames = hhv::movement::wire::encodeInputs(Builder, Inputs);
+	const auto Move = HeavenField::CreateMove(Builder, Frames);
 	Builder.Finish(HeavenField::CreateEnvelope(Builder, HeavenField::Payload::Move, Move.Union()));
 	Outbound.Enqueue(FrameOf(Builder));
 }
 
-void FHHVFieldConnection::SendSetParty(const TArray<uint16>& DexNumbers, uint16 ActiveDex)
+void FHHVFieldConnection::SendSetParty(const TArray<uint16> &DexNumbers, uint16 ActiveDex)
 {
 	if (bStopRequested)
 	{
@@ -187,11 +195,9 @@ void FHHVFieldConnection::SendSetParty(const TArray<uint16>& DexNumbers, uint16 
 
 	flatbuffers::FlatBufferBuilder Builder(128);
 	// 벡터는 상위 테이블을 시작하기 전에 만들어야 한다.
-	const auto Members =
-		Builder.CreateVector(DexNumbers.GetData(), static_cast<size_t>(DexNumbers.Num()));
+	const auto Members = Builder.CreateVector(DexNumbers.GetData(), static_cast<size_t>(DexNumbers.Num()));
 	const auto Request = HeavenField::CreateSetParty(Builder, Members, ActiveDex);
-	Builder.Finish(
-		HeavenField::CreateEnvelope(Builder, HeavenField::Payload::SetParty, Request.Union()));
+	Builder.Finish(HeavenField::CreateEnvelope(Builder, HeavenField::Payload::SetParty, Request.Union()));
 	Outbound.Enqueue(FrameOf(Builder));
 }
 
@@ -244,20 +250,21 @@ uint32 FHHVFieldConnection::Run()
 		{
 			const auto Blob = Builder.CreateVector(Settings.Ticket.GetData(), Settings.Ticket.Num());
 			const auto Enter = HeavenField::CreateEnter(Builder, Blob, /*dev_name=*/0,
-				/*dev_character_id=*/0, /*dev_partner_species=*/0, Settings.InstanceType);
+			                                            /*dev_character_id=*/0, /*dev_partner_species=*/0,
+			                                            Settings.InstanceType, hhv::movement::Version);
 			Builder.Finish(HeavenField::CreateEnvelope(Builder, HeavenField::Payload::Enter, Enter.Union()));
 			UE_LOG(LogHHVField, Display, TEXT("entering with a %d byte ticket (instance type %u)"),
-				Settings.Ticket.Num(), Settings.InstanceType);
+			       Settings.Ticket.Num(), Settings.InstanceType);
 		}
 		else
 		{
 			const auto Name = Builder.CreateString(TCHAR_TO_UTF8(*Settings.DevName));
-			const auto Enter = HeavenField::CreateEnter(Builder, /*ticket=*/0, Name,
-				Settings.DevCharacterId, Settings.DevPartnerSpecies, Settings.InstanceType);
+			const auto Enter = HeavenField::CreateEnter(Builder, /*ticket=*/0, Name, Settings.DevCharacterId,
+			                                            Settings.DevPartnerSpecies, Settings.InstanceType,
+			                                            hhv::movement::Version);
 			Builder.Finish(HeavenField::CreateEnvelope(Builder, HeavenField::Payload::Enter, Enter.Union()));
-			UE_LOG(LogHHVField, Warning,
-				TEXT("no ticket; entering as dev '%s' (server needs --dev-no-auth)"),
-				*Settings.DevName);
+			UE_LOG(LogHHVField, Warning, TEXT("no ticket; entering as dev '%s' (server needs --dev-no-auth)"),
+			       *Settings.DevName);
 		}
 
 		Outbound.Enqueue(FrameOf(Builder));
@@ -290,7 +297,7 @@ uint32 FHHVFieldConnection::Run()
 	return 0;
 }
 
-bool FHHVFieldConnection::ConnectAndHandshake(FString& OutError)
+bool FHHVFieldConnection::ConnectAndHandshake(FString &OutError)
 {
 	Ctx = SSL_CTX_new(TLS_client_method());
 	if (Ctx == nullptr)
@@ -331,8 +338,8 @@ bool FHHVFieldConnection::ConnectAndHandshake(FString& OutError)
 	// thread for ~20s, not the game thread.
 	if (BIO_do_connect(Bio) <= 0)
 	{
-		OutError = FString::Printf(TEXT("cannot reach field server at %s: %s"),
-			*Address, *LastOpenSslError());
+		OutError =
+		    FString::Printf(TEXT("cannot reach field server at %s: %s"), *Address, *LastOpenSslError());
 		return false;
 	}
 
@@ -341,7 +348,7 @@ bool FHHVFieldConnection::ConnectAndHandshake(FString& OutError)
 	BIO_socket_nbio(BIO_get_fd(Bio, nullptr), 1);
 
 	UE_LOG(LogHHVField, Display, TEXT("connected to %s (%s, %s)"), *Address,
-		UTF8_TO_TCHAR(SSL_get_version(Ssl)), UTF8_TO_TCHAR(SSL_get_cipher(Ssl)));
+	       UTF8_TO_TCHAR(SSL_get_version(Ssl)), UTF8_TO_TCHAR(SSL_get_cipher(Ssl)));
 	return true;
 }
 
@@ -351,7 +358,7 @@ void FHHVFieldConnection::CloseTls()
 	{
 		BIO_free_all(Bio);
 		Bio = nullptr;
-		Ssl = nullptr;  // owned by the BIO chain
+		Ssl = nullptr; // owned by the BIO chain
 	}
 	if (Ctx != nullptr)
 	{
@@ -398,7 +405,7 @@ bool FHHVFieldConnection::FlushOutbound()
 	}
 }
 
-bool FHHVFieldConnection::ReadInbound(FString& OutError)
+bool FHHVFieldConnection::ReadInbound(FString &OutError)
 {
 	uint8 Buffer[8192];
 	for (;;)
@@ -432,9 +439,9 @@ void FHHVFieldConnection::ParseAccumulated()
 	int32 Offset = 0;
 	while (RecvAccum.Num() - Offset >= 4)
 	{
-		const uint8* Header = RecvAccum.GetData() + Offset;
+		const uint8 *Header = RecvAccum.GetData() + Offset;
 		const uint32 Size = static_cast<uint32>(Header[0]) | (static_cast<uint32>(Header[1]) << 8) |
-			(static_cast<uint32>(Header[2]) << 16) | (static_cast<uint32>(Header[3]) << 24);
+		                    (static_cast<uint32>(Header[2]) << 16) | (static_cast<uint32>(Header[3]) << 24);
 
 		if (Size == 0 || Size > MaxFrameBytes)
 		{
@@ -459,7 +466,7 @@ void FHHVFieldConnection::ParseAccumulated()
 	}
 }
 
-void FHHVFieldConnection::DispatchFrame(const uint8* Data, int32 Size)
+void FHHVFieldConnection::DispatchFrame(const uint8 *Data, int32 Size)
 {
 	// The server is not a trust boundary the way a client is, but a truncated or
 	// corrupt frame still reaches GetRoot as raw offsets. Verify first.
@@ -470,7 +477,7 @@ void FHHVFieldConnection::DispatchFrame(const uint8* Data, int32 Size)
 		return;
 	}
 
-	const HeavenField::Envelope* Envelope = HeavenField::GetEnvelope(Data);
+	const HeavenField::Envelope *Envelope = HeavenField::GetEnvelope(Data);
 
 	// Verifier 는 payload_type 만 있고 payload 오프셋이 없는 프레임을 통과시킨다
 	// (VerifyTable(nullptr) 이 true 다). 그대로 두면 아래 payload_as_* 가 nullptr 을
@@ -484,9 +491,16 @@ void FHHVFieldConnection::DispatchFrame(const uint8* Data, int32 Size)
 	FHHVFieldEventData Event;
 	switch (Envelope->payload_type())
 	{
-	case HeavenField::Payload::EnterAck:
-	{
-		const HeavenField::EnterAck* Ack = Envelope->payload_as_EnterAck();
+	case HeavenField::Payload::EnterAck: {
+		const HeavenField::EnterAck *Ack = Envelope->payload_as_EnterAck();
+		if (Ack->core_version() != hhv::movement::Version)
+		{
+			PushDisconnect(TEXT("Movement core version mismatch"));
+			bStopRequested = true;
+			return;
+		}
+		Event.MovementState = hhv::movement::wire::decodeState(*Ack->movement());
+		Event.CollisionHash = Ack->collision_hash();
 		Event.Type = EHHVFieldEvent::EnterAck;
 		Event.EntityId = Ack->entity_id();
 		Event.X = Ack->x();
@@ -498,25 +512,20 @@ void FHHVFieldConnection::DispatchFrame(const uint8* Data, int32 Size)
 		break;
 	}
 
-	case HeavenField::Payload::Correction:
-	{
-		const HeavenField::Correction* Correction = Envelope->payload_as_Correction();
+	case HeavenField::Payload::Correction: {
+		const HeavenField::Correction *Correction = Envelope->payload_as_Correction();
 		Event.Type = EHHVFieldEvent::Correction;
 		Event.Sequence = Correction->sequence();
-		Event.X = Correction->x();
-		Event.Y = Correction->y();
-		Event.Z = Correction->z();
-		Event.Facing = Correction->facing();
+		Event.MovementState = hhv::movement::wire::decodeState(*Correction->movement());
 		break;
 	}
 
-	case HeavenField::Payload::Snapshot:
-	{
-		const HeavenField::Snapshot* Snapshot = Envelope->payload_as_Snapshot();
+	case HeavenField::Payload::Snapshot: {
+		const HeavenField::Snapshot *Snapshot = Envelope->payload_as_Snapshot();
 		Event.Type = EHHVFieldEvent::Snapshot;
 		ReadEntities(Snapshot->spawned(), Event.Snapshot.Spawned, Snapshot->server_time_seconds());
 		ReadEntities(Snapshot->moved(), Event.Snapshot.Moved, Snapshot->server_time_seconds());
-		if (const flatbuffers::Vector<uint64_t>* Despawned = Snapshot->despawned())
+		if (const flatbuffers::Vector<uint64_t> *Despawned = Snapshot->despawned())
 		{
 			Event.Snapshot.Despawned.Reserve(static_cast<int32>(Despawned->size()));
 			for (const uint64 EntityId : *Despawned)
@@ -527,17 +536,16 @@ void FHHVFieldConnection::DispatchFrame(const uint8* Data, int32 Size)
 		break;
 	}
 
-	case HeavenField::Payload::PartyState:
-	{
-		const HeavenField::PartyState* State = Envelope->payload_as_PartyState();
+	case HeavenField::Payload::PartyState: {
+		const HeavenField::PartyState *State = Envelope->payload_as_PartyState();
 		Event.Type = EHHVFieldEvent::PartyState;
 		Event.Party.bOk = State->ok();
-		if (const flatbuffers::String* Message = State->message())
+		if (const flatbuffers::String *Message = State->message())
 		{
 			Event.Party.Message = FString(UTF8_TO_TCHAR(Message->c_str()));
 		}
 		Event.Party.ActiveDex = State->active_dex();
-		if (const flatbuffers::Vector<uint16>* Party = State->dex_numbers())
+		if (const flatbuffers::Vector<uint16> *Party = State->dex_numbers())
 		{
 			Event.Party.Party.Reserve(static_cast<int32>(Party->size()));
 			for (const uint16 Dex : *Party)
@@ -545,7 +553,7 @@ void FHHVFieldConnection::DispatchFrame(const uint8* Data, int32 Size)
 				Event.Party.Party.Add(Dex);
 			}
 		}
-		if (const flatbuffers::Vector<uint16>* Unlocked = State->unlocked())
+		if (const flatbuffers::Vector<uint16> *Unlocked = State->unlocked())
 		{
 			Event.Party.Unlocked.Reserve(static_cast<int32>(Unlocked->size()));
 			for (const uint16 Dex : *Unlocked)
@@ -556,21 +564,19 @@ void FHHVFieldConnection::DispatchFrame(const uint8* Data, int32 Size)
 		break;
 	}
 
-	case HeavenField::Payload::PartnerChanged:
-	{
-		const HeavenField::PartnerChanged* Changed = Envelope->payload_as_PartnerChanged();
+	case HeavenField::Payload::PartnerChanged: {
+		const HeavenField::PartnerChanged *Changed = Envelope->payload_as_PartnerChanged();
 		Event.Type = EHHVFieldEvent::PartnerChanged;
 		Event.EntityId = Changed->entity_id();
 		Event.PartnerDex = Changed->partner_species();
 		break;
 	}
 
-	case HeavenField::Payload::GachaDrawResponse:
-	{
-		const HeavenField::GachaDrawResponse* Result = Envelope->payload_as_GachaDrawResponse();
+	case HeavenField::Payload::GachaDrawResponse: {
+		const HeavenField::GachaDrawResponse *Result = Envelope->payload_as_GachaDrawResponse();
 		Event.Type = EHHVFieldEvent::GachaResult;
 		Event.Gacha.bOk = Result->ok();
-		if (const flatbuffers::String* Message = Result->message())
+		if (const flatbuffers::String *Message = Result->message())
 		{
 			Event.Gacha.Message = FString(UTF8_TO_TCHAR(Message->c_str()));
 		}
@@ -580,19 +586,17 @@ void FHHVFieldConnection::DispatchFrame(const uint8* Data, int32 Size)
 		break;
 	}
 
-	case HeavenField::Payload::TokenBalance:
-	{
-		const HeavenField::TokenBalance* Balance = Envelope->payload_as_TokenBalance();
+	case HeavenField::Payload::TokenBalance: {
+		const HeavenField::TokenBalance *Balance = Envelope->payload_as_TokenBalance();
 		Event.Type = EHHVFieldEvent::TokenBalance;
 		Event.Tokens = Balance->tokens();
 		break;
 	}
 
-	case HeavenField::Payload::Notice:
-	{
-		const HeavenField::Notice* Notice = Envelope->payload_as_Notice();
+	case HeavenField::Payload::Notice: {
+		const HeavenField::Notice *Notice = Envelope->payload_as_Notice();
 		Event.Type = EHHVFieldEvent::Notice;
-		if (const flatbuffers::String* Text = Notice->text())
+		if (const flatbuffers::String *Text = Notice->text())
 		{
 			Event.Text = FString(UTF8_TO_TCHAR(Text->c_str()));
 		}
@@ -602,14 +606,14 @@ void FHHVFieldConnection::DispatchFrame(const uint8* Data, int32 Size)
 	default:
 		// Enter and Move are client-to-server. The server never sends them.
 		UE_LOG(LogHHVField, Warning, TEXT("unexpected payload %u from field server"),
-			static_cast<uint32>(Envelope->payload_type()));
+		       static_cast<uint32>(Envelope->payload_type()));
 		return;
 	}
 
 	Inbound.Enqueue(MoveTemp(Event));
 }
 
-void FHHVFieldConnection::PushDisconnect(const FString& Reason)
+void FHHVFieldConnection::PushDisconnect(const FString &Reason)
 {
 	// Run() has several exits and the tail runs after every one of them. Only
 	// the first reason is worth reporting -- the rest are consequences.
@@ -635,15 +639,14 @@ void FHHVFieldConnection::Poll()
 			bInField = true;
 			if (OnEnterAck)
 			{
-				OnEnterAck(Event.EntityId, Event.X, Event.Y, Event.Z, Event.Facing, Event.RoomId,
-					Event.OriginOffset);
+				OnEnterAck(Event);
 			}
 			break;
 
 		case EHHVFieldEvent::Correction:
 			if (OnCorrection)
 			{
-				OnCorrection(Event.Sequence, Event.X, Event.Y, Event.Z, Event.Facing);
+				OnCorrection(Event.Sequence, Event.MovementState);
 			}
 			break;
 

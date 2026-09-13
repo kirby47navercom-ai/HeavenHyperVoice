@@ -7,14 +7,14 @@ add_executable(FieldServer
 target_include_directories(FieldServer PRIVATE src)
 
 # 야생 포켓몬과 그 AI 는 InstanceServer 로 갔다. 필드는 플레이어와 파트너만
-# 있고 전투도 없다. 지형(Nav)은 두 서버가 같이 쓴다.
+# 있고 전투도 없다. 공통 이동 코어은 두 서버가 같이 쓴다.
 #
 # DB 비밀번호는 LoginServer 와 같은 자격증명에서 읽으므로 추가 설정이 없다.
 # 그 API(advapi32)는 Net 이 들고 온다.
 target_link_libraries(FieldServer PRIVATE
     Net
     Data
-    Nav
+    ServerMovement
     FieldShared
 )
 

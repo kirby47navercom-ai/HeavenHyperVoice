@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <map>
 #include <random>
+#include <stdexcept>
 #include <utility>
 
 #include "InstanceGeometry.h"
@@ -23,20 +24,19 @@ constexpr float kWildAreaFraction = 0.8f;
 
 // 야생을 뿌리고 배회시킬 구역. 플레이 테스트에서는 입장 직후 보여야 하므로
 // 시작 지점 주변을 우선 쓴다. 맵이 붙어 있으면 실제로 설 수 있는지는 별도로 검증한다.
-WildArea wildAreaFor(const Map* map) {
+WildArea wildAreaFor(const Map *map) {
     WildArea area;
     area.centerX = kSpawnX;
     area.centerY = kSpawnY;
     area.halfExtent = kSpawnWildHalfExtent;
 
-    if (map == nullptr || !map->loaded() ||
-        map->canStandAt(kSpawnX, kSpawnY, map->agent(), nullptr)) {
+    if (map == nullptr || !map->loaded() || map->canStandAt(kSpawnX, kSpawnY, map->agent(), nullptr)) {
         return area;
     }
 
     // 시작 지점이 지형 밖인 맵에서는 최후 수단으로 맵 안쪽을 쓴다.
     if (map->bounds().valid) {
-        const nav::Aabb& box = map->bounds();
+        const nav::Aabb &box = map->bounds();
         area.centerX = (box.min.x + box.max.x) * 0.5f;
         area.centerY = (box.min.y + box.max.y) * 0.5f;
         const float halfX = (box.max.x - box.min.x) * 0.5f;
@@ -50,10 +50,15 @@ WildArea wildAreaFor(const Map* map) {
 // 어느 방향으로 가려 해도 첫 샘플에서 막힌다. 자리를 몇 번 다시 굴려 본다.
 constexpr int kSpawnAttempts = 16;
 
-}  // namespace
+} // namespace
 
 RoomManager::RoomManager(RoomSettings settings, std::map<std::uint32_t, InstanceType> types)
     : settings_(std::move(settings)), types_(std::move(types)) {
+    for (const auto& [type, config] : types_) {
+        if (!config.map || !config.map->loaded()) {
+            throw std::invalid_argument("Instance type " + std::to_string(type) + " requires shared collision");
+        }
+    }
     if (settings_.capacity < 1) {
         settings_.capacity = 1;
     }
@@ -72,10 +77,10 @@ bool RoomManager::isKnownType(std::uint32_t type) const {
     return types_.count(type) != 0;
 }
 
-Room* RoomManager::createRoomLocked(std::uint32_t type) {
+Room *RoomManager::createRoomLocked(std::uint32_t type) {
     // isKnownType 을 통과한 뒤에만 불린다.
-    const InstanceType& config = types_.at(type);
-    const Map* map = config.map;
+    const InstanceType &config = types_.at(type);
+    const Map *map = config.map;
 
     auto room = std::make_unique<Room>();
     room->id = nextRoomId_++;
@@ -108,20 +113,19 @@ Room* RoomManager::createRoomLocked(std::uint32_t type) {
         // 한쪽만 막으면 나머지로 새어 나온다.
         std::vector<std::uint16_t> pool = config.wildSpecies;
         if (pool.empty()) {
-            for (const proto::SpeciesBase& base : proto::kSpecies) {
+            for (const proto::SpeciesBase &base : proto::kSpecies) {
                 if (proto::isWildSpawnable(base.dex)) {
                     pool.push_back(base.id);
                 }
             }
         }
-        std::uniform_int_distribution<std::size_t> fromPool(
-            0, pool.empty() ? 0 : pool.size() - 1);
-        const auto pickSpecies = [&](std::mt19937& gen) -> std::uint16_t {
+        std::uniform_int_distribution<std::size_t> fromPool(0, pool.empty() ? 0 : pool.size() - 1);
+        const auto pickSpecies = [&](std::mt19937 &gen) -> std::uint16_t {
             return pool.empty() ? std::uint16_t{0} : pool[fromPool(gen)];
         };
 
-        // 지형이 있으면 navmesh 위에 설 수 있는 자리와 높이를 같이 얻는다.
-        const auto findSpawn = [map](float x, float y, nav::Vec3& out) {
+        // 지형이 있으면 공통 충돌 지형 위에 설 수 있는 자리와 높이를 같이 얻는다.
+        const auto findSpawn = [map](float x, float y, nav::Vec3 &out) {
             out = nav::Vec3{x, y, 0.f};
             if (map == nullptr || !map->loaded()) {
                 return true;
@@ -143,7 +147,7 @@ Room* RoomManager::createRoomLocked(std::uint32_t type) {
             }
             const std::uint16_t species = pickSpecies(rng);
             if (species == 0) {
-                break;  // 뽑을 종족이 없다
+                break; // 뽑을 종족이 없다
             }
             room->world.enterWild(kWildIdBase + static_cast<std::uint64_t>(i), species,
                                   data::Position{type, spawn.x, spawn.y, spawn.z, 0.f});
@@ -155,13 +159,13 @@ Room* RoomManager::createRoomLocked(std::uint32_t type) {
         }
     }
 
-    Room* raw = room.get();
+    Room *raw = room.get();
     rooms_.push_back(std::move(room));
     spdlog::info("room {} opened (type {}, {} rooms total)", raw->id, type, rooms_.size());
     return raw;
 }
 
-Room* RoomManager::join(std::uint32_t type, std::uint32_t preferredRoomId) {
+Room *RoomManager::join(std::uint32_t type, std::uint32_t preferredRoomId) {
     if (!isKnownType(type)) {
         return nullptr;
     }
@@ -170,9 +174,8 @@ Room* RoomManager::join(std::uint32_t type, std::uint32_t preferredRoomId) {
 
     // 파티가 지목한 방이 있으면 먼저 본다. 없어졌거나 꽉 찼으면 아래로 흘러간다.
     if (preferredRoomId != 0) {
-        for (const auto& room : rooms_) {
-            if (room->id == preferredRoomId && room->type == type &&
-                room->players < settings_.capacity) {
+        for (const auto &room : rooms_) {
+            if (room->id == preferredRoomId && room->type == type && room->players < settings_.capacity) {
                 ++room->players;
                 return room.get();
             }
@@ -182,7 +185,7 @@ Room* RoomManager::join(std::uint32_t type, std::uint32_t preferredRoomId) {
     // 자리가 있는 첫 방. 앞에서부터 채워야 방이 흩어지지 않고, 빈 방이 생겨
     // 회수될 기회도 온다.
     int roomsOfType = 0;
-    for (const auto& room : rooms_) {
+    for (const auto &room : rooms_) {
         if (room->type != type) {
             continue;
         }
@@ -197,12 +200,12 @@ Room* RoomManager::join(std::uint32_t type, std::uint32_t preferredRoomId) {
         return nullptr;
     }
 
-    Room* room = createRoomLocked(type);
+    Room *room = createRoomLocked(type);
     room->players = 1;
     return room;
 }
 
-void RoomManager::leave(Room* room) {
+void RoomManager::leave(Room *room) {
     if (room == nullptr) {
         return;
     }
@@ -223,18 +226,18 @@ void RoomManager::tickShard(unsigned shard, unsigned shardCount, float dt) {
 
     // 목록만 사본으로 뜨고 mutex_ 는 바로 놓는다. 틱이 오래 걸리는데 그동안
     // 잡고 있으면 다른 스레드의 join/leave 가 전부 밀린다.
-    std::vector<Room*> mine;
+    std::vector<Room *> mine;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         mine.reserve(rooms_.size() / (shardCount == 0 ? 1 : shardCount) + 1);
-        for (const auto& room : rooms_) {
+        for (const auto &room : rooms_) {
             if (shardCount <= 1 || room->id % shardCount == shard) {
                 mine.push_back(room.get());
             }
         }
     }
 
-    for (Room* room : mine) {
+    for (Room *room : mine) {
         // 방마다 자기 Lua VM 이고, 한 방은 언제나 이 샤드가 맡는다.
         if (room->ai != nullptr) {
             room->world.advanceWild(dt, *room->ai);
@@ -249,7 +252,7 @@ void RoomManager::reapEmpty() {
     std::lock_guard<std::mutex> lock(mutex_);
 
     const auto now = std::chrono::steady_clock::now();
-    const auto expired = [&](const std::unique_ptr<Room>& room) {
+    const auto expired = [&](const std::unique_ptr<Room> &room) {
         if (room->players > 0) {
             return false;
         }
@@ -272,7 +275,7 @@ std::size_t RoomManager::roomCount() const {
 std::size_t RoomManager::playerCount() const {
     std::lock_guard<std::mutex> lock(mutex_);
     std::size_t total = 0;
-    for (const auto& room : rooms_) {
+    for (const auto &room : rooms_) {
         total += static_cast<std::size_t>(room->players);
     }
     return total;
@@ -282,15 +285,15 @@ std::string RoomManager::describe() const {
     std::lock_guard<std::mutex> lock(mutex_);
 
     // 종류별로 묶는다. map 이라 출력 순서가 종류 번호 순으로 고정된다.
-    std::map<std::uint32_t, std::pair<int, int>> byType;  // type -> (방 수, 인원)
-    for (const auto& room : rooms_) {
-        auto& entry = byType[room->type];
+    std::map<std::uint32_t, std::pair<int, int>> byType; // type -> (방 수, 인원)
+    for (const auto &room : rooms_) {
+        auto &entry = byType[room->type];
         ++entry.first;
         entry.second += room->players;
     }
 
     std::string out;
-    for (const auto& [type, entry] : byType) {
+    for (const auto &[type, entry] : byType) {
         if (!out.empty()) {
             out += ", ";
         }
@@ -300,4 +303,4 @@ std::string RoomManager::describe() const {
     return out.empty() ? "no rooms" : out;
 }
 
-}  // namespace heaven::instance
+} // namespace heaven::instance

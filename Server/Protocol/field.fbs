@@ -7,7 +7,7 @@
 // 프레이밍은 chat/login 과 동일하다 (4바이트 LE 길이 + Envelope).
 //
 //   Enter{ticket}  -> EnterAck{entity_id, x, y, z} 접속 후 첫 프레임
-//   Move{x, y}     -> (없음)                       클라 -> 서버, 20Hz
+//   Move{inputs}   -> Correction{sequence, movement} 60Hz 입력을 묶어서 전송
 //   (없음)          -> Snapshot                    서버 -> 클라, 20Hz 틱
 //
 // Spawn/Despawn 은 Snapshot 안에 들어가지만 틱을 기다리지 않고 즉시 나간다.
@@ -25,6 +25,39 @@ enum GachaType : ubyte { None = 0, Fire = 1, Water = 2, Grass = 3, Normal = 4, E
 // dev_* 는 서버가 --dev-no-auth 로 떠 있을 때만 읽는다. 그 모드가 아니면
 // 존재 자체를 무시하므로, 평소에는 이 필드로 인증을 우회할 수 없다.
 // 로그인 서버 없이 필드만 클라이언트와 붙여볼 때 쓴다.
+// Shared core state uses Unreal coordinates without a world-origin offset.
+table CoreState {
+  px:float;
+  py:float;
+  pz:float;
+  vx:float;
+  vy:float;
+  vz:float;
+  ax:float;
+  ay:float;
+  az:float;
+  nx:float;
+  ny:float;
+  nz:float;
+  facing:float;
+  mode:ubyte;
+  roll_ticks:ushort;
+  roll_x:float;
+  roll_y:float;
+  roll_z:float;
+  wall_sliding:bool;
+}
+
+table CoreInput {
+  sequence:uint;
+  x:float;
+  y:float;
+  buttons:ubyte;
+  predicted_x:float;
+  predicted_y:float;
+  predicted_z:float;
+}
+
 table Enter {
   ticket:[ubyte];
 
@@ -35,6 +68,7 @@ table Enter {
   // 인스턴스 서버 전용. 들어갈 인스턴스 종류다. 필드 서버는 읽지 않는다.
   // 뒤에 붙였다 — 앞에 넣으면 기존 슬롯 번호가 밀려 구버전 클라가 깨진다.
   instance_type:uint;
+  core_version:uint;
 }
 
 // 서버 -> 클라. 내 엔티티 번호와 시작 위치.
@@ -63,22 +97,17 @@ table EnterAck {
   // 안 따라온 클라나 시험 스크립트가 엉뚱한 값을 읽는다.
   world_origin_offset:float;
 
-  // 서버가 navmesh/맵 데이터로 확정한 캡슐 기준 높이다.
+  // 서버가 공통 코어로 확정한 캡슐 기준 높이다.
   // 뒤에 붙였다. 앞에 넣으면 기존 슬롯 번호가 밀린다.
   z:float;
+  core_version:uint;
+  collision_hash:ulong;
+  movement:CoreState (required);
 }
 
-// 클라 -> 서버. 서버가 직전 위치와 경과 시간으로 속도 상한을 검사한다.
-// 높이는 서버 맵에서 다시 정한다. 클라가 보낸 Z 를 권위로 삼지 않는다.
+// 클라 -> 서버. 60Hz 입력과 각 입력 직후의 예측 좌표를 순서대로 전송한다.
 table Move {
-  x:float;
-  y:float;
-  facing:float;
-
-  // 뒤에 붙였다. 앞에 넣으면 x/y/facing 의 슬롯 번호가 밀려 기존 클라가 깨진다.
-  // 서버가 위치를 고쳐야 할 때 이 번호를 그대로 돌려주고, 클라는 그 시점부터
-  // 다시 예측한다.
-  sequence:uint;
+  inputs:[CoreInput] (required);
 }
 
 // 캐릭터 외형(커마). login.fbs 의 같은 이름 표와 필드가 1:1 이다.
@@ -130,7 +159,7 @@ table EntityState {
   // attack_sequence 가 있을 때 바라보거나 맞출 대상 엔티티다.
   attack_target_id:ulong;
 
-  // 서버가 navmesh/맵 데이터로 확정한 캡슐 기준 높이다.
+  // 서버가 공통 코어로 확정한 캡슐 기준 높이다.
   // 뒤에 붙였다. 앞에 넣으면 기존 슬롯 번호가 밀린다.
   z:float;
 
@@ -164,6 +193,8 @@ table EntityState {
   partner_velocity_z:float;
   partner_facing:float;
   partner_teleported:bool;
+  movement:CoreState;
+  partner_movement:CoreState;
 }
 
 table Snapshot {
@@ -180,17 +211,10 @@ table Notice {
   text:string;
 }
 
-// 서버 -> 클라. 보낸 좌표를 서버가 고쳤을 때만, 움직인 본인에게만 간다.
-// 정상 이동에 응답하지 않는 이유는 20Hz x 접속자만큼 왕복이 생기기 때문이다.
+// 서버 -> 클라. 검증한 마지막 입력 순번과 전체 상태를 항상 확인 응답한다.
 table Correction {
   sequence:uint;
-  x:float;
-  y:float;
-  facing:float;
-
-  // 서버가 보정한 캡슐 기준 높이다.
-  // 뒤에 붙였다. 앞에 넣으면 기존 슬롯 번호가 밀린다.
-  z:float;
+  movement:CoreState (required);
 }
 
 // 클라 -> 서버. 파티 구성과 꺼낼 한 마리를 정한다.

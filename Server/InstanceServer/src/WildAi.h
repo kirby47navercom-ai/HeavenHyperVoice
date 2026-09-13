@@ -3,7 +3,7 @@
 // 야생 포켓몬 AI 실행기.
 //
 // 행동 선택은 하나의 Lua BT(wild_ai.lua)가 맡고, C++ 은 현재 action 실행 상태와
-// 서버 권위 검증(타깃/거리/navmesh/충돌/속도 적용)을 맡는다.
+// 서버 권위 검증(타깃/거리/공통 충돌 지형/충돌/속도 적용)을 맡는다.
 // Lua 는 처음, action 완료, 차단, 타깃 변화, 플레이어 접근 같은 재판단 지점에서만
 // 호출하고 이동 중에는 기존 action 을 계속 수행한다.
 //
@@ -43,50 +43,42 @@ struct WildIntent {
 };
 
 class WildAi {
-public:
+  public:
     explicit WildAi(std::unique_ptr<WildBt> behavior);
     ~WildAi();
 
-    WildAi(const WildAi&) = delete;
-    WildAi& operator=(const WildAi&) = delete;
+    WildAi(const WildAi &) = delete;
+    WildAi &operator=(const WildAi &) = delete;
 
     // 포켓몬 하나의 다음 목표를 정한다. 이동 중이거나 휴식 중이면 실행 상태만
     // 전진하고, 새 행동 선택이 필요할 때만 Lua BT 를 호출한다.
-    WildIntent decide(std::uint64_t entityId, std::uint16_t species, std::uint32_t mapId,
-                      float x, float y, float z, float dt,
-                      const std::vector<ObservedPlayer>& players);
+    WildIntent decide(std::uint64_t entityId, std::uint16_t species, std::uint32_t mapId, float x, float y,
+                      float z, float dt, const std::vector<ObservedPlayer> &players);
 
     // 돌아다닐 구역. 방을 만들 때 한 번만 부를 것.
-    void setArea(const WildArea& area) { area_ = area; }
+    void setArea(const WildArea &area) {
+        area_ = area;
+    }
 
     // 서버 맵. nullptr 이면 목표점으로 직선 이동한다.
-    void setMap(const Map* map) {
+    void setMap(const Map *map) {
         map_ = map;
         if (map_ != nullptr && map_->loaded()) {
             agent_ = map_->agent();
         }
     }
 
-    // 월드가 목표 방향 이동을 navmesh 위에서 적용하지 못했을 때 부른다.
+    // 월드가 목표 방향 이동을 공통 충돌 지형 위에서 적용하지 못했을 때 부른다.
     void notifyMoveBlocked(std::uint64_t entityId);
 
     // 배회 경로를 재현 가능하게 만든다. 0 이면 생성자에서 만든 비결정 난수를
     // 그대로 쓴다. 기동 시 한 번만 부를 것.
     void seed(unsigned value);
 
-private:
-    enum class RunningAction : std::uint8_t {
-        None,
-        Wander,
-        Chase,
-        Attack
-    };
+  private:
+    enum class RunningAction : std::uint8_t { None, Wander, Chase, Attack };
 
-    enum class WildPhase : std::uint8_t {
-        NeedDecision,
-        Moving,
-        Resting
-    };
+    enum class WildPhase : std::uint8_t { NeedDecision, Moving, Resting };
 
     struct WildBrain {
         RunningAction action = RunningAction::None;
@@ -114,25 +106,25 @@ private:
         bool valid = false;
     };
 
-    WildIntent chooseNextAction(std::uint64_t entityId, std::uint16_t species,
-                                std::uint32_t mapId, float x, float y, float z, WildBrain& brain,
-                                const std::vector<ObservedPlayer>& players);
-    bool beginMove(float x, float y, float z, const MoveAction& action, WildBrain& brain);
-    WildIntent followPath(float x, float y, float z, WildBrain& brain);
-    MoveAction makeWanderAction(float x, float y, const WildDecision& decision);
-    MoveAction makeChaseAction(const WildDecision& decision, const ObservedPlayer& target);
-    WildIntent makeAttackIntent(float x, float y, const WildDecision& decision,
-                                const ObservedPlayer& target, WildBrain& brain);
-    void requestDecision(WildBrain& brain);
-    void beginRest(WildBrain& brain, float seconds);
+    WildIntent chooseNextAction(std::uint64_t entityId, std::uint16_t species, std::uint32_t mapId, float x,
+                                float y, float z, WildBrain &brain,
+                                const std::vector<ObservedPlayer> &players);
+    bool beginMove(float x, float y, float z, const MoveAction &action, WildBrain &brain);
+    WildIntent followPath(float x, float y, float z, WildBrain &brain);
+    MoveAction makeWanderAction(float x, float y, const WildDecision &decision);
+    MoveAction makeChaseAction(const WildDecision &decision, const ObservedPlayer &target);
+    WildIntent makeAttackIntent(float x, float y, const WildDecision &decision, const ObservedPlayer &target,
+                                WildBrain &brain);
+    void requestDecision(WildBrain &brain);
+    void beginRest(WildBrain &brain, float seconds);
 
     std::unique_ptr<WildBt> behavior_;
     std::mt19937 rng_;
     WildArea area_;
-    const Map* map_ = nullptr;
+    const Map *map_ = nullptr;
     Pathfinder pathfinder_;
     nav::Agent agent_;
     std::unordered_map<std::uint64_t, WildBrain> brains_;
 };
 
-}  // namespace heaven::instance
+} // namespace heaven::instance
