@@ -85,6 +85,20 @@ void slopeAndLayers() {
     require(!map.canStandAt(-100, 500, map.agent()), "standability silently snapped outside XY");
     require(map.nearestStandable(-100, 500, 250, map.agent(), near, -11900),
             "explicit nearest fallback failed");
+
+    // 기준 z 를 주면 그 언저리만 훑는다. 지면이 멀리 아래에 있으면 실패하고,
+    // 기준을 버려야 찾는다 -- 인스턴스 입장이 z=0 으로 물어봤다가 126m 상공에서
+    // 떨어지던 원인이다. 두 질의의 차이를 여기서 못 박아 둔다.
+    Geometry deep;
+    deep.rectangle(0, 0, 1000, 1000, -12600.f);
+    heaven::Map lowFloor(0.f);
+    deep.load(lowFloor);
+    require(!lowFloor.canStandAt(500, 500, lowFloor.agent(), nullptr, 0.f),
+            "reference z somehow reached a floor 126m below");
+    heaven::nav::Vec3 deepFloor;
+    require(lowFloor.canStandAt(500, 500, lowFloor.agent(), &deepFloor),
+            "no-reference query missed the floor");
+    require(deepFloor.z < -12000.f, "no-reference query grounded at the wrong height");
     std::cout << "PASS slope, exact XY, stacked layers, explicit projection\n";
 }
 
