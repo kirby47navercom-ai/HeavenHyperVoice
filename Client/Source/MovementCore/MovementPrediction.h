@@ -1,21 +1,12 @@
 #pragma once
 
 #include "MovementReplay.h"
+#include "MovementAuthority.h"
 #include <deque>
 #include <vector>
 
 namespace hhv::movement
 {
-// A command always represents one 1/60 second step, including idle input.
-struct PredictedInput
-{
-	Input input;
-	Vec3 position;
-};
-
-constexpr std::size_t MaxPendingInputs = 600;
-constexpr std::size_t MaxInputBatch = 15;
-
 class PredictionQueue
 {
   public:
@@ -26,6 +17,7 @@ class PredictionQueue
 		nextSequence = 1;
 		lastSent = 0;
 		acknowledged = 0;
+		discardedInputs = 0;
 	}
 
 	bool predict(Input input, const Config &config, const CollisionWorld &world)
@@ -63,9 +55,11 @@ class PredictionQueue
 		return batch;
 	}
 
-	bool acknowledge(std::uint32_t sequence, const State &authoritative, const CollisionWorld &world)
+	bool acknowledge(std::uint32_t sequence, const State &authoritative, const CollisionWorld &world,
+	                 std::uint64_t discarded = 0)
 	{
-		if (sequence <= acknowledged || sequence > lastSent || !finite(authoritative.position))
+		if (sequence <= acknowledged || sequence > lastSent || !finite(authoritative.position) ||
+		    discarded < discardedInputs || discarded - discardedInputs > sequence - acknowledged)
 		{
 			return false;
 		}
@@ -78,6 +72,7 @@ class PredictionQueue
 		// Rebuild from the complete server state, including jump and roll state.
 		state = authoritative;
 		acknowledged = sequence;
+		discardedInputs = discarded;
 		for (auto &record : history)
 		{
 			record.before = state;
@@ -89,6 +84,7 @@ class PredictionQueue
 
 	State state;
 	std::deque<StepRecord> history;
+	std::uint64_t discardedInputs = 0;
 
   private:
 	std::uint32_t nextSequence = 1;
@@ -96,72 +92,4 @@ class PredictionQueue
 	std::uint32_t acknowledged = 0;
 };
 
-class AuthoritativeQueue
-{
-  public:
-	void reset(const State &initial)
-	{
-		state = initial;
-		pending.clear();
-		received = 0;
-		acknowledged = 0;
-		budget = static_cast<float>(MaxInputBatch);
-		mismatches = 0;
-	}
-
-	bool enqueue(const std::vector<PredictedInput> &batch)
-	{
-		if (batch.empty() || batch.size() > MaxInputBatch || pending.size() + batch.size() > MaxPendingInputs)
-		{
-			return false;
-		}
-
-		std::uint32_t expected = received;
-		for (const auto &frame : batch)
-		{
-			if (expected == UINT32_MAX || frame.input.sequence != ++expected || !valid(frame.input) ||
-			    !finite(frame.position))
-			{
-				return false;
-			}
-		}
-
-		received = expected;
-		pending.insert(pending.end(), batch.begin(), batch.end());
-		return true;
-	}
-
-	bool advance(float elapsed, const Config &config, const CollisionWorld &world)
-	{
-		// Server time bounds simulation speed; packet frequency cannot buy extra ticks.
-		budget =
-		    std::min(static_cast<float>(MaxInputBatch), budget + std::clamp(elapsed, 0.f, .25f) / FixedDt);
-		bool advanced = false;
-		while (!pending.empty() && budget >= 1.f)
-		{
-			const auto frame = pending.front();
-			pending.pop_front();
-			simulate(state, frame.input, config, world);
-
-			if (length(state.position - frame.position) > .5f)
-			{
-				++mismatches;
-			}
-
-			acknowledged = frame.input.sequence;
-			budget -= 1.f;
-			advanced = true;
-		}
-		return advanced;
-	}
-
-	State state;
-	std::uint32_t acknowledged = 0;
-	std::uint64_t mismatches = 0;
-
-  private:
-	std::deque<PredictedInput> pending;
-	std::uint32_t received = 0;
-	float budget = 0;
-};
 } // namespace hhv::movement

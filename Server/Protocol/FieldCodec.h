@@ -186,10 +186,11 @@ inline Bytes encodeSnapshot(const std::vector<EntityView> &spawned, const std::v
     return detail::wrapField(fbb, HeavenField::Payload::Snapshot, builder.Finish().Union());
 }
 
-inline Bytes encodeCorrection(std::uint32_t sequence, const hhv::movement::State &state) {
+inline Bytes encodeCorrection(std::uint32_t sequence, const hhv::movement::State &state,
+                              std::uint64_t discardedInputs = 0) {
     flatbuffers::FlatBufferBuilder fbb;
     const auto movement = hhv::movement::wire::encodeState(fbb, state);
-    const auto correction = HeavenField::CreateCorrection(fbb, sequence, movement);
+    const auto correction = HeavenField::CreateCorrection(fbb, sequence, movement, discardedInputs);
     return detail::wrapField(fbb, HeavenField::Payload::Correction, correction.Union());
 }
 

@@ -276,8 +276,8 @@ void World::advanceWild(float dt, WildAi &ai) {
         return;
     }
 
-    // 2) AI 실행기는 락 밖에서 돌린다. 대부분의 틱은 현재 목표만 돌려주고,
-    //    새 action 선택이 필요할 때만 Lua BT 를 호출한다.
+    // 2) 현재 FSM 상태의 Lua BT를 락 밖에서 평가한다.
+    //    Lua가 전환/명령을 선택하고, C++ 실행기가 배회 방향이나 추격 경로를 유지한다.
     for (Pending &p : pending) {
         p.intent = ai.decide(p.id, p.species, p.mapId, p.x, p.y, p.z, dt, players);
     }
@@ -498,7 +498,11 @@ void World::advancePlayers(float dt) {
         entity.velocityY = state.velocity.y;
         entity.velocityZ = state.velocity.z;
         entity.movedThisTick = true;
-        sendTo(entity, proto::encodeCorrection(entity.movement.acknowledged, state));
+        if (entity.movement.hasCorrection()) {
+            sendTo(entity, proto::encodeCorrection(entity.movement.acknowledged,
+                                                   entity.movement.correctionState(),
+                                                   entity.movement.discardedInputs));
+        }
 
         const int sector = sectorIndex(location.x, location.y);
         if (sector != entity.sector) {

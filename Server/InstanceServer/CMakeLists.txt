@@ -6,14 +6,24 @@
 
 find_package(Lua REQUIRED)
 find_package(sol2 CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
+
+add_library(WildPokemonAI STATIC
+    src/WildAi.cpp
+    src/WildBt.cpp
+    src/WildPokemonAIFSM.cpp
+    src/WildPokemonAIAction.cpp
+    src/WildPokemonAIWanderAction.cpp
+    src/WildPokemonAIBattleAction.cpp
+)
+target_include_directories(WildPokemonAI PUBLIC src PRIVATE ${LUA_INCLUDE_DIR})
+target_link_libraries(WildPokemonAI PUBLIC ServerMovement PRIVATE spdlog::spdlog sol2::sol2 ${LUA_LIBRARIES})
 
 add_executable(InstanceServer
     src/main.cpp
     src/InstanceHandler.cpp
     src/RoomManager.cpp
     src/World.cpp
-    src/WildAi.cpp
-    src/WildBt.cpp
 )
 
 target_include_directories(InstanceServer PRIVATE src)
@@ -23,10 +33,16 @@ target_link_libraries(InstanceServer PRIVATE
     Data
     ServerMovement
     FieldShared
-    sol2::sol2
-    ${LUA_LIBRARIES}
+    WildPokemonAI
 )
-target_include_directories(InstanceServer PRIVATE ${LUA_INCLUDE_DIR})
+
+if(BUILD_TESTING)
+    add_executable(WildPokemonAITests ../tests/WildPokemonAITests.cpp)
+    target_link_libraries(WildPokemonAITests PRIVATE WildPokemonAI)
+    add_test(NAME WildPokemonAITests COMMAND WildPokemonAITests
+        "${CMAKE_CURRENT_SOURCE_DIR}/scripts/wild_ai.lua"
+        "${PROJECT_SOURCE_DIR}/maps/collision/Stage/Filed.hhvcollision")
+endif()
 
 target_compile_definitions(InstanceServer PRIVATE
     # 개발용 인증서/키를 찾기 위한 폴백 경로. Debug 에만 넣는다.

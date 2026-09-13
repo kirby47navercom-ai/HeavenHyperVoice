@@ -119,6 +119,7 @@ struct FHHVFieldEventData
 	// (서버 = 언리얼 + offset). 필드와 인스턴스는 월드 크기가 달라 값이 다르다.
 	float OriginOffset = 0.0f;
 	uint32 Sequence = 0;
+	uint64 DiscardedInputs = 0;
 	float X = 0.0f;
 	float Y = 0.0f;
 	float Z = 0.0f;
@@ -212,7 +213,7 @@ class HEAVENHYPERVOICE_API FHHVFieldConnection : public FRunnable
 	void Poll();
 
 	TFunction<void(const FHHVFieldEventData &Event)> OnEnterAck;
-	TFunction<void(uint32 Sequence, const hhv::movement::State &State)> OnCorrection;
+	TFunction<void(uint32 Sequence, const hhv::movement::State &State, uint64 DiscardedInputs)> OnCorrection;
 	TFunction<void(const FHHVFieldSnapshot &Snapshot)> OnSnapshot;
 	TFunction<void(const FString &Text)> OnNotice;
 	TFunction<void(const FHHVFieldPartyState &State)> OnPartyState;

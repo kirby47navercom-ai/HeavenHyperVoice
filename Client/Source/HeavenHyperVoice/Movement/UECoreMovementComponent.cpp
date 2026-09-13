@@ -318,11 +318,12 @@ bool UUECoreMovementComponent::BeginNetworkSimulation(const hhv::movement::State
 	return true;
 }
 
-void UUECoreMovementComponent::AcknowledgeNetworkInput(uint32 Sequence, const hhv::movement::State &State)
+void UUECoreMovementComponent::AcknowledgeNetworkInput(uint32 Sequence, const hhv::movement::State &State,
+                                                      uint64 DiscardedInputs)
 {
 	const auto *World = GetWorld()->GetSubsystem<UUECoreCollisionSubsystem>();
 	if (bNetworkSimulation && World && World->GetCollision() &&
-	    Prediction.acknowledge(Sequence, State, *World->GetCollision()))
+	    Prediction.acknowledge(Sequence, State, *World->GetCollision(), DiscardedInputs))
 	{
 		if (!hhv::movement::replay::near(CoreState, Prediction.state, .0001f))
 		{

@@ -516,6 +516,7 @@ void FHHVFieldConnection::DispatchFrame(const uint8 *Data, int32 Size)
 		const HeavenField::Correction *Correction = Envelope->payload_as_Correction();
 		Event.Type = EHHVFieldEvent::Correction;
 		Event.Sequence = Correction->sequence();
+		Event.DiscardedInputs = Correction->discarded_inputs();
 		Event.MovementState = hhv::movement::wire::decodeState(*Correction->movement());
 		break;
 	}
@@ -646,7 +647,7 @@ void FHHVFieldConnection::Poll()
 		case EHHVFieldEvent::Correction:
 			if (OnCorrection)
 			{
-				OnCorrection(Event.Sequence, Event.MovementState);
+				OnCorrection(Event.Sequence, Event.MovementState, Event.DiscardedInputs);
 			}
 			break;
 

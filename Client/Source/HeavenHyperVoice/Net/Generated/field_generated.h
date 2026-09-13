@@ -1603,7 +1603,8 @@ struct Correction FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef CorrectionBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
     VT_SEQUENCE = 4,
-    VT_MOVEMENT = 6
+    VT_MOVEMENT = 6,
+    VT_DISCARDED_INPUTS = 8
   };
   uint32_t sequence() const {
     return GetField<uint32_t>(VT_SEQUENCE, 0);
@@ -1611,12 +1612,16 @@ struct Correction FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   const HeavenField::CoreState *movement() const {
     return GetPointer<const HeavenField::CoreState *>(VT_MOVEMENT);
   }
+  uint64_t discarded_inputs() const {
+    return GetField<uint64_t>(VT_DISCARDED_INPUTS, 0);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<uint32_t>(verifier, VT_SEQUENCE, 4) &&
            VerifyOffsetRequired(verifier, VT_MOVEMENT) &&
            verifier.VerifyTable(movement()) &&
+           VerifyField<uint64_t>(verifier, VT_DISCARDED_INPUTS, 8) &&
            verifier.EndTable();
   }
 };
@@ -1630,6 +1635,9 @@ struct CorrectionBuilder {
   }
   void add_movement(::flatbuffers::Offset<HeavenField::CoreState> movement) {
     fbb_.AddOffset(Correction::VT_MOVEMENT, movement);
+  }
+  void add_discarded_inputs(uint64_t discarded_inputs) {
+    fbb_.AddElement<uint64_t>(Correction::VT_DISCARDED_INPUTS, discarded_inputs, 0);
   }
   explicit CorrectionBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
@@ -1646,8 +1654,10 @@ struct CorrectionBuilder {
 inline ::flatbuffers::Offset<Correction> CreateCorrection(
     ::flatbuffers::FlatBufferBuilder &_fbb,
     uint32_t sequence = 0,
-    ::flatbuffers::Offset<HeavenField::CoreState> movement = 0) {
+    ::flatbuffers::Offset<HeavenField::CoreState> movement = 0,
+    uint64_t discarded_inputs = 0) {
   CorrectionBuilder builder_(_fbb);
+  builder_.add_discarded_inputs(discarded_inputs);
   builder_.add_movement(movement);
   builder_.add_sequence(sequence);
   return builder_.Finish();

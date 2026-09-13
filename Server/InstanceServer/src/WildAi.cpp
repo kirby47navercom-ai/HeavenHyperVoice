@@ -1,440 +1,98 @@
 #include "WildAi.h"
 
-#include <algorithm>
+#include "WildBt.h"
+#include "WildPokemonAIBattleAction.h"
+#include "WildPokemonAIWanderAction.h"
 #include <cmath>
-#include <random>
 #include <stdexcept>
 #include <utility>
 
-#include "InstanceGeometry.h"
-#include "WildBt.h"
-
 namespace heaven::instance {
 
-namespace {
-
-constexpr float kDefaultWanderRadius = 1500.f;
-constexpr float kMinWanderRadius = 100.f;
-constexpr float kMaxWanderRadius = 3000.f;
-constexpr float kDefaultArriveRadius = 80.f;
-constexpr float kMinAcceptanceRadius = 30.f;
-constexpr float kMaxAcceptanceRadius = 600.f;
-constexpr float kMinRestSeconds = 0.1f;
-constexpr float kMaxRestSeconds = 8.f;
-constexpr float kPi = 3.14159265358979323846f;
-constexpr float kAggroRadius = 900.f;
-constexpr float kAttackRadius = 180.f;
-constexpr float kLoseTargetRadius = 1800.f;
-constexpr float kChaseRepathDistance = 180.f;
-constexpr float kActionRetrySeconds = 0.5f;
-constexpr float kMinReconsiderSeconds = 0.1f;
-constexpr float kMaxReconsiderSeconds = 2.f;
-constexpr int kWanderGoalAttempts = 8;
-
-float clampAreaX(float value, const WildArea& area) {
-    return std::clamp(value, area.centerX - area.halfExtent, area.centerX + area.halfExtent);
-}
-
-float clampAreaY(float value, const WildArea& area) {
-    return std::clamp(value, area.centerY - area.halfExtent, area.centerY + area.halfExtent);
-}
-
-float clampFinite(float value, float fallback, float minValue, float maxValue) {
-    return std::isfinite(value) ? std::clamp(value, minValue, maxValue) : fallback;
-}
-
-const ObservedPlayer* findPlayerById(const std::vector<ObservedPlayer>& players,
-                                     std::uint64_t entityId, std::uint32_t mapId) {
-    if (entityId == 0) {
-        return nullptr;
-    }
-    for (const ObservedPlayer& player : players) {
-        if (player.entityId == entityId && player.mapId == mapId) {
-            return &player;
-        }
-    }
-    return nullptr;
-}
-
-const ObservedPlayer* findNearestPlayer(float x, float y, std::uint32_t mapId,
-                                        const std::vector<ObservedPlayer>& players,
-                                        float radius) {
-    const float radiusSquared = radius * radius;
-    const ObservedPlayer* nearest = nullptr;
-    float nearestDistanceSquared = radiusSquared;
-    for (const ObservedPlayer& player : players) {
-        if (player.mapId != mapId) {
-            continue;
-        }
-        const float dx = player.x - x;
-        const float dy = player.y - y;
-        const float d2 = dx * dx + dy * dy;
-        if (d2 <= nearestDistanceSquared) {
-            nearest = &player;
-            nearestDistanceSquared = d2;
-        }
-    }
-    return nearest;
-}
-
-bool isPlayerInRange(float x, float y, const ObservedPlayer& player, float radius) {
-    const float dx = player.x - x;
-    const float dy = player.y - y;
-    return dx * dx + dy * dy <= radius * radius;
-}
-
-}  // namespace
-
 WildAi::WildAi(std::unique_ptr<WildBt> behavior)
-    : behavior_(std::move(behavior)), rng_(std::random_device{}()) {
-    if (behavior_ == nullptr) {
+    : behavior_(std::move(behavior)), random_(std::random_device{}()) {
+    if (!behavior_) {
         throw std::invalid_argument("wild behavior tree is required");
     }
 }
 
 WildAi::~WildAi() = default;
 
-WildIntent WildAi::decide(std::uint64_t entityId, std::uint16_t species, std::uint32_t mapId,
-                          float x, float y, float z, float dt,
-                          const std::vector<ObservedPlayer>& players) {
-    WildBrain& brain = brains_[entityId];
-    const float safeDt = std::max(dt, 0.f);
-    brain.replanRemainingSeconds = std::max(0.f, brain.replanRemainingSeconds - safeDt);
-
-    const ObservedPlayer* aggroPlayer =
-        findNearestPlayer(x, y, mapId, players, kAggroRadius);
-    if (brain.action != RunningAction::Chase &&
-        brain.action != RunningAction::Attack &&
-        aggroPlayer != nullptr) {
-        requestDecision(brain);
-    }
-
-    const bool trackingTarget =
-        (brain.action == RunningAction::Chase || brain.action == RunningAction::Attack) &&
-        brain.targetId != 0;
-    if (trackingTarget) {
-        const ObservedPlayer* target = findPlayerById(players, brain.targetId, mapId);
-        if (target == nullptr || !isPlayerInRange(x, y, *target, kLoseTargetRadius)) {
-            brain.targetId = 0;
-            brain.action = RunningAction::None;
-            requestDecision(brain);
-        } else if (brain.action == RunningAction::Chase &&
-                   brain.phase == WildPhase::Moving &&
-                   isPlayerInRange(x, y, *target, kAttackRadius)) {
-            requestDecision(brain);
-        } else if (brain.phase == WildPhase::Moving &&
-                   distanceSquared(target->x, target->y, brain.lastTargetX,
-                                   brain.lastTargetY) >
-                       kChaseRepathDistance * kChaseRepathDistance &&
-                   brain.replanRemainingSeconds <= 0.f) {
-            requestDecision(brain);
-        }
-    }
-
-    if (brain.phase == WildPhase::Moving) {
-        WildIntent intent = followPath(x, y, z, brain);
-        if (!intent.moving) {
-            beginRest(brain, brain.restAfterArriveSeconds);
-        }
-        return intent;
-    }
-
-    if (brain.phase == WildPhase::Resting) {
-        brain.restRemainingSeconds = std::max(0.f, brain.restRemainingSeconds - safeDt);
-        if (brain.restRemainingSeconds > 0.f) {
-            return {};
-        }
-        brain.phase = WildPhase::NeedDecision;
-    }
-
-    return chooseNextAction(entityId, species, mapId, x, y, z, brain, players);
+void WildAi::setArea(const WildArea& area) {
+    area_ = area;
 }
 
-void WildAi::notifyMoveBlocked(std::uint64_t entityId) {
-    const auto it = brains_.find(entityId);
-    if (it == brains_.end()) {
-        return;
-    }
-
-    // 막힌 목표를 계속 붙잡으면 매 틱 같은 이동을 시도한다.
-    // 짧게 쉰 뒤 Lua BT 에 새 action 을 묻는다.
-    it->second.path.clear();
-    it->second.pathIndex = 0;
-    beginRest(it->second, 0.25f);
+void WildAi::setMap(const Map* map) {
+    map_ = map;
 }
 
 void WildAi::seed(unsigned value) {
-    if (value == 0) {
-        return;
+    if (value != 0) {
+        random_.seed(value);
+        behavior_->seed(value);
     }
-    rng_.seed(value);
-    behavior_->seed(value);
 }
 
-WildIntent WildAi::chooseNextAction(std::uint64_t entityId, std::uint16_t species,
-                                    std::uint32_t mapId, float x, float y, float z,
-                                    WildBrain& brain,
-                                    const std::vector<ObservedPlayer>& players) {
-    const ObservedPlayer* currentTarget = findPlayerById(players, brain.targetId, mapId);
-    if (currentTarget != nullptr && !isPlayerInRange(x, y, *currentTarget, kLoseTargetRadius)) {
-        currentTarget = nullptr;
-    }
-    const ObservedPlayer* nearestPlayer =
-        findNearestPlayer(x, y, mapId, players, kLoseTargetRadius);
+WildPokemonAIState WildAi::stateOf(std::uint64_t entityId) const {
+    const auto found = brains_.find(entityId);
+    return found == brains_.end() ? WildPokemonAIState::Wander : found->second.fsm.state();
+}
 
+void WildAi::notifyMoveBlocked(std::uint64_t entityId) {
+    const auto found = brains_.find(entityId);
+    if (found != brains_.end()) {
+        if (found->second.fsm.state() == WildPokemonAIState::Wander) {
+            found->second.action.finishWander();
+        } else {
+            found->second.action.movement.blocked();
+        }
+    }
+}
+
+WildIntent WildAi::decide(std::uint64_t entityId, std::uint16_t species, std::uint32_t mapId,
+                          float x, float y, float z, float dt,
+                          const std::vector<ObservedPlayer>& players) {
+    auto& brain = brains_[entityId];
+    const float elapsed = std::isfinite(dt) ? std::max(dt, 0.f) : 0.f;
+    brain.action.advanceTime(elapsed);
+
+    const WildPokemonAIActionContext actionContext{{x, y, z}, map_, area_, players, mapId};
     WildBtContext context;
     context.entityId = entityId;
     context.species = species;
     context.mapId = mapId;
-    context.x = x;
-    context.y = y;
-    context.z = z;
-    context.currentTarget = currentTarget;
-    context.nearestPlayer = nearestPlayer;
-    context.aggroRadius = kAggroRadius;
-    context.attackRadius = kAttackRadius;
-    context.loseTargetRadius = kLoseTargetRadius;
+    context.position = actionContext.position;
+    context.state = brain.fsm.state();
+    context.memory = &brain.action;
+    context.players = &players;
 
     const WildDecision decision = behavior_->decide(context);
     if (!decision.valid) {
-        beginRest(brain, kActionRetrySeconds);
+        brain.action.movement.stop();
         return {};
     }
 
-    if (decision.action == WildDecision::Action::Wander) {
-        brain.action = RunningAction::Wander;
-        brain.targetId = 0;
-        brain.replanRemainingSeconds = 0.f;
-
-        for (int attempt = 0; attempt < kWanderGoalAttempts; ++attempt) {
-            const MoveAction action = makeWanderAction(x, y, decision);
-            if (action.valid && beginMove(x, y, z, action, brain)) {
-                brain.phase = WildPhase::Moving;
-                WildIntent intent = followPath(x, y, z, brain);
-                if (!intent.moving) {
-                    beginRest(brain, brain.restAfterArriveSeconds);
-                }
-                return intent;
-            }
+    if (decision.nextState != brain.fsm.state()) {
+        if (decision.targetId != 0 && !findActionTarget(actionContext, decision.targetId)) {
+            return {};
         }
 
-        beginRest(brain, kActionRetrySeconds);
+        brain.fsm.transitionTo(decision.nextState);
+        // 전환 전 경로/대기 시간을 새 행동에 넘기지 않는다.
+        brain.action = {};
+        brain.action.targetId = decision.targetId;
+        // 새 상태의 BT는 다음 틱에 실행한다. 틱 안의 연쇄 전환을 방지한다.
         return {};
     }
 
-    const ObservedPlayer* actionTarget = findPlayerById(players, decision.targetId, mapId);
-    const bool keepingCurrentTarget =
-        brain.targetId != 0 && decision.targetId == brain.targetId;
-    const float allowedRadius = keepingCurrentTarget ? kLoseTargetRadius : kAggroRadius;
-    if (actionTarget == nullptr || !isPlayerInRange(x, y, *actionTarget, allowedRadius)) {
-        beginRest(brain, kActionRetrySeconds);
-        return {};
+    switch (brain.fsm.state()) {
+    case WildPokemonAIState::Wander:
+        return WildPokemonAIWanderAction{}.execute(decision, actionContext, brain.action, random_);
+    case WildPokemonAIState::Battle:
+        return WildPokemonAIBattleAction{}.execute(decision, actionContext, brain.action);
     }
 
-    if (decision.action == WildDecision::Action::Attack) {
-        return makeAttackIntent(x, y, decision, *actionTarget, brain);
-    }
-
-    const MoveAction action = makeChaseAction(decision, *actionTarget);
-    if (!action.valid || !beginMove(x, y, z, action, brain)) {
-        beginRest(brain, kActionRetrySeconds);
-        return {};
-    }
-
-    brain.action = RunningAction::Chase;
-    brain.targetId = actionTarget->entityId;
-    brain.lastTargetX = actionTarget->x;
-    brain.lastTargetY = actionTarget->y;
-    brain.replanRemainingSeconds = action.restAfterArriveSeconds;
-    brain.phase = WildPhase::Moving;
-
-    WildIntent intent = followPath(x, y, z, brain);
-    if (!intent.moving) {
-        beginRest(brain, brain.restAfterArriveSeconds);
-    }
-    return intent;
+    return {};
 }
 
-bool WildAi::beginMove(float x, float y, float z, const MoveAction& action, WildBrain& brain) {
-    if (!map_ || !map_->loaded()) {
-        return false;
-    }
-    brain.targetX = action.targetX;
-    brain.targetY = action.targetY;
-    brain.targetZ = action.targetZ;
-    brain.acceptanceRadius = std::max(action.acceptanceRadius, 1.f);
-    brain.restAfterArriveSeconds = std::max(action.restAfterArriveSeconds, 0.f);
-    brain.path.clear();
-    brain.pathIndex = 0;
-
-    if (distanceSquared(x, y, brain.targetX, brain.targetY) <=
-        brain.acceptanceRadius * brain.acceptanceRadius) {
-        return true;
-    }
-
-    if (map_ != nullptr && map_->loaded()) {
-        nav::Vec3 goal{brain.targetX, brain.targetY, brain.targetZ};
-        nav::Vec3 groundedGoal;
-        if (map_->canStandAt(goal.x, goal.y, agent_, &groundedGoal, z)) {
-            goal = groundedGoal;
-        } else if (map_->nearestStandable(
-                       goal.x,
-                       goal.y,
-                       std::max(brain.acceptanceRadius, agent_.radius * 4.f),
-                       agent_,
-                       groundedGoal, z)) {
-            goal = groundedGoal;
-        } else {
-            return false;
-        }
-
-        PathResult path = pathfinder_.find(
-            *map_,
-            nav::Vec3{x, y, z},
-            goal,
-            agent_);
-        if (!path.found || path.points.empty()) {
-            return false;
-        }
-
-        brain.targetX = goal.x;
-        brain.targetY = goal.y;
-        brain.targetZ = goal.z;
-        brain.path = std::move(path.points);
-    }
-
-    return true;
-}
-
-WildIntent WildAi::followPath(float x, float y, float z, WildBrain& brain) {
-    constexpr float kWaypointRadius = 35.f;
-    const float waypointRadiusSquared = kWaypointRadius * kWaypointRadius;
-
-    while (brain.pathIndex < brain.path.size() &&
-           distanceSquared(x, y, brain.path[brain.pathIndex].x, brain.path[brain.pathIndex].y) <=
-                waypointRadiusSquared) {
-        const nav::Vec3 current{x, y, z};
-        const nav::Vec3 next = brain.pathIndex + 1 < brain.path.size()
-            ? brain.path[brain.pathIndex + 1]
-            : nav::Vec3{brain.targetX, brain.targetY, brain.targetZ};
-        if (map_ != nullptr && map_->loaded() && map_->blockedAlong(current, next, agent_) &&
-            distanceSquared(x, y, brain.path[brain.pathIndex].x, brain.path[brain.pathIndex].y) > 0.25f) {
-            break;
-        }
-        ++brain.pathIndex;
-    }
-
-    if (brain.pathIndex < brain.path.size()) {
-        const nav::Vec3& waypoint = brain.path[brain.pathIndex];
-        WildIntent intent;
-        intent.targetX = waypoint.x;
-        intent.targetY = waypoint.y;
-        intent.moving = true;
-        return intent;
-    }
-
-    if (distanceSquared(x, y, brain.targetX, brain.targetY) <=
-        brain.acceptanceRadius * brain.acceptanceRadius) {
-        return {};
-    }
-
-    WildIntent intent;
-    intent.targetX = brain.targetX;
-    intent.targetY = brain.targetY;
-    intent.moving = true;
-    return intent;
-}
-
-WildAi::MoveAction WildAi::makeWanderAction(float x, float y,
-                                            const WildDecision& decision) {
-    std::uniform_real_distribution<float> unit(0.f, 1.f);
-
-    const float wanderRadius = clampFinite(decision.wanderRadius,
-                                           kDefaultWanderRadius,
-                                           kMinWanderRadius,
-                                           kMaxWanderRadius);
-    const float angle = unit(rng_) * kPi * 2.f;
-    const float radius = unit(rng_) * wanderRadius;
-
-    MoveAction action;
-    action.targetX = clampAreaX(x + std::cos(angle) * radius, area_);
-    action.targetY = clampAreaY(y + std::sin(angle) * radius, area_);
-    action.acceptanceRadius = clampFinite(decision.acceptanceRadius,
-                                          kDefaultArriveRadius,
-                                          kMinAcceptanceRadius,
-                                          kMaxAcceptanceRadius);
-    action.restAfterArriveSeconds = clampFinite(decision.restSeconds,
-                                                2.f,
-                                                kMinRestSeconds,
-                                                kMaxRestSeconds);
-    action.valid =
-        std::isfinite(action.targetX) &&
-        std::isfinite(action.targetY) &&
-        std::isfinite(action.acceptanceRadius) &&
-        std::isfinite(action.restAfterArriveSeconds);
-    return action;
-}
-
-WildAi::MoveAction WildAi::makeChaseAction(const WildDecision& decision,
-                                           const ObservedPlayer& target) {
-    MoveAction action;
-    action.targetX = target.x;
-    action.targetY = target.y;
-    action.targetZ = target.z;
-    action.acceptanceRadius = clampFinite(decision.acceptanceRadius,
-                                          140.f,
-                                          kMinAcceptanceRadius,
-                                          kMaxAcceptanceRadius);
-    action.restAfterArriveSeconds = clampFinite(decision.reconsiderSeconds,
-                                                kActionRetrySeconds,
-                                                kMinReconsiderSeconds,
-                                                kMaxReconsiderSeconds);
-    action.valid = std::isfinite(action.targetX) && std::isfinite(action.targetY);
-    return action;
-}
-
-WildIntent WildAi::makeAttackIntent(float x, float y,
-                                    const WildDecision& decision,
-                                    const ObservedPlayer& target,
-                                    WildBrain& brain) {
-    const float attackRange = clampFinite(decision.attackRange,
-                                          kAttackRadius,
-                                          kMinAcceptanceRadius,
-                                          kMaxAcceptanceRadius);
-    if (!isPlayerInRange(x, y, target, attackRange)) {
-        beginRest(brain, kActionRetrySeconds);
-        return {};
-    }
-
-    brain.action = RunningAction::Attack;
-    brain.targetId = target.entityId;
-    brain.lastTargetX = target.x;
-    brain.lastTargetY = target.y;
-    brain.path.clear();
-    brain.pathIndex = 0;
-
-    WildIntent intent;
-    intent.attackTargetId = target.entityId;
-    intent.attackRange = attackRange;
-    intent.attacking = true;
-
-    beginRest(brain, clampFinite(decision.reconsiderSeconds,
-                                 1.2f,
-                                 kMinReconsiderSeconds,
-                                 kMaxReconsiderSeconds));
-    return intent;
-}
-
-void WildAi::requestDecision(WildBrain& brain) {
-    brain.phase = WildPhase::NeedDecision;
-    brain.restRemainingSeconds = 0.f;
-    brain.path.clear();
-    brain.pathIndex = 0;
-}
-
-void WildAi::beginRest(WildBrain& brain, float seconds) {
-    brain.phase = WildPhase::Resting;
-    brain.restRemainingSeconds = std::max(seconds, 0.f);
-}
-
-}  // namespace heaven::instance
+} // namespace heaven::instance

@@ -185,7 +185,7 @@ int main(int argc, char **argv) {
                                 authoritative.mode == predicted.mode &&
                                 authoritative.rollRemaining == predicted.rollRemaining,
                             "Jump/roll state diverged over the network");
-                    require(prediction.acknowledge(ack->sequence(), authoritative, world),
+                    require(prediction.acknowledge(ack->sequence(), authoritative, world, ack->discarded_inputs()),
                             "Invalid server sequence");
                     acknowledged = ack->sequence();
                 }
@@ -198,6 +198,31 @@ int main(int argc, char **argv) {
             require(movingWild.size() >= std::stoul(argv[4]), "Not enough wild Pokemon moved during the test");
             std::cout << "PASS: " << movingWild.size() << " wild Pokemon moved with finite core states\n";
         }
+
+        // 실제 연결에서 입력 공백 뒤 큰 묶음이 도착하는 경우를 재현한다.
+        for (int tick = 0; tick < 90; ++tick) {
+            require(prediction.predict({0, 0, 0, 0}, Config{}, world), "Recovery prediction stopped");
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(750));
+        for (int batch = 0; batch < 6; ++batch) {
+            lastBatch = prediction.takeUnsent();
+            connection.send(moveFrame(lastBatch));
+        }
+        const auto recoveryTarget = lastBatch.back().input.sequence;
+        while (acknowledged < recoveryTarget && connection.receive(body)) {
+            const auto *envelope = heaven::proto::verifyFieldEnvelope(body);
+            require(envelope != nullptr, "Malformed recovery reply");
+            if (const auto *ack = envelope->payload_as_Correction()) {
+                const auto authoritative = wire::decodeState(*ack->movement());
+                require(prediction.acknowledge(ack->sequence(), authoritative, world, ack->discarded_inputs()),
+                        "Recovery correction was rejected");
+                acknowledged = ack->sequence();
+            }
+        }
+        require(acknowledged == recoveryTarget && prediction.history.empty(), "Network backlog did not recover");
+        require(prediction.discardedInputs > 0, "Network recovery did not report discarded inputs");
+        std::cout << "PASS: packet gap and 90-input backlog recovered; discarded="
+                  << prediction.discardedInputs << '\n';
 
         connection.send(moveFrame(lastBatch));
         bool closed = false;

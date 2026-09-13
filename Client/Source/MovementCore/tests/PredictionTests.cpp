@@ -109,9 +109,9 @@ int main()
 			require(server.enqueue(burst), "bounded burst could not be queued");
 			server.advance(0, config, world);
 		}
-		require(server.acknowledged == 15, "packet frequency accelerated simulation");
+		require(server.acknowledged == 0, "packet frequency accelerated simulation");
 		server.advance(FixedDt * 3, config, world);
-		require(server.acknowledged == 18, "server time budget did not replenish");
+		require(server.acknowledged == 3, "server time budget did not replenish");
 		std::cout << "Prediction, replay, validation and server-time budget passed\n";
 	}
 	catch (const std::exception &error)
