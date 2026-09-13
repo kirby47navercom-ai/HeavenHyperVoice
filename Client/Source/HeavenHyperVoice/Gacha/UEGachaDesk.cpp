@@ -1,6 +1,7 @@
 #include "UEGachaDesk.h"
 
 #include "Blueprint/UserWidget.h"
+#include "Engine/AssetManager.h"
 #include "GameFramework/Pawn.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
@@ -118,6 +119,47 @@ bool UUEGachaDeskComponent::Open()
 
 	SetComponentTickEnabled(true);
 	return true;
+}
+
+void UUEGachaDeskComponent::Preload()
+{
+	if (bPreloadStarted)
+	{
+		return;
+	}
+	bPreloadStarted = true;
+	PreloadStage = 0;
+	PreloadNext();
+}
+
+void UUEGachaDeskComponent::PreloadNext()
+{
+	// 순서는 무거운 것부터가 아니라 쓰이는 순서다. 중간에 O 를 눌러도 화면과
+	// 기계는 이미 와 있고, 남은 타입표만 그때 동기로 마저 읽으면 된다.
+	FSoftObjectPath Next;
+	if (PreloadStage == 0)
+	{
+		Next = FSoftObjectPath(kDefaultWidgetPath);
+	}
+	else if (PreloadStage == 1)
+	{
+		Next = FSoftObjectPath(kMachineBlueprintPath);
+	}
+	else if (PreloadStage - 2 < static_cast<int32>(UE_ARRAY_COUNT(kPoolPaths)))
+	{
+		Next = FSoftObjectPath(kPoolPaths[PreloadStage - 2]);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Verbose, TEXT("gacha: preload done"));
+		return;
+	}
+
+	++PreloadStage;
+
+	// 하나가 끝나면 그 콜백이 다음 것을 건다. 한 번에 하나만 떠 있다.
+	PreloadHandles.Add(UAssetManager::GetStreamableManager().RequestAsyncLoad(
+		Next, FStreamableDelegate::CreateUObject(this, &UUEGachaDeskComponent::PreloadNext)));
 }
 
 bool UUEGachaDeskComponent::SpawnMachines()

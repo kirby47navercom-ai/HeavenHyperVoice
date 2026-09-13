@@ -35,6 +35,13 @@ AUEPlayerController::AUEPlayerController()
 	bShowMouseCursor = false;
 }
 
+// 필드에 들어오고 이만큼 뒤에 뽑기 에셋을 받기 시작한다. 입장 직후는 레벨
+// 스트리밍과 첫 스냅샷이 몰리는 구간이라 비켜 준다.
+namespace
+{
+	constexpr float kGachaPreloadDelaySeconds = 4.0f;
+}
+
 void AUEPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
@@ -61,6 +68,14 @@ void AUEPlayerController::BeginPlay()
 	if (AUEPlayerCharacter* PlayerCharacter = GetControlledPlayerCharacter())
 	{
 		MaxWalkSpeed = PlayerCharacter->GetCoreMovement()->MaxWalkSpeed;
+	}
+
+	// 뽑기 에셋을 미리 받아 둔다. 입장 직후가 아니라 몇 초 뒤에 시작한다 --
+	// 그때는 레벨 스트리밍이 한창이라 같이 걸면 둘 다 느려진다.
+	if (IsLocalController())
+	{
+		GetWorldTimerManager().SetTimer(GachaPreloadTimer, this, &ThisClass::StartGachaPreload,
+			kGachaPreloadDelaySeconds, false);
 	}
 }
 
@@ -207,6 +222,23 @@ void AUEPlayerController::SetupInputComponent()
 	InputComponent->BindKey(EKeys::LeftMouseButton, IE_Released, this, &ThisClass::ReleaseGachaHandle);
 }
 
+UUEGachaDeskComponent* AUEPlayerController::EnsureGachaDesk()
+{
+	if (!GachaDesk)
+	{
+		GachaDesk = NewObject<UUEGachaDeskComponent>(this, TEXT("GachaDesk"));
+		GachaDesk->RegisterComponent();
+	}
+	return GachaDesk;
+}
+
+// 입장 직후가 아니라 몇 초 뒤에 시작한다. 그때는 레벨 스트리밍이 한창이라
+// 같이 걸면 둘 다 느려진다.
+void AUEPlayerController::StartGachaPreload()
+{
+	EnsureGachaDesk()->Preload();
+}
+
 void AUEPlayerController::ToggleGachaDesk()
 {
 	// 채팅을 치는 중이면 O 는 글자다.
@@ -215,12 +247,7 @@ void AUEPlayerController::ToggleGachaDesk()
 		return;
 	}
 
-	if (!GachaDesk)
-	{
-		GachaDesk = NewObject<UUEGachaDeskComponent>(this, TEXT("GachaDesk"));
-		GachaDesk->RegisterComponent();
-	}
-	GachaDesk->Toggle();
+	EnsureGachaDesk()->Toggle();
 }
 
 void AUEPlayerController::GrabGachaHandle()

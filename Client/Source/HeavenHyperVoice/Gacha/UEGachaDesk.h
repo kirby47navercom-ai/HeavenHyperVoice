@@ -12,6 +12,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Engine/StreamableManager.h"
 #include "Templates/SubclassOf.h"
 
 #include "UEGachaDesk.generated.h"
@@ -43,6 +44,19 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Gacha")
 	void Toggle();
+
+	/**
+	 * 뽑기 에셋을 미리 받아 둔다. 필드에 들어온 뒤 한 번만 부르면 된다.
+	 *
+	 * Open() 이 하는 로드는 기계 블루프린트(캡슐 서른 개)와 타입표 다섯 벌,
+	 * 그리고 그 표가 물고 있는 종족 데이터와 초상화 전부다. 게임 스레드에서
+	 * 한꺼번에 하면 O 를 누르는 순간 화면이 멈춘다.
+	 *
+	 * 한 번에 하나씩 비동기로 받는다. 한꺼번에 걸면 스트리밍이 몰려 필드
+	 * 프레임이 튀고, 그러면 미리 받는 의미가 없다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Gacha")
+	void Preload();
 
 	UFUNCTION(BlueprintPure, Category = "Gacha")
 	bool IsOpen() const { return bOpen; }
@@ -81,6 +95,9 @@ private:
 	// 레벨에 기계가 없을 때 다섯 대를 띄운다. 실패하면 false.
 	bool SpawnMachines();
 
+	// 다음 한 덩이를 받는다. 다 받으면 아무것도 하지 않는다.
+	void PreloadNext();
+
 	// 손잡이 중심을 기준으로 한 마우스 각도. 중심에 너무 붙거나 기계에서
 	// 너무 멀면 방향을 판단할 수 없어 false 다.
 	bool GetCrankAngle(float& Angle) const;
@@ -96,6 +113,11 @@ private:
 	// 닫을 때 되돌릴 것들. 뽑기방은 닫지 않으므로 쓰이지 않는다.
 	UPROPERTY(Transient) TObjectPtr<AActor> PreviousViewTarget;
 	bool bRestoreCursor = false;
+
+	// 받아 둔 것을 붙잡는다. 놓으면 O 를 누르기 전에 GC 가 도로 버린다.
+	TArray<TSharedPtr<FStreamableHandle>> PreloadHandles;
+	int32 PreloadStage = 0;
+	bool bPreloadStarted = false;
 
 	bool bOpen = false;
 	bool bDragging = false;

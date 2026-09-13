@@ -269,10 +269,17 @@ private:
 	void GrabGachaHandle();
 	void ReleaseGachaHandle();
 
+	// 뽑기 컴포넌트를 만들어 돌려준다. 없으면 그 자리에서 붙인다.
+	class UUEGachaDeskComponent* EnsureGachaDesk();
+
+	// 필드에 들어오고 조금 뒤에 뽑기 에셋을 미리 받기 시작한다.
+	UFUNCTION()
+	void StartGachaPreload();
+
 	// P로 포켓몬 토큰 하나를 받는다. **디버그용이다.**
 	//
-	// 수급처가 아직 없어서 둔 임시 경로다. 서버가 --allow-debug-tokens 로 떠
-	// 있어야 실제로 늘고, 아니면 요청이 조용히 버려진다. 보유량은 클라가 세지
+	// 수급처가 아직 없어서 둔 임시 경로다. 서버에 가림막은 없다 -- 누구나
+	// 부를 수 있으니 수급처가 생기면 양쪽 다 지울 것. 보유량은 클라가 세지
 	// 않는다 — 서버가 TokenBalance 로 알려주는 값이 권위다.
 	//
 	// Enhanced Input 액션이 아니라 InputComponent 에 직접 붙였다. 새 액션을
@@ -396,9 +403,11 @@ private:
 	std::unique_ptr<FHHVChatConnection> ChatConnection;
 	bool bChatInputOpen = false;
 
-	// 뽑기 조작 한 벌. 처음 O 를 누를 때 만든다.
+	// 뽑기 조작 한 벌. 미리 받기를 시작할 때 만들어 둔다.
 	UPROPERTY(Transient)
 	TObjectPtr<class UUEGachaDeskComponent> GachaDesk;
+
+	FTimerHandle GachaPreloadTimer;
 	bool bMouseViewHeld = false;
 	bool bDraggingChat = false;
 	// T로 채팅창 전체를 감춘 상태다.
