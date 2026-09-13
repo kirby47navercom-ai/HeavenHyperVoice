@@ -155,7 +155,8 @@ void UUECharacterLobbySlotWidget::RefreshPreview()
 		}
 	}
 
-	if (PartnerPreviewActorClass)
+	// 파트너가 없으면 미리보기도 없다. 종족 데이터 없이 띄우면 빈 액터가 남는다.
+	if (PartnerPreviewActorClass && ViewData.PartnerSpecies)
 	{
 		AActor* PreviewActor = PreviewViewport->Spawn(PartnerPreviewActorClass);
 		if (AUEPokemonCharacter* PartnerPreview = Cast<AUEPokemonCharacter>(PreviewActor))

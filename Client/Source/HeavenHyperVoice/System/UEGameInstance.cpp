@@ -510,11 +510,9 @@ void UUEGameInstance::ApplyServerCharacters(const TArray<FHHVCharacterSummary>& 
 	UUEPokemonSpeciesCatalog* Catalog = GetSpeciesCatalog();
 	if (!Catalog)
 	{
-		// 로비는 PartnerSpecies 가 채워진 슬롯만 완성 캐릭터로 친다
-		// (IsCharacterSlotOccupied). 카탈로그가 없으면 서버가 보낸 캐릭터가
-		// 조용히 사라지므로, 원인을 로그로 남긴다.
+		// 캐릭터 자체는 뜬다. 파트너만 비어 보이므로 원인을 로그로 남긴다.
 		UE_LOG(LogTemp, Error,
-			TEXT("HHV: SpeciesCatalog is not assigned. Server characters will not appear in the lobby."));
+			TEXT("HHV: SpeciesCatalog is not assigned. Lobby characters will show no partner."));
 	}
 
 	for (int32 Index = 0; Index < ServerCharacters.Num(); ++Index)
@@ -539,8 +537,8 @@ void UUEGameInstance::ApplyServerCharacters(const TArray<FHHVCharacterSummary>& 
 			if (Slot.PartnerSpecies.IsNull())
 			{
 				UE_LOG(LogTemp, Warning,
-					TEXT("HHV: dex %d is not in the catalog; character '%s' will be hidden. ")
-					TEXT("Fill DexNumber on the species data asset."),
+					TEXT("HHV: dex %d is not in the catalog; character '%s' shows without a ")
+					TEXT("partner. Fill DexNumber on the species data asset."),
 					Source.Partner.DexNumber, *Source.Nickname);
 			}
 		}
@@ -597,10 +595,11 @@ bool UUEGameInstance::IsCharacterSlotOccupied(int32 SlotIndex) const
 	}
 
 	const FUECharacterSlotData& Slot = CharacterSlotSave->Slots[SlotIndex];
-	// 이름·외형·파트너가 모두 확정된 슬롯만 로비의 완성 캐릭터로 취급한다.
-	return Slot.bOccupied
-		&& !Slot.CharacterName.TrimStartAndEnd().IsEmpty()
-		&& !Slot.PartnerSpecies.IsNull();
+
+	// 파트너는 보지 않는다. 파트너 없는 캐릭터도 정식 캐릭터다 -- 서버는
+	// speciesId 0 으로 만드는 것("파트너 없이 시작")을 받아 주고 방생도 된다.
+	// 파트너를 조건에 넣었더니 그런 캐릭터가 로비에서 통째로 사라졌다.
+	return Slot.bOccupied && !Slot.CharacterName.TrimStartAndEnd().IsEmpty();
 }
 
 bool UUEGameInstance::SelectCharacterSlot(int32 SlotIndex)

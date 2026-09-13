@@ -112,6 +112,12 @@ void UUECharacterSelectionWidget::RefreshLobby()
 				PartnerDisplayName.RemoveFromStart(TEXT("DA_"));
 				ViewData.PartnerName = FText::FromString(PartnerDisplayName);
 			}
+			else
+			{
+				// 파트너가 없는 캐릭터다. 칸을 비워 두면 앞 슬롯의 이름이 남는다.
+				ViewData.PartnerSpecies = nullptr;
+				ViewData.PartnerName = NSLOCTEXT("CharacterLobby", "NoPartner", "없음");
+			}
 		}
 		else
 		{
