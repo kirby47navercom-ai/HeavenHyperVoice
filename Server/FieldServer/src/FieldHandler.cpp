@@ -303,8 +303,11 @@ bool FieldHandler::handleEnter(TlsSession &session, const HeavenField::Enter &re
             self->send(proto::encodeTokenBalance(tokens));
         }
 
-        spdlog::info("entered: {} (character {}, {}) at ({:.0f}, {:.0f}) - {} in field", character->nickname,
-                     characterId, self->peer(), start.x, start.y, context->world->size());
+        // 해금과 파티 수를 같이 남긴다. 로스터가 비어 파티 화면이 잠겨 보일 때
+        // character_unlocks 행이 없는 것인지 비트가 안 선 것인지 이 줄로 가른다.
+        spdlog::info("entered: {} (character {}, {}) at ({:.0f}, {:.0f}) - {} in field, {} unlocked, {} in party",
+                     character->nickname, characterId, self->peer(), start.x, start.y,
+                     context->world->size(), character->unlocked.size(), character->party.size());
     });
 
     if (!queued) {
