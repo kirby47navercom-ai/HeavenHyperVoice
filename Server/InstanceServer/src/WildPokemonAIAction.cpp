@@ -31,9 +31,15 @@ const ObservedPlayer* findActionTarget(const WildPokemonAIActionContext& context
     return nullptr;
 }
 
+namespace {
+// 실패한 탐색 뒤 쉬는 시간. 파트너 쪽 pathFailRetrySeconds 와 같은 값이다.
+constexpr float kPathFailRetrySeconds = 0.5f;
+} // namespace
+
 void WildPokemonAIMovement::advanceTime(float dt) {
     restRemaining = std::max(0.f, restRemaining - dt);
     replanRemaining = std::max(0.f, replanRemaining - dt);
+    pathFailRemaining = std::max(0.f, pathFailRemaining - dt);
 }
 
 void WildPokemonAIActionMemory::advanceTime(float dt) {
@@ -66,6 +72,12 @@ bool WildPokemonAIMovement::begin(const Map* map, nav::Vec3 position, nav::Vec3 
         return false;
     }
 
+    // 직전 시도가 실패했으면 쉬는 동안은 다시 찾지 않는다. Lua 가 같은 상대를
+    // 계속 Chase 로 고르면 begin 이 매 틱 불리는데, 실패는 최대 비용이다.
+    if (pathFailRemaining > 0.f) {
+        return false;
+    }
+
     requestedGoal = goal;
     acceptanceRadius_ = acceptanceRadius;
     restAfterArrive_ = restAfterArrive;
@@ -75,6 +87,7 @@ bool WildPokemonAIMovement::begin(const Map* map, nav::Vec3 position, nav::Vec3 
     if (!map->canStandAt(goal.x, goal.y, agent, &groundedGoal, position.z) &&
         !map->nearestStandable(goal.x, goal.y, std::max(acceptanceRadius, agent.radius * 4.f),
                                agent, groundedGoal, position.z)) {
+        pathFailRemaining = kPathFailRetrySeconds;
         return false;
     }
 
@@ -82,6 +95,7 @@ bool WildPokemonAIMovement::begin(const Map* map, nav::Vec3 position, nav::Vec3 
     if (horizontalDistanceSquared(position, goal_) > acceptanceRadius_ * acceptanceRadius_) {
         PathResult path = Pathfinder{}.find(*map, position, goal_, agent);
         if (!path.found || path.points.empty()) {
+            pathFailRemaining = kPathFailRetrySeconds;
             return false;
         }
 

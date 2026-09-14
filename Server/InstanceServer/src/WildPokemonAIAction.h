@@ -21,6 +21,10 @@ public:
     bool moving = false;
     float restRemaining = 0.f;
     float replanRemaining = 0.f;
+
+    // 경로 탐색이 실패한 뒤 남은 대기. 실패한 A* 는 언제나 maxSearchNodes 를
+    // 다 쓰므로, 못 가는 상대를 매 틱 다시 쫓으면 그것만으로 틱 예산을 넘긴다.
+    float pathFailRemaining = 0.f;
     nav::Vec3 requestedGoal;
 
 private:

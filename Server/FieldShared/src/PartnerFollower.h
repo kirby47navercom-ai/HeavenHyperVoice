@@ -22,6 +22,10 @@ struct PartnerFollowConfig {
     float waypointRadius = 35.f;
     float blockedRecoverySeconds = 2.f;
     float pathRetrySeconds = 0.25f;
+
+    // 실패한 A* 는 언제나 maxSearchNodes 를 다 쓴다. 도달할 수 없는 자리를
+    // 매 틱 다시 찾으면 그 값을 20Hz 로 낸다. 실패한 뒤에는 이만큼 쉰다.
+    float pathFailRetrySeconds = 0.5f;
 };
 
 struct PartnerOwnerState {
@@ -46,6 +50,9 @@ struct PartnerState {
     float idleSeconds = 0.f;
     float blockedSeconds = 0.f;
     float retrySeconds = 0.f;
+
+    // 경로 탐색이 실패한 뒤 남은 대기. 0 보다 크면 탐색을 아예 하지 않는다.
+    float pathFailSeconds = 0.f;
     nav::Vec3 pathGoal;
     std::vector<nav::Vec3> path;
     std::size_t pathIndex = 0;

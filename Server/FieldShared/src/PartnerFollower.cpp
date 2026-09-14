@@ -152,10 +152,19 @@ bool refreshPath(PartnerState &state, const nav::Vec3 &goal, const Map *map,
         return true;
     }
 
+    // 직전 탐색이 실패했으면 쉬는 동안은 찾지 않는다. 실패는 언제나 최대
+    // 비용(maxSearchNodes 전부)이라, 못 가는 자리를 매 틱 다시 찾으면 그것만으로
+    // 틱 예산을 넘긴다. 여기서 false 를 돌려주면 호출자는 막힌 것으로 보고
+    // 평소의 blocked 복구(끝내 순간이동)를 그대로 탄다.
+    if (state.pathFailSeconds > 0.f) {
+        return false;
+    }
+
     Pathfinder pathfinder;
     PathResult path = pathfinder.find(*map, state.location, goal, map->agent());
     if (!path.found || path.points.empty()) {
         clearPath(state);
+        state.pathFailSeconds = config.pathFailRetrySeconds;
         return false;
     }
 
@@ -205,6 +214,7 @@ bool teleportPartner(PartnerState &state, const nav::Vec3 &target, float facing)
     state.facing = facing;
     state.blockedSeconds = 0.f;
     state.retrySeconds = 0.f;
+    state.pathFailSeconds = 0.f;
     state.movedThisTick = true;
     state.teleportedThisTick = true;
     clearPath(state);
@@ -252,6 +262,7 @@ bool PartnerFollower::initialize(const PartnerOwnerState &owner, std::uint16_t s
     state.idleSeconds = 0.f;
     state.blockedSeconds = 0.f;
     state.retrySeconds = 0.f;
+    state.pathFailSeconds = 0.f;
     clearPath(state);
     state.movedThisTick = true;
     state.teleportedThisTick = true;
@@ -303,6 +314,7 @@ static bool chooseMovement(float dt, const PartnerOwnerState &owner, std::uint16
         clearPath(state);
         state.blockedSeconds = 0.f;
         state.retrySeconds = 0.f;
+        state.pathFailSeconds = 0.f;
         bool changed = false;
         if (length2D(state.velocity) > kSmallDistance) {
             state.velocity = {};
@@ -342,6 +354,7 @@ static bool chooseMovement(float dt, const PartnerOwnerState &owner, std::uint16
         return stopPartner(state);
     };
     state.retrySeconds = std::max(0.f, state.retrySeconds - std::max(dt, 0.f));
+    state.pathFailSeconds = std::max(0.f, state.pathFailSeconds - std::max(dt, 0.f));
     if (state.retrySeconds > 0.f) {
         return blocked();
     }
