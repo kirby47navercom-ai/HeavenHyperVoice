@@ -272,7 +272,11 @@ bool InstanceHandler::handleEnter(TlsSession &session, const HeavenField::Enter 
 }
 
 bool InstanceHandler::handleMove(TlsSession &session, Room &room, const HeavenField::Move &request) {
-    return room.world.move(characterId_, &session, hhv::movement::wire::decodeInputs(request));
+    if (!request.inputs() || request.inputs()->size() > hhv::movement::MaxInputBatch) {
+        return false;
+    }
+    return room.world.move(characterId_, &session, hhv::movement::wire::decodeInputs(request),
+                               request.input_epoch(), request.reset_requested());
 }
 
 bool InstanceHandler::handleSetParty(TlsSession &session, Room &room, const HeavenField::SetParty &request) {

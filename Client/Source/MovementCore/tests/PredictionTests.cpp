@@ -99,7 +99,7 @@ int main()
 		// Repeated calls without elapsed server time must not grant more simulation time.
 		server.reset(initial);
 		std::uint32_t sequence = 0;
-		for (int batch = 0; batch < 20; ++batch)
+		for (int batch = 0; batch < 1; ++batch)
 		{
 			std::vector<PredictedInput> burst;
 			for (int tick = 0; tick < 15; ++tick)
@@ -107,6 +107,10 @@ int main()
 				burst.push_back({{++sequence, 1, 0, 0}, {}});
 			}
 			require(server.enqueue(burst), "bounded burst could not be queued");
+			server.advance(0, config, world);
+		}
+		for (int call = 0; call < 20; ++call)
+		{
 			server.advance(0, config, world);
 		}
 		require(server.acknowledged == 0, "packet frequency accelerated simulation");

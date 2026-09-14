@@ -46,8 +46,8 @@ WildArea wildAreaFor(const Map *map) {
     return area;
 }
 
-// 벽 안에 뜬 야생은 영원히 얼어붙는다. blockedAlong 이 출발점부터 훑으므로
-// 어느 방향으로 가려 해도 첫 샘플에서 막힌다. 자리를 몇 번 다시 굴려 본다.
+// 벽 안에 생성되면 공통 코어가 정상적으로 움직일 수 없다.
+// 충돌 없는 바닥을 찾을 때까지 위치를 제한된 횟수만 다시 뽑는다.
 constexpr int kSpawnAttempts = 16;
 
 } // namespace

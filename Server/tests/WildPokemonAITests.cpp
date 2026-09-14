@@ -283,6 +283,51 @@ void testSharedCoreMovement(const std::string& script, const std::string& collis
     require(chased && attacked, "Battle action follows a shared-core path and attacks after approaching");
 }
 
+void testChaseAcrossElevation() {
+    struct CollisionFile {
+        std::filesystem::path path = std::filesystem::temp_directory_path() /
+            ("hhv-ai-slope-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+             ".hhvcollision");
+
+        ~CollisionFile() {
+            std::error_code error;
+            std::filesystem::remove(path, error);
+        }
+    } file;
+
+    hhv::movement::TriangleWorld collision;
+    collision.build({{{0, 0, 0}, {3000, 0, 900}, {3000, 2000, 900}},
+                     {{0, 0, 0}, {3000, 2000, 900}, {0, 2000, 0}}});
+    std::ofstream output(file.path);
+    require(collision.save(output), "Save sloped AI navigation fixture");
+    output.close();
+
+    heaven::Map map(0.f);
+    std::string error;
+    require(map.loadFromFile(file.path.string(), error), "Build sloped AI NavMesh");
+    hhv::movement::State state;
+    heaven::nav::Vec3 goal;
+    require(map.canStandAt(200, 1000, map.agent(), &state.position) &&
+            map.canStandAt(2200, 1000, map.agent(), &goal), "Resolve chase endpoints on a slope");
+    state.mode = hhv::movement::Mode::Grounded;
+    require(goal.z - state.position.z > 500.f, "Chase target is well above the starting floor");
+
+    WildPokemonAIMovement movement;
+    require(movement.begin(&map, state.position, goal, 35.f, .5f),
+            "Chase uses the target elevation when choosing its destination floor");
+    float accumulator = 0.f;
+    bool grounded = true;
+    for (int tick = 0; tick < 300 && movement.moving; ++tick) {
+        const auto intent = movement.follow(&map, state.position);
+        map.advance(state, accumulator, .05f, {intent.targetX, intent.targetY, state.position.z},
+                    intent.moving, 200.f);
+        grounded = grounded && state.mode == hhv::movement::Mode::Grounded;
+    }
+    require(grounded, "Slope chase retains ground contact");
+    require(!movement.moving && std::hypot(state.position.x - goal.x, state.position.y - goal.y) <= 35.f,
+            "Wild chase finishes its uphill NavMesh route through the common movement core");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -294,6 +339,7 @@ int main(int argc, char** argv) {
         testLuaOwnsTransitions();
         testBadScriptResults();
         testTimedWandering();
+        testChaseAcrossElevation();
         testSharedCoreMovement(argv[1], argv[2]);
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

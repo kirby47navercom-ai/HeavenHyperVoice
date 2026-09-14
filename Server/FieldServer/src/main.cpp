@@ -226,6 +226,7 @@ int main(int argc, char **argv) {
         if (!options.mapFile.empty()) {
             loadedMapFile = heaven::net::resolveResourcePath(options.mapFile, "field map");
             std::string mapError;
+            spdlog::info("field map: loading collision and building NavMesh: {}", loadedMapFile);
             if (!map.loadFromFile(loadedMapFile, mapError)) {
                 throw std::runtime_error("map: " + mapError);
             }
@@ -297,7 +298,6 @@ int main(int argc, char **argv) {
         // 20Hz 틱. 이번 주기에 움직인 것만 뷰어별로 묶어 내보낸다.
         std::thread ticker([&] {
             const auto period = std::chrono::milliseconds(1000 / heaven::proto::kTickHz);
-            heaven::net::TickPacer pacer(period, "field tick");
             auto previous = std::chrono::steady_clock::now();
             while (running.load(std::memory_order_acquire)) {
                 const auto now = std::chrono::steady_clock::now();
@@ -305,7 +305,7 @@ int main(int argc, char **argv) {
                 previous = now;
                 const auto deadline = now + period;
                 world.tick(dt);
-                pacer.sleepUntil(deadline);
+                std::this_thread::sleep_until(deadline);
             }
         });
 

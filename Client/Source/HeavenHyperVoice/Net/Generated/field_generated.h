@@ -823,10 +823,18 @@ inline ::flatbuffers::Offset<EnterAck> CreateEnterAck(
 struct Move FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef MoveBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
-    VT_INPUTS = 4
+    VT_INPUTS = 4,
+    VT_INPUT_EPOCH = 6,
+    VT_RESET_REQUESTED = 8
   };
   const ::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::CoreInput>> *inputs() const {
     return GetPointer<const ::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::CoreInput>> *>(VT_INPUTS);
+  }
+  uint64_t input_epoch() const {
+    return GetField<uint64_t>(VT_INPUT_EPOCH, 1ULL);
+  }
+  bool reset_requested() const {
+    return GetField<uint8_t>(VT_RESET_REQUESTED, 0) != 0;
   }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
@@ -834,6 +842,8 @@ struct Move FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyOffsetRequired(verifier, VT_INPUTS) &&
            verifier.VerifyVector(inputs()) &&
            verifier.VerifyVectorOfTables(inputs()) &&
+           VerifyField<uint64_t>(verifier, VT_INPUT_EPOCH, 8) &&
+           VerifyField<uint8_t>(verifier, VT_RESET_REQUESTED, 1) &&
            verifier.EndTable();
   }
 };
@@ -844,6 +854,12 @@ struct MoveBuilder {
   ::flatbuffers::uoffset_t start_;
   void add_inputs(::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::CoreInput>>> inputs) {
     fbb_.AddOffset(Move::VT_INPUTS, inputs);
+  }
+  void add_input_epoch(uint64_t input_epoch) {
+    fbb_.AddElement<uint64_t>(Move::VT_INPUT_EPOCH, input_epoch, 1ULL);
+  }
+  void add_reset_requested(bool reset_requested) {
+    fbb_.AddElement<uint8_t>(Move::VT_RESET_REQUESTED, static_cast<uint8_t>(reset_requested), 0);
   }
   explicit MoveBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
@@ -859,19 +875,27 @@ struct MoveBuilder {
 
 inline ::flatbuffers::Offset<Move> CreateMove(
     ::flatbuffers::FlatBufferBuilder &_fbb,
-    ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::CoreInput>>> inputs = 0) {
+    ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::CoreInput>>> inputs = 0,
+    uint64_t input_epoch = 1ULL,
+    bool reset_requested = false) {
   MoveBuilder builder_(_fbb);
+  builder_.add_input_epoch(input_epoch);
   builder_.add_inputs(inputs);
+  builder_.add_reset_requested(reset_requested);
   return builder_.Finish();
 }
 
 inline ::flatbuffers::Offset<Move> CreateMoveDirect(
     ::flatbuffers::FlatBufferBuilder &_fbb,
-    const std::vector<::flatbuffers::Offset<HeavenField::CoreInput>> *inputs = nullptr) {
+    const std::vector<::flatbuffers::Offset<HeavenField::CoreInput>> *inputs = nullptr,
+    uint64_t input_epoch = 1ULL,
+    bool reset_requested = false) {
   auto inputs__ = inputs ? _fbb.CreateVector<::flatbuffers::Offset<HeavenField::CoreInput>>(*inputs) : 0;
   return HeavenField::CreateMove(
       _fbb,
-      inputs__);
+      inputs__,
+      input_epoch,
+      reset_requested);
 }
 
 struct Appearance FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -1604,7 +1628,8 @@ struct Correction FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
     VT_SEQUENCE = 4,
     VT_MOVEMENT = 6,
-    VT_DISCARDED_INPUTS = 8
+    VT_DISCARDED_INPUTS = 8,
+    VT_INPUT_EPOCH = 10
   };
   uint32_t sequence() const {
     return GetField<uint32_t>(VT_SEQUENCE, 0);
@@ -1615,6 +1640,9 @@ struct Correction FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   uint64_t discarded_inputs() const {
     return GetField<uint64_t>(VT_DISCARDED_INPUTS, 0);
   }
+  uint64_t input_epoch() const {
+    return GetField<uint64_t>(VT_INPUT_EPOCH, 1ULL);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -1622,6 +1650,7 @@ struct Correction FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyOffsetRequired(verifier, VT_MOVEMENT) &&
            verifier.VerifyTable(movement()) &&
            VerifyField<uint64_t>(verifier, VT_DISCARDED_INPUTS, 8) &&
+           VerifyField<uint64_t>(verifier, VT_INPUT_EPOCH, 8) &&
            verifier.EndTable();
   }
 };
@@ -1639,6 +1668,9 @@ struct CorrectionBuilder {
   void add_discarded_inputs(uint64_t discarded_inputs) {
     fbb_.AddElement<uint64_t>(Correction::VT_DISCARDED_INPUTS, discarded_inputs, 0);
   }
+  void add_input_epoch(uint64_t input_epoch) {
+    fbb_.AddElement<uint64_t>(Correction::VT_INPUT_EPOCH, input_epoch, 1ULL);
+  }
   explicit CorrectionBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -1655,8 +1687,10 @@ inline ::flatbuffers::Offset<Correction> CreateCorrection(
     ::flatbuffers::FlatBufferBuilder &_fbb,
     uint32_t sequence = 0,
     ::flatbuffers::Offset<HeavenField::CoreState> movement = 0,
-    uint64_t discarded_inputs = 0) {
+    uint64_t discarded_inputs = 0,
+    uint64_t input_epoch = 1ULL) {
   CorrectionBuilder builder_(_fbb);
+  builder_.add_input_epoch(input_epoch);
   builder_.add_discarded_inputs(discarded_inputs);
   builder_.add_movement(movement);
   builder_.add_sequence(sequence);

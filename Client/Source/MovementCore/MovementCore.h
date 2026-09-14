@@ -10,7 +10,7 @@ namespace hhv::movement
 constexpr float FixedDt = 1.f / 60.f;
 
 // Simulation/replay compatibility. The independent collision file format is still version 1.
-constexpr std::uint32_t Version = 2;
+constexpr std::uint32_t Version = 3;
 
 struct Vec3
 {

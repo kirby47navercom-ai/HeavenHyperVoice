@@ -94,17 +94,6 @@ Position World::resolvePosition(const Position &position) const {
             resolved.x = grounded.x;
             resolved.y = grounded.y;
             resolved.z = grounded.z;
-        } else if (map_->canStandAt(resolved.x, resolved.y, map_->agent(), &grounded)) {
-            // 기준 z 를 버리고 맵 높이 전체로 다시 찾는다.
-            //
-            // 기준을 주면 그 언저리(stepHeight*2 + floorSnap)만 훑는다. 입장은
-            // z 를 모르니 0 을 넣어 부르는데 Filed 의 지면은 원점에서 -12600 이라
-            // 그 짧은 탐색으로는 바닥을 못 만나고, 실패하면 z 가 0 인 채로 나가서
-            // 126m 상공에 떨어뜨린다. 필드도 같은 자리에서 기준 없는 질의로
-            // 되돌린다.
-            resolved.x = grounded.x;
-            resolved.y = grounded.y;
-            resolved.z = grounded.z;
         }
     }
     return resolved;
@@ -467,14 +456,15 @@ void World::setPartnerSpecies(std::uint64_t characterId, std::uint16_t partnerSp
 }
 
 bool World::move(std::uint64_t characterId, const TlsSession *session,
-                 const std::vector<hhv::movement::PredictedInput> &inputs) {
+                 const std::vector<hhv::movement::PredictedInput> &inputs,
+              std::uint64_t inputEpoch, bool requestReset) {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto found = entities_.find(characterId);
     if (found == entities_.end() || found->second.session.lock().get() != session || map_ == nullptr ||
         !map_->loaded()) {
         return false;
     }
-    return found->second.movement.enqueue(inputs);
+    return found->second.movement.enqueue(inputs, inputEpoch, requestReset);
 }
 
 void World::advancePlayers(float dt) {
@@ -501,7 +491,7 @@ void World::advancePlayers(float dt) {
         if (entity.movement.hasCorrection()) {
             sendTo(entity, proto::encodeCorrection(entity.movement.acknowledged,
                                                    entity.movement.correctionState(),
-                                                   entity.movement.discardedInputs));
+                                                   entity.movement.discardedInputs, entity.movement.epoch()));
         }
 
         const int sector = sectorIndex(location.x, location.y);

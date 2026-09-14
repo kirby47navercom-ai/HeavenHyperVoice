@@ -397,4 +397,55 @@ bool FHHVOfflineMovementTest::RunTest(const FString&)
 	}
 	return true;
 }
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FHHVCoreNetworkResetTest, "HHV.Movement.Core.NetworkHardReset",
+                                 EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FHHVCoreNetworkResetTest::RunTest(const FString &)
+{
+	FCoreTestScene Scene(TEXT("/Game/Level/UEDPIE_4_PlayerTestLevel"));
+	auto *Collision = Scene.World->GetSubsystem<UUECoreCollisionSubsystem>();
+	if (!TestTrue(TEXT("Load reset test collision"), Collision->EnsureReady()))
+	{
+		return false;
+	}
+	Scene.Advance(120);
+	const auto Baseline = Scene.Movement->GetCoreState();
+	if (!TestTrue(TEXT("Start network simulation"),
+	              Scene.Movement->BeginNetworkSimulation(Baseline, Collision->GetCollision()->hash())))
+	{
+		return false;
+	}
+	Scene.Advance(30, FVector(1, 0, 0));
+	Scene.Movement->TakeNetworkInputs();
+	Scene.Movement->RequestCoreJump();
+	Scene.Movement->RequestCoreRoll();
+	Scene.Tick(hhv::movement::FixedDt * .5f);
+
+	Scene.Movement->AcknowledgeNetworkInput(0, Baseline, 30, 2);
+	TestEqual(TEXT("Actor is snapped to authoritative position"), Scene.Pawn->GetActorLocation(),
+	          FVector(Baseline.position.x, Baseline.position.y, Baseline.position.z));
+	TestTrue(TEXT("Full movement state matches the reset snapshot"),
+	         hhv::movement::replay::near(Scene.Movement->GetCoreState(), Baseline, .0001f));
+	TestEqual(TEXT("Input epoch advances"), Scene.Movement->GetInputEpoch(), uint64(2));
+	TestTrue(TEXT("Both sent and unsent history is cleared"), Scene.Movement->TakeNetworkInputs().empty());
+	Scene.Movement->AcknowledgeNetworkInput(15, {}, 0, 1);
+	TestTrue(TEXT("Old correction cannot undo the snap"),
+	         hhv::movement::replay::near(Scene.Movement->GetCoreState(), Baseline, .0001f));
+
+	Scene.Tick(hhv::movement::FixedDt * .5f);
+	TestTrue(TEXT("Old fractional frame time was cleared"), Scene.Movement->TakeNetworkInputs().empty());
+	Scene.Tick(hhv::movement::FixedDt * .5f, FVector(0, 1, 0));
+	const auto Fresh = Scene.Movement->TakeNetworkInputs();
+	if (TestEqual(TEXT("Only fresh input is sent"), Fresh.size(), size_t(1)))
+	{
+		TestEqual(TEXT("Fresh epoch starts at input one"), Fresh.front().input.sequence, uint32(1));
+		TestEqual(TEXT("Pending old jump and roll were discarded"), Fresh.front().input.buttons, uint8(0));
+	}
+
+	Scene.Advance(121, FVector(1, 0, 0));
+	TestTrue(TEXT("Missing corrections trigger a reset request"), Scene.Movement->NeedsInputReset());
+	Scene.Movement->AcknowledgeNetworkInput(0, Baseline, 30, 3);
+	TestFalse(TEXT("New baseline releases reset wait"), Scene.Movement->NeedsInputReset());
+	return true;
+}
 #endif

@@ -14,6 +14,8 @@ movement::Config nav::Agent::config() const {
 }
 
 bool Map::loadFromFile(const std::string &path, std::string &error) {
+    loaded_ = false;
+    error.clear();
     std::ifstream input(path);
     if (!input || !collision_.load(input)) {
         error = "cannot load canonical collision file: " + path;
@@ -36,7 +38,8 @@ bool Map::loadFromFile(const std::string &path, std::string &error) {
             bounds_.max.z = std::max(bounds_.max.z, vertex.z);
         }
     }
-    return true;
+    loaded_ = navigation_.build(collision_, agent_.config(), error);
+    return loaded_;
 }
 
 nav::Vec3 Map::toCore(nav::Vec3 value) const {
@@ -96,59 +99,12 @@ bool Map::nearestStandable(float x, float y, float radius, const nav::Agent &age
 }
 
 bool Map::blockedAlong(const nav::Vec3 &from, const nav::Vec3 &to, const nav::Agent &agent) const {
-    if (!loaded() || !movement::finite(from) || !movement::finite(to)) {
+    // 이 NavMesh는 맵의 기본 캡슐 규격으로 만들어졌다. 다른 크기를 조용히 통과시키지 않는다.
+    if (!loaded() || agent.radius != agent_.radius || agent.halfHeight != agent_.halfHeight ||
+        agent.maxStepHeight != agent_.maxStepHeight || agent.maxSlopeAngleDegrees != agent_.maxSlopeAngleDegrees) {
         return true;
     }
-
-    const auto config = agent.config();
-    movement::State probe;
-    probe.position = toCore(from);
-    probe.mode = movement::Mode::Grounded;
-    const auto goal = toCore(to);
-    const auto segment = goal - probe.position;
-
-    // Clear segments with continuous floor support need no acceleration simulation.
-    // The core's capsule and slope rules still decide whether the route is usable.
-    const auto obstruction = collision_.sweep(probe.position, segment, config.radius, config.halfHeight);
-    if (!obstruction.blocking) {
-        const float spacing = std::max(config.radius * .5f, 1.f);
-        const int samples = static_cast<int>(std::ceil(movement::length(segment) / spacing));
-        bool supported = samples <= 4096;
-        for (int sample = 0; supported && sample <= samples; ++sample) {
-            movement::State floor;
-            floor.position = probe.position + segment * (static_cast<float>(sample) / std::max(samples, 1));
-            const float expectedZ = floor.position.z;
-            supported = movement::findFloor(floor, config, collision_, config.floorSnap) &&
-                        std::abs(floor.position.z - expectedZ) <= config.skin * 2.f;
-        }
-        if (supported) {
-            return false;
-        }
-    }
-
-    // Stairs and changing slopes need the full walking simulation.
-    const int steps = std::min(1800, static_cast<int>(movement::length(goal - probe.position) /
-                                                      (config.walkSpeed * movement::FixedDt)) +
-                                         60);
-    for (int index = 0; index < steps; ++index) {
-        const auto delta = goal - probe.position;
-        const float horizontal = std::hypot(delta.x, delta.y);
-        if (horizontal < 5.f && std::abs(delta.z) <= config.stepHeight) {
-            return false;
-        }
-
-        const auto direction = movement::normalized({delta.x, delta.y, 0});
-        movement::Input input;
-        input.x = direction.x;
-        input.y = direction.y;
-        const auto previous = probe.position;
-        movement::simulate(probe, input, config, collision_);
-        if (probe.mode != movement::Mode::Grounded ||
-            (index > 4 && movement::length(probe.position - previous) < .01f)) {
-            return true;
-        }
-    }
-    return true;
+    return !navigation_.clearSegment(toCore(from), toCore(to));
 }
 
 void Map::advance(movement::State &state, float &accumulator, float dt, nav::Vec3 target, bool moving,

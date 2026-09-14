@@ -37,6 +37,19 @@ struct Geometry {
         triangles.push_back({point(x0, y0), point(x1, y1), point(x0, y1)});
     }
 
+    void wall(float x0, float y0, float x1, float y1, float height) {
+        rectangle(x0, y0, x1, y1, height);
+        const hhv::movement::Vec3 corners[] = {{x0, y0, 0}, {x1, y0, 0},
+                                               {x1, y1, 0}, {x0, y1, 0}};
+        const hhv::movement::Vec3 up{0, 0, height};
+        for (int index = 0; index < 4; ++index) {
+            const auto a = corners[index];
+            const auto b = corners[(index + 1) % 4];
+            triangles.push_back({a, b, b + up});
+            triangles.push_back({a, b + up, a + up});
+        }
+    }
+
     void load(heaven::Map &map) {
         hhv::movement::TriangleWorld world;
         world.build(triangles);
@@ -81,25 +94,65 @@ void slopeAndLayers() {
     const auto upper = ground(map, 1000, 500, 1100);
     require(upper.z > 1000, "upper layer not selected");
     require(map.blockedAlong(from, upper, map.agent()), "2D raycast allowed a layer change");
+    require(!heaven::Pathfinder{}.find(map, from, upper, map.agent()).found,
+            "disconnected layers produced a complete path");
+    auto floating = from;
+    floating.z += 200.f;
+    require(!heaven::Pathfinder{}.find(map, floating, from, map.agent()).found,
+            "sloped polygon bounds accepted a point far above its surface");
     heaven::nav::Vec3 near;
     require(!map.canStandAt(-100, 500, map.agent()), "standability silently snapped outside XY");
     require(map.nearestStandable(-100, 500, 250, map.agent(), near, -11900),
             "explicit nearest fallback failed");
-
-    // 기준 z 를 주면 그 언저리만 훑는다. 지면이 멀리 아래에 있으면 실패하고,
-    // 기준을 버려야 찾는다 -- 인스턴스 입장이 z=0 으로 물어봤다가 126m 상공에서
-    // 떨어지던 원인이다. 두 질의의 차이를 여기서 못 박아 둔다.
-    Geometry deep;
-    deep.rectangle(0, 0, 1000, 1000, -12600.f);
-    heaven::Map lowFloor(0.f);
-    deep.load(lowFloor);
-    require(!lowFloor.canStandAt(500, 500, lowFloor.agent(), nullptr, 0.f),
-            "reference z somehow reached a floor 126m below");
-    heaven::nav::Vec3 deepFloor;
-    require(lowFloor.canStandAt(500, 500, lowFloor.agent(), &deepFloor),
-            "no-reference query missed the floor");
-    require(deepFloor.z < -12000.f, "no-reference query grounded at the wrong height");
     std::cout << "PASS slope, exact XY, stacked layers, explicit projection\n";
+}
+
+void tilesWallsAndSteps() {
+    Geometry geometry;
+    geometry.rectangle(0, 0, 12000, 3000);
+    geometry.wall(5700, 500, 6300, 2500, 300);
+    heaven::Map map(153600.f);
+    geometry.load(map);
+    const auto start = ground(map, 154100, 155100);
+    const auto goal = ground(map, 165100, 155100);
+    require(map.navigation().polygonCount() > 0, "NavMesh contains no polygons");
+    require(map.blockedAlong(start, goal, map.agent()), "straight segment passed through wall");
+    const auto path = heaven::Pathfinder{}.find(map, start, goal, map.agent());
+    require(path.found && path.points.size() > 2, "cross-tile wall detour missing");
+    for (std::size_t index = 1; index < path.points.size(); ++index) {
+        require(!map.blockedAlong(path.points[index - 1], path.points[index], map.agent()),
+                "detour left its connected polygon corridor");
+    }
+
+    auto largerAgent = map.agent();
+    largerAgent.radius *= 2.f;
+    require(!heaven::Pathfinder{}.find(map, start, goal, largerAgent).found,
+            "path silently accepted an incompatible capsule size");
+    auto invalid = goal;
+    invalid.x = NAN;
+    require(!heaven::Pathfinder{}.find(map, start, invalid, map.agent()).found,
+            "non-finite destination produced a path");
+
+    Geometry steps;
+    steps.rectangle(0, 0, 2000, 2000);
+    steps.rectangle(2000, 0, 4000, 2000, 40);
+    steps.rectangle(4000, 0, 6000, 2000, 100);
+    heaven::Map stepMap(0.f);
+    steps.load(stepMap);
+    const auto low = ground(stepMap, 500, 1000);
+    const auto middle = ground(stepMap, 3000, 1000);
+    const auto high = ground(stepMap, 5500, 1000);
+    require(heaven::Pathfinder{}.find(stepMap, low, middle, stepMap.agent()).found,
+            "walkable step was disconnected");
+    require(!heaven::Pathfinder{}.find(stepMap, low, high, stepMap.agent()).found,
+            "partial path across an excessive step was accepted");
+
+    std::string error;
+    require(!stepMap.loadFromFile(steps.path.string() + ".missing", error) && !stepMap.loaded(),
+            "failed reload retained a usable map");
+    require(!heaven::Pathfinder{}.find(stepMap, low, middle, stepMap.agent()).found,
+            "failed reload returned a stale path");
+    std::cout << "PASS tile connections, wall detour, agent size, invalid inputs, steps and reload failure\n";
 }
 
 void cornersAndParallelPaths() {
@@ -189,9 +242,12 @@ void partnerRecovery() {
 void exportedMap(const std::filesystem::path &file, float origin) {
     heaven::Map map(origin);
     std::string error;
+    const auto buildStart = std::chrono::steady_clock::now();
     if (!map.loadFromFile(file.string(), error)) {
         throw std::runtime_error(error);
     }
+    const auto buildMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - buildStart).count();
     const auto start = ground(map, origin, origin);
     using namespace heaven::fieldshared;
     PartnerOwnerState owner{start, {}, 0};
@@ -207,8 +263,18 @@ void exportedMap(const std::filesystem::path &file, float origin) {
         require(!partner.teleportedThisTick, "exported map partner stalled on nearby slope");
     }
     require(partner.location.x > start.x + 800, "exported map partner did not follow");
+    const auto searchStart = std::chrono::steady_clock::now();
+    constexpr int Queries = 200;
+    for (int index = 0; index < Queries; ++index) {
+        require(heaven::Pathfinder{}.find(map, start, owner.location, map.agent()).found,
+                "repeated actual-map path query failed");
+    }
+    const auto searchMs = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - searchStart).count() / Queries;
     std::cout << "PASS " << file.filename().string()
-              << " 10m player path and partner follow; triangles=" << map.triangleCount() << '\n';
+              << " 10m player path and partner follow; triangles=" << map.triangleCount()
+              << ", polygons=" << map.navigation().polygonCount()
+              << ", load/build_ms=" << buildMs << ", path_mean_ms=" << searchMs << '\n';
 }
 
 } // namespace
@@ -216,6 +282,7 @@ void exportedMap(const std::filesystem::path &file, float origin) {
 int main(int argc, char **argv) {
     try {
         slopeAndLayers();
+        tilesWallsAndSteps();
         cornersAndParallelPaths();
         partnerRecovery();
         if (argc > 1) {

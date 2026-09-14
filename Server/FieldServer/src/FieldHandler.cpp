@@ -303,11 +303,8 @@ bool FieldHandler::handleEnter(TlsSession &session, const HeavenField::Enter &re
             self->send(proto::encodeTokenBalance(tokens));
         }
 
-        // 해금과 파티 수를 같이 남긴다. 로스터가 비어 파티 화면이 잠겨 보일 때
-        // character_unlocks 행이 없는 것인지 비트가 안 선 것인지 이 줄로 가른다.
-        spdlog::info("entered: {} (character {}, {}) at ({:.0f}, {:.0f}) - {} in field, {} unlocked, {} in party",
-                     character->nickname, characterId, self->peer(), start.x, start.y,
-                     context->world->size(), character->unlocked.size(), character->party.size());
+        spdlog::info("entered: {} (character {}, {}) at ({:.0f}, {:.0f}) - {} in field", character->nickname,
+                     characterId, self->peer(), start.x, start.y, context->world->size());
     });
 
     if (!queued) {
@@ -448,7 +445,11 @@ bool FieldHandler::handleDebugGrantToken(TlsSession &session) {
 }
 
 bool FieldHandler::handleMove(TlsSession &session, const HeavenField::Move &request) {
-    return context_.world->move(characterId_, &session, hhv::movement::wire::decodeInputs(request));
+    if (!request.inputs() || request.inputs()->size() > hhv::movement::MaxInputBatch) {
+        return false;
+    }
+    return context_.world->move(characterId_, &session, hhv::movement::wire::decodeInputs(request),
+                               request.input_epoch(), request.reset_requested());
 }
 
 void FieldHandler::onClosed(TlsSession &session) {

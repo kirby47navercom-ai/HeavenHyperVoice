@@ -10,9 +10,8 @@ namespace hhv::movement
 constexpr unsigned MaxAuthorityStepsPerUpdate = 6;
 constexpr unsigned MaxAuthorityTimeCredit = static_cast<unsigned>(MaxPendingInputs);
 constexpr unsigned PredictDirectionTicks = 6;
-constexpr std::size_t CompactInputThreshold = 24;
-constexpr std::size_t RecentInputsToKeep = 6;
-constexpr std::size_t InputKeyframeStride = 6;
+// 400ms보다 많은 미처리 입력은 따라잡지 않고 서버 확정 상태에서 다시 시작한다.
+constexpr std::size_t AuthorityResetThreshold = 24;
 
 class AuthoritativeQueue
 {
@@ -32,11 +31,23 @@ class AuthoritativeQueue
 		mismatches = 0;
 		discardedInputs = 0;
 		predictedSteps = 0;
+		inputEpoch = 1;
+		resetRequested = false;
 	}
 
-	bool enqueue(const std::vector<PredictedInput> &batch)
+	bool enqueue(const std::vector<PredictedInput> &batch, std::uint64_t epoch = 1,
+	             bool requestReset = false)
 	{
-		if (batch.empty() || batch.size() > MaxInputBatch || pending.size() + batch.size() > MaxPendingInputs)
+		if (epoch == 0 || epoch > inputEpoch || batch.size() > MaxInputBatch)
+		{
+			return false;
+		}
+		if (epoch < inputEpoch)
+		{
+			// 이미 소켓에 들어간 이전 세대 입력은 연결 오류 없이 버린다.
+			return true;
+		}
+		if (batch.empty() && !requestReset)
 		{
 			return false;
 		}
@@ -51,14 +62,45 @@ class AuthoritativeQueue
 			}
 		}
 
+		if (requestReset || resetRequested || pending.size() + batch.size() > AuthorityResetThreshold)
+		{
+			if (inputEpoch == UINT64_MAX)
+			{
+				return false;
+			}
+			discardedInputs += pending.size() + batch.size();
+			pending.clear();
+			resetRequested = true;
+		}
+		else
+		{
+			pending.insert(pending.end(), batch.begin(), batch.end());
+		}
 		received = expected;
-		pending.insert(pending.end(), batch.begin(), batch.end());
 		return true;
 	}
 
 	bool advance(float elapsed, const Config &config, const CollisionWorld &world)
 	{
 		correctionReady = false;
+		if (resetRequested)
+		{
+			// 마지막으로 실제 입력을 계산한 전체 상태를 새 세대의 시작점으로 확정한다.
+			// 밀린 시간과 임시 예측도 함께 폐기하여 이후 틱에서 과거를 다시 따라잡지 않는다.
+			state = confirmedState;
+			pending.clear();
+			++inputEpoch;
+			received = 0;
+			acknowledged = 0;
+			budget = 0;
+			predictedTicks = 0;
+			lastInput = {};
+			needsPredictionReplacement = false;
+			resetRequested = false;
+			correctionReady = true;
+			return true;
+		}
+
 		const float maximumSeconds = float(MaxAuthorityTimeCredit) * FixedDt;
 		const float seconds = std::isfinite(elapsed) ? std::clamp(elapsed, 0.f, maximumSeconds) : 0.f;
 		budget = std::min(float(MaxAuthorityTimeCredit), budget + seconds / FixedDt);
@@ -76,12 +118,6 @@ class AuthoritativeQueue
 			needsPredictionReplacement = true;
 		}
 
-		const std::size_t removed = compactPending();
-		if (removed > 0)
-		{
-			// 생략한 과거 시간을 새 예측 이동에 다시 쓰지 않는다.
-			budget = std::max(0.f, budget - float(removed));
-		}
 
 		bool advanced = false;
 		for (unsigned step = 0; step < MaxAuthorityStepsPerUpdate && budget + 1e-6f >= 1.f; ++step)
@@ -103,8 +139,6 @@ class AuthoritativeQueue
 					++mismatches;
 				}
 
-				// 건너뛴 입력은 검증 성공으로 세지 않는다. 누적 폐기 수를 보정에 명시한다.
-				discardedInputs += frame.input.sequence - acknowledged - 1;
 				acknowledged = frame.input.sequence;
 				lastInput = frame.input;
 				confirmedState = state;
@@ -153,6 +187,11 @@ class AuthoritativeQueue
 		return pending.size();
 	}
 
+	std::uint64_t epoch() const
+	{
+		return inputEpoch;
+	}
+
 	// 월드/다른 플레이어에게 보여 주는 상태. 확인 응답에는 correctionState()를 쓴다.
 	State state;
 	std::uint32_t acknowledged = 0;
@@ -161,44 +200,6 @@ class AuthoritativeQueue
 	std::uint64_t predictedSteps = 0;
 
   private:
-	static bool sameControl(const Input &a, const Input &b)
-	{
-		return a.buttons == b.buttons && std::abs(a.x - b.x) < .0001f &&
-		       std::abs(a.y - b.y) < .0001f;
-	}
-
-	std::size_t compactPending()
-	{
-		const auto &base = needsPredictionReplacement ? confirmedState : state;
-		if (pending.size() <= CompactInputThreshold || base.mode != Mode::Grounded || base.rollRemaining > 0)
-		{
-			return 0;
-		}
-
-		std::deque<PredictedInput> keyframes;
-		const std::size_t recentStart = pending.size() - RecentInputsToKeep;
-		bool preserveMotion = false;
-		for (std::size_t index = 0; index < pending.size(); ++index)
-		{
-			const auto &frame = pending[index];
-			const bool edge = index == 0 || index >= recentStart;
-			const bool oneShot = (frame.input.buttons & (Jump | Roll)) != 0;
-			// 점프/구르기 뒤의 물리 상태는 아직 모른다. 이후 구간도 계산 전에는 줄이지 않는다.
-			preserveMotion = preserveMotion || oneShot;
-			const bool changedBefore = index > 0 && !sameControl(pending[index - 1].input, frame.input);
-			const bool changedAfter = index + 1 < pending.size() &&
-			                          !sameControl(frame.input, pending[index + 1].input);
-			if (edge || preserveMotion || changedBefore || changedAfter || index % InputKeyframeStride == 0)
-			{
-				keyframes.push_back(frame);
-			}
-		}
-
-		const auto removed = pending.size() - keyframes.size();
-		pending.swap(keyframes);
-		return removed;
-	}
-
 	State confirmedState;
 	std::deque<PredictedInput> pending;
 	std::uint32_t received = 0;
@@ -207,5 +208,7 @@ class AuthoritativeQueue
 	Input lastInput;
 	bool correctionReady = false;
 	bool needsPredictionReplacement = false;
+	std::uint64_t inputEpoch = 1;
+	bool resetRequested = false;
 };
 }

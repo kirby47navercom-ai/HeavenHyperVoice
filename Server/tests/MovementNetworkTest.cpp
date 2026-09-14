@@ -91,10 +91,10 @@ heaven::proto::Bytes enterFrame(std::uint64_t id, std::uint32_t type) {
     return heaven::proto::detail::wrapField(builder, HeavenField::Payload::Enter, enter.Union());
 }
 
-heaven::proto::Bytes moveFrame(const std::vector<PredictedInput> &inputs) {
+heaven::proto::Bytes moveFrame(const std::vector<PredictedInput> &inputs, std::uint64_t epoch = 1, bool requestReset = false) {
     flatbuffers::FlatBufferBuilder builder;
     const auto frames = wire::encodeInputs(builder, inputs);
-    const auto move = HeavenField::CreateMove(builder, frames);
+    const auto move = HeavenField::CreateMove(builder, frames, epoch, requestReset);
     return heaven::proto::detail::wrapField(builder, HeavenField::Payload::Move, move.Union());
 }
 
@@ -185,7 +185,7 @@ int main(int argc, char **argv) {
                                 authoritative.mode == predicted.mode &&
                                 authoritative.rollRemaining == predicted.rollRemaining,
                             "Jump/roll state diverged over the network");
-                    require(prediction.acknowledge(ack->sequence(), authoritative, world, ack->discarded_inputs()),
+                    require(prediction.acknowledge(ack->sequence(), authoritative, world, ack->discarded_inputs(), ack->input_epoch()),
                             "Invalid server sequence");
                     acknowledged = ack->sequence();
                 }
@@ -208,23 +208,48 @@ int main(int argc, char **argv) {
             lastBatch = prediction.takeUnsent();
             connection.send(moveFrame(lastBatch));
         }
-        const auto recoveryTarget = lastBatch.back().input.sequence;
-        while (acknowledged < recoveryTarget && connection.receive(body)) {
+        const auto oldEpoch = prediction.epoch();
+        bool reset = false;
+        while (!reset && connection.receive(body)) {
             const auto *envelope = heaven::proto::verifyFieldEnvelope(body);
-            require(envelope != nullptr, "Malformed recovery reply");
+            require(envelope != nullptr, "Malformed reset reply");
             if (const auto *ack = envelope->payload_as_Correction()) {
                 const auto authoritative = wire::decodeState(*ack->movement());
-                require(prediction.acknowledge(ack->sequence(), authoritative, world, ack->discarded_inputs()),
-                        "Recovery correction was rejected");
-                acknowledged = ack->sequence();
+                require(prediction.acknowledge(ack->sequence(), authoritative, world,
+                                               ack->discarded_inputs(), ack->input_epoch()),
+                        "Reset correction was rejected");
+                reset = prediction.epoch() > oldEpoch;
+                if (reset) {
+                    require(ack->sequence() == 0 && prediction.history.empty() &&
+                                replay::near(prediction.state, authoritative, .001f),
+                            "Hard reset replayed old prediction instead of snapping to server state");
+                }
             }
         }
-        require(acknowledged == recoveryTarget && prediction.history.empty(), "Network backlog did not recover");
-        require(prediction.discardedInputs > 0, "Network recovery did not report discarded inputs");
-        std::cout << "PASS: packet gap and 90-input backlog recovered; discarded="
-                  << prediction.discardedInputs << '\n';
+        require(reset && prediction.discardedInputs > 0, "Network backlog did not force a reset");
+        // Even a repeated old packet already in flight must be harmless after the reset.
+        connection.send(moveFrame(lastBatch, oldEpoch));
+        require(prediction.predict({0, 0, 1, 0}, Config{}, world), "New epoch prediction did not resume");
+        lastBatch = prediction.takeUnsent();
+        require(lastBatch.front().input.sequence == 1, "New epoch input numbering did not restart");
+        connection.send(moveFrame(lastBatch, prediction.epoch()));
+        bool resumed = false;
+        while (!resumed && connection.receive(body)) {
+            const auto *envelope = heaven::proto::verifyFieldEnvelope(body);
+            require(envelope != nullptr, "Malformed resumed reply");
+            if (const auto *ack = envelope->payload_as_Correction()) {
+                require(ack->input_epoch() == prediction.epoch(), "Resumed reply used a stale epoch");
+                const auto authoritative = wire::decodeState(*ack->movement());
+                require(replay::near(prediction.state, authoritative, .01f), "Fresh input diverged after reset");
+                resumed = prediction.acknowledge(ack->sequence(), authoritative, world,
+                                                  ack->discarded_inputs(), ack->input_epoch());
+            }
+        }
+        require(resumed && prediction.history.empty(), "Fresh input was not confirmed after reset");
+        std::cout << "PASS: backlog hard reset, exact server state, stale packet discard and resumed input\n";
 
-        connection.send(moveFrame(lastBatch));
+        // Current-epoch duplicates remain invalid, unlike discarded old-epoch traffic.
+        connection.send(moveFrame(lastBatch, prediction.epoch()));
         bool closed = false;
         for (int frame = 0; frame < 100 && !closed; ++frame) {
             closed = !connection.receive(body);

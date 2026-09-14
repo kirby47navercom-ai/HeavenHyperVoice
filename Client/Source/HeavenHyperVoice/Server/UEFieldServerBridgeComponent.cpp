@@ -190,8 +190,9 @@ void UUEFieldServerBridgeComponent::StartConnection(const FString &Service, uint
 
 	FieldConnection = std::make_unique<FHHVFieldConnection>();
 	FieldConnection->OnEnterAck = [this](const FHHVFieldEventData &Event) { HandleFieldEnterAck(Event); };
-	FieldConnection->OnCorrection = [this](uint32 Sequence, const hhv::movement::State &State, uint64 DiscardedInputs) {
-		GetPlayerCharacter()->GetCoreMovement()->AcknowledgeNetworkInput(Sequence, State, DiscardedInputs);
+	FieldConnection->OnCorrection = [this](uint32 Sequence, const hhv::movement::State &State,
+                                         uint64 DiscardedInputs, uint64 InputEpoch) {
+		GetPlayerCharacter()->GetCoreMovement()->AcknowledgeNetworkInput(Sequence, State, DiscardedInputs, InputEpoch);
 	};
 	FieldConnection->OnSnapshot = [this](const FHHVFieldSnapshot &Snapshot) {
 		HandleFieldSnapshot(Snapshot);
@@ -620,7 +621,8 @@ void UUEFieldServerBridgeComponent::ReportFieldPositionNow()
 
 	// 전송 간격을 건너뛴다. 다음 정기 전송을 기다릴 여유가 없다 — 곧 레벨이
 	// 갈리면서 이 연결이 통째로 사라진다.
-	FieldConnection->SendMove(GetPlayerCharacter()->GetCoreMovement()->TakeNetworkInputs());
+	auto *Movement = GetPlayerCharacter()->GetCoreMovement();
+	FieldConnection->SendMove(Movement->TakeNetworkInputs(), Movement->GetInputEpoch(), Movement->NeedsInputReset());
 	TimeSinceLastSend = 0.0f;
 }
 
@@ -648,5 +650,6 @@ void UUEFieldServerBridgeComponent::HandleCharacterMovementUpdated(float DeltaSe
 	}
 	TimeSinceLastSend = 0.0f;
 
-	FieldConnection->SendMove(GetPlayerCharacter()->GetCoreMovement()->TakeNetworkInputs());
+	auto *Movement = GetPlayerCharacter()->GetCoreMovement();
+	FieldConnection->SendMove(Movement->TakeNetworkInputs(), Movement->GetInputEpoch(), Movement->NeedsInputReset());
 }

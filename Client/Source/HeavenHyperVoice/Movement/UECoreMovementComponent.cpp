@@ -319,13 +319,22 @@ bool UUECoreMovementComponent::BeginNetworkSimulation(const hhv::movement::State
 }
 
 void UUECoreMovementComponent::AcknowledgeNetworkInput(uint32 Sequence, const hhv::movement::State &State,
-                                                      uint64 DiscardedInputs)
+                                                      uint64 DiscardedInputs, uint64 InputEpoch)
 {
 	const auto *World = GetWorld()->GetSubsystem<UUECoreCollisionSubsystem>();
+	const uint64 PreviousEpoch = Prediction.epoch();
 	if (bNetworkSimulation && World && World->GetCollision() &&
-	    Prediction.acknowledge(Sequence, State, *World->GetCollision(), DiscardedInputs))
+	    Prediction.acknowledge(Sequence, State, *World->GetCollision(), DiscardedInputs, InputEpoch))
 	{
-		if (!hhv::movement::replay::near(CoreState, Prediction.state, .0001f))
+		if (Prediction.epoch() != PreviousEpoch)
+		{
+			// 강제 보정 이전 프레임의 점프/구르기와 누적 시간도 다시 실행하지 않는다.
+			History.clear();
+			Accumulator = 0;
+			PendingButtons = 0;
+			ConsumeInputVector();
+		}
+		else if (!hhv::movement::replay::near(CoreState, Prediction.state, .0001f))
 		{
 			// A correction starts a new continuous replay segment.
 			History = Prediction.history;

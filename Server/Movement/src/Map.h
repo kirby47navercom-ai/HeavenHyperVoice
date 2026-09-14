@@ -2,6 +2,7 @@
 
 #include "MovementPrediction.h"
 #include "TriangleWorld.h"
+#include "NavigationMesh.h"
 #include <limits>
 #include <string>
 
@@ -32,7 +33,7 @@ class Map {
     explicit Map(float originOffset = 25600.f) : originOffset_(originOffset) {}
     bool loadFromFile(const std::string &path, std::string &error);
     bool loaded() const {
-        return collision_.size() != 0;
+        return loaded_;
     }
     std::size_t triangleCount() const {
         return collision_.size();
@@ -45,6 +46,9 @@ class Map {
     }
     const hhv::movement::TriangleWorld &collision() const {
         return collision_;
+    }
+    const NavigationMesh &navigation() const {
+        return navigation_;
     }
 
     nav::Vec3 toCore(nav::Vec3 value) const;
@@ -62,8 +66,10 @@ class Map {
 
   private:
     hhv::movement::TriangleWorld collision_;
+    NavigationMesh navigation_;
     nav::Agent agent_;
     nav::Aabb bounds_;
     float originOffset_;
+    bool loaded_ = false;
 };
 } // namespace heaven

@@ -168,7 +168,8 @@ void FHHVFieldConnection::Stop()
 	bStopRequested = true;
 }
 
-void FHHVFieldConnection::SendMove(const std::vector<hhv::movement::PredictedInput> &Inputs)
+void FHHVFieldConnection::SendMove(const std::vector<hhv::movement::PredictedInput> &Inputs,
+                                  uint64 InputEpoch, bool bRequestReset)
 {
 	if (bStopRequested)
 	{
@@ -176,12 +177,12 @@ void FHHVFieldConnection::SendMove(const std::vector<hhv::movement::PredictedInp
 	}
 
 	flatbuffers::FlatBufferBuilder Builder(128);
-	if (Inputs.empty())
+	if (Inputs.empty() && !bRequestReset)
 	{
 		return;
 	}
 	const auto Frames = hhv::movement::wire::encodeInputs(Builder, Inputs);
-	const auto Move = HeavenField::CreateMove(Builder, Frames);
+	const auto Move = HeavenField::CreateMove(Builder, Frames, InputEpoch, bRequestReset);
 	Builder.Finish(HeavenField::CreateEnvelope(Builder, HeavenField::Payload::Move, Move.Union()));
 	Outbound.Enqueue(FrameOf(Builder));
 }
@@ -517,6 +518,7 @@ void FHHVFieldConnection::DispatchFrame(const uint8 *Data, int32 Size)
 		Event.Type = EHHVFieldEvent::Correction;
 		Event.Sequence = Correction->sequence();
 		Event.DiscardedInputs = Correction->discarded_inputs();
+		Event.InputEpoch = Correction->input_epoch();
 		Event.MovementState = hhv::movement::wire::decodeState(*Correction->movement());
 		break;
 	}
@@ -647,7 +649,7 @@ void FHHVFieldConnection::Poll()
 		case EHHVFieldEvent::Correction:
 			if (OnCorrection)
 			{
-				OnCorrection(Event.Sequence, Event.MovementState, Event.DiscardedInputs);
+				OnCorrection(Event.Sequence, Event.MovementState, Event.DiscardedInputs, Event.InputEpoch);
 			}
 			break;
 

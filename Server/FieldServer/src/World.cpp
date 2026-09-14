@@ -271,14 +271,15 @@ void World::setPartnerSpecies(std::uint64_t characterId, std::uint16_t partnerSp
 }
 
 bool World::move(std::uint64_t characterId, const TlsSession *session,
-                 const std::vector<hhv::movement::PredictedInput> &inputs) {
+                 const std::vector<hhv::movement::PredictedInput> &inputs,
+              std::uint64_t inputEpoch, bool requestReset) {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto found = entities_.find(characterId);
     if (found == entities_.end() || found->second.session.lock().get() != session || map_ == nullptr ||
         !map_->loaded()) {
         return false;
     }
-    return found->second.movement.enqueue(inputs);
+    return found->second.movement.enqueue(inputs, inputEpoch, requestReset);
 }
 
 void World::advancePlayers(float dt) {
@@ -305,7 +306,7 @@ void World::advancePlayers(float dt) {
         if (entity.movement.hasCorrection()) {
             sendTo(entity, proto::encodeCorrection(entity.movement.acknowledged,
                                                    entity.movement.correctionState(),
-                                                   entity.movement.discardedInputs));
+                                                   entity.movement.discardedInputs, entity.movement.epoch()));
         }
 
         const int sector = proto::sectorIndex(location.x, location.y);

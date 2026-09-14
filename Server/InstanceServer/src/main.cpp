@@ -276,11 +276,13 @@ int main(int argc, char **argv) {
             auto collision = std::make_unique<heaven::Map>(heaven::instance::kWorldOriginOffset);
             std::string mapError;
             const std::string resolved = heaven::net::resolveResourcePath(path, "instance map");
+            spdlog::info("instance type {}: loading collision and building NavMesh: {}", type, resolved);
             if (!collision->loadFromFile(resolved, mapError)) {
                 throw std::runtime_error("instance " + std::to_string(type) + " map: " + mapError);
             }
-            spdlog::info("instance type {}: {} (core triangles {}, hash {})", type, resolved,
-                         collision->triangleCount(), collision->collision().hash());
+            spdlog::info("instance type {}: {} (core triangles {}, nav polygons {}, hash {})", type, resolved,
+                         collision->triangleCount(), collision->navigation().polygonCount(),
+                         collision->collision().hash());
             warnIfSpawnUnreachable(type, *collision);
 
             types[type].map = collision.get();
@@ -395,7 +397,6 @@ int main(int argc, char **argv) {
         for (unsigned shard = 0; shard < tickThreads; ++shard) {
             tickers.emplace_back([&, shard, tickThreads] {
                 const auto period = std::chrono::milliseconds(1000 / heaven::instance::kTickHz);
-                heaven::net::TickPacer pacer(period, "instance tick");
                 auto previous = std::chrono::steady_clock::now();
                 float sinceReap = 0.f;
 
@@ -415,7 +416,7 @@ int main(int argc, char **argv) {
                             rooms.reapEmpty();
                         }
                     }
-                    pacer.sleepUntil(deadline);
+                    std::this_thread::sleep_until(deadline);
                 }
             });
         }

@@ -109,7 +109,8 @@ class World {
 
     // Only sequential inputs from the owning session enter the authoritative queue.
     bool move(std::uint64_t characterId, const TlsSession *session,
-              const std::vector<hhv::movement::PredictedInput> &inputs);
+              const std::vector<hhv::movement::PredictedInput> &inputs,
+              std::uint64_t inputEpoch, bool requestReset);
     std::uint64_t collisionHash() const {
         return map_ ? map_->collision().hash() : 0;
     }

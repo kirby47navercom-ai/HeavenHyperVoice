@@ -89,95 +89,138 @@ void testConfirmedCorrection(const CollisionWorld &world)
 	require(replay::near(client.state, server.correctionState(), .001f), "Speculative future leaked into replay");
 }
 
-void testQueueCompaction(const CollisionWorld &world)
+void testHardReset(const CollisionWorld &world)
 {
 	Config config;
 	PredictionQueue client;
 	AuthoritativeQueue server;
 	client.reset(spawn());
 	server.reset(spawn());
-	for (int tick = 1; tick <= 90; ++tick)
-	{
-		Input input;
-		input.x = 1;
-		input.buttons = tick == 30 ? Jump : (tick == 85 ? Roll : 0);
-		require(client.predict(input, config, world), "Could not build the backlog");
-	}
-	const float fullDistance = client.state.position.x;
-	for (int batch = 0; batch < 6; ++batch)
-	{
-		require(server.enqueue(client.takeUnsent()), "Backlog batch rejected");
-	}
-
-	bool jumped = false;
-	bool rolled = false;
-	bool skipped = false;
-	for (int update = 0; update < 120 && server.acknowledged < 90; ++update)
-	{
-		server.advance(FixedDt, config, world);
-		jumped = jumped || server.correctionState().mode == Mode::Falling;
-		rolled = rolled || server.correctionState().rollRemaining > 0;
-		skipped = skipped || server.discardedInputs > 0;
-		if (server.hasCorrection())
-		{
-			require(client.acknowledge(server.acknowledged, server.correctionState(), world, server.discardedInputs),
-			        "Compacted correction was rejected");
-		}
-	}
-	require(skipped && server.discardedInputs > 20, "Continuous backlog was not compacted");
-	require(jumped && rolled, "Compaction lost a jump or roll transition");
-	require(server.acknowledged == 90 && client.history.empty(), "Backlog did not recover");
-	require(replay::near(client.state, server.correctionState(), .001f), "Compacted client did not converge");
-	require(server.correctionState().position.x < fullDistance, "Dropped duration was silently restored");
-	require(client.discardedInputs == server.discardedInputs, "Dropped inputs were reported as verified");
-
 	client.predict({0, 1, 0, 0}, config, world);
-	client.takeUnsent();
-	require(!client.acknowledge(91, server.correctionState(), world, 0), "Regressing discard count accepted");
+	server.enqueue(client.takeUnsent(), client.epoch());
+	server.advance(FixedDt, config, world);
+	client.acknowledge(server.acknowledged, server.correctionState(), world);
+	const auto baseline = server.correctionState();
+	const auto oldEpoch = client.epoch();
+
+	for (int tick = 0; tick < 75; ++tick)
+	{
+		const auto buttons = static_cast<std::uint8_t>(tick == 0 ? Jump : (tick == 60 ? Roll : 0));
+		require(client.predict({0, 1, 0, buttons}, config, world), "Could not build reset backlog");
+	}
+	server.enqueue(client.takeUnsent(), oldEpoch);
+	server.enqueue(client.takeUnsent(), oldEpoch);
+	const auto inFlight = client.takeUnsent();
+	require(server.queuedInputs() == 0, "Overflow left old input on the server");
+	require(server.advance(2.f, config, world), "Overflow did not publish a correction");
+	require(server.hasCorrection() && server.epoch() == oldEpoch + 1 && server.acknowledged == 0,
+	        "Reset did not open a fresh input epoch");
+	require(server.discardedInputs == 30 && replay::near(server.state, baseline, .001f),
+	        "Overflow executed stale movement or changed the confirmed state");
+	require(client.acknowledge(0, server.correctionState(), world, server.discardedInputs, server.epoch()),
+	        "New epoch correction rejected");
+	require(client.history.empty() && client.takeUnsent().empty() && replay::near(client.state, baseline, .001f),
+	        "Hard reset replayed sent or unsent client inputs");
+	require(server.enqueue(inFlight, oldEpoch) && server.queuedInputs() == 0,
+	        "In-flight old inputs returned to the server queue");
+	require(!client.acknowledge(1, spawn(), world, 0, oldEpoch), "Old correction moved the reset client");
+	require(!client.acknowledge(0, spawn(), world, server.discardedInputs, server.epoch()),
+	        "Duplicate reset correction was applied twice");
+	require(!server.advance(0, config, world) && replay::near(server.state, baseline, .001f),
+	        "Discarded catch-up time advanced the reset server");
+
+	client.predict({0, 0, 1, 0}, config, world);
+	const auto fresh = client.takeUnsent();
+	require(fresh.size() == 1 && fresh.front().input.sequence == 1, "New input numbering did not restart");
+	require(server.enqueue(fresh, client.epoch()), "New epoch input rejected");
+	server.advance(FixedDt, config, world);
+	require(client.acknowledge(1, server.correctionState(), world, server.discardedInputs, server.epoch()),
+	        "New epoch acknowledgement failed");
+	require(client.history.empty() && replay::near(client.state, server.state, .001f),
+	        "Fresh movement diverged after reset");
+	require(!server.enqueue(fresh, client.epoch()), "Same-epoch duplicate was accepted");
+	require(!server.enqueue(fresh, client.epoch() + 1), "Client selected an unauthorized future epoch");
 }
 
-void testTransitionBoundaries(const CollisionWorld &world)
+void testResetPreservesExecutedState(const CollisionWorld &world)
 {
-	Config config;
+	for (const auto button : {Jump, Roll})
+	{
+		AuthoritativeQueue server;
+		server.reset(spawn());
+		server.enqueue({{{1, 1, 0, static_cast<std::uint8_t>(button)}, {}}});
+		server.advance(FixedDt, Config{}, world);
+		const auto confirmed = server.correctionState();
+		server.advance(FixedDt * 3, Config{}, world);
+		for (std::uint32_t first : {2u, 17u})
+		{
+			std::vector<PredictedInput> batch;
+			for (std::uint32_t sequence = first; sequence < first + 15; ++sequence)
+			{
+				batch.push_back({{sequence, -1, 0, Jump}, {}});
+			}
+			require(server.enqueue(batch), "Event-heavy backlog rejected");
+		}
+		server.advance(.5f, Config{}, world);
+		require(server.epoch() == 2 && server.queuedInputs() == 0 && server.discardedInputs == 30,
+		        "Airborne or rolling backlog escaped reset");
+		require(replay::near(server.state, confirmed, .001f),
+		        "Reset lost executed jump/roll state or kept speculative motion");
+	}
+}
+
+void testClientRequestedReset(const CollisionWorld &world)
+{
+	PredictionQueue client;
+	AuthoritativeQueue server;
+	client.reset(spawn());
+	server.reset(spawn());
+	// 서버는 정상 처리하지만 확인 응답이 클라이언트에 도착하지 않는 상황이다.
+	for (std::size_t tick = 0; tick < PredictionResetThreshold; ++tick)
+	{
+		require(client.predict({0, 1, 0, 0}, Config{}, world), "Client reached its limit too early");
+		require(server.enqueue(client.takeUnsent(), client.epoch()), "Normal input rejected");
+		server.advance(FixedDt, Config{}, world);
+	}
+	const auto baseline = server.correctionState();
+	require(!client.predict({0, 1, 0, Jump}, Config{}, world) && client.needsReset(),
+	        "Client did not request reset after prolonged missing acknowledgements");
+	require(client.takeUnsent().empty(), "Reset-waiting client kept sending stale movement");
+	require(server.enqueue({}, client.epoch(), true), "Empty reset request rejected");
+	server.advance(.5f, Config{}, world);
+	require(client.acknowledge(0, server.correctionState(), world, server.discardedInputs, server.epoch()),
+	        "Client-initiated reset response rejected");
+	require(!client.needsReset() && client.history.empty() && replay::near(client.state, baseline, .001f),
+	        "Client-initiated reset did not clear history and waiting state");
+	const auto epoch = server.epoch();
+	require(server.enqueue({}, epoch - 1, true), "Late reset request caused a disconnect");
+	server.advance(0, Config{}, world);
+	require(server.epoch() == epoch, "Late request reset the new generation again");
+	require(!server.enqueue({}, epoch + 1, true), "Future-epoch reset request accepted");
+}
+
+void testThresholdAndWorkLimit(const CollisionWorld &world)
+{
 	AuthoritativeQueue server;
 	server.reset(spawn());
-	std::vector<std::uint32_t> important;
-	for (std::uint32_t start = 1; start <= 60; start += 15)
+	for (std::uint32_t first : {1u, 13u})
 	{
 		std::vector<PredictedInput> batch;
-		for (std::uint32_t sequence = start; sequence < start + 15; ++sequence)
-		{
-			const float x = sequence < 20 ? 1.f : (sequence < 40 ? 0.f : -1.f);
-			const std::uint8_t buttons = sequence >= 30 ? Run : 0;
-			batch.push_back({{sequence, x, 0, buttons}, {}});
-		}
-		server.enqueue(batch);
-	}
-	for (int tick = 0; tick < 60 && server.acknowledged < 60; ++tick)
-	{
-		server.advance(FixedDt, config, world);
-		important.push_back(server.acknowledged);
-	}
-	for (std::uint32_t sequence : {19, 20, 29, 30, 39, 40})
-	{
-		require(std::find(important.begin(), important.end(), sequence) != important.end(),
-		        "Direction, stop or run boundary was removed");
-	}
-
-	// 단발 입력이 계속 오면 압축하지 않는다. CPU 한도는 별도로 유지한다.
-	server.reset(spawn());
-	for (std::uint32_t start = 1; start <= 60; start += 15)
-	{
-		std::vector<PredictedInput> batch;
-		for (std::uint32_t sequence = start; sequence < start + 15; ++sequence)
+		for (std::uint32_t sequence = first; sequence < first + 12; ++sequence)
 		{
 			batch.push_back({{sequence, 1, 0, Jump}, {}});
 		}
 		server.enqueue(batch);
 	}
-	server.advance(.5f, config, world);
-	require(server.acknowledged == MaxAuthorityStepsPerUpdate && server.discardedInputs == 0,
-	        "Event-heavy backlog bypassed the work limit or dropped an event");
+	server.advance(FixedDt * 24, Config{}, world);
+	require(server.epoch() == 1 && server.acknowledged == MaxAuthorityStepsPerUpdate,
+	        "Threshold boundary reset unnecessarily or bypassed the work limit");
+	for (int update = 0; update < 3; ++update)
+	{
+		server.advance(0, Config{}, world);
+	}
+	require(server.acknowledged == 24 && server.discardedInputs == 0,
+	        "Within-threshold inputs failed to catch up with earned time");
 }
 
 void testPredictionCollision()
@@ -199,55 +242,6 @@ void testPredictionCollision()
 	        "Server prediction crossed a wall or adopted a client position");
 }
 
-void testServerHitchBudget(const CollisionWorld &world)
-{
-	AuthoritativeQueue server;
-	server.reset(spawn());
-	for (std::uint32_t start = 1; start <= 48; start += 12)
-	{
-		std::vector<PredictedInput> batch;
-		for (std::uint32_t sequence = start; sequence < start + 12; ++sequence)
-		{
-			batch.push_back({{sequence, 1, 0, Jump}, {}});
-		}
-		server.enqueue(batch);
-	}
-	server.advance(FixedDt * 48, Config{}, world);
-	require(server.acknowledged == 6, "A server hitch bypassed the per-update step limit");
-	for (int recovery = 0; recovery < 7; ++recovery)
-	{
-		server.advance(0, Config{}, world);
-	}
-	require(server.acknowledged == 48 && server.discardedInputs == 0,
-	        "Server hitch time was lost before protected inputs could catch up");
-	const auto recovered = server.state;
-	server.advance(0, Config{}, world);
-	require(replay::near(recovered, server.state, .001f), "Catch-up invented additional simulation time");
-}
-
-void testCompactionWhileReplacingPrediction(const CollisionWorld &world)
-{
-	AuthoritativeQueue server;
-	server.reset(spawn());
-	server.enqueue({{{1, 1, 0, 0}, {}}});
-	server.advance(FixedDt, Config{}, world);
-	server.advance(FixedDt * 3, Config{}, world);
-	const auto predicted = server.state;
-	for (std::uint32_t start = 2; start < 62; start += 15)
-	{
-		std::vector<PredictedInput> batch;
-		for (std::uint32_t sequence = start; sequence < start + 15; ++sequence)
-		{
-			batch.push_back({{sequence, 1, 0, 0}, {}});
-		}
-		server.enqueue(batch);
-	}
-	require(!server.advance(0, Config{}, world), "Discarded duration should exhaust this update's credit");
-	require(replay::near(server.state, predicted, .001f), "A non-advancing update silently rewound world state");
-	server.advance(FixedDt, Config{}, world);
-	require(server.hasCorrection() && server.acknowledged == 2,
-	        "Deferred prediction replacement did not process its first retained input");
-}
 }
 
 int main()
@@ -259,12 +253,12 @@ int main()
 		             {{-10000, -10000, 0}, {10000, 10000, 0}, {-10000, 10000, 0}}});
 		testMissingAndLateInputs(world);
 		testConfirmedCorrection(world);
-		testQueueCompaction(world);
-		testTransitionBoundaries(world);
+		testHardReset(world);
+		testResetPreservesExecutedState(world);
+		testClientRequestedReset(world);
+		testThresholdAndWorkLimit(world);
 		testPredictionCollision();
-		testServerHitchBudget(world);
-		testCompactionWhileReplacingPrediction(world);
-		std::cout << "Missing/late input, compaction, event boundaries, corrections and collisions passed\n";
+		std::cout << "Missing/late input, hard reset, stale epochs, client reset requests and collisions passed\n";
 	}
 	catch (const std::exception &error)
 	{

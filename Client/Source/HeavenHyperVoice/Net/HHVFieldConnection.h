@@ -120,6 +120,7 @@ struct FHHVFieldEventData
 	float OriginOffset = 0.0f;
 	uint32 Sequence = 0;
 	uint64 DiscardedInputs = 0;
+	uint64 InputEpoch = 1;
 	float X = 0.0f;
 	float Y = 0.0f;
 	float Z = 0.0f;
@@ -185,7 +186,7 @@ class HEAVENHYPERVOICE_API FHHVFieldConnection : public FRunnable
 		return bInField;
 	}
 
-	void SendMove(const std::vector<hhv::movement::PredictedInput> &Inputs);
+	void SendMove(const std::vector<hhv::movement::PredictedInput> &Inputs, uint64 InputEpoch, bool bRequestReset);
 
 	/**
 	 * 파티 구성과 꺼낼 한 마리를 정한다. 전부 도감번호다.
@@ -213,7 +214,7 @@ class HEAVENHYPERVOICE_API FHHVFieldConnection : public FRunnable
 	void Poll();
 
 	TFunction<void(const FHHVFieldEventData &Event)> OnEnterAck;
-	TFunction<void(uint32 Sequence, const hhv::movement::State &State, uint64 DiscardedInputs)> OnCorrection;
+	TFunction<void(uint32 Sequence, const hhv::movement::State &State, uint64 DiscardedInputs, uint64 InputEpoch)> OnCorrection;
 	TFunction<void(const FHHVFieldSnapshot &Snapshot)> OnSnapshot;
 	TFunction<void(const FString &Text)> OnNotice;
 	TFunction<void(const FHHVFieldPartyState &State)> OnPartyState;
