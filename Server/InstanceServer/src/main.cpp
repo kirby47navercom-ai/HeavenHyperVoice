@@ -395,6 +395,7 @@ int main(int argc, char **argv) {
         for (unsigned shard = 0; shard < tickThreads; ++shard) {
             tickers.emplace_back([&, shard, tickThreads] {
                 const auto period = std::chrono::milliseconds(1000 / heaven::instance::kTickHz);
+                heaven::net::TickPacer pacer(period, "instance tick");
                 auto previous = std::chrono::steady_clock::now();
                 float sinceReap = 0.f;
 
@@ -414,7 +415,7 @@ int main(int argc, char **argv) {
                             rooms.reapEmpty();
                         }
                     }
-                    std::this_thread::sleep_until(deadline);
+                    pacer.sleepUntil(deadline);
                 }
             });
         }
