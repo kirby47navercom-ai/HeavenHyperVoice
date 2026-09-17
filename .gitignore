@@ -11,6 +11,12 @@ Client/Plugins/MCPUnreal/
 # Local authoring sources; commit imported Unreal assets from Content instead.
 /Client/SourceArt/
 
+# Image generation output; copy what the game uses into Client/UI/Images instead.
+/output/
+
+# Planning documents kept out of the repository.
+/Docs/
+
 # Generated project files
 *.sln
 *.suo
