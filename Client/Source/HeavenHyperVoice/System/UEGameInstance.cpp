@@ -14,6 +14,7 @@
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/CoreDelegates.h"
 #include "MoviePlayer.h"
 #include "TimerManager.h"
 #include "UObject/UObjectGlobals.h"
@@ -60,6 +61,8 @@ void UUEGameInstance::Shutdown()
 		FTSTicker::GetCoreTicker().RemoveTicker(LoadingFinishHandle);
 		LoadingFinishHandle.Reset();
 	}
+	FCoreDelegates::OnSamplingInput.Remove(LoadingMoviePollHandle);
+	LoadingMoviePollHandle.Reset();
 	HideLoadingScreen();
 
 	// 워커 스레드를 조인한다. 콜백이 매달린 참조가 되기 전에 먼저 정리한다.
@@ -71,7 +74,17 @@ void UUEGameInstance::Shutdown()
 void UUEGameInstance::HandlePreLoadMap(const FString& MapName)
 {
 	(void)MapName;
+
+	// 게임을 켜고 첫 맵(타이틀)을 여는 동안에는 로딩 화면을 띄우지 않는다. 이때는 로딩 화면의
+	// 배경 텍스처도 아직 준비 전이라 까만 화면 위에 막대만 보였다.
+	if (!bFirstMapLoadStarted)
+	{
+		bFirstMapLoadStarted = true;
+		return;
+	}
+
 	ShowLoadingScreen();
+	bLoadingMapStarted = true;
 }
 
 void UUEGameInstance::ShowLoadingScreen()
@@ -114,6 +127,14 @@ void UUEGameInstance::ShowLoadingScreen()
 		Attributes.bMoviesAreSkippable = false;
 		GetMoviePlayer()->SetupLoadingScreen(Attributes);
 		GetMoviePlayer()->PlayMovie();
+
+		// bWaitForManualStop 이라 무비 플레이어는 맵 로드가 끝난 직후(PostLoadMap) 자기 루프에서
+		// 게임 스레드를 붙잡고 StopMovie 를 기다린다. 그동안 코어 티커(FinishLoadingScreen)는 돌지
+		// 않아 입력이 들어올 때까지 로딩 화면이 닫히지 않았다. 그 루프 안에서도 매번 불리는
+		// OnSamplingInput 에서 준비가 끝났는지 보고 직접 멈춘다.
+		FCoreDelegates::OnSamplingInput.Remove(LoadingMoviePollHandle);
+		LoadingMoviePollHandle = FCoreDelegates::OnSamplingInput.AddUObject(
+			this, &ThisClass::PollLoadingScreenWhileMovieWaits);
 	}
 	else if (GEngine && GEngine->GameViewport && !bLoadingScreenInViewport)
 	{
@@ -181,11 +202,29 @@ void UUEGameInstance::HandlePostLoadMap(UWorld* LoadedWorld)
 bool UUEGameInstance::FinishLoadingScreen(float DeltaSeconds)
 {
 	(void)DeltaSeconds;
+	if (!IsLoadedWorldReadyToReveal())
+	{
+		return true;
+	}
+
+	HideLoadingScreen();
+	LoadingFinishHandle.Reset();
+	return false;
+}
+
+bool UUEGameInstance::IsLoadedWorldReadyToReveal()
+{
 	const UHHVLoadingScreenSettings* Settings = GetDefault<UHHVLoadingScreenSettings>();
 
 	if (!bPostLoadAssetsReady)
 	{
-		if (UWorld* LoadedWorld = LoadedWorldForLoadingScreen.Get())
+		// 무비 플레이어 대기 중에는 HandlePostLoadMap 보다 먼저 불릴 수 있어 지금 월드로 대신한다.
+		UWorld* LoadedWorld = LoadedWorldForLoadingScreen.Get();
+		if (!LoadedWorld)
+		{
+			LoadedWorld = GetWorld();
+		}
+		if (LoadedWorld)
 		{
 			LoadedWorld->BlockTillLevelStreamingCompleted();
 		}
@@ -198,22 +237,37 @@ bool UUEGameInstance::FinishLoadingScreen(float DeltaSeconds)
 			IStreamingManager::Get().NotifyLevelChange();
 			if (IStreamingManager::Get().StreamAllResources() > 0)
 			{
-				return true;
+				return false;
 			}
 		}
 
 		bPostLoadAssetsReady = true;
 	}
 
-	if (FPlatformTime::Seconds() - LoadingScreenStartedAtSeconds
-		< Settings->MinimumDisplaySeconds)
+	return FPlatformTime::Seconds() - LoadingScreenStartedAtSeconds >= Settings->MinimumDisplaySeconds;
+}
+
+void UUEGameInstance::PollLoadingScreenWhileMovieWaits()
+{
+	// OnSamplingInput 은 평소 프레임에도 불린다. 맵 로드가 끝나 새 월드가 BeginPlay 한 뒤에만 본다.
+	// (OpenLevelWithLoadingScreen 이 로딩 화면을 먼저 띄우고 실제 이동은 다음 틱에 시작한다.)
+	// IsMovieCurrentlyPlaying 은 보지 않는다. 무비 플레이어는 대기 루프에 들어가며 로딩 스레드를
+	// 먼저 정리해서, 루프 안에서는 재생 중이 아니라고 답한다.
+	const UWorld* World = GetWorld();
+	if (!World || !World->HasBegunPlay() || !LoadingScreenSlateWidget.IsValid() || !IsMoviePlayerEnabled())
 	{
-		return true;
+		return;
+	}
+	if (!bLoadingMapStarted || !IsLoadedWorldReadyToReveal())
+	{
+		return;
 	}
 
-	HideLoadingScreen();
-	LoadingFinishHandle.Reset();
-	return false;
+	FCoreDelegates::OnSamplingInput.Remove(LoadingMoviePollHandle);
+	LoadingMoviePollHandle.Reset();
+	// 여기서는 WaitForMovieToFinish 를 다시 부르면 안 된다 (이미 그 루프 안이다). 멈춤 표시만 하면
+	// 루프가 끝나고, 남은 정리는 FinishLoadingScreen 이 한다.
+	GetMoviePlayer()->StopMovie();
 }
 
 void UUEGameInstance::HideLoadingScreen()
@@ -234,6 +288,7 @@ void UUEGameInstance::HideLoadingScreen()
 	LoadedWorldForLoadingScreen.Reset();
 	LoadingScreenSlateWidget.Reset();
 	LoadingScreenWidget = nullptr;
+	bLoadingMapStarted = false;
 }
 
 // ---------------------------------------------------------------- 로그인 서버

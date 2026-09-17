@@ -291,6 +291,8 @@ private:
 	void HandlePostLoadMap(UWorld* LoadedWorld);
 	bool BeginPendingLevelTravel(float DeltaSeconds);
 	bool FinishLoadingScreen(float DeltaSeconds);
+	bool IsLoadedWorldReadyToReveal();
+	void PollLoadingScreenWhileMovieWaits();
 	void HideLoadingScreen();
 
 	void LoadCharacterSlots();
@@ -382,6 +384,11 @@ private:
 	FDelegateHandle PostLoadMapHandle;
 	FTSTicker::FDelegateHandle PendingTravelHandle;
 	FTSTicker::FDelegateHandle LoadingFinishHandle;
+	FDelegateHandle LoadingMoviePollHandle;
+	// PreLoadMap 이 불린 뒤다. 그 전(이동 직전 프레임)에는 아직 옛 월드라 로딩 화면을 닫으면 안 된다.
+	bool bLoadingMapStarted = false;
+	// 게임 시작 뒤 첫 맵 로드가 시작됐는지. 첫 로드에는 로딩 화면을 쓰지 않는다.
+	bool bFirstMapLoadStarted = false;
 	TSoftObjectPtr<UWorld> PendingTravelLevel;
 	FString PendingTravelOptions;
 	double LoadingScreenStartedAtSeconds = 0.0;
