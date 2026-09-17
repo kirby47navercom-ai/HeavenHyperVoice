@@ -398,7 +398,8 @@ void AUEPlayerCharacter::ApplyRemoteCoreState(const hhv::movement::State &State,
 	const FQuat Rotation = FRotator(0.f, State.facing, 0.f).Quaternion();
 	const bool bReset = bTeleported || RemoteMoveBuffer.IsEmpty() ||
 	                    FVector::Dist(GetActorLocation(), Location) >= RemoteHardSnapDistance;
-	RemoteMoveBuffer.Add({ServerTime, Location, Velocity, Rotation, State}, bReset, .1);
+	RemoteMoveBuffer.Add({ServerTime, Location, Velocity, Rotation, State}, bReset,
+	                     RemoteInterpolationDelaySeconds);
 	if (bReset)
 	{
 		CoreMovement->RenderServerState(State);
@@ -408,7 +409,8 @@ void AUEPlayerCharacter::ApplyRemoteCoreState(const hhv::movement::State &State,
 void AUEPlayerCharacter::UpdateRemoteProxyMovement(float DeltaSeconds)
 {
 	FUEServerMoveSample Sample;
-	if (!RemoteMoveBuffer.Advance(DeltaSeconds, .1, Sample))
+	if (!RemoteMoveBuffer.Advance(DeltaSeconds, RemoteInterpolationDelaySeconds, Sample,
+	                            RemoteMaxPlaybackLagSeconds))
 	{
 		return;
 	}

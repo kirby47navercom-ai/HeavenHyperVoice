@@ -51,7 +51,9 @@ class FUEServerMoveBuffer
 		return true;
 	}
 
-	bool Advance(double DeltaSeconds, double Delay, FUEServerMoveSample &Out)
+	// A positive limit skips stale playback while keeping samples around the new render time.
+	bool Advance(double DeltaSeconds, double Delay, FUEServerMoveSample &Out,
+	             double MaxPlaybackLagSeconds = 0.0)
 	{
 		if (Samples.IsEmpty())
 		{
@@ -61,6 +63,15 @@ class FUEServerMoveBuffer
 		const double ExcessLag = Samples.Last().Time - PlaybackTime - Delay;
 		const double Rate = ExcessLag > Delay ? 1.1 : 1.0;
 		PlaybackTime += FMath::Max(DeltaSeconds, 0.0) * Rate;
+
+		const double PlaybackLag = Samples.Last().Time - PlaybackTime;
+		if (MaxPlaybackLagSeconds > Delay && PlaybackLag > MaxPlaybackLagSeconds)
+		{
+			// Received movement is already available. Skip the old interval instead of
+			// spending seconds replaying it. The pruning below keeps the bracketing samples.
+			PlaybackTime = Samples.Last().Time - Delay;
+		}
+
 		if (PlaybackTime > Samples.Last().Time)
 		{
 			PlaybackTime = Samples.Last().Time;

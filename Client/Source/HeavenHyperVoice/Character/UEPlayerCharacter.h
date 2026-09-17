@@ -244,6 +244,11 @@ class HEAVENHYPERVOICE_API AUEPlayerCharacter : public APawn
 	bool bAppearanceExternallyDriven = false;
 
 	FUEServerMoveBuffer RemoteMoveBuffer;
+
+	// Keep two 20Hz snapshots for interpolation; skip playback if it falls far behind.
+	static constexpr double RemoteInterpolationDelaySeconds = 0.1;
+	static constexpr double RemoteMaxPlaybackLagSeconds = 0.35;
+
 	float RemoteHardSnapDistance = 500.f;
 
 	void PlayerCharacterInit();
