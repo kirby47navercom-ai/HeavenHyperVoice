@@ -2,11 +2,15 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Styling/SlateTypes.h"
+#include "UEFrontendPanelStyle.h"
 #include "UEServerAddressWidget.generated.h"
 
 class UButton;
 class UEditableTextBox;
+class UImage;
 class UTextBlock;
+class UWidgetAnimation;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FUEServerAddressConfirmedSignature, const FString&, ServerAddress);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FUEServerAddressBackRequestedSignature);
@@ -48,9 +52,28 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Frontend|Server Address")
 	FString DefaultServerAddress = TEXT("127.0.0.1");
 
+	/** 상태 문구가 바뀔 때마다 부른다. StatusStyles 를 비워 두면 색·아이콘은 WBP 가 여기서 고른다. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Frontend|Server Address")
+	void OnStatusChanged(EUEFrontendStatusKind Kind);
+
+	// 상태 종류별 문구 색과 아이콘. 비어 있으면 C++ 은 모양을 건드리지 않는다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Frontend|Server Address|Style")
+	TMap<EUEFrontendStatusKind, FUEFrontendStatusStyle> StatusStyles;
+
+	// 켜면 오류일 때 입력칸을 InputErrorStyle 로, 아니면 InputStyle 로 바꾼다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Frontend|Server Address|Style")
+	bool bUseInputErrorStyle = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Frontend|Server Address|Style", meta = (EditCondition = "bUseInputErrorStyle"))
+	FEditableTextBoxStyle InputStyle;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Frontend|Server Address|Style", meta = (EditCondition = "bUseInputErrorStyle"))
+	FEditableTextBoxStyle InputErrorStyle;
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	// 배치와 스타일은 WBP_ServerAddress에서만 편집한다.
 	// 원본 반응형 WBP의 내부 이름을 유지해 위젯 GUID를 안전하게 보존한다.
@@ -66,6 +89,17 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> StatusText = nullptr;
 
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> StatusIcon = nullptr;
+
+	// 누르면 DefaultServerAddress 를 입력칸에 채운다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> LocalAddressButton = nullptr;
+
+	// 화면이 뜰 때 패널이 들어오는 애니메이션.
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> PanelIn = nullptr;
+
 private:
 	UFUNCTION()
 	void HandleConfirmClicked();
@@ -76,6 +110,16 @@ private:
 
 	// 버튼과 엔터가 함께 쓰는 실제 처리.
 	void ConfirmAddress();
+
+	void SetStatus(const FText& Message, EUEFrontendStatusKind Kind);
+
+	UFUNCTION()
+	void HandleLocalAddressClicked();
+
+	bool bInputShowsError = false;
+
+	// 키보드·패드로 버튼에 포커스가 가면 “<버튼 이름>FocusRing” 위젯을 보여 준다.
+	FUEFrontendFocusRings FocusRings;
 
 	UFUNCTION()
 	void HandleBackClicked();

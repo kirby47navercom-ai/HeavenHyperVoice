@@ -2,12 +2,16 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Styling/SlateTypes.h"
+#include "../Frontend/UEFrontendPanelStyle.h"
 #include "UELoginWidget.generated.h"
 
 class UButton;
 class UEditableTextBox;
+class UImage;
 class USizeBox;
 class UTextBlock;
+class UWidgetAnimation;
 class UUEAccountSubsystem;
 enum class EUELocalAccountResult : uint8;
 
@@ -48,9 +52,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Text")
 	FText RegisterReadyStatusText;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Text")
-	FText DuplicateCheckRequiredStatusText;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Login|Text")
 	FText UserIdAvailableStatusText;
@@ -121,16 +122,60 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Login")
 	EUELoginScreenMode GetScreenMode() const { return ScreenMode; }
 
+	/** 로그인·회원가입 전환 때 부른다. bUseTabStyles 를 끄면 선택된 탭 모양은 WBP 가 여기서 고른다. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Login")
+	void OnScreenModeChanged(EUELoginScreenMode Mode);
+
+	// 상태 종류별 문구 색과 아이콘. 비어 있으면 C++ 은 모양을 건드리지 않는다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Style")
+	TMap<EUEFrontendStatusKind, FUEFrontendStatusStyle> StatusStyles;
+
+	// 켜면 오류 원인이 된 입력칸만 InputErrorStyle 로, 나머지는 InputStyle 로 둔다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Style")
+	bool bUseInputErrorStyle = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Style", meta = (EditCondition = "bUseInputErrorStyle"))
+	FEditableTextBoxStyle InputStyle;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Style", meta = (EditCondition = "bUseInputErrorStyle"))
+	FEditableTextBoxStyle InputErrorStyle;
+
+	// 켜면 로그인·회원가입 탭 중 선택된 쪽에 SelectedTabStyle 을 입힌다.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Style")
+	bool bUseTabStyles = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Style", meta = (EditCondition = "bUseTabStyles"))
+	FButtonStyle TabStyle;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Style", meta = (EditCondition = "bUseTabStyles"))
+	FButtonStyle SelectedTabStyle;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Style", meta = (EditCondition = "bUseTabStyles"))
+	FLinearColor TabTextColor = FLinearColor::Black;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Login|Style", meta = (EditCondition = "bUseTabStyles"))
+	FLinearColor SelectedTabTextColor = FLinearColor::White;
+
 	UFUNCTION(BlueprintCallable, Category = "Login")
-	void SetStatusMessage(const FText& Message);
+	void SetStatusMessage(const FText& Message, EUEFrontendStatusKind Kind = EUEFrontendStatusKind::Info);
+
+	/** 상태 문구가 바뀔 때마다 부른다. 색·아이콘·연결 중 파형은 WBP 가 Kind 를 보고 고른다. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Login")
+	void OnStatusChanged(EUEFrontendStatusKind Kind);
 
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 private:
 	void RefreshScreenMode();
-	void ResetDuplicateCheck();
+	void RefreshTabs();
+	void ShowUserIdFormatGuide(const FString& UserId);
+
+	// ErrorInput 은 Kind 가 Error 일 때 오류 테두리로 표시할 입력칸이다.
+	void SetStatus(const FText& Message, EUEFrontendStatusKind Kind, UEditableTextBox* ErrorInput);
+	void MarkInputError(UEditableTextBox* Input, bool bError);
 	void HandleLogin();
 	void HandleRegistration();
 	UUEAccountSubsystem* GetAccountSubsystem() const;
@@ -140,10 +185,10 @@ private:
 	void HandleRegisterTabClicked();
 
 	UFUNCTION()
-	void HandlePrimaryActionClicked();
+	void HandleLoginTabClicked();
 
 	UFUNCTION()
-	void HandleDuplicateCheckClicked();
+	void HandlePrimaryActionClicked();
 
 	UFUNCTION()
 	void HandleUserIdChanged(const FText& NewText);
@@ -169,7 +214,8 @@ private:
 	void SetRequestPending(bool bPending);
 
 private:
-	UPROPERTY(meta = (BindWidget))
+	// 탭 배치에서는 탭 글자가 제목을 대신하므로 없어도 된다.
+	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> SubtitleBlock = nullptr;
 
 	/**
@@ -189,9 +235,6 @@ private:
 	TObjectPtr<UEditableTextBox> IdInputBox = nullptr;
 
 	UPROPERTY(meta = (BindWidget))
-	TObjectPtr<UButton> DuplicateCheckButton = nullptr;
-
-	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UEditableTextBox> PasswordInputBox = nullptr;
 
 	UPROPERTY(meta = (BindWidget))
@@ -202,6 +245,27 @@ private:
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> RegisterTabButton = nullptr;
+
+	/**
+	 * 로그인·회원가입을 탭으로 나란히 둘 때의 로그인 탭. 없으면 예전 배치로 본다:
+	 * 회원가입 중에는 RegisterTabButton 을 숨기고 BackButton 이 로그인으로 돌아간다.
+	 * 있으면 두 탭이 항상 보이고 BackButton 은 모드와 상관없이 서버 화면으로 간다.
+	 */
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UButton> LoginTabButton = nullptr;
+
+	// bUseTabStyles 가 켜져 있을 때 탭 글자색과 선택 눈금을 바꾼다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> LoginTabLabel = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> RegisterTabLabel = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> LoginTabTick = nullptr;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> RegisterTabTick = nullptr;
 
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UButton> PrimaryActionButton = nullptr;
@@ -215,9 +279,34 @@ private:
 	UPROPERTY(meta = (BindWidget))
 	TObjectPtr<UTextBlock> StatusBlock = nullptr;
 
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UImage> StatusIcon = nullptr;
+
+	// 연결 중일 때 아이콘 대신 보이는 파형. 움직임은 StatusWaveLoop 애니메이션이 맡는다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UWidget> StatusWave = nullptr;
+
+	// 화면이 뜰 때 패널이 들어오는 애니메이션.
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> PanelIn = nullptr;
+
+	// 파형처럼 화면이 떠 있는 동안 계속 도는 움직임.
+	UPROPERTY(Transient, meta = (BindWidgetAnimOptional))
+	TObjectPtr<UWidgetAnimation> StatusWaveLoop = nullptr;
+
+	// 로그인 패널 머리줄에 지금 붙을 서버 주소를 보여 준다. 누르면 서버 화면으로 가는
+	// BackButton 옆에 두는 용도라 없어도 된다.
+	UPROPERTY(meta = (BindWidgetOptional))
+	TObjectPtr<UTextBlock> ServerAddressText = nullptr;
+
 	EUELoginScreenMode ScreenMode = EUELoginScreenMode::Login;
-	bool bUserIdDuplicateChecked = false;
-	FString DuplicateCheckedUserId;
+
+	// 지금 오류 스타일이 입혀진 입력칸. 스타일을 매번 다시 넣지 않으려고 들고 있다.
+	UPROPERTY(Transient)
+	TSet<TObjectPtr<UEditableTextBox>> InputsShowingError;
+
+	// 키보드·패드로 버튼에 포커스가 가면 “<버튼 이름>FocusRing” 위젯을 보여 준다.
+	FUEFrontendFocusRings FocusRings;
 
 	// 서버 응답을 기다리는 중이다. 연타로 두 번째 요청이 나가면 서버가 연결을
 	// 끊으므로(LoginHandler 의 Busy 단계) 버튼을 잠근다.

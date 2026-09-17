@@ -2,6 +2,7 @@
 
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
+#include "Components/Image.h"
 #include "Components/TextBlock.h"
 
 void UUEServerAddressWidget::NativeConstruct()
@@ -11,9 +12,15 @@ void UUEServerAddressWidget::NativeConstruct()
 	ConfirmButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleConfirmClicked);
 	BackButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleBackClicked);
 	CharacterNameInput->OnTextCommitted.AddUniqueDynamic(this, &ThisClass::HandleAddressCommitted);
-	if (StatusText)
+	if (LocalAddressButton)
 	{
-		StatusText->SetText(ReadyMessage);
+		LocalAddressButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleLocalAddressClicked);
+	}
+	SetStatus(ReadyMessage, EUEFrontendStatusKind::Info);
+	FocusRings.Collect(this);
+	if (PanelIn)
+	{
+		PlayAnimation(PanelIn);
 	}
 	CharacterNameInput->SetKeyboardFocus();
 }
@@ -32,8 +39,18 @@ void UUEServerAddressWidget::NativeDestruct()
 	{
 		CharacterNameInput->OnTextCommitted.RemoveDynamic(this, &ThisClass::HandleAddressCommitted);
 	}
+	if (LocalAddressButton)
+	{
+		LocalAddressButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleLocalAddressClicked);
+	}
 
 	Super::NativeDestruct();
+}
+
+void UUEServerAddressWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	FocusRings.Refresh();
 }
 
 void UUEServerAddressWidget::SetInitialServerAddress(const FString& ServerAddress)
@@ -107,15 +124,37 @@ void UUEServerAddressWidget::ConfirmAddress()
 
 	if (!IsValidServerAddress(ServerAddress))
 	{
-		if (StatusText)
-		{
-			StatusText->SetText(InvalidAddressMessage);
-		}
+		SetStatus(InvalidAddressMessage, EUEFrontendStatusKind::Error);
 		CharacterNameInput->SetKeyboardFocus();
 		return;
 	}
 
 	OnServerAddressConfirmed.Broadcast(ServerAddress);
+}
+
+void UUEServerAddressWidget::SetStatus(const FText& Message, EUEFrontendStatusKind Kind)
+{
+	if (StatusText)
+	{
+		StatusText->SetText(Message);
+	}
+	UEFrontendStatus::Apply(StatusStyles, Kind, StatusText, StatusIcon, nullptr);
+
+	// 입력 중에 스타일을 매번 다시 넣지 않도록 오류 여부가 바뀔 때만 바꾼다.
+	const bool bError = Kind == EUEFrontendStatusKind::Error;
+	if (bUseInputErrorStyle && CharacterNameInput && bError != bInputShowsError)
+	{
+		CharacterNameInput->SetWidgetStyle(bError ? InputErrorStyle : InputStyle);
+		bInputShowsError = bError;
+	}
+	OnStatusChanged(Kind);
+}
+
+void UUEServerAddressWidget::HandleLocalAddressClicked()
+{
+	CharacterNameInput->SetText(FText::FromString(DefaultServerAddress));
+	SetStatus(ReadyMessage, EUEFrontendStatusKind::Info);
+	CharacterNameInput->SetKeyboardFocus();
 }
 
 void UUEServerAddressWidget::HandleBackClicked()

@@ -7,6 +7,8 @@
 #include "../../CharacterSelection/UI/UECharacterSelectionWidget.h"
 #include "../../System/UEGameInstance.h"
 
+#include "TimerManager.h"
+
 
 void AUEFrontendPlayerController::BeginPlay()
 {
@@ -29,20 +31,24 @@ void AUEFrontendPlayerController::BeginPlay()
 
 void AUEFrontendPlayerController::ShowTitle()
 {
-	if (!TitleWidgetClass)
+	UUETitleWidget* Title = TitleLayer;
+	if (Title)
 	{
-		UE_LOG(LogTemp, Error, TEXT("타이틀 위젯 클래스가 BP_FrontendPlayerController 기본값에 지정되지 않았습니다."));
-		return;
+		// 서버 화면에서 돌아온 경우다. 배경은 그대로 두고 줌인만 한다.
+		Title->SetShot(EUEFrontendShot::Title, true);
+	}
+	else
+	{
+		Title = EnsureTitleLayer(EUEFrontendShot::Title);
+		if (!Title)
+		{
+			return;
+		}
+		Title->PlayIntro();
 	}
 
-	UUETitleWidget* TitleWidget = CreateWidget<UUETitleWidget>(this, TitleWidgetClass);
-	if (!TitleWidget)
-	{
-		return;
-	}
-
-	TitleWidget->OnContinueRequested.AddUniqueDynamic(this, &ThisClass::HandleTitleContinueRequested);
-	ReplaceCurrentWidget(TitleWidget);
+	ClearCurrentWidget();
+	ApplyFrontendInputMode(Title);
 }
 
 void AUEFrontendPlayerController::ShowLogin()
@@ -61,7 +67,7 @@ void AUEFrontendPlayerController::ShowLogin()
 
 	LoginWidget->OnLoginSucceeded.AddUniqueDynamic(this, &ThisClass::HandleLoginSucceeded);
 	LoginWidget->OnBackRequested.AddUniqueDynamic(this, &ThisClass::HandleLoginBackRequested);
-	ReplaceCurrentWidget(LoginWidget);
+	ShowOverTitleLayer(LoginWidget);
 }
 
 void AUEFrontendPlayerController::ShowServerAddress()
@@ -89,7 +95,7 @@ void AUEFrontendPlayerController::ShowServerAddress()
 	ServerAddressWidget->OnBackRequested.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleServerAddressBackRequested);
-	ReplaceCurrentWidget(ServerAddressWidget);
+	ShowOverTitleLayer(ServerAddressWidget);
 }
 
 void AUEFrontendPlayerController::ShowLobby()
@@ -109,6 +115,7 @@ void AUEFrontendPlayerController::ShowLobby()
 	LobbyWidget->OnCharacterCreationRequested.AddUniqueDynamic(
 		this,
 		&ThisClass::HandleCharacterCreationRequested);
+	RemoveTitleLayer();
 	ReplaceCurrentWidget(LobbyWidget);
 }
 
@@ -127,24 +134,100 @@ void AUEFrontendPlayerController::ShowCharacterName()
 	}
 	NameWidget->OnNameConfirmed.AddUniqueDynamic(this, &ThisClass::HandleCharacterNameConfirmed);
 	NameWidget->OnBackRequested.AddUniqueDynamic(this, &ThisClass::HandleCharacterNameBackRequested);
+	RemoveTitleLayer();
 	ReplaceCurrentWidget(NameWidget);
 }
 
-void AUEFrontendPlayerController::ReplaceCurrentWidget(UUserWidget* NewWidget)
+void AUEFrontendPlayerController::ReplaceCurrentWidget(UUserWidget* NewWidget, float RevealDelay)
 {
 	if (!NewWidget)
 	{
 		return;
 	}
 
+	ClearCurrentWidget();
+	CurrentWidget = NewWidget;
+
+	if (RevealDelay <= 0.0f)
+	{
+		CurrentWidget->AddToViewport(WidgetZOrder);
+		ApplyFrontendInputMode(CurrentWidget);
+		return;
+	}
+
+	// 줌아웃이 어느 정도 진행된 뒤에 패널을 붙인다. 그 사이 입력은 타이틀 겹이 받지만
+	// Menu 장면이라 무시한다.
+	TWeakObjectPtr<UUserWidget> PendingWidget = NewWidget;
+	GetWorldTimerManager().SetTimer(RevealTimer, FTimerDelegate::CreateWeakLambda(this, [this, PendingWidget]
+	{
+		UUserWidget* Widget = PendingWidget.Get();
+		if (Widget && CurrentWidget == Widget && !Widget->IsInViewport())
+		{
+			Widget->AddToViewport(WidgetZOrder);
+			ApplyFrontendInputMode(Widget);
+		}
+	}), RevealDelay, false);
+}
+
+void AUEFrontendPlayerController::ClearCurrentWidget()
+{
+	GetWorldTimerManager().ClearTimer(RevealTimer);
 	if (CurrentWidget)
 	{
 		CurrentWidget->RemoveFromParent();
+		CurrentWidget = nullptr;
+	}
+}
+
+UUETitleWidget* AUEFrontendPlayerController::EnsureTitleLayer(EUEFrontendShot InitialShot)
+{
+	if (TitleLayer)
+	{
+		return TitleLayer;
 	}
 
-	CurrentWidget = NewWidget;
-	CurrentWidget->AddToViewport(WidgetZOrder);
-	ApplyFrontendInputMode(CurrentWidget);
+	if (!TitleWidgetClass)
+	{
+		UE_LOG(LogTemp, Error, TEXT("타이틀 위젯 클래스가 BP_FrontendPlayerController 기본값에 지정되지 않았습니다."));
+		return nullptr;
+	}
+
+	TitleLayer = CreateWidget<UUETitleWidget>(this, TitleWidgetClass);
+	if (!TitleLayer)
+	{
+		return nullptr;
+	}
+
+	TitleLayer->OnContinueRequested.AddUniqueDynamic(this, &ThisClass::HandleTitleContinueRequested);
+	// 서버·로그인 패널보다 한 칸 아래에 깐다.
+	TitleLayer->AddToViewport(WidgetZOrder - 1);
+	TitleLayer->SetShot(InitialShot, false);
+	return TitleLayer;
+}
+
+void AUEFrontendPlayerController::RemoveTitleLayer()
+{
+	if (TitleLayer)
+	{
+		TitleLayer->OnContinueRequested.RemoveDynamic(this, &ThisClass::HandleTitleContinueRequested);
+		TitleLayer->RemoveFromParent();
+		TitleLayer = nullptr;
+	}
+}
+
+void AUEFrontendPlayerController::ShowOverTitleLayer(UUserWidget* NewWidget)
+{
+	// 타이틀 장면에서 넘어올 때만 줌아웃을 보여 주고 패널을 늦게 붙인다.
+	// 로그인 ↔ 서버처럼 이미 Menu 장면이면 바로 바꾼다. 타이틀 겹이 없던 경우
+	// (로그인 요청을 받고 바로 로그인 화면으로 시작) 는 줌 끝 모습으로 만든다.
+	const bool bZoomOut = TitleLayer
+		&& TitleLayer->GetShot() == EUEFrontendShot::Title
+		&& TitleLayer->HasZoomAnimation();
+	if (UUETitleWidget* Title = EnsureTitleLayer(EUEFrontendShot::Menu))
+	{
+		Title->SetShot(EUEFrontendShot::Menu, true);
+	}
+	ReplaceCurrentWidget(NewWidget, bZoomOut ? MenuRevealDelay : 0.0f);
 }
 
 void AUEFrontendPlayerController::ApplyFrontendInputMode(UUserWidget* FocusWidget)

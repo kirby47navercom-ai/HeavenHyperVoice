@@ -7,6 +7,7 @@
 
 #include "Components/Button.h"
 #include "Components/EditableTextBox.h"
+#include "Components/Image.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 
@@ -21,8 +22,11 @@ void UUELoginWidget::NativeConstruct()
 	Super::NativeConstruct();
 
 	RegisterTabButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleRegisterTabClicked);
+	if (LoginTabButton)
+	{
+		LoginTabButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleLoginTabClicked);
+	}
 	PrimaryActionButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandlePrimaryActionClicked);
-	DuplicateCheckButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleDuplicateCheckClicked);
 	IdInputBox->OnTextChanged.AddUniqueDynamic(this, &ThisClass::HandleUserIdChanged);
 	BackButton->OnClicked.AddUniqueDynamic(this, &ThisClass::HandleBackClicked);
 
@@ -31,10 +35,26 @@ void UUELoginWidget::NativeConstruct()
 		GameInstance->OnLoginCompleted.AddUniqueDynamic(this, &ThisClass::HandleServerLoginCompleted);
 		GameInstance->OnRegisterCompleted.AddUniqueDynamic(this, &ThisClass::HandleServerRegisterCompleted);
 		GameInstance->OnServerDisconnected.AddUniqueDynamic(this, &ThisClass::HandleServerDisconnected);
+
+		if (ServerAddressText)
+		{
+			ServerAddressText->SetText(FText::FromString(GameInstance->GetServerAddress()));
+		}
 	}
 
 	SetScreenMode(EUELoginScreenMode::Login);
 	SetRequestPending(false);
+	FocusRings.Collect(this);
+
+	if (PanelIn)
+	{
+		PlayAnimation(PanelIn);
+	}
+	if (StatusWaveLoop)
+	{
+		// 반복 횟수 0 은 끝없이 반복이다.
+		PlayAnimation(StatusWaveLoop, 0.0f, 0);
+	}
 }
 
 void UUELoginWidget::NativeDestruct()
@@ -43,13 +63,13 @@ void UUELoginWidget::NativeDestruct()
 	{
 		RegisterTabButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleRegisterTabClicked);
 	}
+	if (LoginTabButton)
+	{
+		LoginTabButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleLoginTabClicked);
+	}
 	if (PrimaryActionButton)
 	{
 		PrimaryActionButton->OnClicked.RemoveDynamic(this, &ThisClass::HandlePrimaryActionClicked);
-	}
-	if (DuplicateCheckButton)
-	{
-		DuplicateCheckButton->OnClicked.RemoveDynamic(this, &ThisClass::HandleDuplicateCheckClicked);
 	}
 	if (IdInputBox)
 	{
@@ -71,46 +91,122 @@ void UUELoginWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
+void UUELoginWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+	FocusRings.Refresh();
+}
+
 void UUELoginWidget::SetScreenMode(EUELoginScreenMode NewMode)
 {
 	ScreenMode = NewMode;
-	ResetDuplicateCheck();
 	RefreshScreenMode();
-	SetStatusMessage(ScreenMode == EUELoginScreenMode::Register ? RegisterReadyStatusText : ReadyStatusText);
+	if (ScreenMode == EUELoginScreenMode::Register)
+	{
+		// 로그인에서 쳐 둔 아이디가 있으면 그 형식부터 알려준다.
+		ShowUserIdFormatGuide(IdInputBox->GetText().ToString().TrimStartAndEnd());
+		return;
+	}
+	SetStatusMessage(ReadyStatusText);
 }
 
-void UUELoginWidget::SetStatusMessage(const FText& Message)
+void UUELoginWidget::SetStatusMessage(const FText& Message, EUEFrontendStatusKind Kind)
+{
+	SetStatus(Message, Kind, nullptr);
+}
+
+void UUELoginWidget::SetStatus(const FText& Message, EUEFrontendStatusKind Kind, UEditableTextBox* ErrorInput)
 {
 	if (StatusBlock)
 	{
 		StatusBlock->SetText(Message);
+	}
+	UEFrontendStatus::Apply(StatusStyles, Kind, StatusBlock, StatusIcon, StatusWave);
+
+	if (bUseInputErrorStyle)
+	{
+		const bool bError = Kind == EUEFrontendStatusKind::Error;
+		for (UEditableTextBox* Input : {IdInputBox.Get(), PasswordInputBox.Get(), ConfirmPasswordInputBox.Get()})
+		{
+			MarkInputError(Input, bError && Input == ErrorInput);
+		}
+	}
+	OnStatusChanged(Kind);
+}
+
+void UUELoginWidget::MarkInputError(UEditableTextBox* Input, bool bError)
+{
+	if (!Input || bError == InputsShowingError.Contains(Input))
+	{
+		return;
+	}
+	// 입력 중에 스타일을 매번 다시 넣지 않도록 오류 여부가 바뀔 때만 넣는다.
+	Input->SetWidgetStyle(bError ? InputErrorStyle : InputStyle);
+	if (bError)
+	{
+		InputsShowingError.Add(Input);
+	}
+	else
+	{
+		InputsShowingError.Remove(Input);
 	}
 }
 
 void UUELoginWidget::RefreshScreenMode()
 {
 	const bool bIsRegisterMode = ScreenMode == EUELoginScreenMode::Register;
-	SubtitleBlock->SetText(bIsRegisterMode ? RegisterSubtitleText : LoginSubtitleText);
+	if (SubtitleBlock)
+	{
+		SubtitleBlock->SetText(bIsRegisterMode ? RegisterSubtitleText : LoginSubtitleText);
+	}
 	if (NicknameRow)
 	{
 		// 닉네임은 캐릭터 속성이라 가입에 싣지 않는다. WBP 에서 지울 때까지 접어 둔다.
 		NicknameRow->SetVisibility(ESlateVisibility::Collapsed);
 	}
-	DuplicateCheckButton->SetVisibility(bIsRegisterMode ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 	ConfirmPasswordRow->SetVisibility(bIsRegisterMode ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
-	RegisterTabButton->SetVisibility(bIsRegisterMode ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
+	RegisterTabButton->SetVisibility(bIsRegisterMode && !LoginTabButton ? ESlateVisibility::Collapsed : ESlateVisibility::Visible);
 	PrimaryActionLabel->SetText(bIsRegisterMode ? CreateAccountButtonText : LoginButtonText);
+	RefreshTabs();
+	OnScreenModeChanged(ScreenMode);
 }
 
-void UUELoginWidget::ResetDuplicateCheck()
+void UUELoginWidget::RefreshTabs()
 {
-	bUserIdDuplicateChecked = false;
-	DuplicateCheckedUserId.Reset();
+	if (!bUseTabStyles || !LoginTabButton)
+	{
+		return;
+	}
+
+	const bool bIsRegisterMode = ScreenMode == EUELoginScreenMode::Register;
+	LoginTabButton->SetStyle(bIsRegisterMode ? TabStyle : SelectedTabStyle);
+	RegisterTabButton->SetStyle(bIsRegisterMode ? SelectedTabStyle : TabStyle);
+	if (LoginTabLabel)
+	{
+		LoginTabLabel->SetColorAndOpacity(FSlateColor(bIsRegisterMode ? TabTextColor : SelectedTabTextColor));
+	}
+	if (RegisterTabLabel)
+	{
+		RegisterTabLabel->SetColorAndOpacity(FSlateColor(bIsRegisterMode ? SelectedTabTextColor : TabTextColor));
+	}
+	if (LoginTabTick)
+	{
+		LoginTabTick->SetVisibility(bIsRegisterMode ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible);
+	}
+	if (RegisterTabTick)
+	{
+		RegisterTabTick->SetVisibility(bIsRegisterMode ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Hidden);
+	}
 }
 
 void UUELoginWidget::HandleRegisterTabClicked()
 {
 	SetScreenMode(EUELoginScreenMode::Register);
+}
+
+void UUELoginWidget::HandleLoginTabClicked()
+{
+	SetScreenMode(EUELoginScreenMode::Login);
 }
 
 void UUELoginWidget::HandlePrimaryActionClicked()
@@ -124,20 +220,15 @@ void UUELoginWidget::HandlePrimaryActionClicked()
 	HandleRegistration();
 }
 
-void UUELoginWidget::HandleDuplicateCheckClicked()
+void UUELoginWidget::ShowUserIdFormatGuide(const FString& UserId)
 {
-	// 서버에는 "이 아이디 쓸 수 있나" 를 묻는 메시지가 없다. 넣으려면 프로토콜과
-	// 서버 핸들러가 늘어나는데, 얻는 것은 가입 버튼을 누르기 전에 알려주는 것뿐이다.
-	// 중복이면 가입 응답이 "이미 사용 중인 아이디입니다" 로 알려준다.
-	//
-	// 그래서 여기서는 서버가 어차피 거절할 형식만 미리 걸러준다. 규칙은
-	// LoginCodec.h 의 isValidUsername 과 같다: 영문/숫자/밑줄, 3~32자.
-	const FString UserId = IdInputBox->GetText().ToString().TrimStartAndEnd();
-
-	if (UserId.Len() < 3 || UserId.Len() > 32)
+	// 서버에는 "이 아이디 쓸 수 있나" 를 묻는 메시지가 없다. 중복이면 가입 응답이
+	// "이미 사용 중인 아이디입니다" 로 알려준다. 그래서 입력하는 동안에는 서버가 어차피
+	// 거절할 형식만 알려준다. 규칙은 LoginCodec.h 의 isValidUsername 과 같다:
+	// 영문/숫자/밑줄, 3~32자.
+	if (UserId.IsEmpty())
 	{
-		ResetDuplicateCheck();
-		SetStatusMessage(InvalidUserIdLengthStatusText);
+		SetStatusMessage(RegisterReadyStatusText);
 		return;
 	}
 
@@ -149,20 +240,24 @@ void UUELoginWidget::HandleDuplicateCheckClicked()
 			|| Character == TEXT('_');
 		if (!bAllowed)
 		{
-			ResetDuplicateCheck();
-			SetStatusMessage(InvalidUserIdCharactersStatusText);
+			SetStatus(InvalidUserIdCharactersStatusText, EUEFrontendStatusKind::Error, IdInputBox);
 			return;
 		}
 	}
 
-	bUserIdDuplicateChecked = true;
-	DuplicateCheckedUserId = UserId.ToLower();
-	SetStatusMessage(UserIdFormatOkStatusText);
+	// 길이는 아직 치는 중일 수 있어 오류가 아니라 안내로 보여준다.
+	if (UserId.Len() < 3 || UserId.Len() > 32)
+	{
+		SetStatusMessage(InvalidUserIdLengthStatusText);
+		return;
+	}
+
+	SetStatusMessage(UserIdFormatOkStatusText, EUEFrontendStatusKind::Success);
 }
 
 void UUELoginWidget::HandleBackClicked()
 {
-	if (ScreenMode == EUELoginScreenMode::Register)
+	if (ScreenMode == EUELoginScreenMode::Register && !LoginTabButton)
 	{
 		SetScreenMode(EUELoginScreenMode::Login);
 		return;
@@ -173,14 +268,10 @@ void UUELoginWidget::HandleBackClicked()
 
 void UUELoginWidget::HandleUserIdChanged(const FText& NewText)
 {
-	// 중복 확인 뒤 아이디를 수정하면 이전 확인 결과를 바로 무효화한다.
-	if (bUserIdDuplicateChecked && NewText.ToString().TrimStartAndEnd().ToLower() != DuplicateCheckedUserId)
+	// 응답을 기다리는 동안 문구를 덮으면 연결 중 표시가 사라진다.
+	if (ScreenMode == EUELoginScreenMode::Register && !bRequestPending)
 	{
-		ResetDuplicateCheck();
-		if (ScreenMode == EUELoginScreenMode::Register)
-		{
-			SetStatusMessage(DuplicateCheckRequiredStatusText);
-		}
+		ShowUserIdFormatGuide(NewText.ToString().TrimStartAndEnd());
 	}
 }
 
@@ -196,10 +287,6 @@ void UUELoginWidget::SetRequestPending(bool bPending)
 	{
 		PrimaryActionButton->SetIsEnabled(!bPending);
 	}
-	if (DuplicateCheckButton)
-	{
-		DuplicateCheckButton->SetIsEnabled(!bPending);
-	}
 }
 
 void UUELoginWidget::HandleLogin()
@@ -207,7 +294,7 @@ void UUELoginWidget::HandleLogin()
 	UUEGameInstance* GameInstance = GetHHVGameInstance();
 	if (!GameInstance)
 	{
-		SetStatusMessage(LoginFailedStatusText);
+		SetStatusMessage(LoginFailedStatusText, EUEFrontendStatusKind::Error);
 		return;
 	}
 
@@ -215,14 +302,14 @@ void UUELoginWidget::HandleLogin()
 	const FString Password = PasswordInputBox->GetText().ToString();
 	if (UserId.IsEmpty() || Password.IsEmpty())
 	{
-		SetStatusMessage(InvalidFieldsStatusText);
+		SetStatus(InvalidFieldsStatusText, EUEFrontendStatusKind::Error, UserId.IsEmpty() ? IdInputBox : PasswordInputBox);
 		return;
 	}
 
 	// 서버 왕복이라 여기서 결과가 나오지 않는다. HandleServerLoginCompleted 에서 잇는다.
 	PendingUserId = UserId;
 	SetRequestPending(true);
-	SetStatusMessage(ConnectingStatusText);
+	SetStatusMessage(ConnectingStatusText, EUEFrontendStatusKind::Pending);
 	GameInstance->ConnectAndLogin(UserId, Password);
 }
 
@@ -234,11 +321,11 @@ void UUELoginWidget::HandleServerLoginCompleted(bool bOk, const FString& Message
 	{
 		// 서버가 준 사유를 그대로 보여준다. 아이디 존재 여부는 서버가 이미
 		// 하나의 문구로 합쳐서 보낸다.
-		SetStatusMessage(Message.IsEmpty() ? LoginFailedStatusText : FText::FromString(Message));
+		SetStatus(Message.IsEmpty() ? LoginFailedStatusText : FText::FromString(Message), EUEFrontendStatusKind::Error, PasswordInputBox);
 		return;
 	}
 
-	SetStatusMessage(LoginSucceededStatusText);
+	SetStatusMessage(LoginSucceededStatusText, EUEFrontendStatusKind::Success);
 	PasswordInputBox->SetText(FText::GetEmpty());
 
 	// 닉네임은 캐릭터 속성이라 로그인 응답에 없다. 캐릭터를 고를 때 정해진다.
@@ -251,8 +338,8 @@ void UUELoginWidget::HandleServerRegisterCompleted(bool bOk, const FString& Mess
 
 	if (!bOk)
 	{
-		ResetDuplicateCheck();
-		SetStatusMessage(Message.IsEmpty() ? SaveFailedStatusText : FText::FromString(Message));
+		// 가입 거절은 대부분 아이디 문제(중복·형식)다.
+		SetStatus(Message.IsEmpty() ? SaveFailedStatusText : FText::FromString(Message), EUEFrontendStatusKind::Error, IdInputBox);
 		return;
 	}
 
@@ -260,16 +347,15 @@ void UUELoginWidget::HandleServerRegisterCompleted(bool bOk, const FString& Mess
 	PasswordInputBox->SetText(FText::GetEmpty());
 	ConfirmPasswordInputBox->SetText(FText::GetEmpty());
 	ScreenMode = EUELoginScreenMode::Login;
-	ResetDuplicateCheck();
 	RefreshScreenMode();
-	SetStatusMessage(Message.IsEmpty() ? RegistrationSucceededStatusText : FText::FromString(Message));
+	SetStatusMessage(Message.IsEmpty() ? RegistrationSucceededStatusText : FText::FromString(Message), EUEFrontendStatusKind::Success);
 }
 
 void UUELoginWidget::HandleServerDisconnected(bool bOk, const FString& Message)
 {
 	// 요청 도중 끊긴 경우다. 버튼을 풀어 다시 시도할 수 있게 한다.
 	SetRequestPending(false);
-	SetStatusMessage(Message.IsEmpty() ? LoginFailedStatusText : FText::FromString(Message));
+	SetStatusMessage(Message.IsEmpty() ? LoginFailedStatusText : FText::FromString(Message), EUEFrontendStatusKind::Error);
 }
 
 void UUELoginWidget::HandleRegistration()
@@ -277,7 +363,7 @@ void UUELoginWidget::HandleRegistration()
 	UUEGameInstance* GameInstance = GetHHVGameInstance();
 	if (!GameInstance)
 	{
-		SetStatusMessage(StorageUnavailableStatusText);
+		SetStatusMessage(StorageUnavailableStatusText, EUEFrontendStatusKind::Error);
 		return;
 	}
 
@@ -288,12 +374,12 @@ void UUELoginWidget::HandleRegistration()
 	// 비밀번호 확인은 서버에 보낼 값이 아니라 입력 실수를 잡는 것이라 여기서 본다.
 	if (Password != Confirmation)
 	{
-		SetStatusMessage(PasswordMismatchStatusText);
+		SetStatus(PasswordMismatchStatusText, EUEFrontendStatusKind::Error, ConfirmPasswordInputBox);
 		return;
 	}
 	if (UserId.IsEmpty() || Password.IsEmpty())
 	{
-		SetStatusMessage(InvalidFieldsStatusText);
+		SetStatus(InvalidFieldsStatusText, EUEFrontendStatusKind::Error, UserId.IsEmpty() ? IdInputBox : PasswordInputBox);
 		return;
 	}
 
@@ -301,7 +387,7 @@ void UUELoginWidget::HandleRegistration()
 	// 받는다. 아이디 중복은 서버가 가입 응답으로 알려준다.
 	PendingUserId = UserId;
 	SetRequestPending(true);
-	SetStatusMessage(ConnectingStatusText);
+	SetStatusMessage(ConnectingStatusText, EUEFrontendStatusKind::Pending);
 	GameInstance->ConnectAndRegister(UserId, Password);
 }
 
