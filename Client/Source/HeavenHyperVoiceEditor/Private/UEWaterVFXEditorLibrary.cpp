@@ -2,6 +2,8 @@
 #include "NiagaraSystem.h"
 #include "NiagaraEmitterHandle.h"
 #include "NiagaraEmitterBase.h"
+#include "NiagaraEditorUtilities.h"
+#include "NiagaraEmitter.h"
 #include "UObject/UnrealType.h"
 
 UObject* UUEWaterVFXEditorLibrary::WaterLayer(UNiagaraSystem* System, FName Name, bool bDuplicate)
@@ -28,6 +30,12 @@ bool UUEWaterVFXEditorLibrary::SetWaterProperty(UObject* Object, FName Name, con
 	FPropertyChangedEvent Event(Property);
 	Object->PostEditChangeProperty(Event);
 	return true;
+}
+
+bool UUEWaterVFXEditorLibrary::AddStandardVFXLayer(UNiagaraSystem* System, UNiagaraEmitter* Emitter)
+{
+	if (!System || !Emitter) return false;
+	return FNiagaraEditorUtilities::AddEmitterToSystem(*System, *Emitter, Emitter->GetExposedVersion().VersionGuid).IsValid();
 }
 
 bool UUEWaterVFXEditorLibrary::FinishWaterSystem(UNiagaraSystem* System)

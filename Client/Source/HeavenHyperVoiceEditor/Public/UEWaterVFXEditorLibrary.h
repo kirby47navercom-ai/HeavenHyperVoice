@@ -2,6 +2,7 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "UEWaterVFXEditorLibrary.generated.h"
 class UNiagaraSystem;
+class UNiagaraEmitter;
 
 /** Editor-only access for authoring lightweight Niagara layers from Python. */
 UCLASS()
@@ -9,6 +10,8 @@ class HEAVENHYPERVOICEEDITOR_API UUEWaterVFXEditorLibrary : public UBlueprintFun
 {
 	GENERATED_BODY()
 public:
+	UFUNCTION(BlueprintCallable, Category="VFX|Editor")
+	static bool AddStandardVFXLayer(UNiagaraSystem* System, UNiagaraEmitter* Emitter);
 	UFUNCTION(BlueprintCallable, Category="VFX|Editor")
 	static UObject* WaterLayer(UNiagaraSystem* System, FName Name, bool bDuplicate);
 	UFUNCTION(BlueprintCallable, Category="VFX|Editor")
