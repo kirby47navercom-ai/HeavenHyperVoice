@@ -168,7 +168,7 @@ protected:
 	 * 버튼을 코드가 채운다. 없으면 탭 없이 전체 목록만 나온다.
 	 *
 	 * 버튼을 WBP 마다 여섯 개씩 두지 않는 이유는 속성이 늘면 그만큼 또 늘기
-	 * 때문이다. 아이콘은 /Game/UI/PokemonType 의 것을 쓴다.
+	 * 때문이다. 아이콘은 공통 에셋 연결표에서 지정한다.
 	 */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UPanelWidget> TypeTabBar = nullptr;
@@ -183,7 +183,7 @@ protected:
 	TObjectPtr<UTextBlock> StatusText = nullptr;
 
 	// 화면에 늘어놓을 종족 표. 도감번호를 이름·초상화로 바꾸는 데도 쓴다.
-	// 비어 있으면 ini 의 SpeciesCatalog 를 빌린다.
+	// 비어 있으면 공통 에셋 연결표의 SpeciesCatalog를 사용한다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field Party")
 	TObjectPtr<UUEPokemonSpeciesCatalog> SpeciesCatalog = nullptr;
 

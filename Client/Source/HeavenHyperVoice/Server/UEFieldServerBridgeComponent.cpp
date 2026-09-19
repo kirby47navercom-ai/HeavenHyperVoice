@@ -1,4 +1,5 @@
 #include "UEFieldServerBridgeComponent.h"
+#include "../Data/UEProjectAssets.h"
 
 #include "UEFieldRemotePlayerSyncComponent.h"
 #include "UEFieldPartnerSyncComponent.h"
@@ -6,6 +7,7 @@
 #include "UEFieldWildPokemonSyncComponent.h"
 #include "../Character/UEPlayerCharacter.h"
 #include "../Pokemon/UEPokemonSpeciesData.h"
+#include "../Pokemon/UEPokemonCharacter.h"
 #include "../System/UEGameInstance.h"
 
 #include "Engine/World.h"
@@ -132,6 +134,12 @@ void UUEFieldServerBridgeComponent::ResolveSyncComponents()
 	WildPokemonSyncComponent = PlayerCharacter->FindComponentByClass<UUEFieldWildPokemonSyncComponent>();
 	RemotePlayerSyncComponent = PlayerCharacter->FindComponentByClass<UUEFieldRemotePlayerSyncComponent>();
 	PartnerSyncComponent = PlayerCharacter->FindComponentByClass<UUEFieldPartnerSyncComponent>();
+
+	if (!WildPokemonClass)
+	{
+		if (const UUEProjectAssets* Assets = UUEProjectAssetSettings::GetProjectAssets())
+			WildPokemonClass = Assets->PokemonClass.LoadSynchronous();
+	}
 
 	if (WildPokemonSyncComponent.IsValid())
 	{
@@ -505,8 +513,13 @@ void UUEFieldServerBridgeComponent::TogglePartyWidget()
 
 	if (!PartyWidgetClass)
 	{
+		if (const UUEProjectAssets* Assets = UUEProjectAssetSettings::GetProjectAssets())
+			PartyWidgetClass = Assets->PartyWidgetClass.LoadSynchronous();
+	}
+	if (!PartyWidgetClass)
+	{
 		UE_LOG(LogTemp, Warning,
-		       TEXT("FieldServerBridge: PartyWidgetClass is not assigned; set it in DefaultGame.ini."));
+		       TEXT("FieldServerBridge: PartyWidgetClass is not assigned; set it in the project assets data asset."));
 		return;
 	}
 

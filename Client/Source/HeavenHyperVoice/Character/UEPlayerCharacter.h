@@ -214,9 +214,6 @@ class HEAVENHYPERVOICE_API AUEPlayerCharacter : public APawn
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Customization")
 	TObjectPtr<UUEHHVCustomizationCatalog> HHVCustomizationCatalog = nullptr;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Customization|Materials")
-	FDirectoryPath MorphSafeMaterialDirectory;
-
 	// 플레이어 애님 블루프린트나 몽타주 재생 코드가 참조할 기본 애니메이션 데이터 에셋이다.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
 	TObjectPtr<UUEPlayerAnimationDataAsset> PlayerAnimationData = nullptr;

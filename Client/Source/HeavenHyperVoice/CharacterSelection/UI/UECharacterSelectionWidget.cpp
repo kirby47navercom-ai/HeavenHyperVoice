@@ -1,4 +1,5 @@
 #include "UECharacterSelectionWidget.h"
+#include "../../Data/UEProjectAssets.h"
 
 #include "../../System/UEGameInstance.h"
 #include "../../Pokemon/UEPokemonSpeciesData.h"
@@ -223,15 +224,19 @@ void UUECharacterSelectionWidget::EnterSelectedCharacter()
 		return;
 	}
 
-	if (GameplayLevel.IsNull() || !GameplayGameModeClass)
+	const UUEProjectAssets* Assets = UUEProjectAssetSettings::GetProjectAssets();
+	const TSoftObjectPtr<UWorld> TargetLevel = !GameplayLevel.IsNull() ? GameplayLevel
+		: (Assets ? Assets->FieldLevel : TSoftObjectPtr<UWorld>());
+	UClass* GameMode = GameplayGameModeClass ? GameplayGameModeClass.Get()
+		: (Assets ? Assets->FieldGameModeClass.LoadSynchronous() : nullptr);
+	if (TargetLevel.IsNull())
 	{
-		UE_LOG(LogTemp, Error, TEXT("게임 레벨 또는 게임 모드가 WBP_CharacterSelection 기본값에 지정되지 않았습니다."));
+		UE_LOG(LogTemp, Error, TEXT("Assign FieldLevel in the project assets data asset."));
 		return;
 	}
-
-	// 맵 경로를 문자열로 만들지 않고 블루프린트가 참조한 소프트 오브젝트를 사용한다.
-	const FString TravelOptions = FString::Printf(TEXT("?game=%s"), *GameplayGameModeClass->GetPathName());
-	GameInstance->OpenLevelWithLoadingScreen(GameplayLevel, true, TravelOptions);
+	// 게임 모드가 비어 있으면 대상 맵의 World Settings를 그대로 사용한다.
+	const FString TravelOptions = GameMode ? FString::Printf(TEXT("?game=%s"), *GameMode->GetPathName()) : FString();
+	GameInstance->OpenLevelWithLoadingScreen(TargetLevel, true, TravelOptions);
 }
 
 TArray<UUECharacterLobbySlotWidget*> UUECharacterSelectionWidget::GetLobbySlots() const

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "UEHHVCustomizationPreviewActor.h"
+#include "../../../Data/UEProjectAssets.h"
 
 #include "../Data/UEHHVCustomizationTypes.h"
 
@@ -98,20 +99,6 @@ namespace UEHHVCustomizationPreviewActorPrivate
 		}
 	}
 
-	inline FString MakeMorphSafeMaterialName(const UMaterialInterface* Material)
-	{
-		FString AssetName = Material ? Material->GetName() : FString();
-		for (int32 Index = 0; Index < AssetName.Len(); ++Index)
-		{
-			TCHAR& Character = AssetName[Index];
-			if (!FChar::IsAlnum(Character) && Character != TEXT('_'))
-			{
-				Character = TCHAR('_');
-			}
-		}
-		return FString::Printf(TEXT("MI_MS_%s"), *AssetName);
-	}
-
 	inline void ApplyPreviewEyeColorParameters(UMaterialInstanceDynamic* Material, const FLinearColor& EyeColor)
 	{
 		if (!Material)
@@ -158,116 +145,9 @@ namespace UEHHVCustomizationPreviewActorPrivate
 		int32 MaterialIndex,
 		int32 MaterialCount)
 	{
-		if (!Mesh)
-		{
-			return nullptr;
-		}
-
-		FString MeshObjectPath = Mesh->GetPathName();
-		int32 DotIndex = INDEX_NONE;
-		if (MeshObjectPath.FindChar(TEXT('.'), DotIndex))
-		{
-			MeshObjectPath.LeftInline(DotIndex);
-		}
-
-		const FString MeshFolder = FPaths::GetPath(MeshObjectPath);
-		const bool bIsAssetsFbxOutfitMesh =
-			MeshObjectPath.Contains(TEXT("/AssetsFBX/")) &&
-			MeshObjectPath.Contains(TEXT("/Outfit/"));
-		if (!MeshFolder.EndsWith(TEXT("/SkeletalMeshes")) && !bIsAssetsFbxOutfitMesh)
-		{
-			return nullptr;
-		}
-
-		const FString MeshOwnerFolder = FPaths::GetPath(MeshFolder);
-		const FString MaterialName = CurrentMaterial ? CurrentMaterial->GetName() : FString();
-		if (bIsAssetsFbxOutfitMesh)
-		{
-			// 의상 FBX 메쉬에는 이미 원본 /Assets/Pal 머티리얼 슬롯이 들어 있다.
-			// 같은 이름의 /AssetsFBX 로컬 머티리얼은 추출 중 깨진 경우가 있어 덮어쓰지 않는다.
-			return nullptr;
-		}
-
-		const auto LoadLocalMaterialByName = [&MeshOwnerFolder](const FString& CandidateName) -> UMaterialInterface*
-		{
-			if (CandidateName.IsEmpty())
-			{
-				return nullptr;
-			}
-
-			const FString LocalMaterialPath = FString::Printf(
-				TEXT("%s/Materials/%s.%s"),
-				*MeshOwnerFolder,
-				*CandidateName,
-				*CandidateName);
-			return LoadObject<UMaterialInterface>(nullptr, *LocalMaterialPath);
-		};
-		const auto LoadSourceOutfitMaterialByName =
-			[&MeshFolder](const FString& CandidateName, const FString& VersionFolder) -> UMaterialInterface*
-		{
-			if (CandidateName.IsEmpty() || VersionFolder.IsEmpty())
-			{
-				return nullptr;
-			}
-
-			const FString VariantFolder = FPaths::GetPath(MeshFolder);
-			const FString OutfitRootFolder = FPaths::GetPath(VariantFolder);
-			const FString SourceMaterialPath = FString::Printf(
-				TEXT("%s/%s/%s.%s"),
-				*OutfitRootFolder,
-				*VersionFolder,
-				*CandidateName,
-				*CandidateName);
-			return LoadObject<UMaterialInterface>(nullptr, *SourceMaterialPath);
-		};
-
-		FString MeshMaterialStem = Mesh->GetName();
-		MeshMaterialStem.RemoveFromStart(TEXT("SK_"));
-		if (MeshMaterialStem.EndsWith(TEXT("_2")))
-		{
-			MeshMaterialStem.LeftChopInline(2);
-		}
-
-		if (MeshMaterialStem.Contains(TEXT("Hair")))
-		{
-			// 헤어는 메쉬 기본 슬롯이 원본이다. 옷 보정 로직으로 덮으면 색과 윤곽이 틀어진다.
-			return nullptr;
-		}
-
-		const bool bSingleOutfitSlotUsesBodyMaterial =
-			MaterialIndex == 0 &&
-			MaterialCount == 1 &&
-			MaterialName.Contains(TEXT("Body")) &&
-			Mesh->GetName().Contains(TEXT("Outfit"));
-		if (bSingleOutfitSlotUsesBodyMaterial)
-		{
-			// 단일 슬롯 의상이 몸 피부 머티리얼을 물고 있으면 같은 의상 폴더의 원본 M01을 찾아 쓴다.
-			FString OutfitMaterialStem = MeshMaterialStem;
-			if (!OutfitMaterialStem.Contains(TEXT("_v")))
-			{
-				OutfitMaterialStem += TEXT("_v01");
-			}
-			FString VersionFolder = TEXT("v01");
-			const int32 VersionIndex = OutfitMaterialStem.Find(TEXT("_v"), ESearchCase::IgnoreCase, ESearchDir::FromEnd);
-			if (VersionIndex != INDEX_NONE && OutfitMaterialStem.Len() >= VersionIndex + 4)
-			{
-				VersionFolder = OutfitMaterialStem.Mid(VersionIndex + 1, 3);
-			}
-			OutfitMaterialStem = TEXT("MI_") + OutfitMaterialStem;
-			if (UMaterialInterface* OutfitMaterial = LoadSourceOutfitMaterialByName(
-				OutfitMaterialStem + TEXT("_M01"),
-				VersionFolder))
-			{
-				return OutfitMaterial;
-			}
-			if (UMaterialInterface* OutfitMaterial = LoadLocalMaterialByName(OutfitMaterialStem + TEXT("_M01")))
-			{
-				return OutfitMaterial;
-			}
-		}
-
-		return nullptr;
-	}
+		const UUEProjectAssets* Assets = UUEProjectAssetSettings::GetProjectAssets();
+		return Assets ? Assets->FindCharacterMaterial(Mesh, MaterialIndex) : nullptr;
+}
 
 	inline void ApplyPreviewOptionMaterials(
 		USkeletalMeshComponent* Component,

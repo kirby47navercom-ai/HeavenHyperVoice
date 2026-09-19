@@ -1,4 +1,5 @@
 #include "UEFieldClientSubsystem.h"
+#include "../Data/UEProjectAssets.h"
 
 #include "../Character/UEPlayerCharacter.h"
 #include "../Player/UEPlayerController.h"
@@ -114,10 +115,12 @@ void UUEFieldClientSubsystem::EnterInstance(int32 InstanceType)
 		UE_LOG(LogTemp, Warning, TEXT("FieldClient: already in instance %d."), PendingInstanceType);
 		return;
 	}
-	if (InstanceLevel.IsNull())
+	const UUEProjectAssets* Assets = UUEProjectAssetSettings::GetProjectAssets();
+	const TSoftObjectPtr<UWorld> TargetLevel = !InstanceLevel.IsNull() ? InstanceLevel : (Assets ? Assets->InstanceLevel : TSoftObjectPtr<UWorld>());
+	if (TargetLevel.IsNull())
 	{
 		UE_LOG(LogTemp, Error,
-			TEXT("FieldClient: InstanceLevel is not set (DefaultGame.ini 의 UEFieldClientSubsystem)."));
+			TEXT("FieldClient: InstanceLevel is not set (공통 에셋 연결표)."));
 		return;
 	}
 
@@ -128,7 +131,7 @@ void UUEFieldClientSubsystem::EnterInstance(int32 InstanceType)
 	}
 
 	PendingInstanceType = InstanceType;
-	TravelTo(InstanceLevel);
+	TravelTo(TargetLevel);
 }
 
 void UUEFieldClientSubsystem::LeaveInstance()
@@ -137,7 +140,9 @@ void UUEFieldClientSubsystem::LeaveInstance()
 	{
 		return;
 	}
-	if (FieldLevel.IsNull())
+	const UUEProjectAssets* Assets = UUEProjectAssetSettings::GetProjectAssets();
+	const TSoftObjectPtr<UWorld> TargetLevel = !FieldLevel.IsNull() ? FieldLevel : (Assets ? Assets->FieldLevel : TSoftObjectPtr<UWorld>());
+	if (TargetLevel.IsNull())
 	{
 		UE_LOG(LogTemp, Error,
 			TEXT("FieldClient: FieldLevel is not set; 인스턴스에서 나갈 곳이 없다."));
@@ -145,7 +150,7 @@ void UUEFieldClientSubsystem::LeaveInstance()
 	}
 
 	PendingInstanceType = 0;
-	TravelTo(FieldLevel);
+	TravelTo(TargetLevel);
 }
 
 void UUEFieldClientSubsystem::TravelTo(const TSoftObjectPtr<UWorld>& Level)

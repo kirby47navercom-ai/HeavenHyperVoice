@@ -1,4 +1,5 @@
 #include "UEPlayerController.h"
+#include "../Data/UEProjectAssets.h"
 
 #include "../Character/UEPlayerCharacter.h"
 #include "../Gacha/UEGachaDesk.h"
@@ -412,14 +413,17 @@ void AUEPlayerController::HandleOptionsScreenAction(FName ActionId)
 		&& (ActionId == TEXT("CharacterSelect") || ActionId == TEXT("Logout")))
 	{
 		UUEGameInstance* GI = GetGameInstance<UUEGameInstance>();
-		if (!GI || FrontendLevel.IsNull()) return;
+		const UUEProjectAssets* Assets = UUEProjectAssetSettings::GetProjectAssets();
+		const TSoftObjectPtr<UWorld> TargetLevel = !FrontendLevel.IsNull() ? FrontendLevel
+			: (Assets ? Assets->FrontendLevel : TSoftObjectPtr<UWorld>());
+		if (!GI || TargetLevel.IsNull()) return;
 		bReturningToFrontend = true;
 		OptionsScreen->SetIsEnabled(false);
 		if (OptionsMenu) OptionsMenu->SetIsEnabled(false);
 		ChatConnection.reset();
 		if (UUEFieldClientSubsystem* Field = UUEFieldClientSubsystem::Get(this)) Field->ResetForFrontend();
 		GI->PrepareReturnToFrontend(ActionId == TEXT("Logout"));
-		GI->OpenLevelWithLoadingScreen(FrontendLevel);
+		GI->OpenLevelWithLoadingScreen(TargetLevel);
 	}
 }
 

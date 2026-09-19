@@ -1,4 +1,5 @@
 #include "UEGachaDesk.h"
+#include "../Data/UEProjectAssets.h"
 
 #include "Blueprint/UserWidget.h"
 #include "Engine/AssetManager.h"
@@ -12,23 +13,6 @@
 
 namespace
 {
-	// 필드 컨트롤러 블루프린트를 손대지 않아도 동작하게 하는 폴백.
-	const TCHAR* kDefaultWidgetPath = TEXT("/Game/Gacha/UI/WBP_GachaStudio.WBP_GachaStudio_C");
-
-	// 기계 본체. 부품과 캡슐 서른 개가 블루프린트의 Components 에 있으므로
-	// C++ 클래스가 아니라 이쪽을 띄워야 한다.
-	const TCHAR* kMachineBlueprintPath =
-		TEXT("/Game/Gacha/Blueprints/BP_GachaMachine.BP_GachaMachine_C");
-
-	// 타입별 후보표. 순서가 곧 DisplayOrder 이고 서버의 GachaType 과 같다.
-	const TCHAR* kPoolPaths[] = {
-		TEXT("/Game/Gacha/Data/DA_Gacha_Fire.DA_Gacha_Fire"),
-		TEXT("/Game/Gacha/Data/DA_Gacha_Water.DA_Gacha_Water"),
-		TEXT("/Game/Gacha/Data/DA_Gacha_Grass.DA_Gacha_Grass"),
-		TEXT("/Game/Gacha/Data/DA_Gacha_Normal.DA_Gacha_Normal"),
-		TEXT("/Game/Gacha/Data/DA_Gacha_Electric.DA_Gacha_Electric"),
-	};
-
 	// 띄운 기계를 둘 자리. 플레이어 머리 위로 멀찍이 올린다 — 지형과 겹치지
 	// 않고, 카메라가 기계에 붙으므로 어디에 있든 보이는 것은 같다.
 	constexpr double kSpawnHeight = 20000.0;
@@ -81,10 +65,11 @@ bool UUEGachaDeskComponent::Open()
 
 	if (!WidgetClass)
 	{
-		WidgetClass = LoadClass<UUEGachaStudioWidget>(nullptr, kDefaultWidgetPath);
+		const UUEProjectAssets* Assets = AssetOverrides ? AssetOverrides.Get() : UUEProjectAssetSettings::GetProjectAssets();
+		WidgetClass = Assets ? Assets->GachaWidgetClass.LoadSynchronous() : nullptr;
 		if (!WidgetClass)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("gacha: cannot load %s"), kDefaultWidgetPath);
+			UE_LOG(LogTemp, Warning, TEXT("gacha: assign GachaWidgetClass in the project assets data asset"));
 			return false;
 		}
 	}
@@ -127,6 +112,13 @@ void UUEGachaDeskComponent::Preload()
 	{
 		return;
 	}
+	const UUEProjectAssets* Assets = AssetOverrides ? AssetOverrides.Get() : UUEProjectAssetSettings::GetProjectAssets();
+	if (!Assets) return;
+	PreloadPaths.Reset();
+	if (!WidgetClass) PreloadPaths.Add(Assets->GachaWidgetClass.ToSoftObjectPath());
+	PreloadPaths.Add(Assets->GachaMachineClass.ToSoftObjectPath());
+	for (const auto& Pool : Assets->GachaPools) PreloadPaths.Add(Pool.ToSoftObjectPath());
+	PreloadPaths.RemoveAll([](const FSoftObjectPath& Path) { return Path.IsNull(); });
 	bPreloadStarted = true;
 	PreloadStage = 0;
 	PreloadNext();
@@ -136,26 +128,8 @@ void UUEGachaDeskComponent::PreloadNext()
 {
 	// 순서는 무거운 것부터가 아니라 쓰이는 순서다. 중간에 O 를 눌러도 화면과
 	// 기계는 이미 와 있고, 남은 타입표만 그때 동기로 마저 읽으면 된다.
-	FSoftObjectPath Next;
-	if (PreloadStage == 0)
-	{
-		Next = FSoftObjectPath(kDefaultWidgetPath);
-	}
-	else if (PreloadStage == 1)
-	{
-		Next = FSoftObjectPath(kMachineBlueprintPath);
-	}
-	else if (PreloadStage - 2 < static_cast<int32>(UE_ARRAY_COUNT(kPoolPaths)))
-	{
-		Next = FSoftObjectPath(kPoolPaths[PreloadStage - 2]);
-	}
-	else
-	{
-		UE_LOG(LogTemp, Verbose, TEXT("gacha: preload done"));
-		return;
-	}
-
-	++PreloadStage;
+	if (!PreloadPaths.IsValidIndex(PreloadStage)) return;
+	const FSoftObjectPath Next = PreloadPaths[PreloadStage++];
 
 	// 하나가 끝나면 그 콜백이 다음 것을 건다. 한 번에 하나만 떠 있다.
 	PreloadHandles.Add(UAssetManager::GetStreamableManager().RequestAsyncLoad(
@@ -188,10 +162,11 @@ bool UUEGachaDeskComponent::SpawnMachines()
 		SpawnedMachines.Reset();
 	}
 
-	UClass* MachineClass = LoadClass<AUEGachaMachine>(nullptr, kMachineBlueprintPath);
+	const UUEProjectAssets* Assets = AssetOverrides ? AssetOverrides.Get() : UUEProjectAssetSettings::GetProjectAssets();
+	UClass* MachineClass = Assets ? Assets->GachaMachineClass.LoadSynchronous() : nullptr;
 	if (!MachineClass)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("gacha: cannot load %s"), kMachineBlueprintPath);
+		UE_LOG(LogTemp, Warning, TEXT("gacha: assign GachaMachineClass in the project assets data asset"));
 		return false;
 	}
 
@@ -203,12 +178,12 @@ bool UUEGachaDeskComponent::SpawnMachines()
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	Params.ObjectFlags |= RF_Transient;
 
-	for (int32 Index = 0; Index < UE_ARRAY_COUNT(kPoolPaths); ++Index)
+	for (int32 Index = 0; Index < Assets->GachaPools.Num(); ++Index)
 	{
-		UUEGachaPool* Pool = LoadObject<UUEGachaPool>(nullptr, kPoolPaths[Index]);
+		UUEGachaPool* Pool = Assets->GachaPools[Index].LoadSynchronous();
 		if (!Pool)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("gacha: cannot load %s"), kPoolPaths[Index]);
+			UE_LOG(LogTemp, Warning, TEXT("gacha: cannot load pool %s"), *Assets->GachaPools[Index].ToString());
 			continue;
 		}
 

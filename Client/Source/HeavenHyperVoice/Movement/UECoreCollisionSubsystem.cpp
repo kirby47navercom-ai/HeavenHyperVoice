@@ -1,4 +1,5 @@
 #include "UECoreCollisionSubsystem.h"
+#include "../Data/UEProjectAssets.h"
 #include "Components/BoxComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -240,6 +241,20 @@ bool AddLandscapeGeometry(ULandscapeComponent *Component, std::vector<hhv::movem
 FString UUECoreCollisionSubsystem::GetCollisionRelativePath() const
 {
 	const FString Package = UWorld::RemovePIEPrefix(GetWorld()->GetOutermost()->GetName());
+	if (const UUEProjectAssets* Assets = UUEProjectAssetSettings::GetProjectAssets())
+	{
+		for (const FUELevelCollisionAsset& Entry : Assets->LevelCollisions)
+		{
+			if (Entry.Level.ToSoftObjectPath().GetLongPackageName() == Package)
+			{
+				// 파일은 Content/MovementCollision 안의 상대 경로로만 지정한다.
+				if (!Entry.CollisionFile.IsEmpty() && FPaths::IsRelative(Entry.CollisionFile)
+					&& !Entry.CollisionFile.Contains(TEXT(".."))) return Entry.CollisionFile;
+				UE_LOG(LogTemp, Error, TEXT("Invalid shared collision file binding for %s"), *Package);
+				return FString();
+			}
+		}
+	}
 	// Keep the package directories so maps with the same short name never collide.
 	return Package.StartsWith(TEXT("/Game/")) ? Package.Mid(6) + TEXT(".hhvcollision") : FString();
 }

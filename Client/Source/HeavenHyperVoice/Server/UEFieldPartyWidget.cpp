@@ -1,4 +1,5 @@
 #include "UEFieldPartyWidget.h"
+#include "../Data/UEProjectAssets.h"
 
 
 #include "UEFieldServerBridgeComponent.h"
@@ -15,6 +16,7 @@
 #include "Components/TextBlock.h"
 #include "Components/WrapBoxSlot.h"
 #include "Blueprint/WidgetTree.h"
+#include "Engine/Texture2D.h"
 #include "GameFramework/PlayerController.h"
 
 void UUEFieldPartyEntryWidget::NativeConstruct()
@@ -349,19 +351,11 @@ namespace
 {
 	constexpr float kTypeIconSize = 34.f;
 
-	// 아이콘은 이름 규칙으로 찾는다: /Game/UI/PokemonType/T_Type_<열거형 이름>.
-	// 속성마다 경로를 적은 표를 두면 속성을 늘릴 때 두 군데를 고쳐야 하고,
-	// 한쪽만 고치면 아이콘이 조용히 사라진다. 없으면 nullptr 다.
 	UTexture2D* LoadTypeIcon(EUEPokemonType Type)
 	{
-		const UEnum* Enum = StaticEnum<EUEPokemonType>();
-		if (!Enum || Type == EUEPokemonType::None)
-		{
-			return nullptr;
-		}
-		const FString Name = Enum->GetNameStringByValue(static_cast<int64>(Type));
-		return LoadObject<UTexture2D>(
-			nullptr, *FString::Printf(TEXT("/Game/UI/PokemonType/T_Type_%s.T_Type_%s"), *Name, *Name));
+		const UUEProjectAssets* Assets = UUEProjectAssetSettings::GetProjectAssets();
+		const auto* Icon = Assets ? Assets->TypeIcons.Find(Type) : nullptr;
+		return Icon ? Icon->LoadSynchronous() : nullptr;
 	}
 
 	// 화면에 쓰는 이름은 UENUM 의 DisplayName 이다 (불꽃, 물). 한글을 코드에
@@ -487,7 +481,7 @@ void UUEFieldPartyWidget::RebuildList()
 	if (!Catalog)
 	{
 		SetStatus(NSLOCTEXT("HHV", "PartyNoCatalog",
-			"종족 카탈로그가 지정되지 않았습니다 (DefaultGame.ini 의 SpeciesCatalog)"));
+			"종족 카탈로그가 지정되지 않았습니다 (공통 에셋 연결표의 SpeciesCatalog)"));
 		return;
 	}
 

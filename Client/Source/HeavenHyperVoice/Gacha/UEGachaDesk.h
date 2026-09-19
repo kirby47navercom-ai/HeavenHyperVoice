@@ -17,6 +17,7 @@
 
 #include "UEGachaDesk.generated.h"
 
+class UUEProjectAssets;
 class AUEGachaMachine;
 class APlayerController;
 class UUEGachaStudioWidget;
@@ -75,12 +76,11 @@ public:
 	void GrabHandle();
 	void ReleaseHandle();
 
-	/**
-	 * 띄울 화면. 비어 있으면 /Game/Gacha/UI/WBP_GachaStudio 를 쓴다.
-	 *
-	 * 폴백이 있는 이유는 필드 컨트롤러 블루프린트를 손대지 않아도 O 가
-	 * 동작하게 하려는 것이다. 다른 화면을 쓰려면 여기서 지정한다.
-	 */
+	/** 비어 있으면 프로젝트 공통 연결표를 사용한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gacha")
+	TObjectPtr<UUEProjectAssets> AssetOverrides;
+
+	/** 이 컴포넌트만 다른 화면을 사용할 때 지정한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Gacha")
 	TSubclassOf<UUEGachaStudioWidget> WidgetClass;
 
@@ -116,6 +116,7 @@ private:
 
 	// 받아 둔 것을 붙잡는다. 놓으면 O 를 누르기 전에 GC 가 도로 버린다.
 	TArray<TSharedPtr<FStreamableHandle>> PreloadHandles;
+	TArray<FSoftObjectPath> PreloadPaths;
 	int32 PreloadStage = 0;
 	bool bPreloadStarted = false;
 

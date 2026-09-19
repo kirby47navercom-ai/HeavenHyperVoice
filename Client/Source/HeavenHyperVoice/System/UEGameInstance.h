@@ -112,7 +112,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "HHV|Character Selection")
 	UUEPokemonSpeciesData* GetSelectedPartnerSpecies() const;
 
-	// 도감번호를 종족 에셋으로 바꾸는 표. ini 의 SpeciesCatalog 가 원본이다.
+	// 도감번호를 종족 에셋으로 바꾸는 표. 공통 에셋 연결표가 기본값이다.
 	// 필드 파티 화면처럼 WBP 없이 뜨는 화면이 빌려 쓴다.
 	UFUNCTION(BlueprintPure, Category = "HHV|Pokemon")
 	UUEPokemonSpeciesCatalog* GetPartySpeciesCatalog() const { return GetSpeciesCatalog(); }
@@ -353,7 +353,7 @@ private:
 	int32 LoginServerPort = 9000;
 
 	/** 종족 id 를 데이터 에셋으로 바꿀 때 쓴다. BP 기본값에서 지정한다. */
-	UPROPERTY(EditDefaultsOnly, Config, Category = "HHV|Server")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HHV|Assets", meta = (AllowPrivateAccess = "true"))
 	TSoftObjectPtr<UUEPokemonSpeciesCatalog> SpeciesCatalog;
 
 	std::unique_ptr<FHHVLoginConnection> LoginConnection;

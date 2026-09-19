@@ -2,6 +2,7 @@
 
 
 #include "UEGameInstance.h"
+#include "../Data/UEProjectAssets.h"
 #include "../System/UEAssetManager.h"
 #include "../UI/Loading/HHVLoadingScreenSettings.h"
 #include "CharacterSelection/UECharacterSlotSaveGame.h"
@@ -41,7 +42,10 @@ void UUEGameInstance::Init()
 		this, &ThisClass::HandlePostLoadMap);
 
 	// 화면 에셋은 첫 이동 직전에 동기 로드하지 않도록 게임 시작 때 준비한다.
-	GetDefault<UHHVLoadingScreenSettings>()->LoadingScreenWidgetClass.LoadSynchronous();
+	if (const UUEProjectAssets* Assets = UUEProjectAssetSettings::GetProjectAssets())
+	{
+		Assets->LoadingScreenWidgetClass.LoadSynchronous();
+	}
 
 	UUEAssetManager::Initialize();
 	LoadCharacterSlots();
@@ -98,8 +102,8 @@ void UUEGameInstance::ShowLoadingScreen()
 		return;
 	}
 
-	const UHHVLoadingScreenSettings* Settings = GetDefault<UHHVLoadingScreenSettings>();
-	UClass* WidgetClass = Settings->LoadingScreenWidgetClass.LoadSynchronous();
+	const UUEProjectAssets* Assets = UUEProjectAssetSettings::GetProjectAssets();
+	UClass* WidgetClass = Assets ? Assets->LoadingScreenWidgetClass.LoadSynchronous() : nullptr;
 	if (!WidgetClass)
 	{
 		return;
@@ -295,7 +299,9 @@ void UUEGameInstance::HideLoadingScreen()
 
 UUEPokemonSpeciesCatalog* UUEGameInstance::GetSpeciesCatalog() const
 {
-	return SpeciesCatalog.IsNull() ? nullptr : SpeciesCatalog.LoadSynchronous();
+	if (!SpeciesCatalog.IsNull()) return SpeciesCatalog.LoadSynchronous();
+	const UUEProjectAssets* Assets = UUEProjectAssetSettings::GetProjectAssets();
+	return Assets ? Assets->SpeciesCatalog.LoadSynchronous() : nullptr;
 }
 
 bool UUEGameInstance::EnsureServerConnection()

@@ -69,14 +69,14 @@ public:
 	FUEFieldPokemonPartyChangedSignature OnPokemonPartyChanged;
 
 protected:
-	// 돌아갈 필드 레벨. WBP_CharacterSelection 이 캐릭터 선택 뒤에 여는 것과
+	// 비어 있으면 공통 에셋 연결표를 사용한다. 돌아갈 필드 레벨. WBP_CharacterSelection 이 캐릭터 선택 뒤에 여는 것과
 	// 같은 레벨이어야 한다.
-	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Field Server")
 	TSoftObjectPtr<UWorld> FieldLevel;
 
 	// 인스턴스 맵. 지금은 종류가 하나뿐이라 전부 이 레벨을 쓴다.
 	// ponytail: 종류마다 맵이 달라지면 TMap<int32, TSoftObjectPtr<UWorld>> 로.
-	UPROPERTY(Config, EditAnywhere, BlueprintReadWrite, Category = "Field Server|Instance")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Field Server|Instance")
 	TSoftObjectPtr<UWorld> InstanceLevel;
 
 private:

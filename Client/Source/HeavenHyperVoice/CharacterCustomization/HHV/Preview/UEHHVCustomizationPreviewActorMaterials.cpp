@@ -264,27 +264,12 @@ void AUEHHVCustomizationPreviewActor::ApplyMeshLocalMaterials(USkeletalMeshCompo
 
 void AUEHHVCustomizationPreviewActor::ApplyMorphSafeMaterials(USkeletalMeshComponent* Component)
 {
-	if (!Component || MorphSafeMaterialFolder.IsEmpty())
-	{
-		return;
-	}
-
+	const UUEProjectAssets* Assets = UUEProjectAssetSettings::GetProjectAssets();
+	if (!Component || !Assets) return;
 	for (int32 Index = 0; Index < Component->GetNumMaterials(); ++Index)
 	{
-		UMaterialInterface* OriginalMaterial = Component->GetMaterial(Index);
-		const FString SafeName = MakeMorphSafeMaterialName(OriginalMaterial);
-		if (SafeName.IsEmpty())
-		{
-			continue;
-		}
-
-		const FString SafePath = FString::Printf(TEXT("%s/%s.%s"), *MorphSafeMaterialFolder, *SafeName, *SafeName);
-		UMaterialInterface* SafeMaterial = LoadObject<UMaterialInterface>(nullptr, *SafePath);
-		if (SafeMaterial)
-		{
-			// 원본 머티리얼을 부모로 둔 MorphSafe 인스턴스를 써서, 모프 적용 후 기본 회색 머티리얼로 떨어지는 일을 막는다.
-			Component->SetMaterial(Index, SafeMaterial);
-		}
+		if (UMaterialInterface* Material = Assets->FindMorphMaterial(Component->GetMaterial(Index)))
+			Component->SetMaterial(Index, Material);
 	}
 }
 
