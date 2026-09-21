@@ -304,6 +304,27 @@ table TokenBalance {
   tokens:uint;
 }
 
+// 서버 -> 클라. 인스턴스 방 하나의 서버 권위 날씨 결과.
+//
+// 20Hz 이동 Snapshot에 매번 넣지 않는다. InstanceServer가 현실 시간 1초마다
+// 별도 프레임으로 보내고, 클라이언트는 이 값 사이를 보간해 비·구름·바람 연출을
+// 움직인다. 필드 서버는 이 메시지를 보내지 않는다.
+table WeatherState {
+  room_id:uint;
+  revision:uint;
+  simulation_time_seconds:double;
+  temperature_c:float;
+  relative_humidity_pct:float;
+  pressure_hpa:float;
+  cloud_cover:float;
+  precipitation_mm_per_hour:float;
+  wind_speed_mps:float;
+  wind_direction_degrees:float;
+  ground_wetness:float;
+  snow_depth_m:float;
+  water_balance_error_kg_m2:float;
+}
+
 union Payload {
   Enter,
   EnterAck,
@@ -320,7 +341,8 @@ union Payload {
   GachaDrawRequest,
   GachaDrawResponse,
   DebugGrantToken,
-  TokenBalance
+  TokenBalance,
+  WeatherState
 }
 
 table Envelope {

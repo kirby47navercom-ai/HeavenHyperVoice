@@ -66,6 +66,9 @@ struct DebugGrantTokenBuilder;
 struct TokenBalance;
 struct TokenBalanceBuilder;
 
+struct WeatherState;
+struct WeatherStateBuilder;
+
 struct Envelope;
 struct EnvelopeBuilder;
 
@@ -126,11 +129,12 @@ enum class Payload : uint8_t {
   GachaDrawResponse = 11,
   DebugGrantToken = 12,
   TokenBalance = 13,
+  WeatherState = 14,
   MIN = NONE,
-  MAX = TokenBalance
+  MAX = WeatherState
 };
 
-inline const Payload (&EnumValuesPayload())[14] {
+inline const Payload (&EnumValuesPayload())[15] {
   static const Payload values[] = {
     Payload::NONE,
     Payload::Enter,
@@ -145,13 +149,14 @@ inline const Payload (&EnumValuesPayload())[14] {
     Payload::GachaDrawRequest,
     Payload::GachaDrawResponse,
     Payload::DebugGrantToken,
-    Payload::TokenBalance
+    Payload::TokenBalance,
+    Payload::WeatherState
   };
   return values;
 }
 
 inline const char * const *EnumNamesPayload() {
-  static const char * const names[15] = {
+  static const char * const names[16] = {
     "NONE",
     "Enter",
     "EnterAck",
@@ -166,13 +171,14 @@ inline const char * const *EnumNamesPayload() {
     "GachaDrawResponse",
     "DebugGrantToken",
     "TokenBalance",
+    "WeatherState",
     nullptr
   };
   return names;
 }
 
 inline const char *EnumNamePayload(Payload e) {
-  if (::flatbuffers::IsOutRange(e, Payload::NONE, Payload::TokenBalance)) return "";
+  if (::flatbuffers::IsOutRange(e, Payload::NONE, Payload::WeatherState)) return "";
   const size_t index = static_cast<size_t>(e);
   return EnumNamesPayload()[index];
 }
@@ -231,6 +237,10 @@ template<> struct PayloadTraits<HeavenField::DebugGrantToken> {
 
 template<> struct PayloadTraits<HeavenField::TokenBalance> {
   static const Payload enum_value = Payload::TokenBalance;
+};
+
+template<> struct PayloadTraits<HeavenField::WeatherState> {
+  static const Payload enum_value = Payload::WeatherState;
 };
 
 template <bool B = false>
@@ -2131,6 +2141,168 @@ inline ::flatbuffers::Offset<TokenBalance> CreateTokenBalance(
   return builder_.Finish();
 }
 
+struct WeatherState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef WeatherStateBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_ROOM_ID = 4,
+    VT_REVISION = 6,
+    VT_SIMULATION_TIME_SECONDS = 8,
+    VT_TEMPERATURE_C = 10,
+    VT_RELATIVE_HUMIDITY_PCT = 12,
+    VT_PRESSURE_HPA = 14,
+    VT_CLOUD_COVER = 16,
+    VT_PRECIPITATION_MM_PER_HOUR = 18,
+    VT_WIND_SPEED_MPS = 20,
+    VT_WIND_DIRECTION_DEGREES = 22,
+    VT_GROUND_WETNESS = 24,
+    VT_SNOW_DEPTH_M = 26,
+    VT_WATER_BALANCE_ERROR_KG_M2 = 28
+  };
+  uint32_t room_id() const {
+    return GetField<uint32_t>(VT_ROOM_ID, 0);
+  }
+  uint32_t revision() const {
+    return GetField<uint32_t>(VT_REVISION, 0);
+  }
+  double simulation_time_seconds() const {
+    return GetField<double>(VT_SIMULATION_TIME_SECONDS, 0.0);
+  }
+  float temperature_c() const {
+    return GetField<float>(VT_TEMPERATURE_C, 0.0f);
+  }
+  float relative_humidity_pct() const {
+    return GetField<float>(VT_RELATIVE_HUMIDITY_PCT, 0.0f);
+  }
+  float pressure_hpa() const {
+    return GetField<float>(VT_PRESSURE_HPA, 0.0f);
+  }
+  float cloud_cover() const {
+    return GetField<float>(VT_CLOUD_COVER, 0.0f);
+  }
+  float precipitation_mm_per_hour() const {
+    return GetField<float>(VT_PRECIPITATION_MM_PER_HOUR, 0.0f);
+  }
+  float wind_speed_mps() const {
+    return GetField<float>(VT_WIND_SPEED_MPS, 0.0f);
+  }
+  float wind_direction_degrees() const {
+    return GetField<float>(VT_WIND_DIRECTION_DEGREES, 0.0f);
+  }
+  float ground_wetness() const {
+    return GetField<float>(VT_GROUND_WETNESS, 0.0f);
+  }
+  float snow_depth_m() const {
+    return GetField<float>(VT_SNOW_DEPTH_M, 0.0f);
+  }
+  float water_balance_error_kg_m2() const {
+    return GetField<float>(VT_WATER_BALANCE_ERROR_KG_M2, 0.0f);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<uint32_t>(verifier, VT_ROOM_ID, 4) &&
+           VerifyField<uint32_t>(verifier, VT_REVISION, 4) &&
+           VerifyField<double>(verifier, VT_SIMULATION_TIME_SECONDS, 8) &&
+           VerifyField<float>(verifier, VT_TEMPERATURE_C, 4) &&
+           VerifyField<float>(verifier, VT_RELATIVE_HUMIDITY_PCT, 4) &&
+           VerifyField<float>(verifier, VT_PRESSURE_HPA, 4) &&
+           VerifyField<float>(verifier, VT_CLOUD_COVER, 4) &&
+           VerifyField<float>(verifier, VT_PRECIPITATION_MM_PER_HOUR, 4) &&
+           VerifyField<float>(verifier, VT_WIND_SPEED_MPS, 4) &&
+           VerifyField<float>(verifier, VT_WIND_DIRECTION_DEGREES, 4) &&
+           VerifyField<float>(verifier, VT_GROUND_WETNESS, 4) &&
+           VerifyField<float>(verifier, VT_SNOW_DEPTH_M, 4) &&
+           VerifyField<float>(verifier, VT_WATER_BALANCE_ERROR_KG_M2, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct WeatherStateBuilder {
+  typedef WeatherState Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_room_id(uint32_t room_id) {
+    fbb_.AddElement<uint32_t>(WeatherState::VT_ROOM_ID, room_id, 0);
+  }
+  void add_revision(uint32_t revision) {
+    fbb_.AddElement<uint32_t>(WeatherState::VT_REVISION, revision, 0);
+  }
+  void add_simulation_time_seconds(double simulation_time_seconds) {
+    fbb_.AddElement<double>(WeatherState::VT_SIMULATION_TIME_SECONDS, simulation_time_seconds, 0.0);
+  }
+  void add_temperature_c(float temperature_c) {
+    fbb_.AddElement<float>(WeatherState::VT_TEMPERATURE_C, temperature_c, 0.0f);
+  }
+  void add_relative_humidity_pct(float relative_humidity_pct) {
+    fbb_.AddElement<float>(WeatherState::VT_RELATIVE_HUMIDITY_PCT, relative_humidity_pct, 0.0f);
+  }
+  void add_pressure_hpa(float pressure_hpa) {
+    fbb_.AddElement<float>(WeatherState::VT_PRESSURE_HPA, pressure_hpa, 0.0f);
+  }
+  void add_cloud_cover(float cloud_cover) {
+    fbb_.AddElement<float>(WeatherState::VT_CLOUD_COVER, cloud_cover, 0.0f);
+  }
+  void add_precipitation_mm_per_hour(float precipitation_mm_per_hour) {
+    fbb_.AddElement<float>(WeatherState::VT_PRECIPITATION_MM_PER_HOUR, precipitation_mm_per_hour, 0.0f);
+  }
+  void add_wind_speed_mps(float wind_speed_mps) {
+    fbb_.AddElement<float>(WeatherState::VT_WIND_SPEED_MPS, wind_speed_mps, 0.0f);
+  }
+  void add_wind_direction_degrees(float wind_direction_degrees) {
+    fbb_.AddElement<float>(WeatherState::VT_WIND_DIRECTION_DEGREES, wind_direction_degrees, 0.0f);
+  }
+  void add_ground_wetness(float ground_wetness) {
+    fbb_.AddElement<float>(WeatherState::VT_GROUND_WETNESS, ground_wetness, 0.0f);
+  }
+  void add_snow_depth_m(float snow_depth_m) {
+    fbb_.AddElement<float>(WeatherState::VT_SNOW_DEPTH_M, snow_depth_m, 0.0f);
+  }
+  void add_water_balance_error_kg_m2(float water_balance_error_kg_m2) {
+    fbb_.AddElement<float>(WeatherState::VT_WATER_BALANCE_ERROR_KG_M2, water_balance_error_kg_m2, 0.0f);
+  }
+  explicit WeatherStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<WeatherState> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<WeatherState>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<WeatherState> CreateWeatherState(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    uint32_t room_id = 0,
+    uint32_t revision = 0,
+    double simulation_time_seconds = 0.0,
+    float temperature_c = 0.0f,
+    float relative_humidity_pct = 0.0f,
+    float pressure_hpa = 0.0f,
+    float cloud_cover = 0.0f,
+    float precipitation_mm_per_hour = 0.0f,
+    float wind_speed_mps = 0.0f,
+    float wind_direction_degrees = 0.0f,
+    float ground_wetness = 0.0f,
+    float snow_depth_m = 0.0f,
+    float water_balance_error_kg_m2 = 0.0f) {
+  WeatherStateBuilder builder_(_fbb);
+  builder_.add_simulation_time_seconds(simulation_time_seconds);
+  builder_.add_water_balance_error_kg_m2(water_balance_error_kg_m2);
+  builder_.add_snow_depth_m(snow_depth_m);
+  builder_.add_ground_wetness(ground_wetness);
+  builder_.add_wind_direction_degrees(wind_direction_degrees);
+  builder_.add_wind_speed_mps(wind_speed_mps);
+  builder_.add_precipitation_mm_per_hour(precipitation_mm_per_hour);
+  builder_.add_cloud_cover(cloud_cover);
+  builder_.add_pressure_hpa(pressure_hpa);
+  builder_.add_relative_humidity_pct(relative_humidity_pct);
+  builder_.add_temperature_c(temperature_c);
+  builder_.add_revision(revision);
+  builder_.add_room_id(room_id);
+  return builder_.Finish();
+}
+
 struct Envelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef EnvelopeBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
@@ -2182,6 +2354,9 @@ struct Envelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   }
   const HeavenField::TokenBalance *payload_as_TokenBalance() const {
     return payload_type() == HeavenField::Payload::TokenBalance ? static_cast<const HeavenField::TokenBalance *>(payload()) : nullptr;
+  }
+  const HeavenField::WeatherState *payload_as_WeatherState() const {
+    return payload_type() == HeavenField::Payload::WeatherState ? static_cast<const HeavenField::WeatherState *>(payload()) : nullptr;
   }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
@@ -2243,6 +2418,10 @@ template<> inline const HeavenField::DebugGrantToken *Envelope::payload_as<Heave
 
 template<> inline const HeavenField::TokenBalance *Envelope::payload_as<HeavenField::TokenBalance>() const {
   return payload_as_TokenBalance();
+}
+
+template<> inline const HeavenField::WeatherState *Envelope::payload_as<HeavenField::WeatherState>() const {
+  return payload_as_WeatherState();
 }
 
 struct EnvelopeBuilder {
@@ -2332,6 +2511,10 @@ inline bool VerifyPayload(::flatbuffers::VerifierTemplate<B> &verifier, const vo
     }
     case Payload::TokenBalance: {
       auto ptr = reinterpret_cast<const HeavenField::TokenBalance *>(obj);
+      return verifier.VerifyTable(ptr);
+    }
+    case Payload::WeatherState: {
+      auto ptr = reinterpret_cast<const HeavenField::WeatherState *>(obj);
       return verifier.VerifyTable(ptr);
     }
     default: return true;

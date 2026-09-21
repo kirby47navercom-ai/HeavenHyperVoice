@@ -564,6 +564,16 @@ void World::tick(float dt) {
     }
 }
 
+void World::broadcast(const proto::Bytes &frame) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto &[entityId, entity] : entities_) {
+        (void)entityId;
+        if (entity.isPlayer) {
+            sendTo(entity, frame);
+        }
+    }
+}
+
 std::vector<std::pair<std::uint64_t, Position>> World::positions() {
     std::lock_guard<std::mutex> lock(mutex_);
     std::vector<std::pair<std::uint64_t, Position>> out;

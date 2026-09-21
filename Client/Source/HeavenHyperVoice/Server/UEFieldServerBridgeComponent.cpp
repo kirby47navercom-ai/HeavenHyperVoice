@@ -220,6 +220,10 @@ void UUEFieldServerBridgeComponent::StartConnection(const FString &Service, uint
 	{
 		HandleFieldTokenBalance(Tokens);
 	};
+	FieldConnection->OnWeatherState = [this](const FHHVInstanceWeatherState &Weather)
+	{
+		HandleInstanceWeatherState(Weather);
+	};
 
 	uint64 ResolvedCharacterId = static_cast<uint64>(DevCharacterId);
 	int32 CharIdOverride = 0;
@@ -286,6 +290,8 @@ void UUEFieldServerBridgeComponent::StopFieldConnection()
 {
 	FieldConnection.reset();
 	CurrentRoomId = 0;
+	bHasInstanceWeatherState = false;
+	InstanceWeatherState = {};
 	SetComponentTickEnabled(false);
 }
 
@@ -447,6 +453,8 @@ void UUEFieldServerBridgeComponent::HandleFieldDisconnected(const FString &Reaso
 	}
 	LocalEntityId = 0;
 	CurrentRoomId = 0;
+	bHasInstanceWeatherState = false;
+	InstanceWeatherState = {};
 	DestroyPresentationActors();
 }
 
@@ -617,6 +625,33 @@ void UUEFieldServerBridgeComponent::HandleFieldTokenBalance(uint32 Tokens)
 {
 	PokemonTokens = static_cast<int32>(FMath::Min<uint32>(Tokens, MAX_int32));
 	OnTokenBalanceChanged.Broadcast(PokemonTokens);
+}
+
+void UUEFieldServerBridgeComponent::HandleInstanceWeatherState(
+	const FHHVInstanceWeatherState &Weather)
+{
+	// 이전 방에서 늦게 도착한 패킷이 새 방 연출을 덮지 못하게 방 번호도 확인한다.
+	if (!bInInstance || CurrentRoomId == 0 || Weather.RoomId != CurrentRoomId)
+	{
+		return;
+	}
+
+	InstanceWeatherState.RoomId = static_cast<int32>(Weather.RoomId);
+	InstanceWeatherState.Revision = static_cast<int32>(Weather.Revision);
+	InstanceWeatherState.SimulationTimeSeconds = Weather.SimulationTimeSeconds;
+	InstanceWeatherState.TemperatureC = Weather.TemperatureC;
+	InstanceWeatherState.RelativeHumidityPct = Weather.RelativeHumidityPct;
+	InstanceWeatherState.PressureHpa = Weather.PressureHpa;
+	InstanceWeatherState.CloudCover = Weather.CloudCover;
+	InstanceWeatherState.PrecipitationMmPerHour = Weather.PrecipitationMmPerHour;
+	InstanceWeatherState.WindSpeedMps = Weather.WindSpeedMps;
+	InstanceWeatherState.WindDirectionDegrees = Weather.WindDirectionDegrees;
+	InstanceWeatherState.GroundWetness = Weather.GroundWetness;
+	InstanceWeatherState.SnowDepthM = Weather.SnowDepthM;
+	InstanceWeatherState.WaterBalanceErrorKgM2 = Weather.WaterBalanceErrorKgM2;
+	bHasInstanceWeatherState = true;
+
+	OnInstanceWeatherChanged.Broadcast(InstanceWeatherState);
 }
 
 AUEPlayerCharacter *UUEFieldServerBridgeComponent::GetPlayerCharacter() const

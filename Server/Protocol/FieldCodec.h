@@ -235,6 +235,22 @@ inline Bytes encodeTokenBalance(std::uint32_t tokens) {
     return detail::wrapField(fbb, HeavenField::Payload::TokenBalance, balance.Union());
 }
 
+inline Bytes encodeWeatherState(std::uint32_t roomId, std::uint32_t revision,
+                                double simulationTimeSeconds, float temperatureC,
+                                float relativeHumidityPct, float pressureHpa,
+                                float cloudCover, float precipitationMmPerHour,
+                                float windSpeedMps, float windDirectionDegrees,
+                                float groundWetness, float snowDepthM,
+                                float waterBalanceErrorKgM2) {
+    flatbuffers::FlatBufferBuilder fbb;
+    const auto weather = HeavenField::CreateWeatherState(
+        fbb, roomId, revision, simulationTimeSeconds, temperatureC,
+        relativeHumidityPct, pressureHpa, cloudCover, precipitationMmPerHour,
+        windSpeedMps, windDirectionDegrees, groundWetness, snowDepthM,
+        waterBalanceErrorKgM2);
+    return detail::wrapField(fbb, HeavenField::Payload::WeatherState, weather.Union());
+}
+
 inline Bytes encodeFieldNotice(std::string_view text) {
     flatbuffers::FlatBufferBuilder fbb;
     auto message = fbb.CreateString(text.data(), text.size());

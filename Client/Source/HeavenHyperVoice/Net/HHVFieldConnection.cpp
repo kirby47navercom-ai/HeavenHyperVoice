@@ -596,6 +596,25 @@ void FHHVFieldConnection::DispatchFrame(const uint8 *Data, int32 Size)
 		break;
 	}
 
+	case HeavenField::Payload::WeatherState: {
+		const HeavenField::WeatherState *Weather = Envelope->payload_as_WeatherState();
+		Event.Type = EHHVFieldEvent::WeatherState;
+		Event.Weather.RoomId = Weather->room_id();
+		Event.Weather.Revision = Weather->revision();
+		Event.Weather.SimulationTimeSeconds = Weather->simulation_time_seconds();
+		Event.Weather.TemperatureC = Weather->temperature_c();
+		Event.Weather.RelativeHumidityPct = Weather->relative_humidity_pct();
+		Event.Weather.PressureHpa = Weather->pressure_hpa();
+		Event.Weather.CloudCover = Weather->cloud_cover();
+		Event.Weather.PrecipitationMmPerHour = Weather->precipitation_mm_per_hour();
+		Event.Weather.WindSpeedMps = Weather->wind_speed_mps();
+		Event.Weather.WindDirectionDegrees = Weather->wind_direction_degrees();
+		Event.Weather.GroundWetness = Weather->ground_wetness();
+		Event.Weather.SnowDepthM = Weather->snow_depth_m();
+		Event.Weather.WaterBalanceErrorKgM2 = Weather->water_balance_error_kg_m2();
+		break;
+	}
+
 	case HeavenField::Payload::Notice: {
 		const HeavenField::Notice *Notice = Envelope->payload_as_Notice();
 		Event.Type = EHHVFieldEvent::Notice;
@@ -693,6 +712,13 @@ void FHHVFieldConnection::Poll()
 			if (OnTokenBalance)
 			{
 				OnTokenBalance(Event.Tokens);
+			}
+			break;
+
+		case EHHVFieldEvent::WeatherState:
+			if (OnWeatherState)
+			{
+				OnWeatherState(Event.Weather);
 			}
 			break;
 

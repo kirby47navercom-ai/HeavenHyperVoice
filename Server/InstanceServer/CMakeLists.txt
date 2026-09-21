@@ -22,6 +22,7 @@ target_link_libraries(WildPokemonAI PUBLIC ServerMovement PRIVATE spdlog::spdlog
 add_executable(InstanceServer
     src/main.cpp
     src/InstanceHandler.cpp
+    src/InstanceWeather.cpp
     src/RoomManager.cpp
     src/World.cpp
 )

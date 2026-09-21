@@ -50,6 +50,10 @@ WildArea wildAreaFor(const Map *map) {
 // 충돌 없는 바닥을 찾을 때까지 위치를 제한된 횟수만 다시 뽑는다.
 constexpr int kSpawnAttempts = 16;
 
+// 이동은 20Hz지만 날씨 패킷은 현실 1초마다 한 번이면 충분하다. 클라이언트가
+// 사이 값을 보간하므로 네트워크와 서버 계산량이 방 수에 비례해 폭증하지 않는다.
+constexpr double kWeatherBroadcastSeconds = 1.0;
+
 } // namespace
 
 RoomManager::RoomManager(RoomSettings settings, std::map<std::uint32_t, InstanceType> types)
@@ -86,6 +90,7 @@ Room *RoomManager::createRoomLocked(std::uint32_t type) {
     room->id = nextRoomId_++;
     room->type = type;
     room->world.setMap(map);
+    room->weather.initialize(type, room->id, config.weather);
 
     // 스폰 좌표와 배회 목표는 C++ 난수원을 쓴다. Lua BT 도 나중에 난수를
     // 쓸 수 있으므로 같은 seed 를 심어 둔다. 방 번호를 섞어서 같은 씨앗으로
@@ -161,7 +166,9 @@ Room *RoomManager::createRoomLocked(std::uint32_t type) {
 
     Room *raw = room.get();
     rooms_.push_back(std::move(room));
-    spdlog::info("room {} opened (type {}, {} rooms total)", raw->id, type, rooms_.size());
+    const InstanceWeatherSnapshot weather = raw->weather.snapshot();
+    spdlog::info("room {} opened (type {}, {:.1f}C, {:.0f}% RH, {} rooms total)",
+                 raw->id, type, weather.temperatureC, weather.relativeHumidityPct, rooms_.size());
     return raw;
 }
 
@@ -226,23 +233,50 @@ void RoomManager::tickShard(unsigned shard, unsigned shardCount, float dt) {
 
     // 목록만 사본으로 뜨고 mutex_ 는 바로 놓는다. 틱이 오래 걸리는데 그동안
     // 잡고 있으면 다른 스레드의 join/leave 가 전부 밀린다.
-    std::vector<Room *> mine;
+    struct TickRoom {
+        Room *room = nullptr;
+        bool occupied = false;
+    };
+    std::vector<TickRoom> mine;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         mine.reserve(rooms_.size() / (shardCount == 0 ? 1 : shardCount) + 1);
         for (const auto &room : rooms_) {
             if (shardCount <= 1 || room->id % shardCount == shard) {
-                mine.push_back(room.get());
+                mine.push_back({room.get(), room->players > 0});
             }
         }
     }
 
-    for (Room *room : mine) {
+    for (const TickRoom target : mine) {
+        Room *room = target.room;
         // 방마다 자기 Lua VM 이고, 한 방은 언제나 이 샤드가 맡는다.
         if (room->ai != nullptr) {
             room->world.advanceWild(dt, *room->ai);
         }
         room->world.tick(dt);
+
+        // 빈 방은 회수 유예 동안에도 World 틱은 유지하지만 날씨 시간은 멈춘다.
+        // 다시 입장하면 떠났을 때의 상태에서 이어지므로 빈 방 계산 비용은 0이다.
+        if (!target.occupied) {
+            continue;
+        }
+
+        room->weatherBroadcastAccumulator += static_cast<double>(dt);
+        if (room->weatherBroadcastAccumulator < kWeatherBroadcastSeconds) {
+            continue;
+        }
+
+        const double elapsed = room->weatherBroadcastAccumulator;
+        room->weatherBroadcastAccumulator = 0.0;
+        room->weather.advance(elapsed);
+        const InstanceWeatherSnapshot weather = room->weather.snapshot();
+        room->world.broadcast(proto::encodeWeatherState(
+            weather.roomId, weather.revision, weather.simulationTimeSeconds,
+            weather.temperatureC, weather.relativeHumidityPct, weather.pressureHpa,
+            weather.cloudCover, weather.precipitationMmPerHour, weather.windSpeedMps,
+            weather.windDirectionDegrees, weather.groundWetness, weather.snowDepthM,
+            weather.waterBalanceErrorKgM2));
     }
 }
 

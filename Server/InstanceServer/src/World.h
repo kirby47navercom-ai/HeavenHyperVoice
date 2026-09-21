@@ -162,6 +162,10 @@ class World {
     // 20Hz. 이번 주기에 움직인 것들을 뷰어별로 묶어 보낸다.
     void tick(float dt);
 
+    // 방 전체에 같은 서버 권위 상태를 보낼 때 쓴다. 날씨처럼 엔티티 시야와
+    // 무관한 데이터는 개별 visible 집합을 순회할 이유가 없다.
+    void broadcast(const proto::Bytes &frame);
+
     // 주기적 저장용 스냅샷. 야생은 저장할 것이 없어 빠진다.
     std::vector<std::pair<std::uint64_t, Position>> positions();
 

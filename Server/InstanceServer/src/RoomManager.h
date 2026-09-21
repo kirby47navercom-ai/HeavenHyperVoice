@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "Map.h"
+#include "InstanceWeather.h"
 #include "WildAi.h"
 #include "World.h"
 
@@ -60,6 +61,10 @@ struct Room {
     World world;
     std::unique_ptr<WildAi> ai;  // 야생 없는 방이면 비어 있다
 
+    // 방마다 독립된 날씨다. 이 값과 누적 시간은 이 방을 맡은 틱 스레드만 만진다.
+    InstanceWeather weather;
+    double weatherBroadcastAccumulator = 0.0;
+
     // 아래 둘은 RoomManager::mutex_ 를 쥔 채로만 만진다.
     int players = 0;
     std::chrono::steady_clock::time_point emptySince;
@@ -70,6 +75,10 @@ struct Room {
 // 종류마다 공통 충돌 맵을 등록해야 한다. 등록하지 않은 종류는 입장을 거절한다.
 struct InstanceType {
     const Map* map = nullptr;
+
+    // 같은 종류의 방이 공유하는 기후 기준값. 실제 초기 습도와 구름은 room_id를
+    // 씨앗에 섞어 방마다 다르게 만든다.
+    InstanceWeatherProfile weather;
 
     // 여기 나올 야생 종족. **서버 내부 번호**다 (옵션은 도감번호로 받고
     // 읽을 때 바꾼다). 비어 있으면 종족 표에서 보스만 뺀 전체를 쓴다.

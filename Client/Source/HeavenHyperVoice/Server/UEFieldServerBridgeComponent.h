@@ -51,6 +51,56 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FUEOnFieldGachaResult, const FUEFiel
 	Result);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FUEOnFieldTokenBalance, int32, Tokens);
 
+/** InstanceServer가 계산한 현재 방의 날씨. 연출 블루프린트는 이 값만 읽는다. */
+USTRUCT(BlueprintType)
+struct FUEInstanceWeatherState
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Weather")
+	int32 RoomId = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Weather")
+	int32 Revision = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Weather")
+	double SimulationTimeSeconds = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Weather")
+	float TemperatureC = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Weather")
+	float RelativeHumidityPct = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Weather")
+	float PressureHpa = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Weather", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float CloudCover = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Weather", meta = (ClampMin = "0.0"))
+	float PrecipitationMmPerHour = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Weather", meta = (ClampMin = "0.0"))
+	float WindSpeedMps = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Weather", meta = (ClampMin = "0.0", ClampMax = "360.0"))
+	float WindDirectionDegrees = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Weather", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float GroundWetness = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Weather", meta = (ClampMin = "0.0"))
+	float SnowDepthM = 0.0f;
+
+	/** 0에 가까울수록 증발·응결·강수 계산에서 물이 보존됐다는 뜻이다. */
+	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Weather")
+	float WaterBalanceErrorKgM2 = 0.0f;
+};
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FUEOnInstanceWeatherChanged,
+	const FUEInstanceWeatherState&, Weather);
+
 class UUEFieldWildPokemonSyncComponent;
 
 USTRUCT(BlueprintType)
@@ -174,6 +224,20 @@ class HEAVENHYPERVOICE_API UUEFieldServerBridgeComponent : public UActorComponen
 	UPROPERTY(BlueprintAssignable, Category = "Field Server|Gacha")
 	FUEOnFieldTokenBalance OnTokenBalanceChanged;
 
+	/** 인스턴스 날씨가 서버에서 갱신될 때 초당 한 번 호출된다. */
+	UPROPERTY(BlueprintAssignable, Category = "Field Server|Weather")
+	FUEOnInstanceWeatherChanged OnInstanceWeatherChanged;
+
+	UFUNCTION(BlueprintPure, Category = "Field Server|Weather")
+	bool HasInstanceWeatherState() const { return bHasInstanceWeatherState; }
+
+	/** 마지막 서버 날씨. 위젯이나 날씨 연출이 늦게 생성되면 이 값으로 첫 화면을 맞춘다. */
+	UFUNCTION(BlueprintPure, Category = "Field Server|Weather")
+	const FUEInstanceWeatherState &GetInstanceWeatherState() const
+	{
+		return InstanceWeatherState;
+	}
+
 	/**
 	 * 다음에 붙을 곳. 0 이면 필드, 그 외에는 그 번호의 인스턴스다.
 	 *
@@ -279,6 +343,7 @@ class HEAVENHYPERVOICE_API UUEFieldServerBridgeComponent : public UActorComponen
 	void HandleFieldPartnerChanged(uint64 EntityId, uint16 PartnerDex);
 	void HandleFieldGachaResult(const FHHVFieldGachaResult &Result);
 	void HandleFieldTokenBalance(uint32 Tokens);
+	void HandleInstanceWeatherState(const FHHVInstanceWeatherState &Weather);
 	void ApplyPartnerServerState(const FHHVFieldEntity &Entity);
 	AUEPlayerCharacter *GetPlayerCharacter() const;
 
@@ -293,6 +358,10 @@ class HEAVENHYPERVOICE_API UUEFieldServerBridgeComponent : public UActorComponen
 
 	// 서버가 알려준 값만 담는다. 클라가 직접 세지 않는다 — 권위는 DB 다.
 	int32 PokemonTokens = 0;
+
+	UPROPERTY(Transient)
+	FUEInstanceWeatherState InstanceWeatherState;
+	bool bHasInstanceWeatherState = false;
 
 	// 내 엔티티 번호. PartnerChanged 가 나에게 온 것인지 가리는 데 쓴다.
 	uint64 LocalEntityId = 0;

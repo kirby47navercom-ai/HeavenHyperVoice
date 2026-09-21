@@ -64,6 +64,24 @@ struct FHHVFieldSnapshot
 	TArray<uint64> Despawned;
 };
 
+/** InstanceServer가 계산한 방 단위 날씨. FieldServer에서는 오지 않는다. */
+struct FHHVInstanceWeatherState
+{
+	uint32 RoomId = 0;
+	uint32 Revision = 0;
+	double SimulationTimeSeconds = 0.0;
+	float TemperatureC = 0.0f;
+	float RelativeHumidityPct = 0.0f;
+	float PressureHpa = 0.0f;
+	float CloudCover = 0.0f;
+	float PrecipitationMmPerHour = 0.0f;
+	float WindSpeedMps = 0.0f;
+	float WindDirectionDegrees = 0.0f;
+	float GroundWetness = 0.0f;
+	float SnowDepthM = 0.0f;
+	float WaterBalanceErrorKgM2 = 0.0f;
+};
+
 /** 서버가 보내 준 파티 상태. 입장 직후 한 번, SetParty 응답으로 한 번 온다. */
 struct FHHVFieldPartyState
 {
@@ -104,6 +122,7 @@ enum class EHHVFieldEvent : uint8
 	PartnerChanged,
 	GachaResult,
 	TokenBalance,
+	WeatherState,
 	Disconnected
 };
 
@@ -127,6 +146,7 @@ struct FHHVFieldEventData
 	float Facing = 0.0f;
 	FString Text;
 	FHHVFieldSnapshot Snapshot;
+	FHHVInstanceWeatherState Weather;
 	FHHVFieldPartyState Party;
 
 	// PartnerChanged 에서만 쓴다. 도감번호이고 0 이면 도로 넣었다는 뜻이다.
@@ -221,6 +241,7 @@ class HEAVENHYPERVOICE_API FHHVFieldConnection : public FRunnable
 	TFunction<void(uint64 EntityId, uint16 PartnerDex)> OnPartnerChanged;
 	TFunction<void(const FHHVFieldGachaResult &Result)> OnGachaResult;
 	TFunction<void(uint32 Tokens)> OnTokenBalance;
+	TFunction<void(const FHHVInstanceWeatherState &Weather)> OnWeatherState;
 	TFunction<void(const FString &Reason)> OnDisconnected;
 
   protected:
