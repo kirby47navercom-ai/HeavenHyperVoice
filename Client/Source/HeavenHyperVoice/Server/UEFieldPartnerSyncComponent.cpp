@@ -4,6 +4,10 @@
 
 #include "Engine/World.h"
 
+#if !defined(HHV_YANG2_CLIENT_AUTHORITY_ONLY) || !HHV_YANG2_CLIENT_AUTHORITY_ONLY
+#error "YANG2_CLIENT_AUTHORITY_ONLY local partner changes must never compile on main."
+#endif
+
 UUEFieldPartnerSyncComponent::UUEFieldPartnerSyncComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
@@ -79,6 +83,35 @@ void UUEFieldPartnerSyncComponent::AddPartner(uint64 OwnerEntityId, AActor *Owne
 	PartnerActor->SetServerHardSnapDistance(TeleportDistance);
 
 	Partners.Add(OwnerEntityId, FPartner{PartnerActor, DexNumber});
+}
+
+void UUEFieldPartnerSyncComponent::AddLocalPartner(uint64 OwnerEntityId, AActor *OwnerActor,
+	int32 DexNumber)
+{
+	// YANG2_CLIENT_AUTHORITY_ONLY
+	AddPartner(OwnerEntityId, OwnerActor, DexNumber);
+	const FPartner* Partner = Partners.Find(OwnerEntityId);
+	if (!Partner || !Partner->Actor.IsValid() || !OwnerActor)
+	{
+		return;
+	}
+
+	AUEPokemonCharacter* PartnerActor = Partner->Actor.Get();
+	PartnerActor->AttachToActor(OwnerActor, FAttachmentTransformRules::KeepWorldTransform);
+	PartnerActor->SetActorRelativeLocation(FVector(-140.0f, 90.0f, 0.0f));
+	PartnerActor->SetActorRelativeRotation(FRotator::ZeroRotator);
+}
+
+bool UUEFieldPartnerSyncComponent::PlayLocalPartnerAttack(uint64 OwnerEntityId, uint32 AttackSequence)
+{
+	// YANG2_CLIENT_AUTHORITY_ONLY
+	const FPartner* Partner = Partners.Find(OwnerEntityId);
+	if (!Partner || !Partner->Actor.IsValid())
+	{
+		return false;
+	}
+	Partner->Actor->HandleServerAttackSignal(/*TargetEntityId=*/0, AttackSequence);
+	return true;
 }
 
 bool UUEFieldPartnerSyncComponent::ApplyPartnerServerState(uint64 OwnerEntityId,

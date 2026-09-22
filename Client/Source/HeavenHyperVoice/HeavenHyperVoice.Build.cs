@@ -8,6 +8,12 @@ public class HeavenHyperVoice : ModuleRules
 	public HeavenHyperVoice(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+
+		// YANG2_CLIENT_AUTHORITY_ONLY
+		// Yang2는 서버 없는 단독 시험 브랜치다. 이 정의가 main에 들어가면
+		// 클라이언트가 서버 권위를 우회하므로 절대 병합하지 않는다.
+		PublicDefinitions.Add("HHV_YANG2_CLIENT_AUTHORITY_ONLY=1");
+
 		PublicIncludePaths.Add(Path.GetFullPath(Path.Combine(ModuleDirectory, "../MovementCore")));
 		PrivateIncludePaths.Add(Path.Combine(ModuleDirectory, "Net/Generated"));
 

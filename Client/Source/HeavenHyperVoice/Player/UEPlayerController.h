@@ -401,6 +401,8 @@ private:
 	TObjectPtr<UTextBlock> ChatInputChannelText = nullptr;
 
 	std::unique_ptr<FHHVChatConnection> ChatConnection;
+	// YANG2_CLIENT_AUTHORITY_ONLY: 혼자 UI 입력을 시험하는 로컬 에코 채팅이다.
+	bool bYang2LocalChat = false;
 	bool bChatInputOpen = false;
 
 	// 뽑기 조작 한 벌. 미리 받기를 시작할 때 만들어 둔다.

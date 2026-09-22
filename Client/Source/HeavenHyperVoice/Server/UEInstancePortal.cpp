@@ -63,7 +63,14 @@ void AUEInstancePortal::Tick(float DeltaSeconds)
     Super::Tick(DeltaSeconds);
     const APlayerController* Controller = GetWorld()->GetFirstPlayerController();
     const AUEPlayerCharacter* Player = Controller ? Cast<AUEPlayerCharacter>(Controller->GetPawn()) : nullptr;
-    if (!Player || !Player->GetCoreMovement()->IsNetworkSimulationActive())
+    const UUEFieldServerBridgeComponent* Bridge =
+        Controller ? UUEFieldServerBridgeComponent::Find(Controller) : nullptr;
+    // YANG2_CLIENT_AUTHORITY_ONLY: 로컬 권위 이동은 NetworkSimulation을 켜지 않는다.
+    // 이 예외가 없으면 포탈이 bArmed=false에서 영원히 풀리지 않아 입장할 수 없다.
+    const bool bMovementReady = Player &&
+        (Player->GetCoreMovement()->IsNetworkSimulationActive() ||
+         (Bridge && Bridge->IsYang2ClientAuthorityEnabled()));
+    if (!bMovementReady)
     {
         return;
     }

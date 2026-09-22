@@ -1,0 +1,18 @@
+#!/bin/sh
+
+# YANG2_CLIENT_AUTHORITY_ONLY
+# main에 Yang2 전용 클라이언트 권위 파일이 섞인 채 커밋되는 것을 막는다.
+
+branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+
+if [ "$branch" = "main" ]; then
+    if [ -f "YANG2_ONLY.md" ] || \
+       git grep -q "YANG2_CLIENT_AUTHORITY_ONLY" -- \
+           'Client/Source/HeavenHyperVoice' '.githooks' 2>/dev/null; then
+        echo "ERROR: Yang2 client-authority files are present on main." >&2
+        echo "Remove YANG2_ONLY.md and every YANG2_CLIENT_AUTHORITY_ONLY change before committing." >&2
+        exit 1
+    fi
+fi
+
+exit 0

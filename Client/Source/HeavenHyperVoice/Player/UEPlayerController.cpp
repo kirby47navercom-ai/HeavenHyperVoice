@@ -126,6 +126,7 @@ void AUEPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		ChatChannelTabs[Index]->OnMouseButtonDownEvent.Unbind();
 	}
 	ChatConnection.reset();
+	bYang2LocalChat = false;
 	UIWindowOrder.Empty();
 	Super::EndPlay(EndPlayReason);
 }
@@ -660,12 +661,21 @@ void AUEPlayerController::ToggleChatVisible()
 
 void AUEPlayerController::StartChat()
 {
-	if (!ChatWidget || ChatConnection)
+	if (!ChatWidget || ChatConnection || bYang2LocalChat)
 	{
 		return;
 	}
 
 	const UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	// YANG2_CLIENT_AUTHORITY_ONLY: 채팅 서버 없이 입력·탭·창 우선순위를 시험한다.
+#if defined(HHV_YANG2_CLIENT_AUTHORITY_ONLY) && HHV_YANG2_CLIENT_AUTHORITY_ONLY
+	if (GameInstance && GameInstance->HasLocalSession())
+	{
+		bYang2LocalChat = true;
+		AddSystemMessage(TEXT("Yang2 로컬 채팅입니다. 다른 플레이어에게 전송되지 않습니다"));
+		return;
+	}
+#endif
 	FHHVChatSettings Settings;
 	if (!GameInstance ||
 		!GameInstance->GetChatEndpoint(Settings.Host, Settings.Port, Settings.Ticket) ||
@@ -936,6 +946,22 @@ bool AUEPlayerController::HandleChatWindowKey(UUserWidget* Window, const FKeyEve
 
 bool AUEPlayerController::SubmitChatText(const FString& Text)
 {
+	// YANG2_CLIENT_AUTHORITY_ONLY: 서버 전송 대신 내 채팅창에만 되돌려 UI를 시험한다.
+	if (bYang2LocalChat)
+	{
+		if (Text.StartsWith(TEXT("/")))
+		{
+			AddSystemMessage(TEXT("Yang2 로컬 모드에서는 멀티플레이어 명령을 사용할 수 없습니다"));
+			return false;
+		}
+		const UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+		const FString Nickname = GameInstance && !GameInstance->GetLocalSessionNickname().IsEmpty()
+			? GameInstance->GetLocalSessionNickname()
+			: TEXT("LocalPlayer");
+		AddChatLine(Nickname, Text, false, ChannelForSelectedTab());
+		return true;
+	}
+
 	if (!ChatConnection)
 	{
 		AddSystemMessage(TEXT("채팅 서버에 연결되어 있지 않습니다"));

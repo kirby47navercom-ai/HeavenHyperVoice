@@ -30,6 +30,9 @@ class HEAVENHYPERVOICE_API UUEFieldPartnerSyncComponent : public UActorComponent
 	// DexNumber 가 0 이면 파트너가 없는 캐릭터다 — 아무것도 만들지 않는다.
 	// 같은 주인을 다시 등록하면 무시한다.
 	void AddPartner(uint64 OwnerEntityId, AActor *OwnerActor, int32 DexNumber);
+	// YANG2_CLIENT_AUTHORITY_ONLY: 서버 위치가 없으므로 로컬 주인에게 붙여 시험한다.
+	void AddLocalPartner(uint64 OwnerEntityId, AActor *OwnerActor, int32 DexNumber);
+	bool PlayLocalPartnerAttack(uint64 OwnerEntityId, uint32 AttackSequence);
 	bool ApplyPartnerServerState(uint64 OwnerEntityId, const hhv::movement::State &State, bool bTeleported,
 	                             double ServerTimeSeconds);
 

@@ -1,0 +1,26 @@
+#!/bin/sh
+
+# YANG2_CLIENT_AUTHORITY_ONLY
+# 작업 브랜치가 무엇이든 main으로 향하는 커밋의 실제 트리를 검사한다.
+
+zero=0000000000000000000000000000000000000000
+
+while read local_ref local_sha remote_ref remote_sha; do
+    if [ "$remote_ref" != "refs/heads/main" ] || [ "$local_sha" = "$zero" ]; then
+        continue
+    fi
+
+    if git cat-file -e "$local_sha:YANG2_ONLY.md" 2>/dev/null; then
+        echo "ERROR: refusing to push Yang2 client authority to main." >&2
+        echo "The commit contains YANG2_ONLY.md." >&2
+        exit 1
+    fi
+
+    if git grep -q "YANG2_CLIENT_AUTHORITY_ONLY" "$local_sha" -- \
+        'Client/Source/HeavenHyperVoice' '.githooks' 2>/dev/null; then
+        echo "ERROR: refusing to push Yang2 client-authority markers to main." >&2
+        exit 1
+    fi
+done
+
+exit 0

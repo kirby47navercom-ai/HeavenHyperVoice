@@ -6,6 +6,7 @@
 #include "UEFieldPartyWidget.h"
 #include "UEFieldWildPokemonSyncComponent.h"
 #include "../Character/UEPlayerCharacter.h"
+#include "../Pokemon/UEPokemonSpeciesCatalog.h"
 #include "../Pokemon/UEPokemonSpeciesData.h"
 #include "../Pokemon/UEPokemonCharacter.h"
 #include "../System/UEGameInstance.h"
@@ -16,6 +17,18 @@
 #include "Misc/CommandLine.h"
 #include "Misc/Crc.h"
 #include "Misc/Parse.h"
+#include "TimerManager.h"
+
+#if !defined(HHV_YANG2_CLIENT_AUTHORITY_ONLY) || !HHV_YANG2_CLIENT_AUTHORITY_ONLY
+#error "YANG2_CLIENT_AUTHORITY_ONLY bridge changes must never compile on main."
+#endif
+
+namespace
+{
+	// YANG2_CLIENT_AUTHORITY_ONLY: 실제 서버 room_id와 헷갈리지 않는 로컬 표식.
+	constexpr uint32 Yang2LocalRoomPrefix = 0x59000000u;
+	constexpr double Yang2WeatherPublishSeconds = 1.0;
+}
 
 UUEFieldServerBridgeComponent::UUEFieldServerBridgeComponent()
 {
@@ -32,15 +45,17 @@ void UUEFieldServerBridgeComponent::BeginDestroy()
 
 bool UUEFieldServerBridgeComponent::IsExternalFieldServerConfigured() const
 {
-	return !FieldServerHost.IsEmpty() && FieldServerPort > 0;
+	// YANG2_CLIENT_AUTHORITY_ONLY: 이 브랜치는 외부 필드 서버를 사용하지 않는다.
+	return false;
 }
 
 bool UUEFieldServerBridgeComponent::SendPokemonAttackRequest(int32 AttackSlot)
 {
-	(void)AttackSlot;
-	UE_LOG(LogTemp, Verbose,
-	       TEXT("FieldServerBridge: pokemon attack request is waiting for a field protocol message."));
-	return false;
+	// YANG2_CLIENT_AUTHORITY_ONLY: 현재 서버 프로토콜에도 플레이어 공격 요청은 아직
+	// 없으므로, 로컬 파트너의 공격 모션을 실행해 입력과 연출을 시험한다.
+	return bYang2ClientAuthorityActive && AttackSlot >= 1 && AttackSlot <= 4 &&
+		PartyState.ActiveDex > 0 && PartnerSyncComponent.IsValid() &&
+		PartnerSyncComponent->PlayLocalPartnerAttack(LocalEntityId, ++Yang2LocalAttackSequence);
 }
 
 void UUEFieldServerBridgeComponent::ReplacePokemonPartyEntriesFromServer(
@@ -121,6 +136,8 @@ void UUEFieldServerBridgeComponent::TickComponent(float DeltaTime, ELevelTick Ti
 	{
 		FieldConnection->Poll();
 	}
+
+	TickYang2ClientAuthority(DeltaTime);
 }
 
 void UUEFieldServerBridgeComponent::ResolveSyncComponents()
@@ -154,11 +171,21 @@ void UUEFieldServerBridgeComponent::ResolveSyncComponents()
 
 void UUEFieldServerBridgeComponent::StartConnection(const FString &Service, uint32 InstanceType)
 {
+	// YANG2_CLIENT_AUTHORITY_ONLY
+	// main에서는 아래 조기 반환 전체가 없어야 한다. 네트워크 연결 대신 동일한
+	// 날씨 계산을 클라이언트 프로세스에서 실행한다.
+	if (bYang2ClientAuthorityActive)
+	{
+		return;
+	}
+	StartYang2ClientAuthority(InstanceType);
+	return;
+
+	// 아래는 main의 서버 권위 연결 코드다. Yang2에서는 위에서 반드시 반환한다.
 	if (FieldConnection)
 	{
 		return;
 	}
-
 	const UWorld *OwnerWorld = GetWorld();
 	if (!OwnerWorld ||
 	    (OwnerWorld->WorldType != EWorldType::Game && OwnerWorld->WorldType != EWorldType::PIE))
@@ -289,10 +316,170 @@ void UUEFieldServerBridgeComponent::StartConnection(const FString &Service, uint
 void UUEFieldServerBridgeComponent::StopFieldConnection()
 {
 	FieldConnection.reset();
+	Yang2LocalWeather.reset();
+	bYang2ClientAuthorityActive = false;
+	Yang2WeatherAccumulator = 0.0;
+	Yang2LocalAttackSequence = 0;
+	bInInstance = false;
+	LocalEntityId = 0;
 	CurrentRoomId = 0;
 	bHasInstanceWeatherState = false;
 	InstanceWeatherState = {};
 	SetComponentTickEnabled(false);
+}
+
+void UUEFieldServerBridgeComponent::StartYang2ClientAuthority(uint32 InstanceType)
+{
+	AUEPlayerCharacter *Player = GetPlayerCharacter();
+	if (!Player)
+	{
+		return;
+	}
+
+	// 서버 EnterAck를 기다리지 않고 공통 이동 코어가 로컬 상태를 권위 상태로 쓴다.
+	Player->GetCoreMovement()->PrepareForNetworkSimulation(/*bAllowLocalSimulation=*/true);
+
+	bYang2ClientAuthorityActive = true;
+	LocalEntityId = 1;
+	bInInstance = InstanceType > 0;
+	CurrentRoomId = bInInstance ? Yang2LocalRoomPrefix | (InstanceType & 0x00FFFFFFu) : 0;
+	Yang2WeatherAccumulator = 0.0;
+	bHasInstanceWeatherState = false;
+	InstanceWeatherState = {};
+
+	if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance()))
+	{
+		GameInstance->PrepareYang2GameplayState();
+		PokemonTokens = GameInstance->GetYang2PokemonTokens();
+		RefreshYang2PartyState(true, TEXT("Yang2 로컬 게임 상태"));
+		OnTokenBalanceChanged.Broadcast(PokemonTokens);
+	}
+
+	if (bInInstance)
+	{
+		Yang2LocalWeather = std::make_unique<heaven::instance::InstanceWeather>();
+		const heaven::instance::InstanceWeatherProfile Profile;
+		Yang2LocalWeather->initialize(InstanceType, CurrentRoomId, Profile);
+		PublishYang2ClientWeather();
+	}
+
+	UE_LOG(LogTemp, Warning,
+	       TEXT("YANG2 CLIENT AUTHORITY: server connection skipped; local solo gameplay is active "
+	            "(instance type %u, local room %u). DO NOT MERGE THIS PATH TO MAIN."),
+	       InstanceType, CurrentRoomId);
+
+	// 인스턴스 날씨는 초당 한 번 진행한다. 필드에서도 브릿지를 살려 두면 목적지
+	// 전환 디버깅 로그를 그대로 볼 수 있어서 로컬 모드 동안은 틱을 유지한다.
+	SetComponentTickEnabled(true);
+}
+
+void UUEFieldServerBridgeComponent::RefreshYang2PartyState(bool bOk, const FString& Message)
+{
+	// YANG2_CLIENT_AUTHORITY_ONLY
+	UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	if (!GameInstance)
+	{
+		return;
+	}
+	PartyState.Party = GameInstance->GetYang2PokemonParty();
+	PartyState.ActiveDex = GameInstance->GetYang2ActivePokemon();
+	PartyState.Unlocked = GameInstance->GetYang2UnlockedPokemon();
+	PartyState.bOk = bOk;
+	PartyState.Message = Message;
+
+	// HUD가 쓰는 상세 파티 목록도 같은 로컬 상태에서 만든다. 서버 패킷이 없더라도
+	// 데이터 에셋에 지정된 이름과 아이콘이 그대로 표시된다.
+	TArray<FUEFieldPokemonPartyEntry> LocalEntries;
+	if (UUEPokemonSpeciesCatalog* Catalog = GameInstance->GetPartySpeciesCatalog())
+	{
+		LocalEntries.Reserve(PartyState.Party.Num());
+		for (const int32 DexNumber : PartyState.Party)
+		{
+			UUEPokemonSpeciesData* Species = Catalog->FindByDex(DexNumber);
+			if (!Species)
+			{
+				continue;
+			}
+
+			FUEFieldPokemonPartyEntry& Entry = LocalEntries.AddDefaulted_GetRef();
+			Entry.PokemonInstanceId = DexNumber;
+			Entry.SpeciesId = Species->SpeciesId;
+			Entry.DisplayName = Species->DisplayName.IsEmpty()
+				? FText::FromName(Species->SpeciesId)
+				: Species->DisplayName;
+			Entry.ProfileIcon = Species->ProfileIcon;
+			Entry.Level = 1;
+			Entry.CurrentHP = 100.0f;
+			Entry.MaxHP = 100.0f;
+			Entry.bSelected = DexNumber == PartyState.ActiveDex;
+			Entry.bCanSummon = true;
+		}
+	}
+	ReplacePokemonPartyEntriesFromServer(MoveTemp(LocalEntries));
+
+	RefreshYang2LocalPartner();
+	OnPartyStateChanged.Broadcast();
+}
+
+void UUEFieldServerBridgeComponent::RefreshYang2LocalPartner()
+{
+	// YANG2_CLIENT_AUTHORITY_ONLY
+	if (!PartnerSyncComponent.IsValid() || LocalEntityId == 0)
+	{
+		return;
+	}
+	PartnerSyncComponent->RemovePartner(LocalEntityId);
+	if (PartyState.ActiveDex > 0)
+	{
+		PartnerSyncComponent->AddLocalPartner(LocalEntityId, GetPlayerCharacter(), PartyState.ActiveDex);
+	}
+}
+
+void UUEFieldServerBridgeComponent::TickYang2ClientAuthority(float DeltaTime)
+{
+	if (!bYang2ClientAuthorityActive || !Yang2LocalWeather || !bInInstance)
+	{
+		return;
+	}
+
+	Yang2WeatherAccumulator += FMath::Max(0.0, static_cast<double>(DeltaTime));
+	if (Yang2WeatherAccumulator < Yang2WeatherPublishSeconds)
+	{
+		return;
+	}
+
+	const double Elapsed = Yang2WeatherAccumulator;
+	Yang2WeatherAccumulator = 0.0;
+	Yang2LocalWeather->advance(Elapsed);
+	PublishYang2ClientWeather();
+}
+
+void UUEFieldServerBridgeComponent::PublishYang2ClientWeather()
+{
+	if (!Yang2LocalWeather)
+	{
+		return;
+	}
+
+	const heaven::instance::InstanceWeatherSnapshot Source = Yang2LocalWeather->snapshot();
+	FHHVInstanceWeatherState Weather;
+	Weather.RoomId = Source.roomId;
+	Weather.Revision = Source.revision;
+	Weather.SimulationTimeSeconds = Source.simulationTimeSeconds;
+	Weather.TemperatureC = Source.temperatureC;
+	Weather.RelativeHumidityPct = Source.relativeHumidityPct;
+	Weather.PressureHpa = Source.pressureHpa;
+	Weather.CloudCover = Source.cloudCover;
+	Weather.PrecipitationMmPerHour = Source.precipitationMmPerHour;
+	Weather.WindSpeedMps = Source.windSpeedMps;
+	Weather.WindDirectionDegrees = Source.windDirectionDegrees;
+	Weather.GroundWetness = Source.groundWetness;
+	Weather.SnowDepthM = Source.snowDepthM;
+	Weather.WaterBalanceErrorKgM2 = Source.waterBalanceErrorKgM2;
+
+	// 서버 패킷과 같은 최종 처리 함수를 지나가므로 기존 블루프린트는 출처를
+	// 구분하지 않고 OnInstanceWeatherChanged를 그대로 받을 수 있다.
+	HandleInstanceWeatherState(Weather);
 }
 
 void UUEFieldServerBridgeComponent::DestroyPresentationActors()
@@ -548,6 +735,17 @@ void UUEFieldServerBridgeComponent::TogglePartyWidget()
 
 bool UUEFieldServerBridgeComponent::SendSetParty(const TArray<int32> &DexNumbers, int32 ActiveDex)
 {
+	// YANG2_CLIENT_AUTHORITY_ONLY: 서버 DB 대신 GameInstance의 로컬 시험 상태를 갱신한다.
+	if (bYang2ClientAuthorityActive)
+	{
+		UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+		FString Message;
+		const bool bOk = GameInstance &&
+			GameInstance->SetYang2PokemonParty(DexNumbers, ActiveDex, Message);
+		RefreshYang2PartyState(bOk, Message);
+		return true;
+	}
+
 	if (!FieldConnection || !FieldConnection->IsInField())
 	{
 		return false;
@@ -587,6 +785,95 @@ UUEFieldServerBridgeComponent *UUEFieldServerBridgeComponent::Find(const APlayer
 
 bool UUEFieldServerBridgeComponent::SendGachaDraw(EUEGachaType Type)
 {
+	// YANG2_CLIENT_AUTHORITY_ONLY: 데이터 에셋의 같은 가중치로 로컬 추첨한다.
+	if (bYang2ClientAuthorityActive && !bInInstance && Type != EUEGachaType::None)
+	{
+		FUEFieldGachaResult Result;
+		UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+		const UUEProjectAssets* Assets = UUEProjectAssetSettings::GetProjectAssets();
+		UUEGachaPool* Pool = nullptr;
+		if (Assets)
+		{
+			for (const TSoftObjectPtr<UUEGachaPool>& Candidate : Assets->GachaPools)
+			{
+				UUEGachaPool* Loaded = Candidate.LoadSynchronous();
+				if (Loaded && Loaded->GetServerType() == Type)
+				{
+					Pool = Loaded;
+					break;
+				}
+			}
+		}
+
+		double TotalWeight = 0.0;
+		if (Pool)
+		{
+			for (const FUEGachaEntry& Entry : Pool->Entries)
+			{
+				if (Entry.DexNumber > 0 && FMath::IsFinite(Entry.Weight) && Entry.Weight > 0.0f)
+				{
+					TotalWeight += Entry.Weight;
+				}
+			}
+		}
+
+		if (!GameInstance || !Pool || TotalWeight <= 0.0)
+		{
+			Result.Message = TEXT("Yang2 로컬 뽑기 데이터가 비어 있습니다");
+			QueueYang2GachaResult(Result);
+			return true;
+		}
+		if (!GameInstance->SpendYang2PokemonToken())
+		{
+			Result.Message = TEXT("포켓몬 토큰이 없습니다");
+			QueueYang2GachaResult(Result);
+			return true;
+		}
+
+		double Roll = FMath::FRandRange(0.0f, static_cast<float>(TotalWeight));
+		const FUEGachaEntry* Drawn = nullptr;
+		for (const FUEGachaEntry& Entry : Pool->Entries)
+		{
+			if (Entry.DexNumber <= 0 || !FMath::IsFinite(Entry.Weight) || Entry.Weight <= 0.0f)
+			{
+				continue;
+			}
+			Roll -= Entry.Weight;
+			if (Roll <= 0.0)
+			{
+				Drawn = &Entry;
+				break;
+			}
+		}
+		if (!Drawn)
+		{
+			for (int32 Index = Pool->Entries.Num() - 1; Index >= 0; --Index)
+			{
+				const FUEGachaEntry& Entry = Pool->Entries[Index];
+				if (Entry.DexNumber > 0 && FMath::IsFinite(Entry.Weight) && Entry.Weight > 0.0f)
+				{
+					Drawn = &Entry;
+					break;
+				}
+			}
+		}
+
+		if (Drawn)
+		{
+			Result.bOk = true;
+			Result.Dex = Drawn->DexNumber;
+			Result.Rarity = Drawn->Rarity;
+			Result.bDuplicate = !GameInstance->UnlockYang2Pokemon(Drawn->DexNumber);
+			Result.Message = Result.bDuplicate ? TEXT("이미 보유한 포켓몬입니다")
+			                                           : TEXT("새 포켓몬을 해금했습니다");
+		}
+		PokemonTokens = GameInstance->GetYang2PokemonTokens();
+		OnTokenBalanceChanged.Broadcast(PokemonTokens);
+		RefreshYang2PartyState(true, FString());
+		QueueYang2GachaResult(Result);
+		return true;
+	}
+
 	if (!FieldConnection || !FieldConnection->IsInField() || Type == EUEGachaType::None)
 	{
 		return false;
@@ -598,6 +885,18 @@ bool UUEFieldServerBridgeComponent::SendGachaDraw(EUEGachaType Type)
 
 bool UUEFieldServerBridgeComponent::SendDebugGrantToken()
 {
+	// YANG2_CLIENT_AUTHORITY_ONLY
+	if (bYang2ClientAuthorityActive && !bInInstance)
+	{
+		if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance()))
+		{
+			GameInstance->GrantYang2PokemonToken();
+			PokemonTokens = GameInstance->GetYang2PokemonTokens();
+			OnTokenBalanceChanged.Broadcast(PokemonTokens);
+			return true;
+		}
+	}
+
 	if (!FieldConnection || !FieldConnection->IsInField())
 	{
 		return false;
@@ -605,6 +904,22 @@ bool UUEFieldServerBridgeComponent::SendDebugGrantToken()
 
 	FieldConnection->SendDebugGrantToken();
 	return true;
+}
+
+void UUEFieldServerBridgeComponent::QueueYang2GachaResult(const FUEFieldGachaResult& Result)
+{
+	// 요청 함수가 반환된 뒤 기계가 bAwaitingResult를 켜므로 다음 틱에 답한다.
+	TWeakObjectPtr<UUEFieldServerBridgeComponent> WeakThis(this);
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimerForNextTick([WeakThis, Result]()
+		{
+			if (WeakThis.IsValid())
+			{
+				WeakThis->OnGachaResult.Broadcast(Result);
+			}
+		});
+	}
 }
 
 void UUEFieldServerBridgeComponent::HandleFieldGachaResult(const FHHVFieldGachaResult &Result)

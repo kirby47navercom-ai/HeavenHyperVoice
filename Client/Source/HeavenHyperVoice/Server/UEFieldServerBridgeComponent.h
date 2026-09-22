@@ -4,6 +4,7 @@
 #include "Components/ActorComponent.h"
 #include "../Net/HHVFieldConnection.h"
 #include "../Gacha/UEGachaPool.h"
+#include "../Yang2/UEYang2InstanceWeather.h" // YANG2_CLIENT_AUTHORITY_ONLY
 #include "Templates/SubclassOf.h"
 
 #include <memory>
@@ -160,6 +161,10 @@ class HEAVENHYPERVOICE_API UUEFieldServerBridgeComponent : public UActorComponen
 
 	UFUNCTION(BlueprintPure, Category = "Field Server")
 	bool IsExternalFieldServerConfigured() const;
+
+	/** YANG2_CLIENT_AUTHORITY_ONLY: 서버 없이 입장부터 필드·인스턴스 시험까지 클라이언트가 맡는다. */
+	UFUNCTION(BlueprintPure, Category = "Yang2|Client Authority")
+	bool IsYang2ClientAuthorityEnabled() const { return true; }
 
 	UFUNCTION(BlueprintCallable, Category = "Field Server|Pokemon")
 	bool SendPokemonAttackRequest(int32 AttackSlot);
@@ -344,6 +349,15 @@ class HEAVENHYPERVOICE_API UUEFieldServerBridgeComponent : public UActorComponen
 	void HandleFieldGachaResult(const FHHVFieldGachaResult &Result);
 	void HandleFieldTokenBalance(uint32 Tokens);
 	void HandleInstanceWeatherState(const FHHVInstanceWeatherState &Weather);
+
+	// YANG2_CLIENT_AUTHORITY_ONLY
+	// main의 화면 흐름을 유지한 채 서버 접속 없이 로컬 단독 게임플레이를 진행한다.
+	void StartYang2ClientAuthority(uint32 InstanceType);
+	void TickYang2ClientAuthority(float DeltaTime);
+	void PublishYang2ClientWeather();
+	void RefreshYang2PartyState(bool bOk, const FString& Message);
+	void RefreshYang2LocalPartner();
+	void QueueYang2GachaResult(const FUEFieldGachaResult& Result);
 	void ApplyPartnerServerState(const FHHVFieldEntity &Entity);
 	AUEPlayerCharacter *GetPlayerCharacter() const;
 
@@ -379,6 +393,13 @@ class HEAVENHYPERVOICE_API UUEFieldServerBridgeComponent : public UActorComponen
 	TWeakObjectPtr<UUEFieldRemotePlayerSyncComponent> RemotePlayerSyncComponent;
 
 	std::unique_ptr<FHHVFieldConnection> FieldConnection;
+
+	// YANG2_CLIENT_AUTHORITY_ONLY: main으로 병합 금지. YANG2_ONLY.md 참고.
+	std::unique_ptr<heaven::instance::InstanceWeather> Yang2LocalWeather;
+	bool bYang2ClientAuthorityActive = false;
+	double Yang2WeatherAccumulator = 0.0;
+	uint32 Yang2LocalAttackSequence = 0;
+
 	TArray<FUEFieldPokemonPartyEntry> PokemonPartyEntries;
 	int32 SnapshotsLogged = 0;
 	float TimeSinceLastSend = 0.0f;

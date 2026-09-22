@@ -265,6 +265,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "HHV|Local Session")
 	FString GetLocalSessionNickname() const { return LocalSessionNickname; }
 
+	// YANG2_CLIENT_AUTHORITY_ONLY
+	// 서버 DB가 맡던 선택 캐릭터의 시험 상태를 레벨 이동 사이에 유지한다.
+	void PrepareYang2GameplayState();
+	void ResetYang2GameplayState();
+	const TArray<int32>& GetYang2UnlockedPokemon() const { return Yang2UnlockedPokemon; }
+	const TArray<int32>& GetYang2PokemonParty() const { return Yang2PokemonParty; }
+	int32 GetYang2ActivePokemon() const { return Yang2ActivePokemon; }
+	int32 GetYang2PokemonTokens() const { return Yang2PokemonTokens; }
+	bool SetYang2PokemonParty(const TArray<int32>& DexNumbers, int32 ActiveDex, FString& OutMessage);
+	bool SpendYang2PokemonToken();
+	void GrantYang2PokemonToken();
+	bool UnlockYang2Pokemon(int32 DexNumber);
+
 	// 로그인 전에 고른 서버 주소를 이후 레벨에서도 사용할 수 있게 보관한다.
 	// 비어 있지 않으면 ConnectAndLogin 이 LoginServerHost 대신 이 값을 쓴다.
 	UFUNCTION(BlueprintCallable, Category = "HHV|Server")
@@ -342,6 +355,14 @@ private:
 
 	UPROPERTY(Transient)
 	bool bHasLocalSession = false;
+
+	// YANG2_CLIENT_AUTHORITY_ONLY: main 병합 금지. 로컬 시험 상태이며 서버 DB와 무관하다.
+	int32 Yang2GameplaySlot = INDEX_NONE;
+	TArray<int32> Yang2UnlockedPokemon;
+	TArray<int32> Yang2PokemonParty;
+	int32 Yang2ActivePokemon = 0;
+	int32 Yang2PokemonTokens = 20;
+	bool bYang2GameplayStateInitialized = false;
 
 	// --- 서버 세션 ---
 
