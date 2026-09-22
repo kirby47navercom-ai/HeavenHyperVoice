@@ -28,6 +28,12 @@ namespace
 	// YANG2_CLIENT_AUTHORITY_ONLY: 실제 서버 room_id와 헷갈리지 않는 로컬 표식.
 	constexpr uint32 Yang2LocalRoomPrefix = 0x59000000u;
 	constexpr double Yang2WeatherPublishSeconds = 1.0;
+
+	UUEGameInstance* GetUEGameInstance(const UActorComponent* Component)
+	{
+		const UWorld* World = Component ? Component->GetWorld() : nullptr;
+		return World ? Cast<UUEGameInstance>(World->GetGameInstance()) : nullptr;
+	}
 }
 
 UUEFieldServerBridgeComponent::UUEFieldServerBridgeComponent()
@@ -347,7 +353,7 @@ void UUEFieldServerBridgeComponent::StartYang2ClientAuthority(uint32 InstanceTyp
 	bHasInstanceWeatherState = false;
 	InstanceWeatherState = {};
 
-	if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance()))
+	if (UUEGameInstance* GameInstance = GetUEGameInstance(this))
 	{
 		GameInstance->PrepareYang2GameplayState();
 		PokemonTokens = GameInstance->GetYang2PokemonTokens();
@@ -376,7 +382,7 @@ void UUEFieldServerBridgeComponent::StartYang2ClientAuthority(uint32 InstanceTyp
 void UUEFieldServerBridgeComponent::RefreshYang2PartyState(bool bOk, const FString& Message)
 {
 	// YANG2_CLIENT_AUTHORITY_ONLY
-	UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+	UUEGameInstance* GameInstance = GetUEGameInstance(this);
 	if (!GameInstance)
 	{
 		return;
@@ -738,7 +744,7 @@ bool UUEFieldServerBridgeComponent::SendSetParty(const TArray<int32> &DexNumbers
 	// YANG2_CLIENT_AUTHORITY_ONLY: 서버 DB 대신 GameInstance의 로컬 시험 상태를 갱신한다.
 	if (bYang2ClientAuthorityActive)
 	{
-		UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+		UUEGameInstance* GameInstance = GetUEGameInstance(this);
 		FString Message;
 		const bool bOk = GameInstance &&
 			GameInstance->SetYang2PokemonParty(DexNumbers, ActiveDex, Message);
@@ -789,7 +795,7 @@ bool UUEFieldServerBridgeComponent::SendGachaDraw(EUEGachaType Type)
 	if (bYang2ClientAuthorityActive && !bInInstance && Type != EUEGachaType::None)
 	{
 		FUEFieldGachaResult Result;
-		UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance());
+		UUEGameInstance* GameInstance = GetUEGameInstance(this);
 		const UUEProjectAssets* Assets = UUEProjectAssetSettings::GetProjectAssets();
 		UUEGachaPool* Pool = nullptr;
 		if (Assets)
@@ -888,7 +894,7 @@ bool UUEFieldServerBridgeComponent::SendDebugGrantToken()
 	// YANG2_CLIENT_AUTHORITY_ONLY
 	if (bYang2ClientAuthorityActive && !bInInstance)
 	{
-		if (UUEGameInstance* GameInstance = Cast<UUEGameInstance>(GetGameInstance()))
+		if (UUEGameInstance* GameInstance = GetUEGameInstance(this))
 		{
 			GameInstance->GrantYang2PokemonToken();
 			PokemonTokens = GameInstance->GetYang2PokemonTokens();

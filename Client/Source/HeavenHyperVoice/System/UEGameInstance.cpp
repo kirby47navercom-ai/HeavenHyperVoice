@@ -434,6 +434,7 @@ void UUEGameInstance::PollServer()
 
 void UUEGameInstance::ConnectAndLogin(const FString& UserId, const FString& Password)
 {
+#if HHV_YANG2_CLIENT_AUTHORITY_ONLY
 	// YANG2_CLIENT_AUTHORITY_ONLY: 서버 접속 없이 기존 로컬 캐릭터 슬롯으로 들어간다.
 	const FString LocalUserId = UserId.TrimStartAndEnd();
 	if (LocalUserId.IsEmpty() || Password.IsEmpty())
@@ -445,15 +446,16 @@ void UUEGameInstance::ConnectAndLogin(const FString& UserId, const FString& Pass
 	SetLocalSession(LocalUserId, FString());
 	OnCharacterListChanged.Broadcast();
 	OnLoginCompleted.Broadcast(true, TEXT("Yang2 로컬 로그인"));
-	return;
-
+#else
 	EnsureServerConnection();
 	LocalSessionUserId = UserId;
 	LoginConnection->SendLogin(UserId, Password);
+#endif
 }
 
 void UUEGameInstance::ConnectAndRegister(const FString& UserId, const FString& Password)
 {
+#if HHV_YANG2_CLIENT_AUTHORITY_ONLY
 	// YANG2_CLIENT_AUTHORITY_ONLY: 계정 서버 없이 UI 흐름만 완료한다.
 	if (UserId.TrimStartAndEnd().IsEmpty() || Password.IsEmpty())
 	{
@@ -461,10 +463,10 @@ void UUEGameInstance::ConnectAndRegister(const FString& UserId, const FString& P
 		return;
 	}
 	OnRegisterCompleted.Broadcast(true, TEXT("Yang2에서는 별도 가입 없이 로그인할 수 있습니다"));
-	return;
-
+#else
 	EnsureServerConnection();
 	LoginConnection->SendRegister(UserId, Password);
+#endif
 }
 
 void UUEGameInstance::DisconnectFromServer()
@@ -479,18 +481,27 @@ void UUEGameInstance::DisconnectFromServer()
 
 bool UUEGameInstance::IsLoggedInToServer() const
 {
+#if HHV_YANG2_CLIENT_AUTHORITY_ONLY
 	// YANG2_CLIENT_AUTHORITY_ONLY
 	return HasLocalSession();
+#else
+	return LoginConnection && LoginConnection->IsAuthenticated();
+#endif
 }
 
 bool UUEGameInstance::IsServerRequestPending() const
 {
+#if HHV_YANG2_CLIENT_AUTHORITY_ONLY
 	// YANG2_CLIENT_AUTHORITY_ONLY: 모든 로컬 응답은 같은 게임 스레드에서 즉시 끝난다.
 	return false;
+#else
+	return LoginConnection && LoginConnection->IsBusy();
+#endif
 }
 
 void UUEGameInstance::RequestCheckNickname(const FString& Nickname)
 {
+#if HHV_YANG2_CLIENT_AUTHORITY_ONLY
 	// YANG2_CLIENT_AUTHORITY_ONLY
 	const FString Candidate = Nickname.TrimStartAndEnd();
 	if (!HasLocalSession() || Candidate.Len() < 2 || Candidate.Len() > 32)
@@ -509,8 +520,7 @@ void UUEGameInstance::RequestCheckNickname(const FString& Nickname)
 		}
 	}
 	OnNicknameChecked.Broadcast(true, TEXT("사용할 수 있는 닉네임입니다"));
-	return;
-
+#else
 	// 로그인 뒤 캐릭터 선택 단계에서만 답할 수 있는 질문이다. 연결이 없으면
 	// 새로 붙어 봐야 인증이 없어 거절당하므로 여기서 끊는다.
 	if (!IsLoggedInToServer())
@@ -520,11 +530,13 @@ void UUEGameInstance::RequestCheckNickname(const FString& Nickname)
 	}
 
 	LoginConnection->SendCheckNickname(Nickname);
+#endif
 }
 
 void UUEGameInstance::RequestCreateCharacter(const FString& Nickname,
 	UUEPokemonSpeciesData* PartnerSpecies, const FUEHHVAppearance& Appearance)
 {
+#if HHV_YANG2_CLIENT_AUTHORITY_ONLY
 	// YANG2_CLIENT_AUTHORITY_ONLY: 서버 DB 대신 기존 SaveGame 슬롯에 저장한다.
 	if (!HasLocalSession())
 	{
@@ -550,8 +562,7 @@ void UUEGameInstance::RequestCreateCharacter(const FString& Nickname,
 	ResetYang2GameplayState();
 	OnCharacterListChanged.Broadcast();
 	OnCharacterChangeCompleted.Broadcast(true, TEXT("Yang2 로컬 캐릭터를 만들었습니다"));
-	return;
-
+#else
 	if (!IsLoggedInToServer())
 	{
 		OnCharacterChangeCompleted.Broadcast(false, TEXT("로그인이 필요합니다"));
@@ -575,10 +586,12 @@ void UUEGameInstance::RequestCreateCharacter(const FString& Nickname,
 	}
 
 	LoginConnection->SendCreateCharacter(Nickname, static_cast<uint16>(DexNumber), Appearance);
+#endif
 }
 
 void UUEGameInstance::RequestDeleteCharacter(int32 SlotIndex, const FString& ConfirmNickname)
 {
+#if HHV_YANG2_CLIENT_AUTHORITY_ONLY
 	// YANG2_CLIENT_AUTHORITY_ONLY
 	FUECharacterSlotData Slot;
 	if (!GetCharacterSlot(SlotIndex, Slot) || !IsCharacterSlotOccupied(SlotIndex) ||
@@ -591,18 +604,19 @@ void UUEGameInstance::RequestDeleteCharacter(int32 SlotIndex, const FString& Con
 	ResetYang2GameplayState();
 	OnCharacterListChanged.Broadcast();
 	OnCharacterChangeCompleted.Broadcast(true, TEXT("캐릭터를 삭제했습니다"));
-	return;
-
+#else
 	if (!IsLoggedInToServer() || !ServerCharacters.IsValidIndex(SlotIndex))
 	{
 		OnCharacterChangeCompleted.Broadcast(false, TEXT("캐릭터를 찾을 수 없습니다"));
 		return;
 	}
 	LoginConnection->SendDeleteCharacter(ServerCharacters[SlotIndex].Id, ConfirmNickname);
+#endif
 }
 
 void UUEGameInstance::RequestSelectCharacter(int32 SlotIndex)
 {
+#if HHV_YANG2_CLIENT_AUTHORITY_ONLY
 	// YANG2_CLIENT_AUTHORITY_ONLY: 티켓 발급을 기다리지 않고 필드 입장 신호를 낸다.
 	FUECharacterSlotData Slot;
 	if (!HasLocalSession() || !GetCharacterSlot(SlotIndex, Slot) ||
@@ -614,14 +628,14 @@ void UUEGameInstance::RequestSelectCharacter(int32 SlotIndex)
 	SetLocalSession(LocalSessionUserId, Slot.CharacterName);
 	PrepareYang2GameplayState();
 	OnEnterReady.Broadcast(Slot.CharacterName);
-	return;
-
+#else
 	if (!IsLoggedInToServer() || !ServerCharacters.IsValidIndex(SlotIndex))
 	{
 		OnCharacterChangeCompleted.Broadcast(false, TEXT("캐릭터를 찾을 수 없습니다"));
 		return;
 	}
 	LoginConnection->SendSelectCharacter(ServerCharacters[SlotIndex].Id);
+#endif
 }
 
 bool UUEGameInstance::GetServiceEndpoint(const FString& Service, FString& OutHost,
