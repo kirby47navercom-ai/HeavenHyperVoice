@@ -413,6 +413,46 @@ const FUEInstanceWeatherState &GetInstanceWeatherState() const;
 클라이언트는 날씨를 다시 계산하지 않는다. 서버 값을 시각적으로 부드럽게 보간하기만
 해야 한다. 그래야 같은 방의 모든 플레이어가 같은 비와 바닥 젖음 상태를 본다.
 
+### 인스턴스 종류별 기후 지정
+
+서버 실행 시 `--instance-weather`를 반복해서 주면 인스턴스 종류마다 다른 기후로
+방을 시작한다. 값의 순서는 다음과 같다.
+
+```text
+type=평균기온°C,초기상대습도%,평균기압hPa,지표수kg/m²,토양수kg/m²,시간배율
+```
+
+예를 들어 1번 인스턴스를 온화하고 습한 숲으로 시작하려면 다음처럼 지정한다.
+
+```text
+--instance-weather 1=18,82,1013.25,4,16,60
+```
+
+같은 `type`으로 생성된 방은 이 기후를 공유하지만 `room_id`가 난수 씨앗에 들어가므로
+구름, 초기 온도와 기압은 조금씩 다르다. 기후가 지정되지 않은 종류는
+`InstanceWeatherProfile`의 기본값을 사용한다. 맵이 등록되지 않은 타입을 지정하면
+서버가 시작 단계에서 오류를 내므로 설정 오타가 조용히 무시되지 않는다.
+
+### 공용 날씨 표현 컴포넌트
+
+`UUEInstanceWeatherPresentationComponent`는 서버 패킷과 Yang2 로컬 계산을 구분하지
+않고 기존 `OnInstanceWeatherChanged`를 받는다. 날씨 연출 블루프린트에 이 컴포넌트를
+추가하고 `On Weather Presentation Updated`를 연결한다.
+
+컴포넌트가 보내는 값은 다음과 같다.
+
+- `CloudAmount`: 구름과 하늘 머티리얼에 넣는 0~1 값
+- `RainIntensity`, `SnowIntensity`: Niagara 방출량에 넣는 0~1 값
+- `FogDensity`: Exponential Height Fog 또는 로컬 안개 머티리얼에 넣는 0~1 값
+- `WindIntensity`, `WindDirectionDegrees`: 입자와 나뭇잎 방향에 넣는 값
+- `GroundWetness`: 지면 머티리얼 파라미터에 넣는 0~1 값
+- `SnowCoverage`: 적설 머티리얼 파라미터에 넣는 0~1 값
+- `bRaining`, `bSnowing`, `bFoggy`: 출현 규칙과 향후 전투가 읽을 수 있는 상태
+
+서버 값은 초당 한 번 오지만 컴포넌트가 매 프레임 보간한 뒤 이벤트를 보내므로 비와
+구름이 갑자기 튀지 않는다. 실제 Niagara, 머티리얼, 사운드는 이 C++ 클래스에
+하드코딩하지 않고 블루프린트에서 직접 배치한다.
+
 ## 11. 연출 블루프린트에 연결할 때의 예
 
 초당 한 번 들어온 값을 바로 입자에 넣으면 비가 계단처럼 변할 수 있다. 연출 액터가
