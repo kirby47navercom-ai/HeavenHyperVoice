@@ -59,6 +59,10 @@ struct Options {
     // 종류마다 나올 야생 종족. --instance-species <type>=<dex,dex,...>
     std::map<std::uint32_t, std::string> species;
 
+    // 종류마다 다른 기후. 서버가 방을 만들 때 이 값을 복사하므로 클라이언트가
+    // 온도나 강수 상태를 임의로 정할 수 없다.
+    std::map<std::uint32_t, heaven::instance::InstanceWeatherProfile> weather;
+
     std::string wildAiScript = "scripts/wild_ai.lua";
 
     heaven::data::OdbcSettings db;
@@ -90,6 +94,9 @@ void printUsage() {
                  "                        Listing a type here is enough to accept it.\n"
                  "                        Unregistered types are refused.\n"
                  "                        Default: type 1 uses the Filed collision map.\n"
+                 "  --instance-weather <t=v>  climate for one instance type, repeatable.\n"
+                 "                        v=tempC,humidityPct,pressureHpa,surfaceWater,soilWater,timeScale\n"
+                 "                        e.g. --instance-weather 1=18,72,1013.25,2,12,60\n"
                  "  --room-capacity <n>   players per room (default 20)\n"
                  "  --max-rooms <n>       rooms per type, 0 = unlimited (default 0)\n"
                  "  --room-idle <n>       seconds an empty room is kept before it closes\n"
@@ -142,6 +149,50 @@ std::vector<std::uint16_t> parseWildSpecies(const std::string &list) {
         out.push_back(species->id);
     }
     return out;
+}
+
+heaven::instance::InstanceWeatherProfile parseWeatherProfile(const std::string &values) {
+    std::vector<double> fields;
+    std::istringstream stream(values);
+    std::string item;
+    while (std::getline(stream, item, ',')) {
+        if (item.empty()) {
+            throw std::runtime_error("empty value in --instance-weather " + values);
+        }
+        fields.push_back(std::stod(item));
+    }
+
+    if (fields.size() != 6) {
+        throw std::runtime_error(
+            "--instance-weather wants tempC,humidityPct,pressureHpa,surfaceWater,soilWater,timeScale, got " +
+            values);
+    }
+
+    const auto requireRange = [&](std::size_t index, double low, double high,
+                                  const char *name) {
+        const double value = fields[index];
+        if (!std::isfinite(value) || value < low || value > high) {
+            throw std::runtime_error(std::string("--instance-weather ") + name +
+                                     " must be between " + std::to_string(low) +
+                                     " and " + std::to_string(high));
+        }
+    };
+
+    requireRange(0, -60.0, 60.0, "temperature");
+    requireRange(1, 0.0, 100.0, "humidity");
+    requireRange(2, 800.0, 1100.0, "pressure");
+    requireRange(3, 0.0, 1000.0, "surface water");
+    requireRange(4, 0.0, 20.0, "soil water");
+    requireRange(5, 0.0, 3600.0, "time scale");
+
+    heaven::instance::InstanceWeatherProfile profile;
+    profile.meanTemperatureC = fields[0];
+    profile.initialRelativeHumidityPct = fields[1];
+    profile.meanPressureHpa = fields[2];
+    profile.initialSurfaceWaterKgM2 = fields[3];
+    profile.initialSoilWaterKgM2 = fields[4];
+    profile.gameSecondsPerRealSecond = fields[5];
+    return profile;
 }
 
 // 스폰이 shared collision 밖이면 그 방은 아무도 못 움직인다. 기동 때 잡는다.
@@ -211,6 +262,16 @@ Options parseArgs(int argc, char **argv) {
             }
             options.maps[static_cast<std::uint32_t>(std::stoul(pair.substr(0, equals)))] =
                 pair.substr(equals + 1);
+        } else if (arg == "--instance-weather") {
+            const std::string pair = next("--instance-weather");
+            const std::size_t equals = pair.find('=');
+            if (equals == 0 || equals == std::string::npos || equals + 1 >= pair.size()) {
+                throw std::runtime_error(
+                    "--instance-weather wants <type>=<temp,humidity,pressure,surface,soil,timeScale>, got " +
+                    pair);
+            }
+            options.weather[static_cast<std::uint32_t>(std::stoul(pair.substr(0, equals)))] =
+                parseWeatherProfile(pair.substr(equals + 1));
         } else if (heaven::data::parseOdbcOption(arg, next, options.db)) {
             // --db-driver/host/port/name/user/conn. 다른 서버와 같은 표를 쓴다.
         } else if (arg == "--redis-host") {
@@ -272,6 +333,14 @@ int main(int argc, char **argv) {
         std::map<std::uint32_t, std::unique_ptr<heaven::Map>> terrain;
         std::map<std::uint32_t, heaven::instance::InstanceType> types;
 
+        for (const auto &[type, profile] : options.weather) {
+            (void)profile;
+            if (options.maps.find(type) == options.maps.end()) {
+                throw std::runtime_error("--instance-weather type " + std::to_string(type) +
+                                         " has no matching --instance-map");
+            }
+        }
+
         for (const auto &[type, path] : options.maps) {
             auto collision = std::make_unique<heaven::Map>(heaven::instance::kWorldOriginOffset);
             std::string mapError;
@@ -287,6 +356,16 @@ int main(int argc, char **argv) {
 
             types[type].map = collision.get();
             types[type].wildSpecies = parseWildSpecies(options.species[type]);
+            if (const auto weather = options.weather.find(type); weather != options.weather.end()) {
+                types[type].weather = weather->second;
+            }
+            const auto &weather = types[type].weather;
+            spdlog::info(
+                "instance type {}: climate = {:.1f} C, {:.0f}% RH, {:.1f} hPa, "
+                "surface {:.1f} kg/m2, soil {:.1f} kg/m2, x{:.1f} time",
+                type, weather.meanTemperatureC, weather.initialRelativeHumidityPct,
+                weather.meanPressureHpa, weather.initialSurfaceWaterKgM2,
+                weather.initialSoilWaterKgM2, weather.gameSecondsPerRealSecond);
             if (types[type].wildSpecies.empty()) {
                 spdlog::warn("instance type {}: no --instance-species; every non-boss "
                              "species in the table can spawn",
