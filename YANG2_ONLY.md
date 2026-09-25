@@ -23,6 +23,11 @@
 8. 날씨 결과는 서버 패킷을 받았을 때와 같은 `OnInstanceWeatherChanged` 이벤트로 전달한다.
 9. 채팅은 다른 사용자에게 보내지 않고 자기 화면에만 에코해 UI 입력을 시험한다.
 
+`UEFieldServerBridgeComponent`의 `Yang2WeatherProfiles`는 인스턴스 타입별 로컬 기후다.
+값을 넣지 않은 타입은 서버 `InstanceWeatherProfile` 기본값을 사용한다. 값을 넣으면
+서버의 `--instance-weather`와 같은 기온, 습도, 기압, 지표수, 토양수와 시간배율로
+클라이언트 프로세스 안에서 계산한다. 이 설정도 Yang2 전용이며 main에 보내지 않는다.
+
 멀티플레이어 동기화, 실제 계정 DB, 다른 사용자와의 채팅·파티는 Yang2에서 만들지 않는다.
 그 기능들은 서버 권위 검증 대상이며 `main`의 서버 실행 환경에서 확인한다.
 

@@ -364,8 +364,27 @@ void UUEFieldServerBridgeComponent::StartYang2ClientAuthority(uint32 InstanceTyp
 	if (bInInstance)
 	{
 		Yang2LocalWeather = std::make_unique<heaven::instance::InstanceWeather>();
-		const heaven::instance::InstanceWeatherProfile Profile;
+		heaven::instance::InstanceWeatherProfile Profile;
+		if (const FUEYang2InstanceWeatherProfile* LocalProfile =
+			Yang2WeatherProfiles.Find(static_cast<int32>(InstanceType)))
+		{
+			// YANG2_CLIENT_AUTHORITY_ONLY: main 서버의 입력 범위와 같게 제한한다.
+			Profile.meanTemperatureC = FMath::Clamp(LocalProfile->MeanTemperatureC, -60.0, 60.0);
+			Profile.initialRelativeHumidityPct = FMath::Clamp(
+				LocalProfile->InitialRelativeHumidityPct, 0.0, 100.0);
+			Profile.meanPressureHpa = FMath::Clamp(LocalProfile->MeanPressureHpa, 800.0, 1100.0);
+			Profile.initialSurfaceWaterKgM2 = FMath::Clamp(
+				LocalProfile->InitialSurfaceWaterKgM2, 0.0, 1000.0);
+			Profile.initialSoilWaterKgM2 = FMath::Clamp(
+				LocalProfile->InitialSoilWaterKgM2, 0.0, 20.0);
+			Profile.gameSecondsPerRealSecond = FMath::Clamp(
+				LocalProfile->GameSecondsPerRealSecond, 0.0, 3600.0);
+		}
 		Yang2LocalWeather->initialize(InstanceType, CurrentRoomId, Profile);
+		UE_LOG(LogTemp, Display,
+			TEXT("YANG2 CLIENT AUTHORITY: local climate type %u = %.1f C, %.0f%% RH, %.1f hPa, x%.1f time"),
+			InstanceType, Profile.meanTemperatureC, Profile.initialRelativeHumidityPct,
+			Profile.meanPressureHpa, Profile.gameSecondsPerRealSecond);
 		PublishYang2ClientWeather();
 	}
 

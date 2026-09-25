@@ -395,6 +395,11 @@ class HEAVENHYPERVOICE_API UUEFieldServerBridgeComponent : public UActorComponen
 	std::unique_ptr<FHHVFieldConnection> FieldConnection;
 
 	// YANG2_CLIENT_AUTHORITY_ONLY: main으로 병합 금지. YANG2_ONLY.md 참고.
+	// 키는 InstanceType이고 값은 서버 --instance-weather와 같은 여섯 기후값이다.
+	UPROPERTY(EditAnywhere, Config, Category = "Yang2|Client Authority|Weather",
+		meta = (AllowPrivateAccess = "true"))
+	TMap<int32, FUEYang2InstanceWeatherProfile> Yang2WeatherProfiles;
+
 	std::unique_ptr<heaven::instance::InstanceWeather> Yang2LocalWeather;
 	bool bYang2ClientAuthorityActive = false;
 	double Yang2WeatherAccumulator = 0.0;
