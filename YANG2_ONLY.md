@@ -76,3 +76,17 @@ Yang2에서 만든 정상적인 공용 기능을 main에 옮겨야 한다면 클
   `YANG2_CLIENT_AUTHORITY_ONLY` 표식이 있으면 푸시를 거절한다.
 
 훅을 일부러 건너뛰는 `--no-verify`는 이 브랜치 경계에는 사용하지 않는다.
+
+## 비·눈 공간 연출 연결
+
+`BP_InstanceWeatherDirector`는 인스턴스 진입 시 공통 데이터 에셋에서 자동 생성된다.
+Yang2에서는 기존 `Yang2LocalWeather` 결과를 브릿지 이벤트로 받아 비·눈 낙하, 피격,
+노출 표면의 젖음·적설을 표시한다. 서버 연결이나 실제 계정이 없어도 이 경로는 작동한다.
+main에서는 같은 연출이 실제 `S_InstanceWeather` 패킷만 받아서 작동한다.
+
+공용 BP/나이아가라/Environment 코드는 main에서 가져와도 된다. 이 문서와 Yang2의
+브릿지·계산기 연결·빌드 매크로는 main으로 보내지 않는다.
+설명과 아트 조절 항목은 `Client/Source/HeavenHyperVoice/Environment/INSTANCE_WEATHER_VISUALS.md` 참고.
+
+`Tests/Yang2WeatherTests.cpp`의 `Heaven.Weather.Yang2LocalSource`도 Yang2 전용이다.
+서버 없이 계산한 눈이 공통 연출에 전달되는지 검사하며, main에는 이 파일을 보내지 않는다.

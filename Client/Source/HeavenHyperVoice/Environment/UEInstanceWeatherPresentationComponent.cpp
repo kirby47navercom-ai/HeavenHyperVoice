@@ -1,6 +1,7 @@
 #include "UEInstanceWeatherPresentationComponent.h"
 
 #include "GameFramework/Actor.h"
+#include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 
 namespace
@@ -63,7 +64,11 @@ void UUEInstanceWeatherPresentationComponent::SetWeatherSource(
 	}
 
 	WeatherSource = NewSource;
-	if (!WeatherSource)
+	bHasWeather = false;
+	CurrentState = {};
+	TargetState = {};
+	BroadcastCurrentState();
+	if (!IsValid(WeatherSource))
 	{
 		return;
 	}

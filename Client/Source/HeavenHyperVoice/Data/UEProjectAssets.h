@@ -7,6 +7,7 @@
 #include "UEProjectAssets.generated.h"
 
 class AGameModeBase;
+class AUEInstanceWeatherDirector;
 class AUEGachaMachine;
 class AUEPokemonCharacter;
 class UUEGachaPool;
@@ -58,6 +59,10 @@ class HEAVENHYPERVOICE_API UUEProjectAssets : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
+	/** 인스턴스에서 사용하는 날씨 BP. 권위 계산 없이 서버/로컬 결과를 표현한다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weather")
+	TSoftClassPtr<AUEInstanceWeatherDirector> InstanceWeatherDirectorClass;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Levels")
 	TSoftObjectPtr<UWorld> FrontendLevel;
 

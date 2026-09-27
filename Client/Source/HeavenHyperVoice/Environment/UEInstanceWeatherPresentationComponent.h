@@ -2,7 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "Server/UEFieldServerBridgeComponent.h"
+#include "../Server/UEFieldServerBridgeComponent.h"
 #include "UEInstanceWeatherPresentationComponent.generated.h"
 
 /**
@@ -98,7 +98,7 @@ public:
 	float TransitionSpeed = 2.5f;
 
 	/** 이 강수량 이상을 연출 강도 1로 본다. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Instance Weather|Tuning", meta = (ClampMin = "0.1", Units = "MillimetersPerHour"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Instance Weather|Tuning", meta = (ClampMin = "0.1"))
 	float HeavyPrecipitationMmPerHour = 12.0f;
 
 	/** 이 풍속 이상을 연출 강도 1로 본다. */
@@ -115,11 +115,11 @@ public:
 
 	/** 이 온도 이하는 강수를 전부 눈으로 표현한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Instance Weather|Tuning", meta = (Units = "Celsius"))
-	float FullSnowTemperatureC = 0.0f;
+	float FullSnowTemperatureC = -1.0f;
 
 	/** 이 온도 이상은 강수를 전부 비로 표현한다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Instance Weather|Tuning", meta = (Units = "Celsius"))
-	float FullRainTemperatureC = 2.0f;
+	float FullRainTemperatureC = 1.0f;
 
 	/** 이 적설 깊이 이상을 지면 눈 덮임 1로 본다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Instance Weather|Tuning", meta = (ClampMin = "0.001", Units = "Meters"))

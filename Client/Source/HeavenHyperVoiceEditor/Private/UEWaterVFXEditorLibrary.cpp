@@ -5,6 +5,30 @@
 #include "NiagaraEditorUtilities.h"
 #include "NiagaraEmitter.h"
 #include "UObject/UnrealType.h"
+#include "Stateless/NiagaraStatelessDistribution.h"
+
+bool UUEWaterVFXEditorLibrary::BindWeatherParticle(UNiagaraSystem* System, UObject* Initialize, UObject* Velocity)
+{
+    if (!System || !Initialize || !Velocity) return false;
+    auto* LifeProperty = FindFProperty<FStructProperty>(Initialize->GetClass(),TEXT("LifetimeDistribution"));
+    auto* VelocityProperty = FindFProperty<FStructProperty>(Velocity->GetClass(),TEXT("LinearVelocityDistribution"));
+    if (!LifeProperty || !VelocityProperty ||
+        LifeProperty->Struct != FNiagaraDistributionRangeFloat::StaticStruct() ||
+        VelocityProperty->Struct != FNiagaraDistributionRangeVector3::StaticStruct()) return false;
+    FNiagaraVariable Life(FNiagaraTypeDefinition::GetFloatDef(),TEXT("User.FallLifetime"));
+    FNiagaraVariable Speed(FNiagaraTypeDefinition::GetVec3Def(),TEXT("User.FallVelocity"));
+    System->GetExposedParameters().AddParameter(Life);
+    System->GetExposedParameters().AddParameter(Speed);
+    System->GetExposedParameters().SetParameterValue(1.f,Life);
+    System->GetExposedParameters().SetParameterValue(FVector3f(0,0,-600),Speed);
+    auto* L = LifeProperty->ContainerPtrToValuePtr<FNiagaraDistributionRangeFloat>(Initialize);
+    auto* V = VelocityProperty->ContainerPtrToValuePtr<FNiagaraDistributionRangeVector3>(Velocity);
+    L->Mode = ENiagaraDistributionMode::Binding;
+    L->ParameterBinding = Life;
+    V->Mode = ENiagaraDistributionMode::Binding;
+    V->ParameterBinding = Speed;
+    return true;
+}
 
 UObject* UUEWaterVFXEditorLibrary::WaterLayer(UNiagaraSystem* System, FName Name, bool bDuplicate)
 {
