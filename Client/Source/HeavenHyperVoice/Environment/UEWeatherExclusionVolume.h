@@ -15,4 +15,6 @@ public:
     TObjectPtr<UBoxComponent> Bounds;
     bool ContainsPoint(const FVector& Point) const;
     bool IntersectsPath(const FVector& Start, const FVector& End) const;
+    /** 머티리얼에서도 같은 회전 상자를 검사하도록 월드→정규화 상자 변환을 보낸다. */
+    void GetMaterialRows(FLinearColor& X, FLinearColor& Y, FLinearColor& Z) const;
 };

@@ -20,3 +20,14 @@ bool AUEWeatherExclusionVolume::IntersectsPath(const FVector& Start, const FVect
     const FBox Box(-Bounds->GetUnscaledBoxExtent(), Bounds->GetUnscaledBoxExtent());
     return Box.IsInsideOrOn(A) || Box.IsInsideOrOn(B) || FMath::LineBoxIntersection(Box,A,B,B-A);
 }
+void AUEWeatherExclusionVolume::GetMaterialRows(FLinearColor& X, FLinearColor& Y, FLinearColor& Z) const
+{
+    const FMatrix Inverse = Bounds->GetComponentTransform().ToInverseMatrixWithScale();
+    const FVector Extent = Bounds->GetUnscaledBoxExtent().ComponentMax(FVector(1));
+    auto Row = [&](int32 Axis)
+    {
+        return FLinearColor(Inverse.M[0][Axis]/Extent[Axis],Inverse.M[1][Axis]/Extent[Axis],
+            Inverse.M[2][Axis]/Extent[Axis],Inverse.M[3][Axis]/Extent[Axis]);
+    };
+    X=Row(0); Y=Row(1); Z=Row(2);
+}

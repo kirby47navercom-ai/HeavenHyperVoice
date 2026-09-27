@@ -29,9 +29,20 @@ public:
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Weather|Effects")
     TObjectPtr<UNiagaraSystem> RainImpact;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Weather|Effects")
+    TObjectPtr<UNiagaraSystem> WallSplash;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Weather|Effects")
     TObjectPtr<UNiagaraSystem> WaterRipple;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Weather|Effects")
     TObjectPtr<UNiagaraSystem> SnowImpact;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Weather|Effects")
+    TObjectPtr<UNiagaraSystem> SnowChunks;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Weather|Surface")
+    TObjectPtr<UMaterialInterface> WetImpactMaterial;
+    /** 피격 자국은 잠시 남았다 사라진다. 실제 물의 저장량이나 전투 판정은 아니다. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weather|Surface", meta=(ClampMin="0",ClampMax="64"))
+    int32 MaxWetMarks = 32;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weather|Surface", meta=(ClampMin="0.2",ClampMax="10"))
+    float WetMarkLifetime = 4;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Weather|Surface")
     TObjectPtr<UMaterialInterface> SurfaceMaterial;
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Weather|Surface")
@@ -70,6 +81,7 @@ private:
     };
     TArray<FPendingImpact> PendingImpacts;
     TArray<TWeakObjectPtr<AUEWeatherExclusionVolume>> Exclusions;
+    TArray<TWeakObjectPtr<UDecalComponent>> WetMarks;
     UPROPERTY(Transient) TArray<TObjectPtr<UDecalComponent>> Tiles;
     UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> SurfaceMID;
     UPROPERTY(Transient) TObjectPtr<UUEFieldServerBridgeComponent> Source;
@@ -82,6 +94,9 @@ private:
     bool Trace(const FVector& Start, const FVector& End, FHitResult& Hit) const;
     bool IsExcluded(const FVector& Start, const FVector& End) const;
     bool IsWater(const FHitResult& Hit) const;
+    bool UsesWeatherMaterial(const FHitResult& Hit) const;
+    void SpawnImpact(const FHitResult& Hit, bool bSnow);
+    void UpdateExclusionParameters();
     void SpawnDrop(const FVector& Center, bool bSnow);
     void UpdateSurface(const FVector& Center);
     void ApplyParameters();

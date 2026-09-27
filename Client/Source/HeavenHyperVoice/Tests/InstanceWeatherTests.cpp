@@ -2,6 +2,11 @@
 #include "../Environment/UEInstanceWeatherDirector.h"
 #include "../Environment/UEWeatherExclusionVolume.h"
 #include "Components/BoxComponent.h"
+#include "Components/DecalComponent.h"
+#include "Materials/Material.h"
+#include "Landscape.h"
+#include "LandscapeComponent.h"
+#include "LandscapeHeightfieldCollisionComponent.h"
 #include "Engine/World.h"
 #include "Misc/AutomationTest.h"
 
@@ -38,6 +43,14 @@ bool FInstanceWeatherTest::RunTest(const FString&)
     TestEqual(TEXT("Detach clears rainfall"), Presentation->GetPresentationState().RainIntensity, 0.f);
 
     auto* Director = World->SpawnActor<AUEInstanceWeatherDirector>();
+    auto* Landscape = World->SpawnActor<ALandscape>();
+    Landscape->LandscapeMaterial = LoadObject<UMaterialInterface>(nullptr,
+        TEXT("/Game/InstanceMap/Plain/Landscape/M_Landscape_GrassSoil.M_Landscape_GrassSoil"));
+    auto* Render = NewObject<ULandscapeComponent>(Landscape);
+    auto* Collision = NewObject<ULandscapeHeightfieldCollisionComponent>(Landscape);
+    Collision->SetRenderComponent(Render);
+    FHitResult LandscapeHit(Landscape,Collision,FVector::ZeroVector,FVector::UpVector);
+    TestTrue(TEXT("Landscape collision resolves managed ground material"),Director->UsesWeatherMaterial(LandscapeHit));
     auto* Roof = World->SpawnActor<AActor>();
     auto* Box = NewObject<UBoxComponent>(Roof);
     Roof->SetRootComponent(Box);
@@ -58,9 +71,30 @@ bool FInstanceWeatherTest::RunTest(const FString&)
     Director->Exclusions.Add(Exclusion);
     TestTrue(TEXT("Rotated exclusion blocks crossing"), Director->IsExcluded(FVector(500,0,500),FVector(500,0,0)));
     TestFalse(TEXT("Outside path stays exposed"), Director->IsExcluded(FVector(1000,0,500),FVector(1000,0,0)));
+    Exclusion->SetActorScale3D(FVector(2,3,1));
+    FLinearColor RowX,RowY,RowZ;
+    Exclusion->GetMaterialRows(RowX,RowY,RowZ);
+    const FVector Sample = Exclusion->Bounds->GetComponentTransform().TransformPosition(FVector(50,10,20));
+    auto Dot = [&](const FLinearColor& Row) { return Sample.X*Row.R+Sample.Y*Row.G+Sample.Z*Row.B+Row.A; };
+    TestTrue(TEXT("Material box matches rotated scaled bounds"),
+        FMath::IsNearlyEqual(Dot(RowX),.5,1.e-5) && FMath::IsNearlyEqual(Dot(RowY),.2,1.e-5) &&
+        FMath::IsNearlyEqual(Dot(RowZ),.4,1.e-5));
+    Director->WetImpactMaterial = UMaterial::GetDefaultMaterial(MD_DeferredDecal);
+    Director->MaxWetMarks = 1;
+    Director->SpawnImpact(Hit,false);
+    TestEqual(TEXT("Water does not receive wet decal"),Director->WetMarks.Num(),0);
+    Roof->Tags.Reset();
+    Director->SpawnImpact(Hit,true);
+    TestEqual(TEXT("Snow does not receive wet decal"),Director->WetMarks.Num(),0);
+    Director->SpawnImpact(Hit,false);
+    Director->SpawnImpact(Hit,false);
+    TestEqual(TEXT("Wet impact budget is bounded"),Director->WetMarks.Num(),1);
+    if (!Director->WetMarks.IsEmpty())
+        TestTrue(TEXT("Wet mark follows hit component"),Director->WetMarks[0]->GetAttachParent()==Box);
     Director->PendingImpacts.Add({1,FVector::ZeroVector,FVector::ZeroVector,false});
     Director->ClearWeather();
     TestEqual(TEXT("Disconnect cancels queued impacts"), Director->PendingImpacts.Num(),0);
+    TestEqual(TEXT("Disconnect removes wet marks"),Director->WetMarks.Num(),0);
     World->DestroyWorld(false);
     return true;
 }
