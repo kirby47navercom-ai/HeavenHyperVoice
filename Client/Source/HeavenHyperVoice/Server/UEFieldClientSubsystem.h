@@ -7,6 +7,7 @@
 
 class AUEPlayerCharacter;
 class AUEPlayerController;
+class AUEInstanceWeatherDirector;
 
 /**
  * 필드/인스턴스 접속의 주인.
@@ -93,6 +94,7 @@ private:
 	int32 PendingInstanceType = 0;
 
 	TWeakObjectPtr<AUEPlayerController> CachedPlayerController;
+	TWeakObjectPtr<AUEInstanceWeatherDirector> WeatherDirector;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUEFieldServerBridgeComponent> FieldServerBridgeComponent = nullptr;

@@ -1,5 +1,6 @@
 #include "UEFieldClientSubsystem.h"
 #include "../Data/UEProjectAssets.h"
+#include "../Environment/UEInstanceWeatherDirector.h"
 
 #include "../Character/UEPlayerCharacter.h"
 #include "../Player/UEPlayerController.h"
@@ -57,6 +58,8 @@ void UUEFieldClientSubsystem::Deinitialize()
 
 void UUEFieldClientSubsystem::ResetForFrontend()
 {
+	if (WeatherDirector.IsValid()) WeatherDirector->Destroy();
+	WeatherDirector.Reset();
 	PendingInstanceType = 0;
 	if (FieldServerBridgeComponent)
 	{
@@ -100,6 +103,12 @@ void UUEFieldClientSubsystem::AttachPlayerCharacter(AUEPlayerCharacter* PlayerCh
 		// 접속을 시작하므로, 뒤에 주면 필드로 한 번 붙었다가 갈아타게 된다.
 		Bridge->SetConnectionTarget(PendingInstanceType);
 		Bridge->AttachToPlayer(PlayerCharacter);
+		if (PendingInstanceType > 0 && !WeatherDirector.IsValid())
+		{
+			const UUEProjectAssets* Assets = UUEProjectAssetSettings::GetProjectAssets();
+			UClass* WeatherClass = Assets ? Assets->InstanceWeatherDirectorClass.LoadSynchronous() : nullptr;
+			if (WeatherClass) WeatherDirector = PlayerCharacter->GetWorld()->SpawnActor<AUEInstanceWeatherDirector>(WeatherClass);
+		}
 	}
 }
 
