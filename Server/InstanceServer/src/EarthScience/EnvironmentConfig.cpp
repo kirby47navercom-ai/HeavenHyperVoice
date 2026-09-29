@@ -1,0 +1,84 @@
+#include "EnvironmentConfig.h"
+#include <cmath>
+#include <fstream>
+#include <map>
+#include <set>
+#include <stdexcept>
+namespace heaven::instance {
+InstanceWeatherProfile loadEnvironmentProfile(const std::string& filename) {
+    // 데이터 에셋과 같은 필드 이름을 사용하므로 특정 맵 경로/좌표를 코드에 박지 않는다.
+    InstanceWeatherProfile result;
+    const std::map<std::string,double*> fields={
+        {"daySeconds",&result.environment.daySeconds}, {"yearDays",&result.environment.yearDays},
+        {"startHour",&result.environment.startHour}, {"startYearFraction",&result.environment.startYearFraction},
+        {"latitudeDegrees",&result.environment.latitudeDegrees}, {"altitudeM",&result.environment.altitudeM},
+        {"seasonalAmplitudeC",&result.environment.seasonalAmplitudeC}, {"dailyAmplitudeC",&result.environment.dailyAmplitudeC},
+        {"thermalResponseSeconds",&result.environment.thermalResponseSeconds}, {"soilCapacityKgM2",&result.environment.soilCapacityKgM2},
+        {"fieldCapacityKgM2",&result.environment.fieldCapacityKgM2}, {"infiltrationKgM2PerSecond",&result.environment.infiltrationKgM2PerSecond},
+        {"drainageSeconds",&result.environment.drainageSeconds}, {"baseWindMps",&result.environment.baseWindMps},
+        {"gustAmplitudeMps",&result.environment.gustAmplitudeMps}, {"sandAvailability",&result.environment.sandAvailability},
+        {"dustStartWindMps",&result.environment.dustStartWindMps}, {"dustFullWindMps",&result.environment.dustFullWindMps},
+        {"dustResponseSeconds",&result.environment.dustResponseSeconds}, {"tideAmplitudeM",&result.environment.tideAmplitudeM},
+        {"tidePeriodHours",&result.environment.tidePeriodHours}, {"tidePhaseDegrees",&result.environment.tidePhaseDegrees},
+        {"waveMaxHeightM",&result.environment.waveMaxHeightM}, {"waveResponseSeconds",&result.environment.waveResponseSeconds} ,
+        {"meanTemperatureC",&result.meanTemperatureC},
+        {"initialRelativeHumidityPct",&result.initialRelativeHumidityPct},
+        {"meanPressureHpa",&result.meanPressureHpa},
+        {"initialSurfaceWaterKgM2",&result.initialSurfaceWaterKgM2},
+        {"initialSoilWaterKgM2",&result.initialSoilWaterKgM2},
+        {"gameSecondsPerRealSecond",&result.gameSecondsPerRealSecond}
+    };
+    std::ifstream input(filename);
+    if(!input) throw std::runtime_error("Cannot open environment profile: "+filename);
+    std::set<std::string> seen;
+    std::string line;
+    while(std::getline(input,line)) {
+        const auto comment=line.find('#'); if(comment!=std::string::npos) line.resize(comment);
+        const auto first=line.find_first_not_of(" \t\r"); if(first==std::string::npos) continue;
+        const auto equals=line.find('=',first);
+        if(equals==std::string::npos) throw std::runtime_error("Expected name=value: "+line);
+        const auto key=line.substr(first,line.find_last_not_of(" \t",equals-1)-first+1);
+        const auto field=fields.find(key);
+        if(field==fields.end() || !seen.insert(key).second) throw std::runtime_error("Unknown/duplicate environment key: "+key);
+        const auto text=line.substr(equals+1); std::size_t end=0;
+        const double value=std::stod(text,&end);
+        if(!std::isfinite(value) || text.find_first_not_of(" \t\r",end)!=std::string::npos)
+            throw std::runtime_error("Invalid environment value: "+line);
+        *field->second=value;
+    }
+    auto safe=result.environment; normalizeEnvironment(safe);
+    if(safe.daySeconds!=result.environment.daySeconds) throw std::runtime_error("Invalid daySeconds");
+    if(safe.yearDays!=result.environment.yearDays) throw std::runtime_error("Invalid yearDays");
+    if(safe.startHour!=result.environment.startHour) throw std::runtime_error("Invalid startHour");
+    if(safe.startYearFraction!=result.environment.startYearFraction) throw std::runtime_error("Invalid startYearFraction");
+    if(safe.latitudeDegrees!=result.environment.latitudeDegrees) throw std::runtime_error("Invalid latitudeDegrees");
+    if(safe.altitudeM!=result.environment.altitudeM) throw std::runtime_error("Invalid altitudeM");
+    if(safe.seasonalAmplitudeC!=result.environment.seasonalAmplitudeC) throw std::runtime_error("Invalid seasonalAmplitudeC");
+    if(safe.dailyAmplitudeC!=result.environment.dailyAmplitudeC) throw std::runtime_error("Invalid dailyAmplitudeC");
+    if(safe.thermalResponseSeconds!=result.environment.thermalResponseSeconds) throw std::runtime_error("Invalid thermalResponseSeconds");
+    if(safe.soilCapacityKgM2!=result.environment.soilCapacityKgM2) throw std::runtime_error("Invalid soilCapacityKgM2");
+    if(safe.fieldCapacityKgM2!=result.environment.fieldCapacityKgM2) throw std::runtime_error("Invalid fieldCapacityKgM2");
+    if(safe.infiltrationKgM2PerSecond!=result.environment.infiltrationKgM2PerSecond) throw std::runtime_error("Invalid infiltrationKgM2PerSecond");
+    if(safe.drainageSeconds!=result.environment.drainageSeconds) throw std::runtime_error("Invalid drainageSeconds");
+    if(safe.baseWindMps!=result.environment.baseWindMps) throw std::runtime_error("Invalid baseWindMps");
+    if(safe.gustAmplitudeMps!=result.environment.gustAmplitudeMps) throw std::runtime_error("Invalid gustAmplitudeMps");
+    if(safe.sandAvailability!=result.environment.sandAvailability) throw std::runtime_error("Invalid sandAvailability");
+    if(safe.dustStartWindMps!=result.environment.dustStartWindMps) throw std::runtime_error("Invalid dustStartWindMps");
+    if(safe.dustFullWindMps!=result.environment.dustFullWindMps) throw std::runtime_error("Invalid dustFullWindMps");
+    if(safe.dustResponseSeconds!=result.environment.dustResponseSeconds) throw std::runtime_error("Invalid dustResponseSeconds");
+    if(safe.tideAmplitudeM!=result.environment.tideAmplitudeM) throw std::runtime_error("Invalid tideAmplitudeM");
+    if(safe.tidePeriodHours!=result.environment.tidePeriodHours) throw std::runtime_error("Invalid tidePeriodHours");
+    if(safe.tidePhaseDegrees!=result.environment.tidePhaseDegrees) throw std::runtime_error("Invalid tidePhaseDegrees");
+    if(safe.waveMaxHeightM!=result.environment.waveMaxHeightM) throw std::runtime_error("Invalid waveMaxHeightM");
+    if(safe.waveResponseSeconds!=result.environment.waveResponseSeconds) throw std::runtime_error("Invalid waveResponseSeconds");
+    if(result.meanTemperatureC<-60 || result.meanTemperatureC>60) throw std::runtime_error("Invalid meanTemperatureC");
+    if(result.initialRelativeHumidityPct<0 || result.initialRelativeHumidityPct>100) throw std::runtime_error("Invalid initialRelativeHumidityPct");
+    if(result.meanPressureHpa<800 || result.meanPressureHpa>1100) throw std::runtime_error("Invalid meanPressureHpa");
+    if(result.initialSurfaceWaterKgM2<0 || result.initialSurfaceWaterKgM2>1000) throw std::runtime_error("Invalid initialSurfaceWaterKgM2");
+    if(result.initialSoilWaterKgM2<0 || result.initialSoilWaterKgM2>10000) throw std::runtime_error("Invalid initialSoilWaterKgM2");
+    if(result.gameSecondsPerRealSecond<0 || result.gameSecondsPerRealSecond>3600) throw std::runtime_error("Invalid gameSecondsPerRealSecond");
+    if(result.initialSoilWaterKgM2>result.environment.soilCapacityKgM2)
+        throw std::runtime_error("Initial soil water exceeds soil capacity");
+    return result;
+}
+}

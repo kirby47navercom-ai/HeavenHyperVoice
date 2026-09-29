@@ -32,7 +32,8 @@ Yang2: 기존 브릿지가 **서버와 같은 InstanceWeather 계산을 로컬�
 | `/Game/Blueprints/DA_ProjectAssets` | 자동 생성할 날씨 BP 참조 |
 
 블루프린트 `OnWeatherVisualsUpdated` 이벤트에는 보간된 상태와 카메라의 실내 여부가 온다.
-추가 음향이나 하늘 표현을 원할 때 여기 연결한다. 현재 안개 액터나 낮밤 순환을 새로 만들지 않는다.
+추가 음향은 이 이벤트에 연결한다. 낮밤·구름·안개·조석·먼지는 별도 `BP_EnvironmentScene`에서 처리한다.
+최신 전체 범위는 `Server/InstanceServer/EARTH_ENVIRONMENT_GUIDE.md`에 설명했다.
 `Fog`는 습도와 구름으로 추정한 **연출용 값**이며 실제 안개 물리량이 아니다.
 전투/출현 판정은 이 보간된 값이 아닌 서버 상태로 처리한다.
 

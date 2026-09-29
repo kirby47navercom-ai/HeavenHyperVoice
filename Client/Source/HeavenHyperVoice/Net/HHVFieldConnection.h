@@ -8,6 +8,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "../Environment/UEEnvironmentState.h"
 #include "Containers/Queue.h"
 #include "HAL/Runnable.h"
 #include "MovementPrediction.h"
@@ -67,6 +68,7 @@ struct FHHVFieldSnapshot
 /** InstanceServer가 계산한 방 단위 날씨. FieldServer에서는 오지 않는다. */
 struct FHHVInstanceWeatherState
 {
+	FUEEnvironmentState Environment;
 	uint32 RoomId = 0;
 	uint32 Revision = 0;
 	double SimulationTimeSeconds = 0.0;

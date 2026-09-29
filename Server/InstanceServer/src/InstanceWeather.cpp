@@ -1,77 +1,23 @@
 #include "InstanceWeather.h"
-
-#include <algorithm>
-#include <cmath>
+#include "EarthScience/WeatherMath.h"
 #include <random>
-
 namespace heaven::instance {
+using namespace earth;
 namespace {
-
-constexpr double kPi = 3.14159265358979323846;
-constexpr double kSimulationStepSeconds = 10.0;
-constexpr double kNearAirDepthM = 120.0;
-constexpr double kUpperAirDepthM = 500.0;
-constexpr double kSoilCapacityKgM2 = 20.0;
-constexpr double kFieldCapacityKgM2 = 12.0;
-constexpr double kCloudRainThresholdKgM2 = 0.05;
-
-double clamp01(double value) {
-    return std::clamp(value, 0.0, 1.0);
+constexpr double kSimulationStepSeconds=10;
+constexpr double kNearAirDepthM=120;
+constexpr double kUpperAirDepthM=500;
+constexpr double kPi=earth::Pi;
+std::uint32_t weatherSeed(std::uint32_t type,std::uint32_t roomId) {
+    std::uint32_t value=roomId*0x9E3779B9u;
+    return value^(type+0x85EBCA6Bu+(value<<6u)+(value>>2u));
 }
-
-double relax(double value, double target, double dt, double responseSeconds) {
-    const double alpha = -std::expm1(-dt / responseSeconds);
-    return value + (target - value) * alpha;
 }
-
-// FAO 식. 온도에서 공기가 가질 수 있는 최대 수증기압(kPa)을 구한다.
-double saturationPressureKPa(double temperatureC) {
-    const double safeTemperature = std::clamp(temperatureC, -20.0, 50.0);
-    return 0.6108 * std::exp(17.27 * safeTemperature / (safeTemperature + 237.3));
-}
-
-// 이상기체 관계로 수증기 kg/m²를 증기압 kPa로 바꾼다.
-template <typename Air>
-double vaporPressureKPa(const Air &air) {
-    return air.vaporKgM2 * 461.5 * (air.temperatureC + 273.15) /
-           (air.depthM * 1000.0);
-}
-
-template <typename Air>
-double saturationMassKgM2(const Air &air) {
-    return saturationPressureKPa(air.temperatureC) * 1000.0 * air.depthM /
-           (461.5 * (air.temperatureC + 273.15));
-}
-
-double transfer(double &from, double &to, double requested) {
-    const double moved = std::min(from, std::max(0.0, requested));
-    from -= moved;
-    to += moved;
-    return moved;
-}
-
-template <typename Air>
-void adjustSaturation(Air &air) {
-    const double capacity = saturationMassKgM2(air);
-    if (air.vaporKgM2 > capacity) {
-        transfer(air.vaporKgM2, air.liquidKgM2, air.vaporKgM2 - capacity);
-    } else {
-        transfer(air.liquidKgM2, air.vaporKgM2, capacity - air.vaporKgM2);
-    }
-}
-
-std::uint32_t weatherSeed(std::uint32_t type, std::uint32_t roomId) {
-    // 순번이 비슷한 방끼리도 난수열이 비슷해지지 않게 두 값을 섞는다.
-    std::uint32_t value = roomId * 0x9E3779B9u;
-    value ^= type + 0x85EBCA6Bu + (value << 6u) + (value >> 2u);
-    return value;
-}
-
-} // namespace
-
 void InstanceWeather::initialize(std::uint32_t type, std::uint32_t roomId,
                                  const InstanceWeatherProfile &profile) {
     profile_ = profile;
+    environment_ = {};
+    normalizeEnvironment(profile_.environment);
     roomId_ = roomId;
     revision_ = 1;
     simulationTimeSeconds_ = 0.0;
@@ -105,16 +51,20 @@ void InstanceWeather::initialize(std::uint32_t type, std::uint32_t roomId,
     windDirectionDegrees_ = std::fmod(weatherPhase_ * 180.0 / kPi, 360.0);
     precipitationMmPerHour_ = 0.0;
     initialWaterKgM2_ = totalWaterKgM2();
+    updateClock();
+    updateCoast(0);
 }
 
 void InstanceWeather::advance(double realDeltaSeconds) {
-    const double safeRealSeconds = std::clamp(realDeltaSeconds, 0.0, 5.0);
+    if (!std::isfinite(realDeltaSeconds) || realDeltaSeconds <= 0) return;
+    const double safeRealSeconds = realDeltaSeconds;
     pendingSimulationSeconds_ += safeRealSeconds *
                                  std::max(0.0, profile_.gameSecondsPerRealSecond);
 
     double simulated = 0.0;
     double precipitation = 0.0;
-    while (pendingSimulationSeconds_ >= kSimulationStepSeconds) {
+    int steps=0;
+    while (pendingSimulationSeconds_ >= kSimulationStepSeconds && steps++ < 4096) {
         precipitation += simulateStep(kSimulationStepSeconds);
         pendingSimulationSeconds_ -= kSimulationStepSeconds;
         simulated += kSimulationStepSeconds;
@@ -127,114 +77,14 @@ void InstanceWeather::advance(double realDeltaSeconds) {
     }
 }
 
+// 각 환경의 순서만 관리한다. 자세한 계산은 EarthScience 폴더의 기능별 cpp에 있다.
 double InstanceWeather::simulateStep(double dt) {
-    simulationTimeSeconds_ += dt;
-
-    // 낮밤 렌더링과 무관한 느린 기단 변화다. 방마다 phase 가 달라 같은 종류의
-    // 복제 던전도 동시에 똑같은 날씨가 되지 않는다.
-    const double frontAngle = 2.0 * kPi * simulationTimeSeconds_ / (8.0 * 3600.0) + weatherPhase_;
-    const double targetTemperature = profile_.meanTemperatureC + 3.0 * std::sin(frontAngle);
-    const double targetPressure = profile_.meanPressureHpa + 9.0 * std::sin(frontAngle * 0.55 + 0.8);
-
-    nearAir_.temperatureC = relax(nearAir_.temperatureC, targetTemperature, dt, 1800.0);
-    upperAir_.temperatureC = relax(upperAir_.temperatureC, targetTemperature - 8.0, dt, 2400.0);
-    ground_.temperatureC = relax(ground_.temperatureC, targetTemperature, dt, 3600.0);
-    pressureHpa_ = relax(pressureHpa_, targetPressure, dt, 1200.0);
-
-    const double pressureDifference = std::abs(targetPressure - pressureHpa_);
-    windSpeedMps_ = relax(windSpeedMps_, 1.0 + pressureDifference * 0.45, dt, 900.0);
-    windDirectionDegrees_ = std::fmod(
-        weatherPhase_ * 180.0 / kPi + simulationTimeSeconds_ / 180.0, 360.0);
-
-    // 1) 증발: 지표와 공기의 수증기압 차이가 클수록 물이 공기로 이동한다.
-    const double vaporDeficitKPa = std::max(
-        0.0, saturationPressureKPa(ground_.temperatureC) - vaporPressureKPa(nearAir_));
-    const double evaporationRate = 0.00002 * vaporDeficitKPa;
-    if (ground_.waterKgM2 > 0.0) {
-        transfer(ground_.waterKgM2, nearAir_.vaporKgM2, evaporationRate * dt);
-    } else {
-        const double soilWetness = clamp01(ground_.soilKgM2 / kSoilCapacityKgM2);
-        transfer(ground_.soilKgM2, nearAir_.vaporKgM2,
-                 evaporationRate * soilWetness * 0.2 * dt);
-    }
-
-    // 2) 연직 혼합: 두 대기층의 수증기 농도 차이를 서서히 줄인다.
-    const double nearConcentration = nearAir_.vaporKgM2 / nearAir_.depthM;
-    const double upperConcentration = upperAir_.vaporKgM2 / upperAir_.depthM;
-    const double exchangeCapacity = 1.0 / (1.0 / nearAir_.depthM + 1.0 / upperAir_.depthM);
-    const double exchangeFraction = -std::expm1(-0.002 * dt / exchangeCapacity);
-    const double exchanged = (nearConcentration - upperConcentration) * exchangeCapacity *
-                             exchangeFraction;
-    if (exchanged >= 0.0) {
-        transfer(nearAir_.vaporKgM2, upperAir_.vaporKgM2, exchanged);
-    } else {
-        transfer(upperAir_.vaporKgM2, nearAir_.vaporKgM2, -exchanged);
-    }
-
-    // 3) 응결: 포화량을 넘긴 수증기를 구름물로 바꾼다.
-    adjustSaturation(nearAir_);
-    adjustSaturation(upperAir_);
-
-    // 4) 강수: 상층 구름물이 임계량을 넘으면 비 또는 눈으로 내려온다.
-    const double cloudExcess = std::max(0.0, upperAir_.liquidKgM2 - kCloudRainThresholdKgM2);
-    const double falling = cloudExcess * (-std::expm1(-dt / 600.0));
-    const double snowFraction = clamp01((1.0 - nearAir_.temperatureC) / 2.0);
-    const double snowfall = transfer(upperAir_.liquidKgM2, ground_.snowKgM2,
-                                     falling * snowFraction);
-    const double rainfall = transfer(upperAir_.liquidKgM2, ground_.waterKgM2,
-                                     falling * (1.0 - snowFraction));
-
-    // 저층 액체 물방울은 안개 침착처럼 매우 천천히 지표로 내려온다.
-    transfer(nearAir_.liquidKgM2, ground_.waterKgM2,
-             nearAir_.liquidKgM2 * (-std::expm1(-dt / 3600.0)));
-
-    // 5) 눈·얼음: 지표가 영상이면 녹고 영하면 지표수가 언다.
-    if (ground_.temperatureC > 0.0) {
-        double meltBudget = 0.00002 * ground_.temperatureC * dt;
-        meltBudget -= transfer(ground_.snowKgM2, ground_.waterKgM2, meltBudget);
-        transfer(ground_.iceKgM2, ground_.waterKgM2, meltBudget);
-    } else {
-        transfer(ground_.waterKgM2, ground_.iceKgM2,
-                 0.00001 * -ground_.temperatureC * dt);
-    }
-
-    // 6) 토양: 지표수가 빈 토양으로 스며들고, 포장용수량을 넘긴 물은 배수된다.
-    const double soilSpace = std::max(0.0, kSoilCapacityKgM2 - ground_.soilKgM2);
-    transfer(ground_.waterKgM2, ground_.soilKgM2,
-             std::min(soilSpace, 0.0001 * dt));
-    const double soilExcess = std::max(0.0, ground_.soilKgM2 - kFieldCapacityKgM2);
-    const double drained = soilExcess * (-std::expm1(-dt / 86400.0));
-    ground_.soilKgM2 -= drained;
-    drainedWaterKgM2_ += drained;
-    return rainfall + snowfall;
+    simulationTimeSeconds_+=dt;
+    updateClock();
+    updateAtmosphere(dt);
+    const double precipitation=updateHydrology(dt);
+    updateCoast(dt);
+    updateDesert(dt);
+    return precipitation;
 }
-
-double InstanceWeather::totalWaterKgM2() const {
-    return nearAir_.vaporKgM2 + nearAir_.liquidKgM2 + upperAir_.vaporKgM2 +
-           upperAir_.liquidKgM2 + ground_.waterKgM2 + ground_.soilKgM2 +
-           ground_.snowKgM2 + ground_.iceKgM2;
 }
-
-InstanceWeatherSnapshot InstanceWeather::snapshot() const {
-    InstanceWeatherSnapshot result;
-    result.roomId = roomId_;
-    result.revision = revision_;
-    result.simulationTimeSeconds = simulationTimeSeconds_;
-    result.temperatureC = static_cast<float>(nearAir_.temperatureC);
-    result.relativeHumidityPct = static_cast<float>(
-        100.0 * nearAir_.vaporKgM2 / std::max(0.000001, saturationMassKgM2(nearAir_)));
-    result.pressureHpa = static_cast<float>(pressureHpa_);
-    result.cloudCover = static_cast<float>(clamp01(upperAir_.liquidKgM2 / 0.35));
-    result.precipitationMmPerHour = static_cast<float>(precipitationMmPerHour_);
-    result.windSpeedMps = static_cast<float>(windSpeedMps_);
-    result.windDirectionDegrees = static_cast<float>(windDirectionDegrees_);
-    result.groundWetness = static_cast<float>(clamp01(
-        (ground_.waterKgM2 + ground_.soilKgM2) /
-        (1.0 + kSoilCapacityKgM2)));
-    result.snowDepthM = static_cast<float>(ground_.snowKgM2 / 100.0);
-    result.waterBalanceErrorKgM2 = static_cast<float>(
-        totalWaterKgM2() - initialWaterKgM2_ + drainedWaterKgM2_);
-    return result;
-}
-
-} // namespace heaven::instance

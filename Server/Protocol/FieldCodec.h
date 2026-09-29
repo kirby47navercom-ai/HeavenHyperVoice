@@ -235,20 +235,39 @@ inline Bytes encodeTokenBalance(std::uint32_t tokens) {
     return detail::wrapField(fbb, HeavenField::Payload::TokenBalance, balance.Union());
 }
 
-inline Bytes encodeWeatherState(std::uint32_t roomId, std::uint32_t revision,
-                                double simulationTimeSeconds, float temperatureC,
-                                float relativeHumidityPct, float pressureHpa,
-                                float cloudCover, float precipitationMmPerHour,
-                                float windSpeedMps, float windDirectionDegrees,
-                                float groundWetness, float snowDepthM,
-                                float waterBalanceErrorKgM2) {
+// 방 스냅샷의 명명된 필드를 전송한다. 서버 구현 파일에는 의존하지 않는다.
+template<class Weather>
+inline Bytes encodeWeatherState(const Weather& weather) {
     flatbuffers::FlatBufferBuilder fbb;
-    const auto weather = HeavenField::CreateWeatherState(
-        fbb, roomId, revision, simulationTimeSeconds, temperatureC,
-        relativeHumidityPct, pressureHpa, cloudCover, precipitationMmPerHour,
-        windSpeedMps, windDirectionDegrees, groundWetness, snowDepthM,
-        waterBalanceErrorKgM2);
-    return detail::wrapField(fbb, HeavenField::Payload::WeatherState, weather.Union());
+    const auto& e=weather.environment;
+    const auto environment=HeavenField::CreateEnvironmentState(fbb,
+        e.dayFraction,
+        e.yearFraction,
+        e.sunElevationDegrees,
+        e.sunAzimuthDegrees,
+        e.tideLevelM,
+        e.waveHeightM,
+        e.sandstormIntensity,
+        e.groundTemperatureC,
+        e.surfaceWaterMm,
+        e.iceMm,
+        e.soilMoisture,
+        e.timeScale);
+    const auto packet=HeavenField::CreateWeatherState(fbb,
+        weather.roomId,
+        weather.revision,
+        weather.simulationTimeSeconds,
+        weather.temperatureC,
+        weather.relativeHumidityPct,
+        weather.pressureHpa,
+        weather.cloudCover,
+        weather.precipitationMmPerHour,
+        weather.windSpeedMps,
+        weather.windDirectionDegrees,
+        weather.groundWetness,
+        weather.snowDepthM,
+        weather.waterBalanceErrorKgM2,environment);
+    return detail::wrapField(fbb,HeavenField::Payload::WeatherState,packet.Union());
 }
 
 inline Bytes encodeFieldNotice(std::string_view text) {

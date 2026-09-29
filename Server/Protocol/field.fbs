@@ -309,6 +309,22 @@ table TokenBalance {
 // 20Hz 이동 Snapshot에 매번 넣지 않는다. InstanceServer가 현실 시간 1초마다
 // 별도 프레임으로 보내고, 클라이언트는 이 값 사이를 보간해 비·구름·바람 연출을
 // 움직인다. 필드 서버는 이 메시지를 보내지 않는다.
+// 서버 권위 환경 확장. 값이 없는 구버전 패킷은 연출을 활성화하지 않는다.
+table EnvironmentState {
+  day_fraction:double;
+  year_fraction:double;
+  sun_elevation_degrees:double;
+  sun_azimuth_degrees:double;
+  tide_level_m:double;
+  wave_height_m:double;
+  sandstorm_intensity:double;
+  ground_temperature_c:double;
+  surface_water_mm:double;
+  ice_mm:double;
+  soil_moisture:double;
+  time_scale:double;
+}
+
 table WeatherState {
   room_id:uint;
   revision:uint;
@@ -323,6 +339,7 @@ table WeatherState {
   ground_wetness:float;
   snow_depth_m:float;
   water_balance_error_kg_m2:float;
+  environment:EnvironmentState;
 }
 
 union Payload {

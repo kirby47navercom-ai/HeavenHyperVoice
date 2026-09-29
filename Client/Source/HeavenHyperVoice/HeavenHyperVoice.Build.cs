@@ -27,6 +27,7 @@ public class HeavenHyperVoice : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
+            "Water",
 			"AnimGraphRuntime",
 			"InputCore",
 			"EnhancedInput",

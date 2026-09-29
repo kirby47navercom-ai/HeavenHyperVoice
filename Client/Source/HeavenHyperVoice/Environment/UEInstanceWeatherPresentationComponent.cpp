@@ -87,6 +87,7 @@ UUEInstanceWeatherPresentationComponent::MakeTargetState(
 {
 	FUEInstanceWeatherPresentationState Result;
 	Result.TemperatureC = Weather.TemperatureC;
+	Result.Environment=Weather.Environment;
 	Result.RelativeHumidityPct = Weather.RelativeHumidityPct;
 	Result.PressureHpa = Weather.PressureHpa;
 	Result.CloudAmount = FMath::Clamp(Weather.CloudCover, 0.0f, 1.0f);
@@ -156,6 +157,7 @@ void UUEInstanceWeatherPresentationComponent::TickComponent(
 
 	const float Alpha = 1.0f - FMath::Exp(
 		-FMath::Max(0.1f, TransitionSpeed) * FMath::Max(0.0f, DeltaTime));
+	BlendEnvironment(CurrentState.Environment,TargetState.Environment,Alpha);
 	CurrentState.TemperatureC = Move(CurrentState.TemperatureC, TargetState.TemperatureC, Alpha);
 	CurrentState.RelativeHumidityPct = Move(
 		CurrentState.RelativeHumidityPct, TargetState.RelativeHumidityPct, Alpha);
@@ -191,7 +193,7 @@ void UUEInstanceWeatherPresentationComponent::TickComponent(
 			TargetState.WindDirectionDegrees)) < 0.1f &&
 		FMath::IsNearlyEqual(CurrentState.GroundWetness, TargetState.GroundWetness, 0.001f) &&
 		FMath::IsNearlyEqual(CurrentState.SnowCoverage, TargetState.SnowCoverage, 0.001f);
-	if (bSettled)
+	if (bSettled && !TargetState.Environment.Enabled)
 	{
 		CurrentState = TargetState;
 		BroadcastCurrentState();

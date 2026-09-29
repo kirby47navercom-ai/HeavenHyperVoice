@@ -8,6 +8,8 @@
 // 실행한다.
 
 #include <cstdint>
+#include "EarthScience/EnvironmentProfile.h"
+#include "EarthScience/EnvironmentState.h"
 
 namespace heaven::instance {
 
@@ -15,18 +17,20 @@ namespace heaven::instance {
 // 단위가 이름에 붙어 있으므로 블루프린트나 설정 파일로 옮길 때도 값의 뜻이
 // 흐려지지 않는다.
 struct InstanceWeatherProfile {
+    EnvironmentProfile environment;
     double meanTemperatureC = 18.0;
     double initialRelativeHumidityPct = 72.0;
     double meanPressureHpa = 1013.25;
     double initialSurfaceWaterKgM2 = 2.0;
     double initialSoilWaterKgM2 = 12.0;
 
-    // 현실 1초 동안 흐르는 시뮬레이션 초. 낮밤 렌더링과는 연결하지 않는다.
+    // 현실 1초 동안 흐르는 시뮬레이션 초. 같은 시계가 낮밤·계절·조석을 구동한다.
     double gameSecondsPerRealSecond = 60.0;
 };
 
 // 서버가 클라이언트에 보내는 방 단위 날씨 결과.
 struct InstanceWeatherSnapshot {
+    EnvironmentState environment;
     std::uint32_t roomId = 0;
     std::uint32_t revision = 0;
     double simulationTimeSeconds = 0.0;
@@ -73,9 +77,15 @@ class InstanceWeather {
     };
 
     double simulateStep(double dt);
+    void updateClock();
+    void updateAtmosphere(double dt);
+    double updateHydrology(double dt);
+    void updateCoast(double dt);
+    void updateDesert(double dt);
     double totalWaterKgM2() const;
 
     InstanceWeatherProfile profile_;
+    EnvironmentState environment_;
     std::uint32_t roomId_ = 0;
     std::uint32_t revision_ = 0;
     double simulationTimeSeconds_ = 0.0;

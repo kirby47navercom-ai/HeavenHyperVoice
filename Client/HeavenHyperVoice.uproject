@@ -83,6 +83,10 @@
 		{
 			"Name": "PCGPrimitives_MeshPartitionInterop",
 			"Enabled": true
+		},
+		{
+			"Name": "Water",
+			"Enabled": true
 		}
 	]
 }

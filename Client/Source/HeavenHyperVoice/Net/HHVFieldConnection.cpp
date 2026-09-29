@@ -612,6 +612,22 @@ void FHHVFieldConnection::DispatchFrame(const uint8 *Data, int32 Size)
 		Event.Weather.GroundWetness = Weather->ground_wetness();
 		Event.Weather.SnowDepthM = Weather->snow_depth_m();
 		Event.Weather.WaterBalanceErrorKgM2 = Weather->water_balance_error_kg_m2();
+		if (const auto* Env=Weather->environment()) {
+			Event.Weather.Environment.Enabled=true;
+			Event.Weather.Environment.DayFraction=Env->day_fraction();
+			Event.Weather.Environment.YearFraction=Env->year_fraction();
+			Event.Weather.Environment.SunElevationDegrees=Env->sun_elevation_degrees();
+			Event.Weather.Environment.SunAzimuthDegrees=Env->sun_azimuth_degrees();
+			Event.Weather.Environment.TideLevelM=Env->tide_level_m();
+			Event.Weather.Environment.WaveHeightM=Env->wave_height_m();
+			Event.Weather.Environment.SandstormIntensity=Env->sandstorm_intensity();
+			Event.Weather.Environment.GroundTemperatureC=Env->ground_temperature_c();
+			Event.Weather.Environment.SurfaceWaterMm=Env->surface_water_mm();
+			Event.Weather.Environment.IceMm=Env->ice_mm();
+			Event.Weather.Environment.SoilMoisture=Env->soil_moisture();
+			Event.Weather.Environment.TimeScale=Env->time_scale();
+		}
+
 		break;
 	}
 

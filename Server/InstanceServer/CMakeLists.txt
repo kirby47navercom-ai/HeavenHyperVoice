@@ -19,10 +19,23 @@ add_library(WildPokemonAI STATIC
 target_include_directories(WildPokemonAI PUBLIC src PRIVATE ${LUA_INCLUDE_DIR})
 target_link_libraries(WildPokemonAI PUBLIC ServerMovement PRIVATE spdlog::spdlog sol2::sol2 ${LUA_LIBRARIES})
 
+# 같은 계산 라이브러리를 실제 서버와 독립 검사에서 공유한다.
+add_library(InstanceClimate STATIC
+    src/InstanceWeather.cpp
+    src/EarthScience/EnvironmentProfile.cpp
+    src/EarthScience/EnvironmentClock.cpp
+    src/EarthScience/AtmosphereCycle.cpp
+    src/EarthScience/SurfaceWaterCycle.cpp
+    src/EarthScience/CoastalEnvironment.cpp
+    src/EarthScience/DesertEnvironment.cpp
+    src/EarthScience/WeatherSnapshot.cpp
+    src/EarthScience/EnvironmentConfig.cpp
+)
+target_include_directories(InstanceClimate PUBLIC src)
+
 add_executable(InstanceServer
     src/main.cpp
     src/InstanceHandler.cpp
-    src/InstanceWeather.cpp
     src/RoomManager.cpp
     src/World.cpp
 )
@@ -35,9 +48,13 @@ target_link_libraries(InstanceServer PRIVATE
     ServerMovement
     FieldShared
     WildPokemonAI
+    InstanceClimate
 )
 
 if(BUILD_TESTING)
+    add_executable(InstanceEnvironmentTests ../tests/InstanceEnvironmentTests.cpp)
+    target_link_libraries(InstanceEnvironmentTests PRIVATE InstanceClimate)
+    add_test(NAME InstanceEnvironmentTests COMMAND InstanceEnvironmentTests "${CMAKE_CURRENT_SOURCE_DIR}/config/environment")
     add_executable(WildPokemonAITests ../tests/WildPokemonAITests.cpp)
     target_link_libraries(WildPokemonAITests PRIVATE WildPokemonAI)
     add_test(NAME WildPokemonAITests COMMAND WildPokemonAITests
@@ -57,6 +74,13 @@ add_custom_command(TARGET InstanceServer POST_BUILD
         "${CMAKE_CURRENT_SOURCE_DIR}/scripts"
         "$<TARGET_FILE_DIR:InstanceServer>/scripts"
     COMMENT "Copying instance AI scripts next to InstanceServer"
+)
+
+add_custom_command(TARGET InstanceServer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/config"
+        "$<TARGET_FILE_DIR:InstanceServer>/config"
+    COMMENT "Copying environment profiles next to InstanceServer"
 )
 
 add_custom_command(TARGET InstanceServer POST_BUILD

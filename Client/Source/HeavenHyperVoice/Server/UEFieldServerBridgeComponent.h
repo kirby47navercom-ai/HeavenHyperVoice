@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "../Environment/UEEnvironmentState.h"
 #include "Components/ActorComponent.h"
 #include "../Net/HHVFieldConnection.h"
 #include "../Gacha/UEGachaPool.h"
@@ -57,6 +58,7 @@ USTRUCT(BlueprintType)
 struct FUEInstanceWeatherState
 {
 	GENERATED_BODY()
+	UPROPERTY(BlueprintReadOnly, Category="Field Server|Weather") FUEEnvironmentState Environment;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Field Server|Weather")
 	int32 RoomId = 0;

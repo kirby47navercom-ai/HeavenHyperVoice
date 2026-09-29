@@ -66,6 +66,9 @@ struct DebugGrantTokenBuilder;
 struct TokenBalance;
 struct TokenBalanceBuilder;
 
+struct EnvironmentState;
+struct EnvironmentStateBuilder;
+
 struct WeatherState;
 struct WeatherStateBuilder;
 
@@ -2141,6 +2144,158 @@ inline ::flatbuffers::Offset<TokenBalance> CreateTokenBalance(
   return builder_.Finish();
 }
 
+struct EnvironmentState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef EnvironmentStateBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_DAY_FRACTION = 4,
+    VT_YEAR_FRACTION = 6,
+    VT_SUN_ELEVATION_DEGREES = 8,
+    VT_SUN_AZIMUTH_DEGREES = 10,
+    VT_TIDE_LEVEL_M = 12,
+    VT_WAVE_HEIGHT_M = 14,
+    VT_SANDSTORM_INTENSITY = 16,
+    VT_GROUND_TEMPERATURE_C = 18,
+    VT_SURFACE_WATER_MM = 20,
+    VT_ICE_MM = 22,
+    VT_SOIL_MOISTURE = 24,
+    VT_TIME_SCALE = 26
+  };
+  double day_fraction() const {
+    return GetField<double>(VT_DAY_FRACTION, 0.0);
+  }
+  double year_fraction() const {
+    return GetField<double>(VT_YEAR_FRACTION, 0.0);
+  }
+  double sun_elevation_degrees() const {
+    return GetField<double>(VT_SUN_ELEVATION_DEGREES, 0.0);
+  }
+  double sun_azimuth_degrees() const {
+    return GetField<double>(VT_SUN_AZIMUTH_DEGREES, 0.0);
+  }
+  double tide_level_m() const {
+    return GetField<double>(VT_TIDE_LEVEL_M, 0.0);
+  }
+  double wave_height_m() const {
+    return GetField<double>(VT_WAVE_HEIGHT_M, 0.0);
+  }
+  double sandstorm_intensity() const {
+    return GetField<double>(VT_SANDSTORM_INTENSITY, 0.0);
+  }
+  double ground_temperature_c() const {
+    return GetField<double>(VT_GROUND_TEMPERATURE_C, 0.0);
+  }
+  double surface_water_mm() const {
+    return GetField<double>(VT_SURFACE_WATER_MM, 0.0);
+  }
+  double ice_mm() const {
+    return GetField<double>(VT_ICE_MM, 0.0);
+  }
+  double soil_moisture() const {
+    return GetField<double>(VT_SOIL_MOISTURE, 0.0);
+  }
+  double time_scale() const {
+    return GetField<double>(VT_TIME_SCALE, 0.0);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<double>(verifier, VT_DAY_FRACTION, 8) &&
+           VerifyField<double>(verifier, VT_YEAR_FRACTION, 8) &&
+           VerifyField<double>(verifier, VT_SUN_ELEVATION_DEGREES, 8) &&
+           VerifyField<double>(verifier, VT_SUN_AZIMUTH_DEGREES, 8) &&
+           VerifyField<double>(verifier, VT_TIDE_LEVEL_M, 8) &&
+           VerifyField<double>(verifier, VT_WAVE_HEIGHT_M, 8) &&
+           VerifyField<double>(verifier, VT_SANDSTORM_INTENSITY, 8) &&
+           VerifyField<double>(verifier, VT_GROUND_TEMPERATURE_C, 8) &&
+           VerifyField<double>(verifier, VT_SURFACE_WATER_MM, 8) &&
+           VerifyField<double>(verifier, VT_ICE_MM, 8) &&
+           VerifyField<double>(verifier, VT_SOIL_MOISTURE, 8) &&
+           VerifyField<double>(verifier, VT_TIME_SCALE, 8) &&
+           verifier.EndTable();
+  }
+};
+
+struct EnvironmentStateBuilder {
+  typedef EnvironmentState Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_day_fraction(double day_fraction) {
+    fbb_.AddElement<double>(EnvironmentState::VT_DAY_FRACTION, day_fraction, 0.0);
+  }
+  void add_year_fraction(double year_fraction) {
+    fbb_.AddElement<double>(EnvironmentState::VT_YEAR_FRACTION, year_fraction, 0.0);
+  }
+  void add_sun_elevation_degrees(double sun_elevation_degrees) {
+    fbb_.AddElement<double>(EnvironmentState::VT_SUN_ELEVATION_DEGREES, sun_elevation_degrees, 0.0);
+  }
+  void add_sun_azimuth_degrees(double sun_azimuth_degrees) {
+    fbb_.AddElement<double>(EnvironmentState::VT_SUN_AZIMUTH_DEGREES, sun_azimuth_degrees, 0.0);
+  }
+  void add_tide_level_m(double tide_level_m) {
+    fbb_.AddElement<double>(EnvironmentState::VT_TIDE_LEVEL_M, tide_level_m, 0.0);
+  }
+  void add_wave_height_m(double wave_height_m) {
+    fbb_.AddElement<double>(EnvironmentState::VT_WAVE_HEIGHT_M, wave_height_m, 0.0);
+  }
+  void add_sandstorm_intensity(double sandstorm_intensity) {
+    fbb_.AddElement<double>(EnvironmentState::VT_SANDSTORM_INTENSITY, sandstorm_intensity, 0.0);
+  }
+  void add_ground_temperature_c(double ground_temperature_c) {
+    fbb_.AddElement<double>(EnvironmentState::VT_GROUND_TEMPERATURE_C, ground_temperature_c, 0.0);
+  }
+  void add_surface_water_mm(double surface_water_mm) {
+    fbb_.AddElement<double>(EnvironmentState::VT_SURFACE_WATER_MM, surface_water_mm, 0.0);
+  }
+  void add_ice_mm(double ice_mm) {
+    fbb_.AddElement<double>(EnvironmentState::VT_ICE_MM, ice_mm, 0.0);
+  }
+  void add_soil_moisture(double soil_moisture) {
+    fbb_.AddElement<double>(EnvironmentState::VT_SOIL_MOISTURE, soil_moisture, 0.0);
+  }
+  void add_time_scale(double time_scale) {
+    fbb_.AddElement<double>(EnvironmentState::VT_TIME_SCALE, time_scale, 0.0);
+  }
+  explicit EnvironmentStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<EnvironmentState> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<EnvironmentState>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<EnvironmentState> CreateEnvironmentState(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    double day_fraction = 0.0,
+    double year_fraction = 0.0,
+    double sun_elevation_degrees = 0.0,
+    double sun_azimuth_degrees = 0.0,
+    double tide_level_m = 0.0,
+    double wave_height_m = 0.0,
+    double sandstorm_intensity = 0.0,
+    double ground_temperature_c = 0.0,
+    double surface_water_mm = 0.0,
+    double ice_mm = 0.0,
+    double soil_moisture = 0.0,
+    double time_scale = 0.0) {
+  EnvironmentStateBuilder builder_(_fbb);
+  builder_.add_time_scale(time_scale);
+  builder_.add_soil_moisture(soil_moisture);
+  builder_.add_ice_mm(ice_mm);
+  builder_.add_surface_water_mm(surface_water_mm);
+  builder_.add_ground_temperature_c(ground_temperature_c);
+  builder_.add_sandstorm_intensity(sandstorm_intensity);
+  builder_.add_wave_height_m(wave_height_m);
+  builder_.add_tide_level_m(tide_level_m);
+  builder_.add_sun_azimuth_degrees(sun_azimuth_degrees);
+  builder_.add_sun_elevation_degrees(sun_elevation_degrees);
+  builder_.add_year_fraction(year_fraction);
+  builder_.add_day_fraction(day_fraction);
+  return builder_.Finish();
+}
+
 struct WeatherState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef WeatherStateBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
@@ -2156,7 +2311,8 @@ struct WeatherState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_WIND_DIRECTION_DEGREES = 22,
     VT_GROUND_WETNESS = 24,
     VT_SNOW_DEPTH_M = 26,
-    VT_WATER_BALANCE_ERROR_KG_M2 = 28
+    VT_WATER_BALANCE_ERROR_KG_M2 = 28,
+    VT_ENVIRONMENT = 30
   };
   uint32_t room_id() const {
     return GetField<uint32_t>(VT_ROOM_ID, 0);
@@ -2197,6 +2353,9 @@ struct WeatherState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   float water_balance_error_kg_m2() const {
     return GetField<float>(VT_WATER_BALANCE_ERROR_KG_M2, 0.0f);
   }
+  const HeavenField::EnvironmentState *environment() const {
+    return GetPointer<const HeavenField::EnvironmentState *>(VT_ENVIRONMENT);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -2213,6 +2372,8 @@ struct WeatherState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<float>(verifier, VT_GROUND_WETNESS, 4) &&
            VerifyField<float>(verifier, VT_SNOW_DEPTH_M, 4) &&
            VerifyField<float>(verifier, VT_WATER_BALANCE_ERROR_KG_M2, 4) &&
+           VerifyOffset(verifier, VT_ENVIRONMENT) &&
+           verifier.VerifyTable(environment()) &&
            verifier.EndTable();
   }
 };
@@ -2260,6 +2421,9 @@ struct WeatherStateBuilder {
   void add_water_balance_error_kg_m2(float water_balance_error_kg_m2) {
     fbb_.AddElement<float>(WeatherState::VT_WATER_BALANCE_ERROR_KG_M2, water_balance_error_kg_m2, 0.0f);
   }
+  void add_environment(::flatbuffers::Offset<HeavenField::EnvironmentState> environment) {
+    fbb_.AddOffset(WeatherState::VT_ENVIRONMENT, environment);
+  }
   explicit WeatherStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -2285,9 +2449,11 @@ inline ::flatbuffers::Offset<WeatherState> CreateWeatherState(
     float wind_direction_degrees = 0.0f,
     float ground_wetness = 0.0f,
     float snow_depth_m = 0.0f,
-    float water_balance_error_kg_m2 = 0.0f) {
+    float water_balance_error_kg_m2 = 0.0f,
+    ::flatbuffers::Offset<HeavenField::EnvironmentState> environment = 0) {
   WeatherStateBuilder builder_(_fbb);
   builder_.add_simulation_time_seconds(simulation_time_seconds);
+  builder_.add_environment(environment);
   builder_.add_water_balance_error_kg_m2(water_balance_error_kg_m2);
   builder_.add_snow_depth_m(snow_depth_m);
   builder_.add_ground_wetness(ground_wetness);

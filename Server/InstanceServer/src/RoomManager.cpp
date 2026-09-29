@@ -271,12 +271,7 @@ void RoomManager::tickShard(unsigned shard, unsigned shardCount, float dt) {
         room->weatherBroadcastAccumulator = 0.0;
         room->weather.advance(elapsed);
         const InstanceWeatherSnapshot weather = room->weather.snapshot();
-        room->world.broadcast(proto::encodeWeatherState(
-            weather.roomId, weather.revision, weather.simulationTimeSeconds,
-            weather.temperatureC, weather.relativeHumidityPct, weather.pressureHpa,
-            weather.cloudCover, weather.precipitationMmPerHour, weather.windSpeedMps,
-            weather.windDirectionDegrees, weather.groundWetness, weather.snowDepthM,
-            weather.waterBalanceErrorKgM2));
+        room->world.broadcast(proto::encodeWeatherState(weather));
     }
 }
 
