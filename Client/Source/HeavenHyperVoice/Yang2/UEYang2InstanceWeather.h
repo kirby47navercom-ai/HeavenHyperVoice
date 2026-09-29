@@ -10,11 +10,17 @@
 #include "../../../../Server/InstanceServer/src/InstanceWeather.h"
 #include "UEYang2InstanceWeather.generated.h"
 
+class UUEEnvironmentProfile;
+
 /** YANG2_CLIENT_AUTHORITY_ONLY: 서버 실행 옵션 대신 로컬 시험에 사용할 기후값. */
 USTRUCT(BlueprintType)
 struct FUEYang2InstanceWeatherProfile
 {
 	GENERATED_BODY()
+
+	/** 지정하면 전체 환경 DA가 우선한다. 비워 두면 레벨 Scene에서 읽는다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Yang2|Weather")
+	TObjectPtr<UUEEnvironmentProfile> EnvironmentProfile;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Yang2|Weather")
 	double MeanTemperatureC = 18.0;

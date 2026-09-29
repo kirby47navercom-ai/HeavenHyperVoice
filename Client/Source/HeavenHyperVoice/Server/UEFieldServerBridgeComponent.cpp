@@ -1,4 +1,5 @@
 #include "UEFieldServerBridgeComponent.h"
+#include "../Yang2/UEYang2Environment.h"
 #include "../Data/UEProjectAssets.h"
 
 #include "UEFieldRemotePlayerSyncComponent.h"
@@ -380,6 +381,8 @@ void UUEFieldServerBridgeComponent::StartYang2ClientAuthority(uint32 InstanceTyp
 			Profile.gameSecondsPerRealSecond = FMath::Clamp(
 				LocalProfile->GameSecondsPerRealSecond, 0.0, 3600.0);
 		}
+		const auto* LocalEnvironment=Yang2WeatherProfiles.Find(static_cast<int32>(InstanceType));
+		ApplyYang2EnvironmentProfile(GetWorld(),LocalEnvironment ? LocalEnvironment->EnvironmentProfile.Get() : nullptr,Profile);
 		Yang2LocalWeather->initialize(InstanceType, CurrentRoomId, Profile);
 		UE_LOG(LogTemp, Display,
 			TEXT("YANG2 CLIENT AUTHORITY: local climate type %u = %.1f C, %.0f%% RH, %.1f hPa, x%.1f time"),
@@ -488,6 +491,7 @@ void UUEFieldServerBridgeComponent::PublishYang2ClientWeather()
 
 	const heaven::instance::InstanceWeatherSnapshot Source = Yang2LocalWeather->snapshot();
 	FHHVInstanceWeatherState Weather;
+	Weather.Environment = MakeYang2EnvironmentState(Source.environment);
 	Weather.RoomId = Source.roomId;
 	Weather.Revision = Source.revision;
 	Weather.SimulationTimeSeconds = Source.simulationTimeSeconds;

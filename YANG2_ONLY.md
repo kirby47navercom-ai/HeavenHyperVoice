@@ -94,3 +94,18 @@ main에서는 같은 연출이 실제 `S_InstanceWeather` 패킷만 받아서 �
 공용 지면 함수, 웅덩이 마스크, 벽 물보라, 젖은 자국, 눈 덩어리도 같은 로컬 날씨 이벤트로
 작동한다. main은 계속 서버 패킷만 입력받는다. 이 확장에는 새로운 권위 우회 코드를 추가하지 않았다.
 실내가 생기면 제외 BP를 배치한다. 현재 맵에는 없는 실내나 수면을 임의로 만들지 않는다.
+
+## 시간·해안·사막 로컬 실행
+
+환경 확장 공통 코드는 main에서 가져왔다. 새 예제 수면은 `L_Environment_Coast`에만 있으며
+기존 도시 물 메시는 교체하지 않는다. `BP_EnvironmentScene.Profile`에 연결한 DA를
+`UEYang2Environment.cpp`가 읽어 로컬 계산기에 넣는다. 종류별 `Yang2WeatherProfiles`에
+`EnvironmentProfile`을 지정하면 레벨 참조보다 우선한다. 양쪽 모두 비었으면 기존 여섯 설정을 사용한다.
+
+`UEYang2InstanceWeatherImplementation.cpp`는 서버의 시간/대기/물순환/조석/사막 cpp를
+그대로 포함한다. 결과는 `MakeYang2EnvironmentState()`를 거쳐 공통 연출에 들어간다.
+서버용 ini 파서는 클라이언트에 포함하지 않는다. 두 Yang2 어댑터 파일과 브릿지 연결 변경은
+main으로 보내면 안 된다. 기존 훅과 컴파일 매크로 차단을 유지한다.
+
+전체 기능/파일 설명: `Server/InstanceServer/EARTH_ENVIRONMENT_GUIDE.md`.
+추가 검사는 실제 DA 세 개의 로컬 입력 변환, 시간 전달, 사막 먼지 발생을 확인한다.

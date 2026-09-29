@@ -9,3 +9,10 @@
 #endif
 
 #include "../../../../Server/InstanceServer/src/InstanceWeather.cpp"
+#include "../../../../Server/InstanceServer/src/EarthScience/EnvironmentProfile.cpp"
+#include "../../../../Server/InstanceServer/src/EarthScience/EnvironmentClock.cpp"
+#include "../../../../Server/InstanceServer/src/EarthScience/AtmosphereCycle.cpp"
+#include "../../../../Server/InstanceServer/src/EarthScience/SurfaceWaterCycle.cpp"
+#include "../../../../Server/InstanceServer/src/EarthScience/CoastalEnvironment.cpp"
+#include "../../../../Server/InstanceServer/src/EarthScience/DesertEnvironment.cpp"
+#include "../../../../Server/InstanceServer/src/EarthScience/WeatherSnapshot.cpp"
