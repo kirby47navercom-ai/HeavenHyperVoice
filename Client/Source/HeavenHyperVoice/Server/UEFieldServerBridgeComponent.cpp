@@ -649,6 +649,7 @@ void UUEFieldServerBridgeComponent::HandleInstanceWeatherState(
 	InstanceWeatherState.GroundWetness = Weather.GroundWetness;
 	InstanceWeatherState.SnowDepthM = Weather.SnowDepthM;
 	InstanceWeatherState.WaterBalanceErrorKgM2 = Weather.WaterBalanceErrorKgM2;
+	InstanceWeatherState.Environment=Weather.Environment;
 	bHasInstanceWeatherState = true;
 
 	OnInstanceWeatherChanged.Broadcast(InstanceWeatherState);

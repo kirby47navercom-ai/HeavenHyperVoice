@@ -1,3 +1,4 @@
+#include "EarthScience/EnvironmentConfig.h"
 #include <spdlog/spdlog.h>
 
 #include <atomic>
@@ -62,6 +63,7 @@ struct Options {
     // 종류마다 다른 기후. 서버가 방을 만들 때 이 값을 복사하므로 클라이언트가
     // 온도나 강수 상태를 임의로 정할 수 없다.
     std::map<std::uint32_t, heaven::instance::InstanceWeatherProfile> weather;
+    std::map<std::uint32_t, std::string> environments;
 
     std::string wildAiScript = "scripts/wild_ai.lua";
 
@@ -94,6 +96,7 @@ void printUsage() {
                  "                        Listing a type here is enough to accept it.\n"
                  "                        Unregistered types are refused.\n"
                  "                        Default: type 1 uses the Filed collision map.\n"
+                 "  --instance-environment <t=file>  exported environment profile\n"
                  "  --instance-weather <t=v>  climate for one instance type, repeatable.\n"
                  "                        v=tempC,humidityPct,pressureHpa,surfaceWater,soilWater,timeScale\n"
                  "                        e.g. --instance-weather 1=18,72,1013.25,2,12,60\n"
@@ -262,6 +265,14 @@ Options parseArgs(int argc, char **argv) {
             }
             options.maps[static_cast<std::uint32_t>(std::stoul(pair.substr(0, equals)))] =
                 pair.substr(equals + 1);
+        } else if (arg == "--instance-environment") {
+            const std::string pair=next("--instance-environment");
+            const auto equals=pair.find('=');
+            if(equals==0 || equals==std::string::npos || equals+1==pair.size())
+                throw std::runtime_error("--instance-environment wants type=profile.ini");
+            std::size_t end=0; const auto type=std::stoul(pair.substr(0,equals),&end);
+            if(end!=equals || type>UINT32_MAX) throw std::runtime_error("Invalid environment type");
+            options.environments[static_cast<std::uint32_t>(type)]=pair.substr(equals+1);
         } else if (arg == "--instance-weather") {
             const std::string pair = next("--instance-weather");
             const std::size_t equals = pair.find('=');
@@ -333,6 +344,8 @@ int main(int argc, char **argv) {
         std::map<std::uint32_t, std::unique_ptr<heaven::Map>> terrain;
         std::map<std::uint32_t, heaven::instance::InstanceType> types;
 
+        for (const auto &[type, path] : options.environments)
+            if(!options.maps.contains(type)) throw std::runtime_error("Unknown environment instance type");
         for (const auto &[type, profile] : options.weather) {
             (void)profile;
             if (options.maps.find(type) == options.maps.end()) {
@@ -359,6 +372,8 @@ int main(int argc, char **argv) {
             if (const auto weather = options.weather.find(type); weather != options.weather.end()) {
                 types[type].weather = weather->second;
             }
+            if(const auto env=options.environments.find(type);env!=options.environments.end())
+                types[type].weather=heaven::instance::loadEnvironmentProfile(env->second);
             const auto &weather = types[type].weather;
             spdlog::info(
                 "instance type {}: climate = {:.1f} C, {:.0f}% RH, {:.1f} hPa, "

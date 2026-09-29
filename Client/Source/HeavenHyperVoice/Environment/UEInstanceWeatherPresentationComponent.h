@@ -17,6 +17,7 @@ struct FUEInstanceWeatherPresentationState
 
 	UPROPERTY(BlueprintReadOnly, Category = "Instance Weather|Raw")
 	float TemperatureC = 0.0f;
+	UPROPERTY(BlueprintReadOnly, Category="Environment") FUEEnvironmentState Environment;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Instance Weather|Raw")
 	float RelativeHumidityPct = 0.0f;
