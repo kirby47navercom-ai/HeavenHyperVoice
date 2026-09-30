@@ -45,6 +45,31 @@ void ApplyYang2EnvironmentProfile(UWorld* World,const UUEEnvironmentProfile* Ove
     Result.environment.tidePhaseDegrees=Asset->TidePhaseDegrees;
     Result.environment.waveMaxHeightM=Asset->WaveMaxHeightM;
     Result.environment.waveResponseSeconds=Asset->WaveResponseSeconds;
+    Result.environment.surfaceFilmCapacityKgM2=Asset->SurfaceFilmCapacityKgM2;
+    Result.environment.moistureExchangeSeconds=Asset->MoistureExchangeSeconds;
+    Result.environment.solarPeakWm2=Asset->SolarPeakWm2;
+    Result.environment.surfaceAlbedo=Asset->SurfaceAlbedo;
+    Result.environment.surfaceEmissivity=Asset->SurfaceEmissivity;
+    Result.environment.clearSkyCoolingWm2=Asset->ClearSkyCoolingWm2;
+    Result.environment.airHeatTransferWm2K=Asset->AirHeatTransferWm2K;
+    Result.environment.springNeapPeriodDays=Asset->SpringNeapPeriodDays;
+    Result.environment.neapTideFraction=Asset->NeapTideFraction;
+    Result.environment.springNeapPhaseDegrees=Asset->SpringNeapPhaseDegrees;
+    Result.environment.shoreHeightM=Asset->ShoreHeightM;
+    Result.environment.wetMovementMultiplier=Asset->WetMovementMultiplier;
+    Result.environment.iceMovementMultiplier=Asset->IceMovementMultiplier;
+    Result.environment.sandVisibilityMultiplier=Asset->SandVisibilityMultiplier;
+    Result.spawnRules.clear();
+    TSet<int32> UsedDex;
+    for(const auto& Row:Asset->SpawnRules) {
+        if(Row.PokemonDex<1 || Row.PokemonDex>65535 || UsedDex.Contains(Row.PokemonDex)) continue;
+        bool Valid=true;
+        for(double V:{Row.BaseWeight,Row.RainMultiplier,Row.SnowMultiplier,Row.NightMultiplier})
+            Valid=Valid && FMath::IsFinite(V) && V>=0 && V<=100;
+        if(!Valid) continue;
+        UsedDex.Add(Row.PokemonDex);
+        Result.spawnRules.push_back({static_cast<uint16>(Row.PokemonDex),Row.BaseWeight,Row.RainMultiplier,Row.SnowMultiplier,Row.NightMultiplier});
+    }
     heaven::instance::normalizeEnvironment(Result.environment);
     Result.initialSoilWaterKgM2=FMath::Min(Result.initialSoilWaterKgM2,Result.environment.soilCapacityKgM2);
 }
@@ -62,5 +87,12 @@ FUEEnvironmentState MakeYang2EnvironmentState(const heaven::instance::Environmen
     Result.IceMm=Source.iceMm;
     Result.SoilMoisture=Source.soilMoisture;
     Result.TimeScale=Source.timeScale;
+    Result.SurfaceHeatFluxWm2=Source.surfaceHeatFluxWm2;
+    Result.ImportedWaterKgM2=Source.importedWaterKgM2;
+    Result.ExportedWaterKgM2=Source.exportedWaterKgM2;
+    Result.TideEnvelopeM=Source.tideEnvelopeM;
+    Result.ShoreWaterDepthM=Source.shoreWaterDepthM;
+    Result.MovementMultiplier=Source.movementMultiplier;
+    Result.VisibilityMultiplier=Source.visibilityMultiplier;
     return Result;
 }

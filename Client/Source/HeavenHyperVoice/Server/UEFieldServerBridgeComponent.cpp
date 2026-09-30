@@ -1,5 +1,6 @@
 #include "UEFieldServerBridgeComponent.h"
 #include "../Yang2/UEYang2Environment.h"
+#include "../Yang2/UEYang2WorldClock.h"
 #include "../Data/UEProjectAssets.h"
 
 #include "UEFieldRemotePlayerSyncComponent.h"
@@ -357,8 +358,8 @@ void UUEFieldServerBridgeComponent::StartYang2ClientAuthority(uint32 InstanceTyp
 	bInInstance = InstanceType > 0;
 	CurrentRoomId = bInInstance ? Yang2LocalRoomPrefix | (InstanceType & 0x00FFFFFFu) : 0;
 	Yang2WeatherAccumulator = 0.0;
-	bHasInstanceWeatherState = false;
-	InstanceWeatherState = {};
+	ClearInstanceWeatherState();
+	GetYang2WorldRealSeconds(GetWorld()); // 필드부터 시계를 시작하고 레벨 전환 중에도 계속 흘러요.
 
 	if (UUEGameInstance* GameInstance = GetUEGameInstance(this))
 	{
@@ -389,7 +390,8 @@ void UUEFieldServerBridgeComponent::StartYang2ClientAuthority(uint32 InstanceTyp
 		}
 		const auto* LocalEnvironment=Yang2WeatherProfiles.Find(static_cast<int32>(InstanceType));
 		ApplyYang2EnvironmentProfile(GetWorld(),LocalEnvironment ? LocalEnvironment->EnvironmentProfile.Get() : nullptr,Profile);
-		Yang2LocalWeather->initialize(InstanceType, CurrentRoomId, Profile);
+		ApplyYang2WorldClockSettings(GetWorld(),Profile);
+		Yang2LocalWeather->initialize(InstanceType, CurrentRoomId, Profile,GetYang2WorldRealSeconds(GetWorld()));
 		UE_LOG(LogTemp, Display,
 			TEXT("YANG2 CLIENT AUTHORITY: local climate type %u = %.1f C, %.0f%% RH, %.1f hPa, x%.1f time"),
 			InstanceType, Profile.meanTemperatureC, Profile.initialRelativeHumidityPct,
@@ -485,6 +487,7 @@ void UUEFieldServerBridgeComponent::TickYang2ClientAuthority(float DeltaTime)
 	const double Elapsed = Yang2WeatherAccumulator;
 	Yang2WeatherAccumulator = 0.0;
 	Yang2LocalWeather->advance(Elapsed);
+	Yang2LocalWeather->synchronizeClock(GetYang2WorldRealSeconds(GetWorld()));
 	PublishYang2ClientWeather();
 }
 

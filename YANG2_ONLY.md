@@ -109,3 +109,16 @@ main으로 보내면 안 된다. 기존 훅과 컴파일 매크로 차단을 유
 
 전체 기능/파일 설명: `Server/InstanceServer/EARTH_ENVIRONMENT_GUIDE.md`.
 추가 검사는 실제 DA 세 개의 로컬 입력 변환, 시간 전달, 사막 먼지 발생을 확인한다.
+
+
+## 공용 시간·열/수분·게임 규칙 보완
+
+main의 환경 변경을 병합한 뒤 Yang2 전용 어댑터에 새 14개 설정과 7개 결과값, SpawnRules 배열을 연결했다. 지표 에너지/외부 수분 교환/게임 배율 계산 CPP도 기존 단일 구현 TU에 포함한다. main에는 이 로컬 TU와 어댑터를 보내지 않는다.
+
+UEYang2WorldClock.h/.cpp는 GameInstance별 steady_clock 시계를 유지한다. 필드부터 시작하고 레벨 전환 중에도 흐르며, 첫 인스턴스의 시간 배속·하루·연중 주기·시작 시각을 이후 인스턴스에 유지한다. 새 플레이 세션은 새 GameInstance로 시계를 시작한다. 지역 기후/위도는 각 DA를 사용한다.
+
+로컬 날씨 결과는 기존 브릿지 이벤트를 거쳐 같은 BP 연출로 간다. 연결 초기화도 공통 ClearInstanceWeatherState를 사용해 오래된 낮밤/수면이 남지 않게 한다.
+
+**적용 범위:** Yang2는 환경 계산과 게임 규칙의 결과값을 로컬에서 계산한다. 야생 포켓몬의 환경별 생성 선택·Lua AI 탐지·야생 이동 실행은 현재 실제로 InstanceServer의 RoomManager/World/WildAi에 연결되어 있다. 기존 Yang2에 별도 야생 서버 AI 실행기가 없어서 서버 없이 그 AI 동작까지 자동 재현하는 기능은 포함하지 않는다. 플레이어 속도·기술 대미지도 변경하지 않는다.
+
+공통 기능/에셋과 수치 의미는 Server/InstanceServer/EARTH_ENVIRONMENT_UPDATES.md에 설명했다.
