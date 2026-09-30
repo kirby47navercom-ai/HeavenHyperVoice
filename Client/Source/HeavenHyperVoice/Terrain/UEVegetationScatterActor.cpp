@@ -100,6 +100,8 @@ AUEVegetationScatterActor::AUEVegetationScatterActor()
 	PrimaryActorTick.bCanEverTick = false;
 
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+	// Static 식생을 붙일 부모도 Static이어야 부착이 취소되지 않아요.
+	SceneRoot->SetMobility(EComponentMobility::Static);
 	SetRootComponent(SceneRoot);
 
 	RadiusPreview = CreateDefaultSubobject<USphereComponent>(TEXT("RadiusPreview"));
@@ -181,7 +183,8 @@ void AUEVegetationScatterActor::RebuildVegetation()
 		Component->CreationMethod = EComponentCreationMethod::UserConstructionScript;
 		Component->ComponentTags.Add(VegetationScatter::GeneratedTag);
 		Component->SetupAttachment(SceneRoot);
-		Component->SetMobility(EComponentMobility::Static);
+		// BP에서 부모를 Movable로 바꿔도 자식은 같은 이동성을 사용해요.
+		Component->SetMobility(SceneRoot->Mobility);
 		Component->SetAbsolute(false, false, true);
 		Component->SetStaticMesh(Mesh);
 		Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);

@@ -18,6 +18,18 @@ for path in ['/Game/InstanceMap/Plain/Plain',ROOT+'/L_Environment_Coast',ROOT+'/
     scenes=[a for a in actors.get_all_level_actors() if isinstance(a,unreal.UEEnvironmentScene)]
     assert len(scenes)==1,(path,len(scenes))
     scene=scenes[0]
+    # 식생 부모/자식의 이동성 불일치는 부착 실패를 일으켜요. 저장된 Plain도 확인해요.
+    vegetation=[a for a in actors.get_all_level_actors() if isinstance(a,unreal.UEVegetationScatterActor)]
+    if path.endswith('/Plain'):assert vegetation,'Plain vegetation missing'
+    for plant in vegetation:
+        root=plant.get_editor_property('root_component')
+        assert root.get_editor_property('mobility')==unreal.ComponentMobility.STATIC,plant.get_path_name()
+        generated=plant.get_components_by_class(unreal.HierarchicalInstancedStaticMeshComponent)
+        assert generated,plant.get_path_name()
+        for component in generated:
+            assert component.get_attach_parent()==root,component.get_path_name()
+            assert component.get_editor_property('mobility')==root.get_editor_property('mobility'),component.get_path_name()
+        assert sum(c.get_instance_count() for c in generated)>0,plant.get_path_name()
     for field in ['profile','sun','moon','sky','fog','clouds','dust_system','parameters']:
         assert scene.get_editor_property(field),(path,field)
     assert scene.get_editor_property('cloud_density_scale')>0
