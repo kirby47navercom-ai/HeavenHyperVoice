@@ -26,6 +26,15 @@ enum GachaType : ubyte { None = 0, Fire = 1, Water = 2, Grass = 3, Normal = 4, E
 // 존재 자체를 무시하므로, 평소에는 이 필드로 인증을 우회할 수 없다.
 // 로그인 서버 없이 필드만 클라이언트와 붙여볼 때 쓴다.
 // Shared core state uses Unreal coordinates without a world-origin offset.
+table WaterRegion {
+  min_x:float; min_y:float; max_x:float; max_y:float;
+  sea_level_cm:float; swim_depth_cm:float = 90; can_swim:bool = true;
+}
+table MovementEnvironment {
+  speed_multiplier:float = 1; traction:float = 1; tide_offset_cm:float;
+  swim_speed:float = 160;
+  water:[WaterRegion];
+}
 table CoreState {
   px:float;
   py:float;
@@ -46,6 +55,7 @@ table CoreState {
   roll_y:float;
   roll_z:float;
   wall_sliding:bool;
+  environment:MovementEnvironment;
 }
 
 table CoreInput {

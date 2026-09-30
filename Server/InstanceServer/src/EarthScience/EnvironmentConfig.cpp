@@ -12,6 +12,9 @@ InstanceWeatherProfile loadEnvironmentProfile(const std::string& filename) {
     // 데이터 에셋과 같은 필드 이름을 사용하므로 특정 맵 경로/좌표를 코드에 박지 않는다.
     InstanceWeatherProfile result;
     const std::map<std::string,double*> fields={
+        {"iceTractionMultiplier",&result.environment.iceTractionMultiplier},
+        {"swimSpeedCmPerSecond",&result.environment.swimSpeedCmPerSecond},
+        {"wildRespawnSeconds",&result.environment.wildRespawnSeconds},
         {"daySeconds",&result.environment.daySeconds}, {"yearDays",&result.environment.yearDays},
         {"startHour",&result.environment.startHour}, {"startYearFraction",&result.environment.startYearFraction},
         {"latitudeDegrees",&result.environment.latitudeDegrees}, {"altitudeM",&result.environment.altitudeM},
@@ -56,6 +59,21 @@ InstanceWeatherProfile loadEnvironmentProfile(const std::string& filename) {
         if(equals==std::string::npos) throw std::runtime_error("Expected name=value: "+line);
         const auto key=line.substr(first,line.find_last_not_of(" \t",equals-1)-first+1);
         if(!seen.insert(key).second) throw std::runtime_error("Duplicate environment key: "+key);
+        if(key.rfind("water.",0)==0) {
+            const auto id=key.substr(6);
+            if(id.empty() || id.find_first_not_of("0123456789")!=std::string::npos || result.environment.waterRegions.size()>=64)
+                throw std::runtime_error("Invalid/too many water regions: "+key);
+            hhv::movement::WaterRegion r; int swimming=0;
+            std::string text=line.substr(equals+1);std::replace(text.begin(),text.end(),',',' ');
+            std::istringstream values(text);std::string extra;
+            if(!(values>>r.minX>>r.minY>>r.maxX>>r.maxY>>r.seaLevelCm>>r.swimDepthCm>>swimming) || values>>extra ||
+                !hhv::movement::valid(r) || (swimming!=0 && swimming!=1)) throw std::runtime_error("Invalid water region: "+line);
+            r.canSwim=swimming!=0;
+            for(const auto& old:result.environment.waterRegions)
+                if(r.minX<old.maxX && r.maxX>old.minX && r.minY<old.maxY && r.maxY>old.minY)
+                    throw std::runtime_error("Overlapping water regions: "+line);
+            result.environment.waterRegions.push_back(r);continue;
+        }
         if(key.rfind("spawn.",0)==0) {
             std::size_t end=0; const auto idText=key.substr(6);
             if(idText.empty() || idText.find_first_not_of("0123456789")!=std::string::npos)
@@ -83,6 +101,8 @@ InstanceWeatherProfile loadEnvironmentProfile(const std::string& filename) {
         *field->second=value;
     }
     auto safe=result.environment; normalizeEnvironment(safe);
+    if(safe.iceTractionMultiplier!=result.environment.iceTractionMultiplier || safe.swimSpeedCmPerSecond!=result.environment.swimSpeedCmPerSecond ||
+        safe.wildRespawnSeconds!=result.environment.wildRespawnSeconds) throw std::runtime_error("Invalid movement/respawn setting");
     if(safe.daySeconds!=result.environment.daySeconds) throw std::runtime_error("Invalid daySeconds");
     if(safe.yearDays!=result.environment.yearDays) throw std::runtime_error("Invalid yearDays");
     if(safe.startHour!=result.environment.startHour) throw std::runtime_error("Invalid startHour");

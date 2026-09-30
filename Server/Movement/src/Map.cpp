@@ -108,8 +108,9 @@ bool Map::blockedAlong(const nav::Vec3 &from, const nav::Vec3 &to, const nav::Ag
 }
 
 void Map::advance(movement::State &state, float &accumulator, float dt, nav::Vec3 target, bool moving,
-                  float speed) const {
+                  float speed,const hhv::movement::Environment& environment) const {
     auto config = agent_.config();
+    config.environment=environment;
     config.walkSpeed = std::max(speed, 1.f);
     config.runSpeed = config.walkSpeed;
     accumulator = std::min(accumulator + std::max(dt, 0.f), .25f);

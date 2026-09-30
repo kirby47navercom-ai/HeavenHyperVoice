@@ -11,6 +11,7 @@
 #include "InstanceGeometry.h"
 #include "PokemonSpecies.h"
 #include "WildBt.h"
+#include "EarthScience/EnvironmentMovement.h"
 
 namespace heaven::instance {
 
@@ -45,10 +46,6 @@ WildArea wildAreaFor(const Map *map) {
     }
     return area;
 }
-
-// 벽 안에 생성되면 공통 코어가 정상적으로 움직일 수 없다.
-// 충돌 없는 바닥을 찾을 때까지 위치를 제한된 횟수만 다시 뽑는다.
-constexpr int kSpawnAttempts = 16;
 
 // 이동은 20Hz지만 날씨 패킷은 현실 1초마다 한 번이면 충분하다. 클라이언트가
 // 사이 값을 보간하므로 네트워크와 서버 계산량이 방 수에 비례해 폭증하지 않는다.
@@ -89,17 +86,20 @@ bool RoomManager::isKnownType(std::uint32_t type) const {
     return types_.count(type) != 0;
 }
 
-Room *RoomManager::createRoomLocked(std::uint32_t type) {
+Room *RoomManager::createRoomLocked(std::uint32_t type,std::uint32_t restoredId,const InstanceWeather* restored) {
+    if(!restoredId && nextRoomId_==UINT32_MAX) throw std::runtime_error("Room IDs exhausted");
     // isKnownType 을 통과한 뒤에만 불린다.
     const InstanceType &config = types_.at(type);
     const Map *map = config.map;
 
     auto room = std::make_unique<Room>();
-    room->id = nextRoomId_++;
+    room->id = restoredId ? restoredId : nextRoomId_++;
     room->type = type;
     room->world.setMap(map);
     room->weather.initialize(type, room->id, config.weather, worldClock_.elapsedRealSeconds());
+    if(restored) room->weather=*restored;
     room->environment=room->weather.snapshot().environment;
+    room->world.setEnvironment(movementEnvironment(config.weather.environment,room->weather.snapshot()));
 
     // 스폰 좌표와 배회 목표는 C++ 난수원을 쓴다. Lua BT 도 나중에 난수를
     // 쓸 수 있으므로 같은 seed 를 심어 둔다. 방 번호를 섞어서 같은 씨앗으로
@@ -116,72 +116,10 @@ Room *RoomManager::createRoomLocked(std::uint32_t type) {
         room->ai->setMap(map);
     }
 
-    if (room->ai != nullptr) {
-        std::mt19937 rng(seed != 0 ? seed : std::random_device{}());
-        std::uniform_real_distribution<float> coordX(area.centerX - area.halfExtent,
-                                                     area.centerX + area.halfExtent);
-        std::uniform_real_distribution<float> coordY(area.centerY - area.halfExtent,
-                                                     area.centerY + area.halfExtent);
-        // 맵이 종족을 정해 뒀으면 그 안에서만 고른다 (main 이 읽을 때 보스를
-        // 이미 거절한다). 안 정해 뒀으면 표 전체에서 보스만 뺀 것을 쓴다 —
-        // 한쪽만 막으면 나머지로 새어 나온다.
-        std::vector<std::uint16_t> pool = config.wildSpecies;
-        if (pool.empty()) {
-            for (const proto::SpeciesBase &base : proto::kSpecies) {
-                if (proto::isWildSpawnable(base.dex)) {
-                    pool.push_back(base.id);
-                }
-            }
-        }
-        const auto climate=room->weather.snapshot();
-        std::vector<double> weights; weights.reserve(pool.size());
-        for(auto species:pool) {
-            double weight=1;
-            const auto* base=proto::findSpecies(species);
-            if(base) for(const auto& rule:config.weather.spawnRules)
-                if(rule.pokemonDex==base->dex) { weight=environmentSpawnWeight(rule,climate); break; }
-            weights.push_back(weight);
-        }
-        const bool anyWeight=std::any_of(weights.begin(),weights.end(),[](double w){return w>0;});
-        std::discrete_distribution<std::size_t> fromPool(weights.begin(),weights.end());
-        const auto pickSpecies = [&](std::mt19937 &gen) -> std::uint16_t {
-            return pool.empty() || !anyWeight ? std::uint16_t{0} : pool[fromPool(gen)];
-        };
-
-        // 지형이 있으면 공통 충돌 지형 위에 설 수 있는 자리와 높이를 같이 얻는다.
-        const auto findSpawn = [map](float x, float y, nav::Vec3 &out) {
-            out = nav::Vec3{x, y, 0.f};
-            if (map == nullptr || !map->loaded()) {
-                return true;
-            }
-            return map->canStandAt(x, y, map->agent(), &out);
-        };
-
-        int spawned = 0;
-        for (int i = 0; i < settings_.wildPerRoom; ++i) {
-            float x = coordX(rng);
-            float y = coordY(rng);
-            nav::Vec3 spawn;
-            for (int attempt = 0; attempt < kSpawnAttempts && !findSpawn(x, y, spawn); ++attempt) {
-                x = coordX(rng);
-                y = coordY(rng);
-            }
-            if (!findSpawn(x, y, spawn)) {
-                continue;
-            }
-            const std::uint16_t species = pickSpecies(rng);
-            if (species == 0) {
-                break; // 뽑을 종족이 없다
-            }
-            room->world.enterWild(kWildIdBase + static_cast<std::uint64_t>(i), species,
-                                  data::Position{type, spawn.x, spawn.y, spawn.z, 0.f});
-            ++spawned;
-        }
-        if (spawned < settings_.wildPerRoom) {
-            spdlog::warn("room {}: {} wild pokemon skipped, no clear spawn point", room->id,
-                         settings_.wildPerRoom - spawned);
-        }
-    }
+    room->wildRandom.seed(seed ? seed : std::random_device{}());
+    room->wildArea=area;
+    room->wildRespawnRemaining.assign(static_cast<std::size_t>(std::max(0,settings_.wildPerRoom)),0);
+    respawnWild(*room,0); // 최초 생성과 리스폰이 같은 환경 가중치/충돌 검사를 사용해요.
 
     Room *raw = room.get();
     rooms_.push_back(std::move(room));
@@ -202,6 +140,7 @@ Room *RoomManager::join(std::uint32_t type, std::uint32_t preferredRoomId) {
     if (preferredRoomId != 0) {
         for (const auto &room : rooms_) {
             if (room->id == preferredRoomId && room->type == type && room->players < settings_.capacity) {
+                room->waitingForRestoredEntry=false;
                 ++room->players;
                 return room.get();
             }
@@ -217,6 +156,7 @@ Room *RoomManager::join(std::uint32_t type, std::uint32_t preferredRoomId) {
         }
         ++roomsOfType;
         if (room->players < settings_.capacity) {
+            room->waitingForRestoredEntry=false;
             ++room->players;
             return room.get();
         }
@@ -269,6 +209,7 @@ void RoomManager::tickShard(unsigned shard, unsigned shardCount, float dt) {
 
     for (const TickRoom target : mine) {
         Room *room = target.room;
+        respawnWild(*room,dt);
         // 방마다 자기 Lua VM 이고, 한 방은 언제나 이 샤드가 맡는다.
         if (room->ai != nullptr) {
             room->ai->setVisibilityMultiplier(static_cast<float>(room->environment.visibilityMultiplier));
@@ -289,6 +230,7 @@ void RoomManager::tickShard(unsigned shard, unsigned shardCount, float dt) {
         room->weather.synchronizeClock(worldClock_.elapsedRealSeconds());
         const InstanceWeatherSnapshot weather = room->weather.snapshot();
         room->environment=weather.environment;
+        room->world.setEnvironment(movementEnvironment(types_.at(room->type).weather.environment,weather));
         if(target.occupied) room->world.broadcast(proto::encodeWeatherState(weather));
     }
 }
@@ -300,7 +242,7 @@ void RoomManager::reapEmpty() {
 
     const auto now = std::chrono::steady_clock::now();
     const auto expired = [&](const std::unique_ptr<Room> &room) {
-        if (room->players > 0) {
+        if (room->players > 0 || room->waitingForRestoredEntry) {
             return false;
         }
         if (now - room->emptySince < settings_.emptyLinger) {

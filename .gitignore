@@ -63,3 +63,7 @@ __pycache__/
 .DS_Store
 Thumbs.db
 Desktop.ini
+# 실행 중 저장되는 기후/시계는 소스나 서버 설정이 아니에요.
+*.state
+*.state.bak
+*.state.tmp

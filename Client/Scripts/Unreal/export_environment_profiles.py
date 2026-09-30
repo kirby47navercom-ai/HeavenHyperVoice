@@ -24,6 +24,10 @@ def export_profile(asset):
         dex=rule.get_editor_property('pokemon_dex')
         weights=[rule.get_editor_property(p) for p in ('base_weight','rain_multiplier','snow_multiplier','night_multiplier')]
         lines.append('spawn.'+str(dex)+'='+','.join(format(v,'.12g') for v in weights))
+    for i,region in enumerate(asset.get_editor_property('water_regions')):
+        lo=region.get_editor_property('minimum');hi=region.get_editor_property('maximum')
+        values=[lo.x,lo.y,hi.x,hi.y,region.get_editor_property('sea_level_cm'),region.get_editor_property('swim_depth_cm'),int(region.get_editor_property('can_swim'))]
+        lines.append('water.'+str(i)+'='+','.join(format(v,'.12g') for v in values))
     out.write_text('\n'.join(lines)+'\n',encoding='utf8')
     return str(out)
 

@@ -15,6 +15,12 @@ static_assert(FLATBUFFERS_VERSION_MAJOR == 25 &&
 
 namespace HeavenField {
 
+struct WaterRegion;
+struct WaterRegionBuilder;
+
+struct MovementEnvironment;
+struct MovementEnvironmentBuilder;
+
 struct CoreState;
 struct CoreStateBuilder;
 
@@ -251,6 +257,209 @@ bool VerifyPayload(::flatbuffers::VerifierTemplate<B> &verifier, const void *obj
 template <bool B = false>
 bool VerifyPayloadVector(::flatbuffers::VerifierTemplate<B> &verifier, const ::flatbuffers::Vector<::flatbuffers::Offset<void>> *values, const ::flatbuffers::Vector<Payload> *types);
 
+struct WaterRegion FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef WaterRegionBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_MIN_X = 4,
+    VT_MIN_Y = 6,
+    VT_MAX_X = 8,
+    VT_MAX_Y = 10,
+    VT_SEA_LEVEL_CM = 12,
+    VT_SWIM_DEPTH_CM = 14,
+    VT_CAN_SWIM = 16
+  };
+  float min_x() const {
+    return GetField<float>(VT_MIN_X, 0.0f);
+  }
+  float min_y() const {
+    return GetField<float>(VT_MIN_Y, 0.0f);
+  }
+  float max_x() const {
+    return GetField<float>(VT_MAX_X, 0.0f);
+  }
+  float max_y() const {
+    return GetField<float>(VT_MAX_Y, 0.0f);
+  }
+  float sea_level_cm() const {
+    return GetField<float>(VT_SEA_LEVEL_CM, 0.0f);
+  }
+  float swim_depth_cm() const {
+    return GetField<float>(VT_SWIM_DEPTH_CM, 90.0f);
+  }
+  bool can_swim() const {
+    return GetField<uint8_t>(VT_CAN_SWIM, 1) != 0;
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<float>(verifier, VT_MIN_X, 4) &&
+           VerifyField<float>(verifier, VT_MIN_Y, 4) &&
+           VerifyField<float>(verifier, VT_MAX_X, 4) &&
+           VerifyField<float>(verifier, VT_MAX_Y, 4) &&
+           VerifyField<float>(verifier, VT_SEA_LEVEL_CM, 4) &&
+           VerifyField<float>(verifier, VT_SWIM_DEPTH_CM, 4) &&
+           VerifyField<uint8_t>(verifier, VT_CAN_SWIM, 1) &&
+           verifier.EndTable();
+  }
+};
+
+struct WaterRegionBuilder {
+  typedef WaterRegion Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_min_x(float min_x) {
+    fbb_.AddElement<float>(WaterRegion::VT_MIN_X, min_x, 0.0f);
+  }
+  void add_min_y(float min_y) {
+    fbb_.AddElement<float>(WaterRegion::VT_MIN_Y, min_y, 0.0f);
+  }
+  void add_max_x(float max_x) {
+    fbb_.AddElement<float>(WaterRegion::VT_MAX_X, max_x, 0.0f);
+  }
+  void add_max_y(float max_y) {
+    fbb_.AddElement<float>(WaterRegion::VT_MAX_Y, max_y, 0.0f);
+  }
+  void add_sea_level_cm(float sea_level_cm) {
+    fbb_.AddElement<float>(WaterRegion::VT_SEA_LEVEL_CM, sea_level_cm, 0.0f);
+  }
+  void add_swim_depth_cm(float swim_depth_cm) {
+    fbb_.AddElement<float>(WaterRegion::VT_SWIM_DEPTH_CM, swim_depth_cm, 90.0f);
+  }
+  void add_can_swim(bool can_swim) {
+    fbb_.AddElement<uint8_t>(WaterRegion::VT_CAN_SWIM, static_cast<uint8_t>(can_swim), 1);
+  }
+  explicit WaterRegionBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<WaterRegion> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<WaterRegion>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<WaterRegion> CreateWaterRegion(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    float min_x = 0.0f,
+    float min_y = 0.0f,
+    float max_x = 0.0f,
+    float max_y = 0.0f,
+    float sea_level_cm = 0.0f,
+    float swim_depth_cm = 90.0f,
+    bool can_swim = true) {
+  WaterRegionBuilder builder_(_fbb);
+  builder_.add_swim_depth_cm(swim_depth_cm);
+  builder_.add_sea_level_cm(sea_level_cm);
+  builder_.add_max_y(max_y);
+  builder_.add_max_x(max_x);
+  builder_.add_min_y(min_y);
+  builder_.add_min_x(min_x);
+  builder_.add_can_swim(can_swim);
+  return builder_.Finish();
+}
+
+struct MovementEnvironment FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef MovementEnvironmentBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_SPEED_MULTIPLIER = 4,
+    VT_TRACTION = 6,
+    VT_TIDE_OFFSET_CM = 8,
+    VT_SWIM_SPEED = 10,
+    VT_WATER = 12
+  };
+  float speed_multiplier() const {
+    return GetField<float>(VT_SPEED_MULTIPLIER, 1.0f);
+  }
+  float traction() const {
+    return GetField<float>(VT_TRACTION, 1.0f);
+  }
+  float tide_offset_cm() const {
+    return GetField<float>(VT_TIDE_OFFSET_CM, 0.0f);
+  }
+  float swim_speed() const {
+    return GetField<float>(VT_SWIM_SPEED, 160.0f);
+  }
+  const ::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::WaterRegion>> *water() const {
+    return GetPointer<const ::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::WaterRegion>> *>(VT_WATER);
+  }
+  template <bool B = false>
+  bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<float>(verifier, VT_SPEED_MULTIPLIER, 4) &&
+           VerifyField<float>(verifier, VT_TRACTION, 4) &&
+           VerifyField<float>(verifier, VT_TIDE_OFFSET_CM, 4) &&
+           VerifyField<float>(verifier, VT_SWIM_SPEED, 4) &&
+           VerifyOffset(verifier, VT_WATER) &&
+           verifier.VerifyVector(water()) &&
+           verifier.VerifyVectorOfTables(water()) &&
+           verifier.EndTable();
+  }
+};
+
+struct MovementEnvironmentBuilder {
+  typedef MovementEnvironment Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_speed_multiplier(float speed_multiplier) {
+    fbb_.AddElement<float>(MovementEnvironment::VT_SPEED_MULTIPLIER, speed_multiplier, 1.0f);
+  }
+  void add_traction(float traction) {
+    fbb_.AddElement<float>(MovementEnvironment::VT_TRACTION, traction, 1.0f);
+  }
+  void add_tide_offset_cm(float tide_offset_cm) {
+    fbb_.AddElement<float>(MovementEnvironment::VT_TIDE_OFFSET_CM, tide_offset_cm, 0.0f);
+  }
+  void add_swim_speed(float swim_speed) {
+    fbb_.AddElement<float>(MovementEnvironment::VT_SWIM_SPEED, swim_speed, 160.0f);
+  }
+  void add_water(::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::WaterRegion>>> water) {
+    fbb_.AddOffset(MovementEnvironment::VT_WATER, water);
+  }
+  explicit MovementEnvironmentBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<MovementEnvironment> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<MovementEnvironment>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<MovementEnvironment> CreateMovementEnvironment(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    float speed_multiplier = 1.0f,
+    float traction = 1.0f,
+    float tide_offset_cm = 0.0f,
+    float swim_speed = 160.0f,
+    ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<HeavenField::WaterRegion>>> water = 0) {
+  MovementEnvironmentBuilder builder_(_fbb);
+  builder_.add_water(water);
+  builder_.add_swim_speed(swim_speed);
+  builder_.add_tide_offset_cm(tide_offset_cm);
+  builder_.add_traction(traction);
+  builder_.add_speed_multiplier(speed_multiplier);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<MovementEnvironment> CreateMovementEnvironmentDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    float speed_multiplier = 1.0f,
+    float traction = 1.0f,
+    float tide_offset_cm = 0.0f,
+    float swim_speed = 160.0f,
+    const std::vector<::flatbuffers::Offset<HeavenField::WaterRegion>> *water = nullptr) {
+  auto water__ = water ? _fbb.CreateVector<::flatbuffers::Offset<HeavenField::WaterRegion>>(*water) : 0;
+  return HeavenField::CreateMovementEnvironment(
+      _fbb,
+      speed_multiplier,
+      traction,
+      tide_offset_cm,
+      swim_speed,
+      water__);
+}
+
 struct CoreState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   typedef CoreStateBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
@@ -272,7 +481,8 @@ struct CoreState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_ROLL_X = 34,
     VT_ROLL_Y = 36,
     VT_ROLL_Z = 38,
-    VT_WALL_SLIDING = 40
+    VT_WALL_SLIDING = 40,
+    VT_ENVIRONMENT = 42
   };
   float px() const {
     return GetField<float>(VT_PX, 0.0f);
@@ -331,6 +541,9 @@ struct CoreState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   bool wall_sliding() const {
     return GetField<uint8_t>(VT_WALL_SLIDING, 0) != 0;
   }
+  const HeavenField::MovementEnvironment *environment() const {
+    return GetPointer<const HeavenField::MovementEnvironment *>(VT_ENVIRONMENT);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -353,6 +566,8 @@ struct CoreState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<float>(verifier, VT_ROLL_Y, 4) &&
            VerifyField<float>(verifier, VT_ROLL_Z, 4) &&
            VerifyField<uint8_t>(verifier, VT_WALL_SLIDING, 1) &&
+           VerifyOffset(verifier, VT_ENVIRONMENT) &&
+           verifier.VerifyTable(environment()) &&
            verifier.EndTable();
   }
 };
@@ -418,6 +633,9 @@ struct CoreStateBuilder {
   void add_wall_sliding(bool wall_sliding) {
     fbb_.AddElement<uint8_t>(CoreState::VT_WALL_SLIDING, static_cast<uint8_t>(wall_sliding), 0);
   }
+  void add_environment(::flatbuffers::Offset<HeavenField::MovementEnvironment> environment) {
+    fbb_.AddOffset(CoreState::VT_ENVIRONMENT, environment);
+  }
   explicit CoreStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -449,8 +667,10 @@ inline ::flatbuffers::Offset<CoreState> CreateCoreState(
     float roll_x = 0.0f,
     float roll_y = 0.0f,
     float roll_z = 0.0f,
-    bool wall_sliding = false) {
+    bool wall_sliding = false,
+    ::flatbuffers::Offset<HeavenField::MovementEnvironment> environment = 0) {
   CoreStateBuilder builder_(_fbb);
+  builder_.add_environment(environment);
   builder_.add_roll_z(roll_z);
   builder_.add_roll_y(roll_y);
   builder_.add_roll_x(roll_x);

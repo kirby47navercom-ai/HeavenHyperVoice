@@ -1,8 +1,11 @@
 #include "EarthScience/EnvironmentConfig.h"
+#include "EarthScience/EnvironmentCheckpoint.h"
 #include <spdlog/spdlog.h>
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <filesystem>
 #include <cstdlib>
 #include <exception>
 #include <fstream>
@@ -66,6 +69,7 @@ struct Options {
     std::map<std::uint32_t, std::string> environments;
 
     std::string wildAiScript = "scripts/wild_ai.lua";
+    std::string environmentStateFile="state/instance-environment.state";
 
     heaven::data::OdbcSettings db;
 
@@ -97,6 +101,7 @@ void printUsage() {
                  "                        Unregistered types are refused.\n"
                  "                        Default: type 1 uses the Filed collision map.\n"
                  "  --instance-environment <t=file>  exported environment profile\n"
+                 "  --environment-state <file>  persistent world clock and room climate\n"
                  "  --instance-weather <t=v>  climate for one instance type, repeatable.\n"
                  "                        v=tempC,humidityPct,pressureHpa,surfaceWater,soilWater,timeScale\n"
                  "                        e.g. --instance-weather 1=18,72,1013.25,2,12,60\n"
@@ -247,6 +252,8 @@ Options parseArgs(int argc, char **argv) {
             options.rooms.wildPerRoom = std::stoi(next("--wild-per-room"));
         } else if (arg == "--wild-ai-script") {
             options.wildAiScript = next("--wild-ai-script");
+        } else if (arg == "--environment-state") {
+            options.environmentStateFile=next("--environment-state");
         } else if (arg == "--wild-seed") {
             options.rooms.wildSeed = static_cast<unsigned>(std::stoul(next("--wild-seed")));
         } else if (arg == "--instance-species") {
@@ -405,6 +412,14 @@ int main(int argc, char **argv) {
 
         heaven::net::WorkQueue dbQueue(options.dbThreads);
         heaven::instance::RoomManager rooms(options.rooms, types);
+        const auto statePath=std::filesystem::absolute(options.environmentStateFile);
+        if(const auto saved=heaven::instance::readEnvironmentCheckpoint(statePath)) {
+            rooms.restoreEnvironment(*saved);
+            spdlog::info("World clock and climate restored from {}",statePath.string());
+        } else if(std::filesystem::exists(statePath) || std::filesystem::exists(statePath.string()+".bak")) {
+            // 손상된 파일을 새 상태로 덮어쓰지 않아요. 운영자가 백업을 선택할 수 있게 기동을 멈춰요.
+            throw std::runtime_error("No valid environment checkpoint: "+statePath.string());
+        }
 
         // 파티는 Redis 에 있다. 없으면 파티 제약 없이 각자 들어간다 — 파티
         // 기능만 죽고 인스턴스는 그대로 돈다.
@@ -515,9 +530,23 @@ int main(int argc, char **argv) {
             });
         }
 
+        std::mutex saveMutex;std::condition_variable saveWake;
+        const auto saveEnvironment=[&] {
+            heaven::instance::writeEnvironmentCheckpoint(statePath,rooms.saveEnvironment());
+        };
+        // 저장 스레드가 짧게 상태를 복사하고 잠금을 놓은 뒤 디스크에 써요.
+        std::thread saver([&] {
+            std::unique_lock lock(saveMutex);
+            while(!saveWake.wait_for(lock,std::chrono::seconds(30),[&]{return !running.load();})) {
+                lock.unlock();
+                try {saveEnvironment();}catch(const std::exception& e){spdlog::error("Environment save failed: {}",e.what());}
+                lock.lock();
+            }
+        });
         server.run();
 
         running.store(false, std::memory_order_release);
+        saveWake.notify_all();saver.join();
         for (std::thread &ticker : tickers) {
             ticker.join();
         }
@@ -525,6 +554,7 @@ int main(int argc, char **argv) {
         // 인스턴스는 위치를 저장하지 않으므로 종료할 때 내보낼 것이 없다.
         // 큐만 비워 대기 중인 입장 처리가 끝나게 한다.
         dbQueue.stop();
+        saveEnvironment(); // 정상 종료는 마지막 틱의 상태까지 보존해요.
         return 0;
     } catch (const std::exception &e) {
         spdlog::error("fatal: {}", e.what());

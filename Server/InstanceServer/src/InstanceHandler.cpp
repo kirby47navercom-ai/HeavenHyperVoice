@@ -107,7 +107,7 @@ bool InstanceHandler::placeInRoom(const std::shared_ptr<TlsSession> &self, std::
         // EnterAck 이 Spawn 보다 먼저 나가야 한다. 클라가 자기 번호를 알기 전에
         // 남의 Spawn 을 받으면 어느 것이 자기인지 모른다.
         self->send(proto::encodeEnterAck(characterId_, start.x, start.y, start.z, start.facing, start.mapId,
-                                         kWorldOriginOffset, room->id, room->world.collisionHash()));
+                                         kWorldOriginOffset, room->id, room->world.collisionHash(),room->world.environment()));
 
         displaced =
             room->world.enter(characterId_, accountId_, nickname_, partnerSpecies, appearance, start, self);

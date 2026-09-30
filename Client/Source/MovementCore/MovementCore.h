@@ -4,13 +4,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include "MovementEnvironment.h"
 
 namespace hhv::movement
 {
 constexpr float FixedDt = 1.f / 60.f;
 
 // Simulation/replay compatibility. The independent collision file format is still version 1.
-constexpr std::uint32_t Version = 3;
+constexpr std::uint32_t Version = 4;
 
 struct Vec3
 {
@@ -88,7 +89,8 @@ enum class Mode : std::uint8_t
 {
 	Grounded,
 	Falling,
-	Disabled
+	Disabled,
+	Swimming
 };
 
 enum Buttons : std::uint8_t
@@ -106,6 +108,7 @@ struct Config
 	float stepHeight = 45, slopeDegrees = 44, floorSnap = 3, skin = .1f;
 	float rotationSpeed = 540, rollSpeed = 600;
 	std::uint16_t rollTicks = 36;
+	Environment environment;
 };
 
 struct Input
@@ -123,6 +126,7 @@ struct State
 	std::uint16_t rollRemaining = 0;
 	Vec3 rollDirection;
 	bool wallSliding = false;
+	Environment environment;
 };
 
 struct Hit
@@ -157,6 +161,16 @@ public:
 	}
 };
 
+// 물 표면부터 아래쪽 공통 지형까지의 실제 깊이를 계산해요. 지붕 위 수면 판정도 막아요.
+inline float waterDepth(Vec3 position,const Config& c,const CollisionWorld& world) {
+	for(const auto& r:c.environment.water) if(r.contains(position.x,position.y)) {
+		const float level=r.seaLevelCm+c.environment.tideOffsetCm;
+		const float probeDistance=30000;
+		const Hit bed=world.sweepFloor({position.x,position.y,level+c.halfHeight+c.skin},probeDistance,c.radius,c.halfHeight,.001f);
+		return bed.blocking ? std::max(0.f,probeDistance*bed.time-c.skin) : probeDistance;
+	}
+	return 0;
+}
 inline bool valid(const Input& in)
 {
 	return std::isfinite(in.x) && std::isfinite(in.y) && std::abs(in.x) <= 1.001f &&
@@ -245,6 +259,18 @@ inline void simulate(State& s, const Input& in, const Config& c, const Collision
 {
 	if (!valid(in) || !finite(s.position) || !finite(s.velocity) || s.mode == Mode::Disabled)
 		return;
+	s.environment=c.environment;
+	const Vec3 originalPosition=s.position;
+	const WaterRegion* water=nullptr;
+	for(const auto& region:c.environment.water)
+		if(region.contains(s.position.x,s.position.y)) { water=&region; break; }
+	const float waterLevel=water ? water->seaLevelCm+c.environment.tideOffsetCm : 0;
+	const float immersion=waterLevel-(s.position.z-c.halfHeight);
+	// 진입/이탈 깊이를 다르게 두어 수면에서 걷기와 수영이 매 틱 뒤바뀌지 않아요.
+	const bool swimming=water && water->canSwim && waterDepth(s.position,c,world)>water->swimDepthCm && immersion>
+		water->swimDepthCm*(s.mode==Mode::Swimming ? .4f : 1.f);
+	if(swimming) { s.mode=Mode::Swimming; s.rollRemaining=0; }
+	else if(s.mode==Mode::Swimming) s.mode=Mode::Falling;
 	s.wallSliding = false;
 	// Small bounded depenetration for spawn/contact rounding. Never teleport through a wall.
 	for (int i = 0; i < 4; ++i)
@@ -274,27 +300,35 @@ inline void simulate(State& s, const Input& in, const Config& c, const Collision
 		s.velocity.z = c.jumpSpeed;
 		s.mode = Mode::Falling;
 	}
-	s.acceleration = wish * (c.acceleration * (s.mode == Mode::Grounded ? 1.f : c.airControl));
+	const float traction=std::clamp(c.environment.traction,.02f,1.f);
+	const float speedMultiplier=std::clamp(c.environment.speedMultiplier,.1f,1.f);
+	s.acceleration = wish * (c.acceleration * (swimming ? .5f : s.mode == Mode::Grounded ? traction : c.airControl));
 	Vec3 horizontal{s.velocity.x, s.velocity.y, 0};
 
 	if (s.rollRemaining > 0)
 	{
-		horizontal = s.rollDirection * c.rollSpeed;
+		horizontal = s.rollDirection * (c.rollSpeed*speedMultiplier);
 		--s.rollRemaining;
 	}
 	else if (length(wish) > 1e-5f)
 	{
-		const float speed = (in.buttons & Run) ? c.runSpeed : c.walkSpeed;
+		const float speed = swimming ? c.environment.swimSpeed : ((in.buttons & Run) ? c.runSpeed : c.walkSpeed)*speedMultiplier;
 		horizontal = approach(horizontal, wish * speed, length(s.acceleration) * FixedDt);
 	}
 	else if (s.mode == Mode::Grounded)
 	{
-		horizontal = approach(horizontal, {}, (c.braking + c.friction * length(horizontal)) * FixedDt);
+		horizontal = approach(horizontal, {}, (c.braking + c.friction * length(horizontal)) * traction * FixedDt);
 	}
+	else if(swimming) horizontal=approach(horizontal,{},c.braking*.5f*FixedDt);
 	s.velocity.x = horizontal.x;
 	s.velocity.y = horizontal.y;
 
-	if (s.mode == Mode::Falling)
+	if(swimming) {
+		// 자유 잠수 대신 수면을 따라 헤엄쳐요. 달리기/구르기는 수영 중 실행되지 않아요.
+		const float target=waterLevel+c.halfHeight-water->swimDepthCm*.8f;
+		s.velocity.z=std::clamp((target-s.position.z)*4.f,-c.environment.swimSpeed,c.environment.swimSpeed);
+	}
+	else if (s.mode == Mode::Falling)
 		s.velocity.z = std::max(-c.terminalSpeed, s.velocity.z - c.gravity * FixedDt);
 	else
 		s.velocity.z = 0;
@@ -379,12 +413,19 @@ inline void simulate(State& s, const Input& in, const Config& c, const Collision
 		}
 	}
 
-	if (s.velocity.z <= 0)
+	if (!swimming && s.velocity.z <= 0)
 	{
 		const float snap = s.mode == Mode::Grounded ? c.stepHeight + c.floorSnap : c.floorSnap;
 
 		if (!findFloor(s, c, world, snap))
 			s.mode = Mode::Falling;
+	}
+	// 수영 불가 구역은 충분히 깊어지는 첫 이동을 막아요. 바다 전체를 고정 벽으로 막지 않아요.
+	for(const auto& region:c.environment.water) {
+		if(!region.canSwim && region.contains(s.position.x,s.position.y) &&
+			region.seaLevelCm+c.environment.tideOffsetCm-(s.position.z-c.halfHeight)>region.swimDepthCm) {
+			s.position=originalPosition; s.velocity={}; break;
+		}
 	}
 
 	if (length(wish) > .01f)

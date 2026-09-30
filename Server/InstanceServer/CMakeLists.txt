@@ -33,13 +33,18 @@ add_library(InstanceClimate STATIC
     src/EarthScience/DesertEnvironment.cpp
     src/EarthScience/WeatherSnapshot.cpp
     src/EarthScience/EnvironmentConfig.cpp
+    src/EarthScience/WeatherPersistence.cpp
+    src/EarthScience/EnvironmentCheckpoint.cpp
 )
 target_include_directories(InstanceClimate PUBLIC src PRIVATE ../Protocol)
+target_include_directories(InstanceClimate PUBLIC ../../Client/Source/MovementCore)
 
 add_executable(InstanceServer
     src/main.cpp
     src/InstanceHandler.cpp
     src/RoomManager.cpp
+    src/RoomEnvironmentPersistence.cpp
+    src/RoomWildRespawn.cpp
     src/World.cpp
 )
 
@@ -55,6 +60,10 @@ target_link_libraries(InstanceServer PRIVATE
 )
 
 if(BUILD_TESTING)
+    add_executable(EnvironmentGameplayTests ../tests/EnvironmentGameplayTests.cpp src/RoomManager.cpp src/RoomEnvironmentPersistence.cpp src/RoomWildRespawn.cpp src/World.cpp)
+    target_include_directories(EnvironmentGameplayTests PRIVATE src)
+    target_link_libraries(EnvironmentGameplayTests PRIVATE InstanceClimate WildPokemonAI FieldShared Net Data)
+    add_test(NAME EnvironmentGameplayTests COMMAND EnvironmentGameplayTests "${CMAKE_CURRENT_SOURCE_DIR}/scripts/wild_ai.lua")
     add_executable(InstanceEnvironmentTests ../tests/InstanceEnvironmentTests.cpp)
     target_link_libraries(InstanceEnvironmentTests PRIVATE InstanceClimate)
     add_test(NAME InstanceEnvironmentTests COMMAND InstanceEnvironmentTests "${CMAKE_CURRENT_SOURCE_DIR}/config/environment")

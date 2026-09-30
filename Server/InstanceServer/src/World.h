@@ -161,6 +161,10 @@ class World {
 
     // 20Hz. 이번 주기에 움직인 것들을 뷰어별로 묶어 보낸다.
     void tick(float dt);
+    void setEnvironment(const hhv::movement::Environment& environment);
+    hhv::movement::Environment environment();
+    // 0 HP는 사망/포획 확정이에요. AI가 죽은 개체를 계속 움직이지 않게 슬롯을 회수해요.
+    bool retireWild(std::uint64_t entityId);
 
     // 방 전체에 같은 서버 권위 상태를 보낼 때 쓴다. 날씨처럼 엔티티 시야와
     // 무관한 데이터는 개별 visible 집합을 순회할 이유가 없다.
@@ -191,6 +195,7 @@ class World {
     std::unordered_map<std::uint64_t, std::uint64_t> byAccount_;
 
     const Map *map_ = nullptr;
+    hhv::movement::Environment environment_;
 
     // 후보 추출 전용 공간 인덱스. 시야 판정에는 쓰이지 않는다.
     std::array<std::unordered_set<std::uint64_t>, kSectorCount> sectors_;

@@ -105,6 +105,8 @@ class PredictionQueue
 		discardedInputs = discarded;
 		for (auto &record : history)
 		{
+			// 보정 패킷의 서버 환경으로 미확인 입력도 다시 계산해요. 클라이언트가 계수를 정하지 않아요.
+			record.config.environment=authoritative.environment;
 			record.before = state;
 			simulate(state, record.input, record.config, world);
 			record.after = state;

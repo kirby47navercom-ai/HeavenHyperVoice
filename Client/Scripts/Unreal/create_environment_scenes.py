@@ -48,7 +48,8 @@ def dust(mpc):
     uv=ext.node(mat,unreal.MaterialExpressionTextureCoordinate,-600,0)
     amount=ext.node(mat,unreal.MaterialExpressionCollectionParameter,-600,180,collection=mpc,parameter_name='Sandstorm')
     color=ext.node(mat,unreal.MaterialExpressionParticleColor,-800,360)
-    alpha=ext.node(mat,unreal.MaterialExpressionComponentMask,-600,360,r=False,g=False,b=False,a=True);ext.link(color,alpha)
+    # ParticleColor의 기본 출력은 RGB예요. 알파 핀을 직접 받아야 float3에서 A를 뽑는 컴파일 오류가 없어요.
+    alpha=ext.node(mat,unreal.MaterialExpressionReroute,-600,360);ext.link(color,alpha,output='A')
     fx=ext.custom(mat,'float r=length(UV*2-1); return float4(.42,.26,.1,pow(saturate(1-r),2)*.2*Amount*Alpha);',dict(UV=uv,Amount=amount,Alpha=alpha))
     rgb=ext.node(mat,unreal.MaterialExpressionComponentMask,300,0,r=True,g=True,b=True)
     opacity=ext.node(mat,unreal.MaterialExpressionComponentMask,300,150,r=False,g=False,b=False,a=True)

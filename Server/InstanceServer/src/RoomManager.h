@@ -19,6 +19,7 @@
 #include <shared_mutex>
 #include <string>
 #include <vector>
+#include <random>
 
 #include "Map.h"
 #include "InstanceWeather.h"
@@ -66,6 +67,11 @@ struct Room {
     InstanceWeather weather;
     EnvironmentState environment;
     double weatherBroadcastAccumulator = 0.0;
+    // 슬롯 번호는 고정이고 재생성 종족/위치는 현재 환경으로 다시 뽑아요.
+    std::vector<double> wildRespawnRemaining;
+    std::mt19937 wildRandom;
+    WildArea wildArea;
+    bool waitingForRestoredEntry=false;
 
     // 아래 둘은 RoomManager::mutex_ 를 쥔 채로만 만진다.
     int players = 0;
@@ -126,10 +132,13 @@ public:
 
     // 로그용. "type=1 rooms=3 players=27" 같은 한 줄.
     std::string describe() const;
+    std::string saveEnvironment() const;
+    void restoreEnvironment(const std::string& saved);
 
 private:
     // mutex_ 를 쥔 채로 부른다.
-    Room* createRoomLocked(std::uint32_t type);
+    Room* createRoomLocked(std::uint32_t type,std::uint32_t restoredId=0,const InstanceWeather* restored=nullptr);
+    void respawnWild(Room& room,float dt);
 
     WorldEnvironmentClock worldClock_;
     RoomSettings settings_;

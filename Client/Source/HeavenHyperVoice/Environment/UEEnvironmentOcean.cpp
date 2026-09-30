@@ -2,6 +2,9 @@
 #include "UEEnvironmentWaves.h"
 #include "WaterBodyOceanActor.h"
 #include "WaterBodyOceanComponent.h"
+float AUEEnvironmentScene::GetOceanSeaLevelCm() const {
+    return Ocean ? Ocean->GetActorLocation().Z+Ocean->GetWaterBodyComponent()->GetHeightOffset() : 0;
+}
 
 void UUEEnvironmentWaves::GenerateGerstnerWaves_Implementation(TArray<FGerstnerWave>& OutWaves) const {
     // 반복 무늬가 덜 보이도록 길이가 다른 네 파도를 겹친다. 합친 진폭은 HeightCm의 절반이다.
