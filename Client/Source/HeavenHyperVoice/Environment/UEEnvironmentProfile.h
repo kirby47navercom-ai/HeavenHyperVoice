@@ -1,4 +1,5 @@
 #pragma once
+#include "UEEnvironmentWaterRegion.h"
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "UEEnvironmentSpawnRule.h"
@@ -34,6 +35,8 @@ public:
 
     // 위도. 북반구는 양수, 남반구는 음수이며 낮 길이와 계절이 달라진다.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Environment", meta=(ClampMin="-85",ClampMax="85")) double LatitudeDegrees=35;
+    // 해안/호수의 실제 구역. 물이 없는 도시는 비워 두세요. 슬롯 순서대로 겹침을 판정해요.
+    UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Environment|Water") TArray<FUEEnvironmentWaterRegion> WaterRegions;
     // 기후 기준점보다 높은 정도
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Environment", meta=(ClampMin="-500",ClampMax="9000")) double AltitudeM=0;
     // 계절에 따른 평균 기온 변동 폭
@@ -113,4 +116,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Environment|Advanced", meta=(ClampMin="0.1",ClampMax="1")) double IceMovementMultiplier=0.85;
     // 최대 모래폭풍에서 야생 탐지 범위 배율이에요.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Environment|Advanced", meta=(ClampMin="0.1",ClampMax="1")) double SandVisibilityMultiplier=0.55;
+    // 얼음에서 가속/제동/마찰의 배율. 작을수록 방향 전환과 멈춤이 늦어요.
+    UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Environment|Gameplay",meta=(ClampMin="0.02",ClampMax="1")) double IceTractionMultiplier=0.12;
+    UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Environment|Gameplay",meta=(ClampMin="10",ClampMax="1000")) double SwimSpeedCmPerSecond=160;
+    // 쓰러지거나 포획된 야생 슬롯을 다시 채우기까지 현실 초예요.
+    UPROPERTY(EditAnywhere,BlueprintReadOnly,Category="Environment|Gameplay",meta=(ClampMin="1",ClampMax="86400")) double WildRespawnSeconds=30;
 };

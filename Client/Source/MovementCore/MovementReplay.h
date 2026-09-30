@@ -14,6 +14,17 @@ struct StepRecord
 
 namespace replay
 {
+inline void write(std::ostream& out,const Environment& e) {
+    out<<e.speedMultiplier<<' '<<e.traction<<' '<<e.tideOffsetCm<<' '<<e.swimSpeed<<' '<<e.water.size()<<'\n';
+    for(const auto& r:e.water) out<<r.minX<<' '<<r.minY<<' '<<r.maxX<<' '<<r.maxY<<' '<<r.seaLevelCm<<' '<<r.swimDepthCm<<' '<<r.canSwim<<'\n';
+}
+inline bool read(std::istream& in,Environment& e) {
+    std::size_t count=0;
+    if(!(in>>e.speedMultiplier>>e.traction>>e.tideOffsetCm>>e.swimSpeed>>count) || count>64) return false;
+    e.water.resize(count);
+    for(auto& r:e.water) if(!(in>>r.minX>>r.minY>>r.maxX>>r.maxY>>r.seaLevelCm>>r.swimDepthCm>>r.canSwim)) return false;
+    return valid(e);
+}
 inline void write(std::ostream& out, const Config& v)
 {
 	out << ' ' << v.radius << ' ' << v.halfHeight << ' ' << v.walkSpeed << ' ' << v.runSpeed << ' '
@@ -21,6 +32,7 @@ inline void write(std::ostream& out, const Config& v)
 	    << ' ' << v.airControl << ' ' << v.terminalSpeed << ' ' << v.stepHeight << ' ' << v.slopeDegrees
 	    << ' ' << v.floorSnap << ' ' << v.skin << ' ' << v.rotationSpeed << ' ' << v.rollSpeed << ' '
 	    << v.rollTicks << '\n';
+	write(out,v.environment);
 }
 
 inline bool read(std::istream& in, Config& v)
@@ -29,6 +41,7 @@ inline bool read(std::istream& in, Config& v)
 	      v.friction >> v.gravity >> v.jumpSpeed >> v.airControl >> v.terminalSpeed >> v.stepHeight >>
 	      v.slopeDegrees >> v.floorSnap >> v.skin >> v.rotationSpeed >> v.rollSpeed >> v.rollTicks))
 		return false;
+	if(!read(in,v.environment)) return false;
 	return std::isfinite(v.radius) && std::isfinite(v.halfHeight) && std::isfinite(v.walkSpeed) &&
 	       std::isfinite(v.runSpeed) && std::isfinite(v.acceleration) && std::isfinite(v.braking) &&
 	       std::isfinite(v.friction) && std::isfinite(v.gravity) && std::isfinite(v.jumpSpeed) &&
@@ -66,7 +79,7 @@ inline bool read(std::istream& in, State& v)
 	       std::isfinite(v.acceleration.z) && std::isfinite(v.floorNormal.x) &&
 	       std::isfinite(v.floorNormal.y) && std::isfinite(v.floorNormal.z) && std::isfinite(v.facing) &&
 	       std::isfinite(v.rollDirection.x) && std::isfinite(v.rollDirection.y) &&
-	       std::isfinite(v.rollDirection.z) && mode <= 2;
+	       std::isfinite(v.rollDirection.z) && mode <= unsigned(Mode::Swimming);
 }
 
 inline bool near(const State& a, const State& b, float epsilon = .001f)

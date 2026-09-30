@@ -28,6 +28,7 @@ public:
     void setMap(const Map* map);
     void notifyMoveBlocked(std::uint64_t entityId);
     void seed(unsigned value);
+    void forget(std::uint64_t entityId) { brains_.erase(entityId); }
     WildPokemonAIState stateOf(std::uint64_t entityId) const;
 
 private:

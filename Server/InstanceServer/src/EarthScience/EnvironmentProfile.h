@@ -1,9 +1,14 @@
 #pragma once
+#include "MovementEnvironment.h"
 
 namespace heaven::instance {
 // 방/지역의 환경 설정. 단위가 붙은 값을 서버 설정 파일과 에디터 데이터 에셋에서 공유한다.
 // 태양과 조석은 게임용 주기 모델이며 특정 날짜/지역의 천문 예보가 아니다.
 struct EnvironmentProfile {
+    std::vector<hhv::movement::WaterRegion> waterRegions;
+    double iceTractionMultiplier=.12; // 얼음의 가속/제동/마찰 배율이에요.
+    double swimSpeedCmPerSecond=160;
+    double wildRespawnSeconds=30; // 리스폰 때의 날씨로 가중치를 다시 계산해요.
     double daySeconds = 86400;       // 시뮬레이션 하루 길이. 현실 속도는 gameSecondsPerRealSecond가 결정한다.
     double yearDays = 120;           // 게임 내 1년의 일수
     double startHour = 9;            // 공용 시계 시작 시각

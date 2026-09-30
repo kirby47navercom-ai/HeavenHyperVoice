@@ -34,6 +34,10 @@ UUECoreMovementComponent::UUECoreMovementComponent()
 	PrimaryComponentTick.TickGroup = TG_PrePhysics;
 	bTickBeforeOwner = false;
 }
+float UUECoreMovementComponent::GetWaterDepthCm() const {
+	const auto* Shared=GetWorld() ? GetWorld()->GetSubsystem<UUECoreCollisionSubsystem>() : nullptr;
+	return Shared && Shared->GetCollision() ? hhv::movement::waterDepth(CoreState.position,MakeCoreConfig(),*Shared->GetCollision()) : 0;
+}
 
 void UUECoreMovementComponent::BeginPlay()
 {
@@ -68,9 +72,10 @@ hhv::movement::Config UUECoreMovementComponent::MakeCoreConfig() const
 {
 	if (bNetworkSimulation)
 	{
-		return hhv::movement::Config{};
+		hhv::movement::Config NetworkConfig; NetworkConfig.environment=CoreState.environment; return NetworkConfig;
 	}
 	hhv::movement::Config C;
+	C.environment=CoreState.environment;
 
 	if (PawnOwner)
 	{
@@ -204,6 +209,7 @@ void UUECoreMovementComponent::PublishState(bool bEvents)
 	const EUECoreMovementMode NewMode =
 	    S.mode == hhv::movement::Mode::Grounded   ? EUECoreMovementMode::Grounded
 	    : S.mode == hhv::movement::Mode::Disabled ? EUECoreMovementMode::Disabled
+	    : S.mode == hhv::movement::Mode::Swimming ? EUECoreMovementMode::Swimming
 	                                              : EUECoreMovementMode::Falling;
 	MovementMode = NewMode;
 	// No engine sweep or depenetration after the core has resolved collision.

@@ -25,6 +25,11 @@ for path in ['/Game/InstanceMap/Plain/Plain',ROOT+'/L_Environment_Coast',ROOT+'/
     if path.endswith('Coast'):
         assert scene.get_editor_property('ocean')
         assert profile.get_editor_property('tide_amplitude_m')>0
+        regions=profile.get_editor_property('water_regions');assert regions,'Coast water regions missing'
+        assert abs(regions[0].get_editor_property('sea_level_cm')-scene.get_ocean_sea_level_cm())<.01
+        repo=Path(unreal.Paths.project_dir()).resolve().parent
+        relative=Path('VFX/Weather/L_Environment_Coast.hhvcollision')
+        assert (repo/'Client/Content/MovementCollision'/relative).read_bytes()==(repo/'Server/maps/collision'/relative).read_bytes()
     if path.endswith('Desert'):assert profile.get_editor_property('sand_availability')>0
     checks.append(dict(map=path,profile=profile.get_path_name(),cloud_density=scene.get_editor_property('cloud_density_scale')))
 out=Path(unreal.Paths.project_saved_dir())/'environment-verified.json'

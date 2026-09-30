@@ -22,6 +22,8 @@ UCLASS(Blueprintable)
 class HEAVENHYPERVOICE_API AUEEnvironmentScene : public AActor {
     GENERATED_BODY()
 public:
+    UFUNCTION(BlueprintPure,Category="Environment|Water")
+    float GetOceanSeaLevelCm() const;
     AUEEnvironmentScene();
     virtual void BeginPlay() override;
     virtual void Tick(float Dt) override;

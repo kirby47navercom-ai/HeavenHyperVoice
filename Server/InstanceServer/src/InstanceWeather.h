@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <iosfwd>
 #include "EarthScience/EnvironmentGameplayRules.h"
 #include "EarthScience/EnvironmentProfile.h"
 #include "EarthScience/EnvironmentState.h"
@@ -62,6 +63,9 @@ class InstanceWeather {
     // 공용 시계로 태양/계절/조석만 정렬해요. 물순환을 새 방 나이만큼 재계산하지 않아요.
     void synchronizeClock(double worldRealSeconds);
     InstanceWeatherSnapshot snapshot() const;
+    // 내부의 공기/토양/눈/얼음 저장소까지 보존해요.
+    void save(std::ostream& output) const;
+    bool restore(std::istream& input);
 
   private:
     // ponytail: 현재는 방 평균 기단 한 칸이다. 플레이어 위치별 날씨가 실제

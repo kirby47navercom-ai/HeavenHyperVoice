@@ -135,6 +135,7 @@ Displaced World::enter(std::uint64_t characterId, std::uint64_t accountId, std::
     initial.position = {entity.position.x - (kWorldOriginOffset), entity.position.y - (kWorldOriginOffset),
                         entity.position.z};
     initial.facing = entity.position.facing;
+    initial.environment=environment_;
     entity.movement.reset(initial);
     if (entity.partnerSpecies != 0) {
         fieldshared::PartnerFollower::initialize(partnerOwnerStateOf(entity), entity.partnerSpecies,
@@ -212,6 +213,21 @@ void World::enterWild(std::uint64_t entityId, std::uint16_t species, const Posit
     updateVisibility(inserted->second);
 }
 
+void World::setEnvironment(const hhv::movement::Environment& environment) {
+    std::lock_guard<std::mutex> lock(mutex_); environment_=environment;
+}
+hhv::movement::Environment World::environment() {
+    std::lock_guard<std::mutex> lock(mutex_);return environment_;
+}
+bool World::retireWild(std::uint64_t entityId) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it=entities_.find(entityId);
+    if(it==entities_.end()) return true; // 포획 경로에서 이미 없앤 슬롯도 다시 채워요.
+    if(!it->second.isWild || it->second.currentHp>0) return false;
+    removeFromVisibility(it->second);
+    sectors_[static_cast<std::size_t>(it->second.sector)].erase(entityId);
+    entities_.erase(it); return true;
+}
 bool World::setWildCurrentHp(std::uint64_t entityId, std::uint16_t currentHp) {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -247,7 +263,7 @@ void World::advanceWild(float dt, WildAi &ai, float environmentMovementMultiplie
     {
         std::lock_guard<std::mutex> lock(mutex_);
         for (const auto &[id, entity] : entities_) {
-            if (entity.isWild) {
+            if (entity.isWild && entity.currentHp>0) {
                 pending.push_back({id,
                                    entity.species,
                                    entity.mapId,
@@ -255,7 +271,7 @@ void World::advanceWild(float dt, WildAi &ai, float environmentMovementMultiplie
                                    entity.position.y,
                                    entity.position.z,
                                    {}});
-            } else {
+            } else if(!entity.isWild) {
                 players.push_back(
                     {id, entity.mapId, entity.position.x, entity.position.y, entity.position.z});
             }
@@ -306,9 +322,11 @@ void World::advanceWild(float dt, WildAi &ai, float environmentMovementMultiplie
             }
 
             const auto previous = entity.movement.state.position;
+            auto landEnvironment=environment_;landEnvironment.speedMultiplier=1;
+            for(auto& region:landEnvironment.water) region.canSwim=false; // 야생 수영 AI가 없는 동안은 깊은 물을 피해요.
             map_->advance(entity.movement.state, entity.movementAccumulator, dt,
                           {p.intent.targetX, p.intent.targetY, entity.position.z}, p.intent.moving,
-                          fieldshared::pokemonMoveSpeed(entity.species)*std::clamp(environmentMovementMultiplier,.1f,1.f));
+                          fieldshared::pokemonMoveSpeed(entity.species)*std::clamp(environmentMovementMultiplier,.1f,1.f),landEnvironment);
             const auto &state = entity.movement.state;
             const auto location = map_->toServer(state.position);
             const float nx = location.x;
@@ -474,7 +492,7 @@ void World::advancePlayers(float dt) {
 
     for (auto &[characterId, entity] : entities_) {
         if (entity.session.expired() ||
-            !entity.movement.advance(dt, hhv::movement::Config{}, map_->collision())) {
+            !entity.movement.advance(dt, [&]{hhv::movement::Config c;c.environment=environment_;return c;}(), map_->collision())) {
             continue;
         }
 

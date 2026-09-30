@@ -148,11 +148,12 @@ inline Bytes wrapField(flatbuffers::FlatBufferBuilder &fbb, HeavenField::Payload
 // roomId 는 인스턴스 서버만 채운다. 필드는 0 이다.
 inline Bytes encodeEnterAck(std::uint64_t entityId, float x, float y, float z, float facing,
                             std::uint32_t mapId, float originOffset, std::uint32_t roomId,
-                            std::uint64_t collisionHash) {
+                            std::uint64_t collisionHash,const hhv::movement::Environment& environment = {}) {
     flatbuffers::FlatBufferBuilder fbb;
     hhv::movement::State state;
     state.position = {x - originOffset, y - originOffset, z};
     state.facing = facing;
+    state.environment=environment;
     const auto movement = hhv::movement::wire::encodeState(fbb, state);
 
     HeavenField::EnterAckBuilder builder(fbb);

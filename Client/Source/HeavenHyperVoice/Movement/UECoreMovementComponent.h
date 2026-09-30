@@ -10,7 +10,8 @@ enum class EUECoreMovementMode : uint8
 {
 	Grounded,
 	Falling,
-	Disabled
+	Disabled,
+	Swimming
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FUECoreMovementUpdated, float, DeltaSeconds, FVector,
@@ -26,6 +27,11 @@ class HEAVENHYPERVOICE_API UUECoreMovementComponent : public UPawnMovementCompon
 
   public:
 	UUECoreMovementComponent();
+	// 로컬 시험 어댑터만 호출해요. 네트워크 접속 시에는 보정 상태의 서버 값이 우선이에요.
+	void SetLocalEnvironment(const hhv::movement::Environment& Value) { if(!bNetworkSimulation) CoreState.environment=Value; }
+	virtual bool IsSwimming() const override { return MovementMode==EUECoreMovementMode::Swimming; }
+	UFUNCTION(BlueprintPure, Category="Shared Movement|Water")
+	float GetWaterDepthCm() const;
 	bool IsNetworkSimulationActive() const
 	{
 		return bNetworkSimulation;

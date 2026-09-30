@@ -62,7 +62,7 @@ class Map {
 
     // AI selects an input direction; the same fixed-step core resolves the actual motion.
     void advance(hhv::movement::State &state, float &accumulator, float dt, nav::Vec3 target, bool moving,
-                 float speed) const;
+                 float speed,const hhv::movement::Environment& environment = {}) const;
 
   private:
     hhv::movement::TriangleWorld collision_;

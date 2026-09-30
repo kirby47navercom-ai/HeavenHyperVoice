@@ -4,6 +4,11 @@
 namespace heaven::instance {
 void normalizeEnvironment(EnvironmentProfile& p) {
     const EnvironmentProfile defaults;
+    p.iceTractionMultiplier=std::isfinite(p.iceTractionMultiplier) ? std::clamp(p.iceTractionMultiplier,.02,1.) : defaults.iceTractionMultiplier;
+    p.swimSpeedCmPerSecond=std::isfinite(p.swimSpeedCmPerSecond) ? std::clamp(p.swimSpeedCmPerSecond,10.,1000.) : defaults.swimSpeedCmPerSecond;
+    p.wildRespawnSeconds=std::isfinite(p.wildRespawnSeconds) ? std::clamp(p.wildRespawnSeconds,1.,86400.) : defaults.wildRespawnSeconds;
+    p.waterRegions.erase(std::remove_if(p.waterRegions.begin(),p.waterRegions.end(),[](const auto& r){return !hhv::movement::valid(r);}),p.waterRegions.end());
+    if(p.waterRegions.size()>64) p.waterRegions.resize(64);
     p.daySeconds=std::isfinite(p.daySeconds) ? std::clamp(p.daySeconds,60.0,864000.0) : defaults.daySeconds;
     p.yearDays=std::isfinite(p.yearDays) ? std::clamp(p.yearDays,1.0,1000.0) : defaults.yearDays;
     p.startHour=std::isfinite(p.startHour) ? std::clamp(p.startHour,0.0,24.0) : defaults.startHour;
