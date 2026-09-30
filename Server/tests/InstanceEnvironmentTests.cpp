@@ -47,15 +47,48 @@ int main(int argc,char** argv) {
     InstanceWeather wet;wet.initialize(1,47,p);
     for(int i=0;i<120;++i)wet.advance(1);
     require(wet.snapshot().environment.sandstormIntensity<.01,"wet ground emits dust");
+    // 토양이 젖어 있어도 표면 물막이 없으면 반짝이는 젖은 바닥으로 표시하지 않아요.
+    InstanceWeatherProfile soil; soil.initialSurfaceWaterKgM2=0; soil.initialRelativeHumidityPct=0;
+    InstanceWeather drySurface; drySurface.initialize(1,47,soil);
+    require(drySurface.snapshot().groundWetness==0,"soil moisture leaks into visible wetness");
+    require(drySurface.snapshot().relativeHumidityPct==0,"dry humidity is silently clamped");
+    require(drySurface.snapshot().cloudCover==0,"dry climate starts with forced clouds");
+    // 조석이 없는 호수/바다에서도 파도가 만들어져야 해요.
+    soil.environment.baseWindMps=14; soil.environment.gustAmplitudeMps=0;
+    drySurface.initialize(1,47,soil); drySurface.advance(10);
+    require(drySurface.snapshot().environment.waveHeightM>0,"waves incorrectly depend on tide amplitude");
+    // 방을 새로 만들거나 잠시 비워도 공용 시간은 같아요. 물순환 나이는 별개예요.
+    InstanceWeather first,later; first.initialize(1,47,soil,100); later.initialize(1,48,soil,500);
+    first.synchronizeClock(500);
+    require(first.snapshot().environment.dayFraction==later.snapshot().environment.dayFraction,"rooms have separate world clocks");
+    soil.environment.tideAmplitudeM=2;
+    first.initialize(1,47,soil);
+    require(std::abs(first.snapshot().environment.tideEnvelopeM-2)<1e-8,"spring tide amplitude differs");
+    first.synchronizeClock(soil.environment.springNeapPeriodDays*soil.environment.daySeconds/soil.gameSecondsPerRealSecond/2);
+    require(std::abs(first.snapshot().environment.tideEnvelopeM-1)<1e-8,"neap tide envelope missing");
+    // 낮 일사/밤 냉각과 개방된 대기 수분의 보존을 확인해요.
+    soil.environment.startHour=12; first.initialize(1,47,soil); first.advance(1);
+    soil.environment.startHour=0; later.initialize(1,47,soil); later.advance(1);
+    require(first.snapshot().environment.surfaceHeatFluxWm2>later.snapshot().environment.surfaceHeatFluxWm2,"solar energy is not applied");
+    require(first.snapshot().environment.exportedWaterKgM2>0,"boundary moisture does not leave the room");
+    require(std::abs(first.snapshot().waterBalanceErrorKgM2)<.001,"open atmosphere loses water accounting");
+    InstanceWeatherSnapshot game; game.precipitationMmPerHour=10; game.temperatureC=20;
+    game.environment.sunElevationDegrees=-12; game.groundWetness=1; game.environment.iceMm=1;
+    game.environment.sandstormIntensity=1;
+    require(std::abs(environmentSpawnWeight({393,2,3,4,5},game)-30)<.001,"rain/night spawn weighting differs");
+    applyEnvironmentGameplay(soil.environment,game);
+    require(game.environment.movementMultiplier<1 && game.environment.visibilityMultiplier<1,"gameplay multipliers are unused");
     p.environment.daySeconds=0;p.environment.dustFullWindMps=0;
     wet.initialize(1,47,p);wet.advance(1);
     require(std::isfinite(wet.snapshot().environment.sunElevationDegrees),"invalid profile made NaN");
     // 실제 서버가 읽는 형식으로 정상 설정과 잘못된 설정을 검사한다.
     const auto path=std::filesystem::temp_directory_path()/"hhv-environment-check.ini";
-    {std::ofstream f(path);f<<"meanTemperatureC=32\ninitialSoilWaterKgM2=.3\nsandAvailability=1\n";}
+    {std::ofstream f(path);f<<"meanTemperatureC=32\ninitialSoilWaterKgM2=.3\nsandAvailability=1\nspawn.393=1,2,3,4\n";}
     const auto loaded=loadEnvironmentProfile(path.string());
     require(loaded.meanTemperatureC==32 && loaded.environment.sandAvailability==1,"profile import differs");
-    for(const char* invalid:{"daySeconds=0\n","typo=3\n","baseWindMps=nan\n","daySeconds=100\ndaySeconds=200\n"}) {
+    require(loaded.spawnRules.size()==1 && loaded.spawnRules.front().rainMultiplier==2,"spawn rule import differs");
+    for(const char* invalid:{"daySeconds=0\n","typo=3\n","baseWindMps=nan\n","daySeconds=100\ndaySeconds=200\n",
+            "spawn.393=1,2,3\n","spawn.393=1,-2,3,4\n","spawn.65535=1,1,1,1\n"}) {
         {std::ofstream f(path);f<<invalid;}
         bool rejected=false;try{loadEnvironmentProfile(path.string());}catch(const std::exception&){rejected=true;}
         require(rejected,"invalid config accepted");

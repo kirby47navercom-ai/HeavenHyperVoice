@@ -28,6 +28,20 @@ void normalizeEnvironment(EnvironmentProfile& p) {
     p.tidePhaseDegrees=std::isfinite(p.tidePhaseDegrees) ? std::clamp(p.tidePhaseDegrees,0.0,360.0) : defaults.tidePhaseDegrees;
     p.waveMaxHeightM=std::isfinite(p.waveMaxHeightM) ? std::clamp(p.waveMaxHeightM,0.0,20.0) : defaults.waveMaxHeightM;
     p.waveResponseSeconds=std::isfinite(p.waveResponseSeconds) ? std::clamp(p.waveResponseSeconds,1.0,86400.0) : defaults.waveResponseSeconds;
+    p.surfaceFilmCapacityKgM2=std::isfinite(p.surfaceFilmCapacityKgM2) ? std::clamp(p.surfaceFilmCapacityKgM2,0.001,10.0) : defaults.surfaceFilmCapacityKgM2;
+    p.moistureExchangeSeconds=std::isfinite(p.moistureExchangeSeconds) ? std::clamp(p.moistureExchangeSeconds,60.0,8640000.0) : defaults.moistureExchangeSeconds;
+    p.solarPeakWm2=std::isfinite(p.solarPeakWm2) ? std::clamp(p.solarPeakWm2,0.0,1400.0) : defaults.solarPeakWm2;
+    p.surfaceAlbedo=std::isfinite(p.surfaceAlbedo) ? std::clamp(p.surfaceAlbedo,0.0,1.0) : defaults.surfaceAlbedo;
+    p.surfaceEmissivity=std::isfinite(p.surfaceEmissivity) ? std::clamp(p.surfaceEmissivity,0.01,1.0) : defaults.surfaceEmissivity;
+    p.clearSkyCoolingWm2=std::isfinite(p.clearSkyCoolingWm2) ? std::clamp(p.clearSkyCoolingWm2,0.0,200.0) : defaults.clearSkyCoolingWm2;
+    p.airHeatTransferWm2K=std::isfinite(p.airHeatTransferWm2K) ? std::clamp(p.airHeatTransferWm2K,1.0,200.0) : defaults.airHeatTransferWm2K;
+    p.springNeapPeriodDays=std::isfinite(p.springNeapPeriodDays) ? std::clamp(p.springNeapPeriodDays,0.1,1000.0) : defaults.springNeapPeriodDays;
+    p.neapTideFraction=std::isfinite(p.neapTideFraction) ? std::clamp(p.neapTideFraction,0.0,1.0) : defaults.neapTideFraction;
+    p.springNeapPhaseDegrees=std::isfinite(p.springNeapPhaseDegrees) ? std::clamp(p.springNeapPhaseDegrees,0.0,360.0) : defaults.springNeapPhaseDegrees;
+    p.shoreHeightM=std::isfinite(p.shoreHeightM) ? std::clamp(p.shoreHeightM,-100.0,100.0) : defaults.shoreHeightM;
+    p.wetMovementMultiplier=std::isfinite(p.wetMovementMultiplier) ? std::clamp(p.wetMovementMultiplier,0.1,1.0) : defaults.wetMovementMultiplier;
+    p.iceMovementMultiplier=std::isfinite(p.iceMovementMultiplier) ? std::clamp(p.iceMovementMultiplier,0.1,1.0) : defaults.iceMovementMultiplier;
+    p.sandVisibilityMultiplier=std::isfinite(p.sandVisibilityMultiplier) ? std::clamp(p.sandVisibilityMultiplier,0.1,1.0) : defaults.sandVisibilityMultiplier;
     p.fieldCapacityKgM2=std::min(p.fieldCapacityKgM2,p.soilCapacityKgM2);
     p.dustFullWindMps=std::max(p.dustFullWindMps,p.dustStartWindMps+.1);
 }

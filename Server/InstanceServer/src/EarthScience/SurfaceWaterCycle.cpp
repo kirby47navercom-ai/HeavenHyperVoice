@@ -8,12 +8,14 @@ double InstanceWeather::updateHydrology(double dt) {
     const double vaporDeficitKPa = std::max(
         0.0, saturationPressureKPa(ground_.temperatureC) - vaporPressureKPa(nearAir_));
     const double evaporationRate = 0.00002 * vaporDeficitKPa;
+    double evaporated=transfer(ground_.filmKgM2,nearAir_.vaporKgM2,evaporationRate*dt);
+    const double evaporationBudget=std::max(0.0,evaporationRate*dt-evaporated);
     if (ground_.waterKgM2 > 0.0) {
-        transfer(ground_.waterKgM2, nearAir_.vaporKgM2, evaporationRate * dt);
+        evaporated+=transfer(ground_.waterKgM2, nearAir_.vaporKgM2, evaporationBudget);
     } else {
         const double soilWetness = clamp01(ground_.soilKgM2 / profile_.environment.soilCapacityKgM2);
-        transfer(ground_.soilKgM2, nearAir_.vaporKgM2,
-                 evaporationRate * soilWetness * 0.2 * dt);
+        evaporated+=transfer(ground_.soilKgM2, nearAir_.vaporKgM2,
+                 evaporationBudget * soilWetness * 0.2);
     }
 
     // 2) 연직 혼합: 두 대기층의 수증기 농도 차이를 서서히 줄인다.
@@ -47,14 +49,20 @@ double InstanceWeather::updateHydrology(double dt) {
              nearAir_.liquidKgM2 * (-std::expm1(-dt / 3600.0)));
 
     // 5) 눈·얼음: 지표가 영상이면 녹고 영하면 지표수가 언다.
+    double melted=0;
     if (ground_.temperatureC > 0.0) {
         double meltBudget = 0.00002 * ground_.temperatureC * dt;
-        meltBudget -= transfer(ground_.snowKgM2, ground_.waterKgM2, meltBudget);
-        transfer(ground_.iceKgM2, ground_.waterKgM2, meltBudget);
+        melted=transfer(ground_.snowKgM2, ground_.waterKgM2, meltBudget);
+        melted+=transfer(ground_.iceKgM2, ground_.waterKgM2, meltBudget-melted);
     } else {
-        transfer(ground_.waterKgM2, ground_.iceKgM2,
-                 0.00001 * -ground_.temperatureC * dt);
+        double freezeBudget=0.00001 * -ground_.temperatureC * dt;
+        const double filmFrozen=transfer(ground_.filmKgM2,ground_.iceKgM2,freezeBudget);
+        melted=-filmFrozen-transfer(ground_.waterKgM2,ground_.iceKgM2,freezeBudget-filmFrozen);
     }
+
+    transfer(ground_.waterKgM2,ground_.filmKgM2,
+        std::max(0.0,profile_.environment.surfaceFilmCapacityKgM2-ground_.filmKgM2));
+    applyLatentHeat(evaporated,melted);
 
     // 6) 토양: 지표수가 빈 토양으로 스며들고, 포장용수량을 넘긴 물은 배수된다.
     const double soilSpace = std::max(0.0, profile_.environment.soilCapacityKgM2 - ground_.soilKgM2);

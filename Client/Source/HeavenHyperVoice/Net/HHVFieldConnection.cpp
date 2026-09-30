@@ -626,6 +626,14 @@ void FHHVFieldConnection::DispatchFrame(const uint8 *Data, int32 Size)
 			Event.Weather.Environment.IceMm=Env->ice_mm();
 			Event.Weather.Environment.SoilMoisture=Env->soil_moisture();
 			Event.Weather.Environment.TimeScale=Env->time_scale();
+			Event.Weather.Environment.SurfaceHeatFluxWm2=Env->surface_heat_flux_wm2();
+			Event.Weather.Environment.ImportedWaterKgM2=Env->imported_water_kg_m2();
+			Event.Weather.Environment.ExportedWaterKgM2=Env->exported_water_kg_m2();
+			Event.Weather.Environment.TideEnvelopeM=Env->tide_envelope_m();
+			Event.Weather.Environment.ShoreWaterDepthM=Env->shore_water_depth_m();
+			Event.Weather.Environment.MovementMultiplier=Env->movement_multiplier();
+			Event.Weather.Environment.VisibilityMultiplier=Env->visibility_multiplier();
+
 		}
 
 		break;

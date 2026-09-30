@@ -58,7 +58,15 @@ constexpr double kWeatherBroadcastSeconds = 1.0;
 
 RoomManager::RoomManager(RoomSettings settings, std::map<std::uint32_t, InstanceType> types)
     : settings_(std::move(settings)), types_(std::move(types)) {
+    // 공용 세계 시간의 다섯 설정은 모든 종류에서 같아야 해요. 위도/지역 기후는 달라도 돼요.
+    const auto sameClock=[](const InstanceWeatherProfile& a,const InstanceWeatherProfile& b) {
+        return a.gameSecondsPerRealSecond==b.gameSecondsPerRealSecond && a.environment.daySeconds==b.environment.daySeconds &&
+            a.environment.yearDays==b.environment.yearDays && a.environment.startHour==b.environment.startHour &&
+            a.environment.startYearFraction==b.environment.startYearFraction;
+    };
     for (const auto& [type, config] : types_) {
+        if(!sameClock(types_.begin()->second.weather,config.weather))
+            throw std::invalid_argument("Instance environment clocks must match across types");
         if (!config.map || !config.map->loaded()) {
             throw std::invalid_argument("Instance type " + std::to_string(type) + " requires shared collision");
         }
@@ -90,7 +98,8 @@ Room *RoomManager::createRoomLocked(std::uint32_t type) {
     room->id = nextRoomId_++;
     room->type = type;
     room->world.setMap(map);
-    room->weather.initialize(type, room->id, config.weather);
+    room->weather.initialize(type, room->id, config.weather, worldClock_.elapsedRealSeconds());
+    room->environment=room->weather.snapshot().environment;
 
     // 스폰 좌표와 배회 목표는 C++ 난수원을 쓴다. Lua BT 도 나중에 난수를
     // 쓸 수 있으므로 같은 seed 를 심어 둔다. 방 번호를 섞어서 같은 씨앗으로
@@ -124,9 +133,19 @@ Room *RoomManager::createRoomLocked(std::uint32_t type) {
                 }
             }
         }
-        std::uniform_int_distribution<std::size_t> fromPool(0, pool.empty() ? 0 : pool.size() - 1);
+        const auto climate=room->weather.snapshot();
+        std::vector<double> weights; weights.reserve(pool.size());
+        for(auto species:pool) {
+            double weight=1;
+            const auto* base=proto::findSpecies(species);
+            if(base) for(const auto& rule:config.weather.spawnRules)
+                if(rule.pokemonDex==base->dex) { weight=environmentSpawnWeight(rule,climate); break; }
+            weights.push_back(weight);
+        }
+        const bool anyWeight=std::any_of(weights.begin(),weights.end(),[](double w){return w>0;});
+        std::discrete_distribution<std::size_t> fromPool(weights.begin(),weights.end());
         const auto pickSpecies = [&](std::mt19937 &gen) -> std::uint16_t {
-            return pool.empty() ? std::uint16_t{0} : pool[fromPool(gen)];
+            return pool.empty() || !anyWeight ? std::uint16_t{0} : pool[fromPool(gen)];
         };
 
         // 지형이 있으면 공통 충돌 지형 위에 설 수 있는 자리와 높이를 같이 얻는다.
@@ -252,15 +271,12 @@ void RoomManager::tickShard(unsigned shard, unsigned shardCount, float dt) {
         Room *room = target.room;
         // 방마다 자기 Lua VM 이고, 한 방은 언제나 이 샤드가 맡는다.
         if (room->ai != nullptr) {
-            room->world.advanceWild(dt, *room->ai);
+            room->ai->setVisibilityMultiplier(static_cast<float>(room->environment.visibilityMultiplier));
+            room->world.advanceWild(dt, *room->ai, static_cast<float>(room->environment.movementMultiplier));
         }
         room->world.tick(dt);
 
-        // 빈 방은 회수 유예 동안에도 World 틱은 유지하지만 날씨 시간은 멈춘다.
-        // 다시 입장하면 떠났을 때의 상태에서 이어지므로 빈 방 계산 비용은 0이다.
-        if (!target.occupied) {
-            continue;
-        }
+        // 회수 유예 중에도 1초 간격 계산만 유지해요. 재입장 때 낮밤이 과거로 돌아가지 않아요.
 
         room->weatherBroadcastAccumulator += static_cast<double>(dt);
         if (room->weatherBroadcastAccumulator < kWeatherBroadcastSeconds) {
@@ -270,8 +286,10 @@ void RoomManager::tickShard(unsigned shard, unsigned shardCount, float dt) {
         const double elapsed = room->weatherBroadcastAccumulator;
         room->weatherBroadcastAccumulator = 0.0;
         room->weather.advance(elapsed);
+        room->weather.synchronizeClock(worldClock_.elapsedRealSeconds());
         const InstanceWeatherSnapshot weather = room->weather.snapshot();
-        room->world.broadcast(proto::encodeWeatherState(weather));
+        room->environment=weather.environment;
+        if(target.occupied) room->world.broadcast(proto::encodeWeatherState(weather));
     }
 }
 

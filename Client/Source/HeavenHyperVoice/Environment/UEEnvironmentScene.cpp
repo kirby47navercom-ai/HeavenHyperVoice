@@ -45,7 +45,10 @@ void AUEEnvironmentScene::BeginPlay() {
 void AUEEnvironmentScene::Tick(float Dt) {
     Super::Tick(Dt); State=Weather->GetPresentationState();
     if(!State.Environment.Enabled) { if(bApplied) RestoreScene(); return; }
-    bApplied=true; UpdateLighting(); UpdateOcean(); UpdateDust();
+    if(!bApplied && Clouds && CloudMID) Clouds->FindComponentByClass<UVolumetricCloudComponent>()->SetMaterial(CloudMID);
+    bApplied=true; UpdateLighting(); UpdateDust();
+    OceanTimer-=FMath::Max(0.f,Dt);
+    if(OceanTimer<=0) { UpdateOcean(); OceanTimer=FMath::Max(.1f,OceanUpdateSeconds); }
 }
 void AUEEnvironmentScene::RestoreScene() {
     if(Sun) { Sun->SetActorRotation(SunRotation); Sun->GetLightComponent()->SetIntensity(SunIntensity); Sun->GetLightComponent()->SetLightColor(SunColor); }
@@ -61,7 +64,7 @@ void AUEEnvironmentScene::RestoreScene() {
     }
     Dust->Deactivate();
     if(Parameters) GetWorld()->GetParameterCollectionInstance(Parameters)->SetScalarParameterValue(TEXT("Sandstorm"),0);
-    RuntimeWaves=nullptr; WaveGenerator=nullptr; bApplied=false;
+    RuntimeWaves=nullptr; WaveGenerator=nullptr; bApplied=false; OceanTimer=0;
 }
 void AUEEnvironmentScene::EndPlay(const EEndPlayReason::Type Reason) {
     if(bApplied) RestoreScene(); Super::EndPlay(Reason);

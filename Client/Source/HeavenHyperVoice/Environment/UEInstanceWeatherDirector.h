@@ -4,6 +4,7 @@
 #include "UEInstanceWeatherPresentationComponent.h"
 #include "UEInstanceWeatherDirector.generated.h"
 class UNiagaraSystem;
+class UNiagaraComponent;
 class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class UMaterialParameterCollection;
@@ -51,9 +52,13 @@ public:
     float Radius = 700;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weather|Sampling", meta=(ClampMin="100",ClampMax="2000",Units="cm"))
     float FallHeight = 600;
-    /** 실제 빗방울 수가 아닌 시각 샘플 수. 프레임당 예산과 대기 충돌 수를 별도로 제한한다. */
+    /** 지속 이미터 전체의 최대 방출률. 입자 수와 CPU 충돌 샘플 수를 따로 제한해요. */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weather|Sampling", meta=(ClampMin="1",ClampMax="200"))
     float MaxDropsPerSecond = 100;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weather|Sampling", meta=(ClampMin="1",ClampMax="32"))
+    int32 PrecipitationColumnsPerType = 16;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weather|Sampling", meta=(ClampMin="0",ClampMax="32"))
+    float MaxImpactSamplesPerSecond = 12;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weather|Sampling", meta=(ClampMin="1000",ClampMax="100000",Units="cm"))
     float SkyTraceHeight = 20000;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Weather|Sampling")
@@ -85,6 +90,12 @@ private:
     UPROPERTY(Transient) TArray<TObjectPtr<UDecalComponent>> Tiles;
     UPROPERTY(Transient) TObjectPtr<UMaterialInstanceDynamic> SurfaceMID;
     UPROPERTY(Transient) TObjectPtr<UUEFieldServerBridgeComponent> Source;
+    UPROPERTY(Transient) TArray<TObjectPtr<UNiagaraComponent>> RainColumns;
+    UPROPERTY(Transient) TArray<TObjectPtr<UNiagaraComponent>> SnowColumns;
+    int32 ColumnCursor = 0;
+    float ColumnTimer = 0;
+    struct FColumnPath { FVector Center, Start, Stop; };
+    TMap<UNiagaraComponent*, FColumnPath> ColumnPaths;
     FUEInstanceWeatherPresentationState State;
     float DropBudget = 0;
     float SurfaceTimer = 0;
@@ -98,6 +109,9 @@ private:
     void SpawnImpact(const FHitResult& Hit, bool bSnow);
     void UpdateExclusionParameters();
     void SpawnDrop(const FVector& Center, bool bSnow);
+    bool SampleFall(const FVector& Center, bool bSnow, FVector& Start, FVector& Stop,
+        FVector& Velocity, float& Lifetime, bool& bHit) const;
+    void UpdatePrecipitation(const FVector& Center, float DeltaSeconds);
     void UpdateSurface(const FVector& Center);
     void ApplyParameters();
     void ClearWeather();

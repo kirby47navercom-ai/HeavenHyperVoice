@@ -72,6 +72,11 @@ void testLuaDecisions(const std::string& script) {
     decision = behavior.decide(context);
     require(decision.valid && decision.nextState == WildPokemonAIState::Battle && decision.targetId == 8,
             "Lua computes distance from raw positions, ignores other maps and interrupts rest");
+    // 같은 500cm 거리도 폭풍 탐지 배율 0.5에서는 450cm 범위 밖이에요.
+    context.visibilityMultiplier = .5f;
+    decision = behavior.decide(context);
+    require(decision.nextState == WildPokemonAIState::Wander,"Sandstorm shrinks actual Lua detection radius");
+    context.visibilityMultiplier = 1;
 
     context.state = WildPokemonAIState::Battle;
     memory.targetId = 8;

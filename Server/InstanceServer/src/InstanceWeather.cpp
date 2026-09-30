@@ -14,7 +14,7 @@ std::uint32_t weatherSeed(std::uint32_t type,std::uint32_t roomId) {
 }
 }
 void InstanceWeather::initialize(std::uint32_t type, std::uint32_t roomId,
-                                 const InstanceWeatherProfile &profile) {
+                                 const InstanceWeatherProfile &profile, double worldRealSeconds) {
     profile_ = profile;
     environment_ = {};
     normalizeEnvironment(profile_.environment);
@@ -23,6 +23,8 @@ void InstanceWeather::initialize(std::uint32_t type, std::uint32_t roomId,
     simulationTimeSeconds_ = 0.0;
     pendingSimulationSeconds_ = 0.0;
     drainedWaterKgM2_ = 0.0;
+    importedWaterKgM2_=exportedWaterKgM2_=0;
+    worldSimulationSeconds_=std::max(0.0,worldRealSeconds)*profile_.gameSecondsPerRealSecond;
 
     std::mt19937 random(weatherSeed(type, roomId));
     std::uniform_real_distribution<double> humidityOffset(-12.0, 12.0);
@@ -33,19 +35,20 @@ void InstanceWeather::initialize(std::uint32_t type, std::uint32_t roomId,
 
     weatherPhase_ = phase(random);
     const double initialTemperature = profile_.meanTemperatureC + temperatureOffset(random);
-    const double humidity = std::clamp(profile_.initialRelativeHumidityPct + humidityOffset(random),
-                                       25.0, 98.0) /
+    const double humidity = std::clamp(profile_.initialRelativeHumidityPct + humidityOffset(random)*
+                                       std::min(profile_.initialRelativeHumidityPct,100-profile_.initialRelativeHumidityPct)/50,
+                                       0.0, 100.0) /
                             100.0;
 
     nearAir_ = {initialTemperature, kNearAirDepthM, 0.0, 0.0};
-    upperAir_ = {initialTemperature - 8.0, kUpperAirDepthM, 0.0, cloudWater(random)};
+    upperAir_ = {initialTemperature - 8.0, kUpperAirDepthM, 0.0, cloudWater(random)*clamp01((humidity-.6)/.4)};
     nearAir_.vaporKgM2 = saturationMassKgM2(nearAir_) * humidity;
-    // 구름층은 포화 상태에서 시작한다. 포화 아래로 만들면 첫 단계에서 이미 있던
-    // 구름물이 전부 재증발해, 초기 구름 편차가 화면에 도달하기도 전에 사라진다.
-    upperAir_.vaporKgM2 = saturationMassKgM2(upperAir_);
+    // 건조한 지역은 상층까지 강제로 포화시키지 않아요. 초기 구름이 있으면 그 층만 포화예요.
+    upperAir_.vaporKgM2 = saturationMassKgM2(upperAir_)*(upperAir_.liquidKgM2>0 ? 1 : humidity);
 
     ground_ = {initialTemperature, profile_.initialSurfaceWaterKgM2,
                profile_.initialSoilWaterKgM2, 0.0, 0.0};
+    transfer(ground_.waterKgM2,ground_.filmKgM2,profile_.environment.surfaceFilmCapacityKgM2);
     pressureHpa_ = profile_.meanPressureHpa + pressureOffset(random);
     windSpeedMps_ = 1.0 + std::abs(pressureHpa_ - profile_.meanPressureHpa) * 0.25;
     windDirectionDegrees_ = std::fmod(weatherPhase_ * 180.0 / kPi, 360.0);
@@ -77,11 +80,19 @@ void InstanceWeather::advance(double realDeltaSeconds) {
     }
 }
 
+void InstanceWeather::synchronizeClock(double worldRealSeconds) {
+    if(!std::isfinite(worldRealSeconds) || worldRealSeconds<0) return;
+    worldSimulationSeconds_=worldRealSeconds*profile_.gameSecondsPerRealSecond;
+    updateClock(); updateCoast(0);
+}
 // 각 환경의 순서만 관리한다. 자세한 계산은 EarthScience 폴더의 기능별 cpp에 있다.
 double InstanceWeather::simulateStep(double dt) {
     simulationTimeSeconds_+=dt;
+    worldSimulationSeconds_+=dt;
     updateClock();
     updateAtmosphere(dt);
+    updateSurfaceEnergy(dt);
+    exchangeBoundaryMoisture(dt);
     const double precipitation=updateHydrology(dt);
     updateCoast(dt);
     updateDesert(dt);

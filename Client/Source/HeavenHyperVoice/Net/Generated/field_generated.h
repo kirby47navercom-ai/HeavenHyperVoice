@@ -2158,7 +2158,14 @@ struct EnvironmentState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_SURFACE_WATER_MM = 20,
     VT_ICE_MM = 22,
     VT_SOIL_MOISTURE = 24,
-    VT_TIME_SCALE = 26
+    VT_TIME_SCALE = 26,
+    VT_SURFACE_HEAT_FLUX_WM2 = 28,
+    VT_IMPORTED_WATER_KG_M2 = 30,
+    VT_EXPORTED_WATER_KG_M2 = 32,
+    VT_TIDE_ENVELOPE_M = 34,
+    VT_SHORE_WATER_DEPTH_M = 36,
+    VT_MOVEMENT_MULTIPLIER = 38,
+    VT_VISIBILITY_MULTIPLIER = 40
   };
   double day_fraction() const {
     return GetField<double>(VT_DAY_FRACTION, 0.0);
@@ -2196,6 +2203,27 @@ struct EnvironmentState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   double time_scale() const {
     return GetField<double>(VT_TIME_SCALE, 0.0);
   }
+  double surface_heat_flux_wm2() const {
+    return GetField<double>(VT_SURFACE_HEAT_FLUX_WM2, 0.0);
+  }
+  double imported_water_kg_m2() const {
+    return GetField<double>(VT_IMPORTED_WATER_KG_M2, 0.0);
+  }
+  double exported_water_kg_m2() const {
+    return GetField<double>(VT_EXPORTED_WATER_KG_M2, 0.0);
+  }
+  double tide_envelope_m() const {
+    return GetField<double>(VT_TIDE_ENVELOPE_M, 0.0);
+  }
+  double shore_water_depth_m() const {
+    return GetField<double>(VT_SHORE_WATER_DEPTH_M, 0.0);
+  }
+  double movement_multiplier() const {
+    return GetField<double>(VT_MOVEMENT_MULTIPLIER, 1.0);
+  }
+  double visibility_multiplier() const {
+    return GetField<double>(VT_VISIBILITY_MULTIPLIER, 1.0);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -2211,6 +2239,13 @@ struct EnvironmentState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<double>(verifier, VT_ICE_MM, 8) &&
            VerifyField<double>(verifier, VT_SOIL_MOISTURE, 8) &&
            VerifyField<double>(verifier, VT_TIME_SCALE, 8) &&
+           VerifyField<double>(verifier, VT_SURFACE_HEAT_FLUX_WM2, 8) &&
+           VerifyField<double>(verifier, VT_IMPORTED_WATER_KG_M2, 8) &&
+           VerifyField<double>(verifier, VT_EXPORTED_WATER_KG_M2, 8) &&
+           VerifyField<double>(verifier, VT_TIDE_ENVELOPE_M, 8) &&
+           VerifyField<double>(verifier, VT_SHORE_WATER_DEPTH_M, 8) &&
+           VerifyField<double>(verifier, VT_MOVEMENT_MULTIPLIER, 8) &&
+           VerifyField<double>(verifier, VT_VISIBILITY_MULTIPLIER, 8) &&
            verifier.EndTable();
   }
 };
@@ -2255,6 +2290,27 @@ struct EnvironmentStateBuilder {
   void add_time_scale(double time_scale) {
     fbb_.AddElement<double>(EnvironmentState::VT_TIME_SCALE, time_scale, 0.0);
   }
+  void add_surface_heat_flux_wm2(double surface_heat_flux_wm2) {
+    fbb_.AddElement<double>(EnvironmentState::VT_SURFACE_HEAT_FLUX_WM2, surface_heat_flux_wm2, 0.0);
+  }
+  void add_imported_water_kg_m2(double imported_water_kg_m2) {
+    fbb_.AddElement<double>(EnvironmentState::VT_IMPORTED_WATER_KG_M2, imported_water_kg_m2, 0.0);
+  }
+  void add_exported_water_kg_m2(double exported_water_kg_m2) {
+    fbb_.AddElement<double>(EnvironmentState::VT_EXPORTED_WATER_KG_M2, exported_water_kg_m2, 0.0);
+  }
+  void add_tide_envelope_m(double tide_envelope_m) {
+    fbb_.AddElement<double>(EnvironmentState::VT_TIDE_ENVELOPE_M, tide_envelope_m, 0.0);
+  }
+  void add_shore_water_depth_m(double shore_water_depth_m) {
+    fbb_.AddElement<double>(EnvironmentState::VT_SHORE_WATER_DEPTH_M, shore_water_depth_m, 0.0);
+  }
+  void add_movement_multiplier(double movement_multiplier) {
+    fbb_.AddElement<double>(EnvironmentState::VT_MOVEMENT_MULTIPLIER, movement_multiplier, 1.0);
+  }
+  void add_visibility_multiplier(double visibility_multiplier) {
+    fbb_.AddElement<double>(EnvironmentState::VT_VISIBILITY_MULTIPLIER, visibility_multiplier, 1.0);
+  }
   explicit EnvironmentStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -2279,8 +2335,22 @@ inline ::flatbuffers::Offset<EnvironmentState> CreateEnvironmentState(
     double surface_water_mm = 0.0,
     double ice_mm = 0.0,
     double soil_moisture = 0.0,
-    double time_scale = 0.0) {
+    double time_scale = 0.0,
+    double surface_heat_flux_wm2 = 0.0,
+    double imported_water_kg_m2 = 0.0,
+    double exported_water_kg_m2 = 0.0,
+    double tide_envelope_m = 0.0,
+    double shore_water_depth_m = 0.0,
+    double movement_multiplier = 1.0,
+    double visibility_multiplier = 1.0) {
   EnvironmentStateBuilder builder_(_fbb);
+  builder_.add_visibility_multiplier(visibility_multiplier);
+  builder_.add_movement_multiplier(movement_multiplier);
+  builder_.add_shore_water_depth_m(shore_water_depth_m);
+  builder_.add_tide_envelope_m(tide_envelope_m);
+  builder_.add_exported_water_kg_m2(exported_water_kg_m2);
+  builder_.add_imported_water_kg_m2(imported_water_kg_m2);
+  builder_.add_surface_heat_flux_wm2(surface_heat_flux_wm2);
   builder_.add_time_scale(time_scale);
   builder_.add_soil_moisture(soil_moisture);
   builder_.add_ice_mm(ice_mm);

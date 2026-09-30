@@ -31,6 +31,20 @@ struct FUEEnvironmentState {
     UPROPERTY(BlueprintReadOnly, Category="Environment") double SoilMoisture=0;
     // 서버 시계의 현실 대비 배속
     UPROPERTY(BlueprintReadOnly, Category="Environment") double TimeScale=0;
+    // 지표의 순 열 유입 W/m²
+    UPROPERTY(BlueprintReadOnly, Category="Environment") double SurfaceHeatFluxWm2=0;
+    // 외부에서 들어온 누적 수분
+    UPROPERTY(BlueprintReadOnly, Category="Environment") double ImportedWaterKgM2=0;
+    // 외부로 빠져나간 누적 수분. 토양 배수는 별도 물 수지에 포함
+    UPROPERTY(BlueprintReadOnly, Category="Environment") double ExportedWaterKgM2=0;
+    // 현재 사리/조금의 조석 진폭
+    UPROPERTY(BlueprintReadOnly, Category="Environment") double TideEnvelopeM=0;
+    // 프로필의 해변 기준점에 물이 덮인 깊이
+    UPROPERTY(BlueprintReadOnly, Category="Environment") double ShoreWaterDepthM=0;
+    // 서버가 확정한 야생 이동 배율
+    UPROPERTY(BlueprintReadOnly, Category="Environment") double MovementMultiplier=1;
+    // 서버가 확정한 야생 탐지 배율
+    UPROPERTY(BlueprintReadOnly, Category="Environment") double VisibilityMultiplier=1;
 };
 // 자정·연말·북쪽에서 긴 경로로 역회전하지 않게 순환 값을 보간한다.
 void BlendEnvironment(FUEEnvironmentState& current,const FUEEnvironmentState& target,double alpha);

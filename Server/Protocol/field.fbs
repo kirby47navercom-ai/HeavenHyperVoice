@@ -323,6 +323,14 @@ table EnvironmentState {
   ice_mm:double;
   soil_moisture:double;
   time_scale:double;
+  surface_heat_flux_wm2:double;
+  imported_water_kg_m2:double;
+  exported_water_kg_m2:double;
+  tide_envelope_m:double;
+  shore_water_depth_m:double;
+  movement_multiplier:double = 1;
+  visibility_multiplier:double = 1;
+
 }
 
 table WeatherState {

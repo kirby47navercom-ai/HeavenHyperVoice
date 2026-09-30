@@ -14,7 +14,7 @@ end
 local root = bt.selector({
     bt.sequence({
         bt.condition(function(ctx)
-            ctx.detected_player = perception.nearest(ctx, AGGRO_RADIUS)
+            ctx.detected_player = perception.nearest(ctx, AGGRO_RADIUS * (ctx.visibility_multiplier or 1))
             return ctx.detected_player ~= nil
         end),
         bt.action(function(ctx)

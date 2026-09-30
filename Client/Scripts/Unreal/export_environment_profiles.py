@@ -17,8 +17,13 @@ def export_profile(asset):
     out.parent.mkdir(parents=True,exist_ok=True)
     lines=['# Generated from '+asset.get_path_name(), '# Edit the data asset, then run export_environment_profiles.py.']
     for name in fields:
-        prop=re.sub(r'(?<!^)(?=[A-Z])','_',name).lower()
-        lines.append(name[0].lower()+name[1:]+'='+format(asset.get_editor_property(prop),'.12g'))
+        # 숫자/연속 대문자가 있는 단위 이름은 Python의 snake_case 변환과 달라질 수 있어요.
+        # 헤더의 원래 reflection 이름으로 읽으면 Wm2K 같은 단위도 정확히 가져와요.
+        lines.append(name[0].lower()+name[1:]+'='+format(asset.get_editor_property(name),'.12g'))
+    for rule in asset.get_editor_property('spawn_rules'):
+        dex=rule.get_editor_property('pokemon_dex')
+        weights=[rule.get_editor_property(p) for p in ('base_weight','rain_multiplier','snow_multiplier','night_multiplier')]
+        lines.append('spawn.'+str(dex)+'='+','.join(format(v,'.12g') for v in weights))
     out.write_text('\n'.join(lines)+'\n',encoding='utf8')
     return str(out)
 

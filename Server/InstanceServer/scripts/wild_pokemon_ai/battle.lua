@@ -10,7 +10,7 @@ local root = bt.selector({
         bt.condition(function(ctx)
             ctx.target = perception.find_target(ctx)
             return not ctx.target or
-                perception.distance_squared(ctx, ctx.target) > LOSE_TARGET_RADIUS * LOSE_TARGET_RADIUS
+                perception.distance_squared(ctx, ctx.target) > (LOSE_TARGET_RADIUS * (ctx.visibility_multiplier or 1)) ^ 2
         end),
         bt.action(function()
             return { next_state = "wander", action = "wait" }

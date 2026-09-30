@@ -109,37 +109,6 @@ void AUEInstanceWeatherDirector::UpdateExclusionParameters()
     }
     MPC->SetScalarParameterValue(TEXT("ExclusionCount"),Count);
 }
-void AUEInstanceWeatherDirector::SpawnDrop(const FVector& Center, bool bSnow)
-{
-    UNiagaraSystem* System = bSnow ? Snow : Rain;
-    if (!System || PendingImpacts.Num() >= 256) return;
-    const float Angle = FMath::FRand()*2*PI;
-    const float Distance = FMath::Sqrt(FMath::FRand())*FMath::Clamp(Radius,100.f,2000.f);
-    const FVector Start = Center + FVector(FMath::Cos(Angle)*Distance,FMath::Sin(Angle)*Distance,
-        FMath::Clamp(FallHeight,100.f,2000.f));
-    // 각 생성 위치에서 하늘을 검사하므로 출입구 안에 있어도 바깥의 비는 보인다.
-    FHitResult Roof;
-    if (Trace(Start,Start+FVector(0,0,SkyTraceHeight),Roof)) return;
-    const float Radians = FMath::DegreesToRadians(State.WindDirectionDegrees);
-    const float FallSpeed = bSnow ? 180.f : 2200.f;
-    const FVector Velocity(FMath::Cos(Radians)*State.WindIntensity*180,
-        FMath::Sin(Radians)*State.WindIntensity*180,-FallSpeed);
-    const float MaxLife = bSnow ? 6.f : 1.5f;
-    FHitResult Hit;
-    const FVector End = Start + Velocity*MaxLife;
-    const bool bHit = Trace(Start,End,Hit);
-    const FVector Stop = bHit ? Hit.ImpactPoint : End;
-    if (IsExcluded(Start,Stop)) return;
-    const float Lifetime = bHit ? Hit.Time*MaxLife : MaxLife;
-    if (Lifetime < .03f) return;
-    auto* FX = UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(),System,Start,
-        FRotator::ZeroRotator,FVector::OneVector,true,false,ENCPoolMethod::AutoRelease,false);
-    if (!FX) return;
-    FX->SetVariableFloat(TEXT("User.FallLifetime"),Lifetime);
-    FX->SetVariableVec3(TEXT("User.FallVelocity"),Velocity);
-    FX->Activate(true);
-    if (bHit) PendingImpacts.Add({GetWorld()->GetTimeSeconds()+Lifetime,Start,Stop,bSnow});
-}
 void AUEInstanceWeatherDirector::UpdateSurface(const FVector& Center)
 {
     if (!SurfaceMID) return;
@@ -198,6 +167,9 @@ void AUEInstanceWeatherDirector::ApplyParameters()
 void AUEInstanceWeatherDirector::ClearWeather()
 {
     PendingImpacts.Reset();
+    for(auto FX:RainColumns) if(FX) FX->DeactivateImmediate();
+    for(auto FX:SnowColumns) if(FX) FX->DeactivateImmediate();
+    ColumnPaths.Reset(); ColumnCursor=0; ColumnTimer=0;
     DropBudget = 0;
     State = {};
     for (auto Tile : Tiles) if (Tile) Tile->SetVisibility(false);
@@ -242,8 +214,9 @@ void AUEInstanceWeatherDirector::Tick(float DeltaSeconds)
     FHitResult Roof;
     bCameraSheltered = IsExcluded(Center,Center) || Trace(Center,Center+FVector(0,0,SkyTraceHeight),Roof);
     const float Intensity = FMath::Clamp(State.RainIntensity+State.SnowIntensity,0.f,1.f);
-    DropBudget = FMath::Min(16.f,DropBudget+FMath::Min(DeltaSeconds,.1f)*
-        FMath::Clamp(MaxDropsPerSecond,1.f,200.f)*Intensity);
+    UpdatePrecipitation(Center,DeltaSeconds);
+    DropBudget = FMath::Min(4.f,DropBudget+FMath::Min(DeltaSeconds,.1f)*
+        FMath::Clamp(MaxImpactSamplesPerSecond,0.f,32.f)*Intensity);
     while (DropBudget>=1)
     {
         DropBudget-=1;
@@ -271,5 +244,7 @@ void AUEInstanceWeatherDirector::EndPlay(const EEndPlayReason::Type Reason)
 {
     ClearWeather();
     for (auto Tile : Tiles) if (Tile) Tile->DestroyComponent();
+    for(auto FX:RainColumns) if(FX) FX->DestroyComponent();
+    for(auto FX:SnowColumns) if(FX) FX->DestroyComponent();
     Super::EndPlay(Reason);
 }

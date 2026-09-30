@@ -24,6 +24,7 @@ public:
                       float x, float y, float z, float dt,
                       const std::vector<ObservedPlayer>& players);
     void setArea(const WildArea& area);
+    void setVisibilityMultiplier(float value);
     void setMap(const Map* map);
     void notifyMoveBlocked(std::uint64_t entityId);
     void seed(unsigned value);
@@ -38,6 +39,7 @@ private:
     std::unique_ptr<WildBt> behavior_;
     std::mt19937 random_;
     WildArea area_;
+    float visibilityMultiplier_ = 1;
     const Map* map_ = nullptr;
     std::unordered_map<std::uint64_t, WildBrain> brains_;
 };

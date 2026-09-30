@@ -12,5 +12,12 @@ void BlendEnvironment(FUEEnvironmentState& current,const FUEEnvironmentState& ta
     current.SurfaceWaterMm=FMath::Lerp(current.SurfaceWaterMm,target.SurfaceWaterMm,alpha);
     current.IceMm=FMath::Lerp(current.IceMm,target.IceMm,alpha);
     current.SoilMoisture=FMath::Lerp(current.SoilMoisture,target.SoilMoisture,alpha);
+    current.SurfaceHeatFluxWm2=FMath::Lerp(current.SurfaceHeatFluxWm2,target.SurfaceHeatFluxWm2,alpha);
+    current.ImportedWaterKgM2=FMath::Lerp(current.ImportedWaterKgM2,target.ImportedWaterKgM2,alpha);
+    current.ExportedWaterKgM2=FMath::Lerp(current.ExportedWaterKgM2,target.ExportedWaterKgM2,alpha);
+    current.TideEnvelopeM=FMath::Lerp(current.TideEnvelopeM,target.TideEnvelopeM,alpha);
+    current.ShoreWaterDepthM=FMath::Lerp(current.ShoreWaterDepthM,target.ShoreWaterDepthM,alpha);
+    current.MovementMultiplier=FMath::Lerp(current.MovementMultiplier,target.MovementMultiplier,alpha);
+    current.VisibilityMultiplier=FMath::Lerp(current.VisibilityMultiplier,target.VisibilityMultiplier,alpha);
     current.TimeScale=FMath::Lerp(current.TimeScale,target.TimeScale,alpha);
 }

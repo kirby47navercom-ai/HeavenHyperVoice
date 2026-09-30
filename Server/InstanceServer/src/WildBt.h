@@ -13,6 +13,7 @@ struct WildBtContext {
     std::uint16_t species = 0;
     std::uint32_t mapId = 0;
     nav::Vec3 position;
+    float visibilityMultiplier = 1;
     WildPokemonAIState state = WildPokemonAIState::Wander;
     const WildPokemonAIActionMemory* memory = nullptr;
     const std::vector<ObservedPlayer>* players = nullptr;

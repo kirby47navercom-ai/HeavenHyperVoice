@@ -13,6 +13,9 @@ public:
 	/** 에디터 제작 전용: 경로별 수명/속도를 Niagara User 파라미터에 연결한다. */
 	UFUNCTION(BlueprintCallable, Category="VFX|Editor")
 	static bool BindWeatherParticle(UNiagaraSystem* System, UObject* Initialize, UObject* Velocity);
+	/** 지속 이미터의 방출률을 User.SpawnRate에 연결해요. 입자마다 시스템을 만들지 않아요. */
+	UFUNCTION(BlueprintCallable, Category="VFX|Editor")
+	static bool BindWeatherSpawnRate(UNiagaraSystem* System, UObject* Emitter);
 	UFUNCTION(BlueprintCallable, Category="VFX|Editor")
 	static bool AddStandardVFXLayer(UNiagaraSystem* System, UNiagaraEmitter* Emitter);
 	UFUNCTION(BlueprintCallable, Category="VFX|Editor")
