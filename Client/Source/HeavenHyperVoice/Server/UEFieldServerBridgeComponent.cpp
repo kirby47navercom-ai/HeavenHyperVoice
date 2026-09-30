@@ -1,6 +1,7 @@
 #include "UEFieldServerBridgeComponent.h"
 #include "../Yang2/UEYang2Environment.h"
 #include "../Yang2/UEYang2WorldClock.h"
+#include "EarthScience/EnvironmentMovement.h"
 #include "../Data/UEProjectAssets.h"
 
 #include "UEFieldRemotePlayerSyncComponent.h"
@@ -331,6 +332,9 @@ void UUEFieldServerBridgeComponent::ClearInstanceWeatherState()
 void UUEFieldServerBridgeComponent::StopFieldConnection()
 {
 	FieldConnection.reset();
+	if(bYang2ClientAuthorityActive) SaveYang2Environment(GetWorld(),Yang2LocalWeather.get(),true);
+	Yang2Wild.reset();Yang2WildLoading={};Yang2WildAccumulator=0;
+	if(auto* Player=GetPlayerCharacter()) Player->GetCoreMovement()->SetLocalEnvironment({});
 	Yang2LocalWeather.reset();
 	bYang2ClientAuthorityActive = false;
 	Yang2WeatherAccumulator = 0.0;
@@ -391,7 +395,10 @@ void UUEFieldServerBridgeComponent::StartYang2ClientAuthority(uint32 InstanceTyp
 		const auto* LocalEnvironment=Yang2WeatherProfiles.Find(static_cast<int32>(InstanceType));
 		ApplyYang2EnvironmentProfile(GetWorld(),LocalEnvironment ? LocalEnvironment->EnvironmentProfile.Get() : nullptr,Profile);
 		ApplyYang2WorldClockSettings(GetWorld(),Profile);
-		Yang2LocalWeather->initialize(InstanceType, CurrentRoomId, Profile,GetYang2WorldRealSeconds(GetWorld()));
+		Yang2ActiveProfile=Profile;
+        Yang2LocalWeather->initialize(InstanceType, CurrentRoomId, Profile,GetYang2WorldRealSeconds(GetWorld()));
+        RestoreYang2Climate(GetWorld(),*Yang2LocalWeather);
+        StartYang2Wild(Profile);
 		UE_LOG(LogTemp, Display,
 			TEXT("YANG2 CLIENT AUTHORITY: local climate type %u = %.1f C, %.0f%% RH, %.1f hPa, x%.1f time"),
 			InstanceType, Profile.meanTemperatureC, Profile.initialRelativeHumidityPct,
@@ -473,11 +480,11 @@ void UUEFieldServerBridgeComponent::RefreshYang2LocalPartner()
 
 void UUEFieldServerBridgeComponent::TickYang2ClientAuthority(float DeltaTime)
 {
-	if (!bYang2ClientAuthorityActive || !Yang2LocalWeather || !bInInstance)
-	{
-		return;
-	}
+	if (!bYang2ClientAuthorityActive) return;
+	SaveYang2Environment(GetWorld(),Yang2LocalWeather.get());
+	if (!Yang2LocalWeather || !bInInstance) return;
 
+	TickYang2Wild(DeltaTime);
 	Yang2WeatherAccumulator += FMath::Max(0.0, static_cast<double>(DeltaTime));
 	if (Yang2WeatherAccumulator < Yang2WeatherPublishSeconds)
 	{
@@ -499,6 +506,7 @@ void UUEFieldServerBridgeComponent::PublishYang2ClientWeather()
 	}
 
 	const heaven::instance::InstanceWeatherSnapshot Source = Yang2LocalWeather->snapshot();
+    if(auto* Player=GetPlayerCharacter()) Player->GetCoreMovement()->SetLocalEnvironment(heaven::instance::movementEnvironment(Yang2ActiveProfile.environment,Source));
 	FHHVInstanceWeatherState Weather;
 	Weather.Environment = MakeYang2EnvironmentState(Source.environment);
 	Weather.RoomId = Source.roomId;

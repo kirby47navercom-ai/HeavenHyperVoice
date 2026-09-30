@@ -66,6 +66,9 @@ bool FYang2WeatherTest::RunTest(const FString&)
         ApplyYang2EnvironmentProfile(nullptr,Asset,Profile);
         TestEqual(TEXT("DA temperature copied"),Profile.meanTemperatureC,Asset->MeanTemperatureC);
         TestEqual(TEXT("DA tide copied"),Profile.environment.tideAmplitudeM,Asset->TideAmplitudeM);
+        TestEqual(TEXT("DA ice traction copied"),Profile.environment.iceTractionMultiplier,Asset->IceTractionMultiplier);
+        TestEqual(TEXT("DA water regions copied"),static_cast<int32>(Profile.environment.waterRegions.size()),Asset->WaterRegions.Num());
+        if(!Asset->WaterRegions.IsEmpty()) TestEqual(TEXT("DA sea level copied"),Profile.environment.waterRegions.front().seaLevelCm,Asset->WaterRegions[0].SeaLevelCm);
         TestEqual(TEXT("DA sand copied"),Profile.environment.sandAvailability,Asset->SandAvailability);
         TestEqual(TEXT("DA heat exchange copied"),Profile.environment.airHeatTransferWm2K,Asset->AirHeatTransferWm2K);
         TestEqual(TEXT("DA spawn rows copied"),static_cast<int32>(Profile.spawnRules.size()),Asset->SpawnRules.Num());

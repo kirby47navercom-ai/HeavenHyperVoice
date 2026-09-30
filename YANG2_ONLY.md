@@ -115,10 +115,38 @@ main으로 보내면 안 된다. 기존 훅과 컴파일 매크로 차단을 유
 
 main의 환경 변경을 병합한 뒤 Yang2 전용 어댑터에 새 14개 설정과 7개 결과값, SpawnRules 배열을 연결했다. 지표 에너지/외부 수분 교환/게임 배율 계산 CPP도 기존 단일 구현 TU에 포함한다. main에는 이 로컬 TU와 어댑터를 보내지 않는다.
 
-UEYang2WorldClock.h/.cpp는 GameInstance별 steady_clock 시계를 유지한다. 필드부터 시작하고 레벨 전환 중에도 흐르며, 첫 인스턴스의 시간 배속·하루·연중 주기·시작 시각을 이후 인스턴스에 유지한다. 새 플레이 세션은 새 GameInstance로 시계를 시작한다. 지역 기후/위도는 각 DA를 사용한다.
+UEYang2WorldClock.h/.cpp는 GameInstance별 steady_clock 시계를 유지한다. 필드부터 시작하고 레벨 전환 중에도 흐르며, 첫 인스턴스의 시간 배속·하루·연중 주기·시작 시각을 이후 인스턴스에 유지한다. 새 플레이 세션은 Saved/Yang2/environment.state에서 마지막 시계와 기후를 복구한다. 저장 파일이 없을 때만 새 시계를 시작한다. 지역 기후/위도는 각 DA를 사용한다.
 
 로컬 날씨 결과는 기존 브릿지 이벤트를 거쳐 같은 BP 연출로 간다. 연결 초기화도 공통 ClearInstanceWeatherState를 사용해 오래된 낮밤/수면이 남지 않게 한다.
 
-**적용 범위:** Yang2는 환경 계산과 게임 규칙의 결과값을 로컬에서 계산한다. 야생 포켓몬의 환경별 생성 선택·Lua AI 탐지·야생 이동 실행은 현재 실제로 InstanceServer의 RoomManager/World/WildAi에 연결되어 있다. 기존 Yang2에 별도 야생 서버 AI 실행기가 없어서 서버 없이 그 AI 동작까지 자동 재현하는 기능은 포함하지 않는다. 플레이어 속도·기술 대미지도 변경하지 않는다.
+**적용 범위:** Yang2는 기후와 플레이어의 젖음·얼음·수영 이동을 로컬에서 계산한다. 야생 생성·리스폰은 현재 날씨의 종족 가중치를 사용한다. 서버의 WildBt/WildAi/FSM/행동 코드와 Recast/Detour를 재사용하여 배회·탐지·추적·공격 판단을 서버 없이 실행한다. 실제 전투 대미지·포획·다른 플레이어 동기화는 아직 연결하지 않는다.
 
 공통 기능/에셋과 수치 의미는 Server/InstanceServer/EARTH_ENVIRONMENT_UPDATES.md에 설명했다.
+
+
+## 재실행 복구·수영·야생 AI (이번 추가)
+
+main의 공통 계산과 프로토콜 변경은 main에서 병합한다. 아래 로컬 연결만 Yang2에 커밋한다.
+
+- `UEYang2WorldClock.cpp`: 30초마다 공용 시계와 방별 기후를 저장하고 종료/레벨 전환 시 즉시 저장한다. 서버와 같은 체크섬·임시 파일 교체·정상 이전 파일 백업을 사용한다. 저장 파일이나 DA 설정이 호환되지 않으면 오류를 표시하고 원본 파일을 덮어쓰지 않는다. 프로그램이 꺼진 시간 동안 기후를 임의로 진행하지 않는다.
+- `UEYang2Environment.cpp`: DA의 IceTractionMultiplier, SwimSpeedCmPerSecond, WildRespawnSeconds, WaterRegions를 공통 모델에 전달한다. 도시처럼 물이 없는 곳은 WaterRegions를 비워 둔다. 해안 예제 DA에는 실제 해수면/해변/해저 구역을 넣었다.
+- 브릿지 `PublishYang2ClientWeather()`: 로컬 기후의 이동 환경을 공통 MovementCore에 전달한다. main에서는 이 값이 서버 CoreState 패킷에서만 온다.
+- `UEYang2WildSimulation.h/.cpp`: 소켓/UObject 없이 서버 Lua AI와 공통 충돌/이동을 실행한다. 야생 개체의 HP가 0이 되면 제거하고 지정한 대기 시간 후 현재 날씨로 다시 선택한다.
+- `UEYang2WildBridge.cpp`: 플레이어가 쓰는 동일한 충돌 파일/해시로 길찾기를 백그라운드에서 준비한다. 준비되면 기존 WildPokemonSyncComponent로 모델/애니메이션/공격 신호를 표시한다. Lua 파일 오류나 해시 불일치가 있으면 실패 로그를 남긴다.
+- `UEYang2ServerWildAI/ServerWildBT/ServerNavigation.cpp`: 실제 서버 소스를 포함하여 한 번 컴파일한다. main에서 AI를 고치면 Yang2도 동일한 소스가 갱신된다.
+
+브릿지 BP의 `Yang2|Wild AI`에서 아래 값을 편집한다.
+
+| 속성 | 역할 |
+|---|---|
+| Yang2WildAiScript | 모듈 실행 폴더를 기준으로 한 Lua 파일. 기본 Config는 Yang2AI/wild_ai.lua이며 빌드 시 실제 서버 스크립트가 복사된다. |
+| Yang2WildPerRoom | 로컬 야생 슬롯 수. 기본 12, 범위 0~64. |
+| Yang2WildAreaCm | 진입 플레이어 위치 주변 생성/배회 반경. 고정 좌표를 사용하지 않는다. |
+| Yang2WildSpeciesDex | 생성 후보 도감 번호. 비우면 프로토콜의 일반 야생 종족 전체를 사용한다. |
+| Yang2WeatherProfiles / EnvironmentProfile | 각 인스턴스의 기후·생성 가중치·물 구역 DA. 레벨의 BP_EnvironmentScene.Profile도 사용할 수 있다. |
+
+`SetYang2WildHealth(EntityId, HP)`는 BP에서 로컬 사망/리스폰을 확인할 입력이며 전투 대미지 공식을 대신하지 않는다. `GetYang2WildCount()`는 현재 살아 있는 로컬 야생 수를 돌려준다. 이동·야생 클래스/모델은 기존 공통 데이터 에셋의 참조를 사용한다.
+
+서버와 같은 Lua/네이티브 라이브러리를 사용하므로 빌드 전 기존 `Server/build/vs2022/vcpkg_installed/x64-windows` 의존성이 있어야 한다. 새 패키지는 추가하지 않았다. Lua DLL/스크립트는 빌드/패키징 결과 폴더로 함께 복사한다. 서버 OpenSSL 헤더가 UE OpenSSL 버전을 가리지 않도록 AI 헤더만 Intermediate에 준비한다. 큰 맵의 최초 NavMesh 생성이 끝나기 전에는 야생이 표시되지 않으며 준비 로그가 나온다.
+
+검증: Editor 빌드, 공통 환경 검사, `Heaven.Weather.Yang2LocalSource`, `Heaven.Weather.Yang2WildAI`, 로컬 저장 복구 검사. 자동 검사는 작은 충돌 평면에서 실제 Lua의 추적·공격·사망·날씨별 리스폰을 확인한다. 실제 게임 접속/플레이 및 멀티플레이 부하 검증은 별도다.

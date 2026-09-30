@@ -59,6 +59,11 @@ void ApplyYang2EnvironmentProfile(UWorld* World,const UUEEnvironmentProfile* Ove
     Result.environment.wetMovementMultiplier=Asset->WetMovementMultiplier;
     Result.environment.iceMovementMultiplier=Asset->IceMovementMultiplier;
     Result.environment.sandVisibilityMultiplier=Asset->SandVisibilityMultiplier;
+    Result.environment.iceTractionMultiplier=Asset->IceTractionMultiplier;
+    Result.environment.swimSpeedCmPerSecond=Asset->SwimSpeedCmPerSecond;
+    Result.environment.wildRespawnSeconds=Asset->WildRespawnSeconds;
+    Result.environment.waterRegions.clear();
+    for(const auto& Region:Asset->WaterRegions) if(hhv::movement::valid(Region.ToCore())) Result.environment.waterRegions.push_back(Region.ToCore());
     Result.spawnRules.clear();
     TSet<int32> UsedDex;
     for(const auto& Row:Asset->SpawnRules) {

@@ -19,3 +19,8 @@
 #include "../../../../Server/InstanceServer/src/EarthScience/CoastalEnvironment.cpp"
 #include "../../../../Server/InstanceServer/src/EarthScience/DesertEnvironment.cpp"
 #include "../../../../Server/InstanceServer/src/EarthScience/WeatherSnapshot.cpp"
+#include "../../../../Server/InstanceServer/src/EarthScience/WeatherPersistence.cpp"
+#if PLATFORM_WINDOWS
+#include "Windows/WindowsHWrapper.h"
+#endif
+#include "../../../../Server/InstanceServer/src/EarthScience/EnvironmentCheckpoint.cpp"

@@ -6,6 +6,7 @@
 #include "../Net/HHVFieldConnection.h"
 #include "../Gacha/UEGachaPool.h"
 #include "../Yang2/UEYang2InstanceWeather.h" // YANG2_CLIENT_AUTHORITY_ONLY
+#include "Async/Future.h"
 #include "Templates/SubclassOf.h"
 
 #include <memory>
@@ -141,12 +142,19 @@ struct FUEFieldPokemonPartyEntry
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FUEFieldPokemonPartyChangedSignature);
 
+class FYang2WildSimulation; // YANG2_CLIENT_AUTHORITY_ONLY
+
 UCLASS(ClassGroup = (Custom), Config = Game, DefaultConfig, meta = (BlueprintSpawnableComponent))
 class HEAVENHYPERVOICE_API UUEFieldServerBridgeComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
-  public:
+public:
+    // YANG2_CLIENT_AUTHORITY_ONLY: 서버 프로토콜의 전투가 생기기 전 체력/리스폰을 시험하는 BP 함수예요.
+    UFUNCTION(BlueprintCallable,Category="Yang2|Wild AI")
+    bool SetYang2WildHealth(int64 EntityId,int32 HP);
+    UFUNCTION(BlueprintPure,Category="Yang2|Wild AI")
+    int32 GetYang2WildCount() const;
 	UUEFieldServerBridgeComponent();
 	virtual void BeginDestroy() override;
 
@@ -356,6 +364,8 @@ class HEAVENHYPERVOICE_API UUEFieldServerBridgeComponent : public UActorComponen
 	// YANG2_CLIENT_AUTHORITY_ONLY
 	// main의 화면 흐름을 유지한 채 서버 접속 없이 로컬 단독 게임플레이를 진행한다.
 	void StartYang2ClientAuthority(uint32 InstanceType);
+	void StartYang2Wild(const heaven::instance::InstanceWeatherProfile& Profile);
+	void TickYang2Wild(float DeltaTime);
 	void TickYang2ClientAuthority(float DeltaTime);
 	void PublishYang2ClientWeather();
 	void RefreshYang2PartyState(bool bOk, const FString& Message);
@@ -404,6 +414,14 @@ class HEAVENHYPERVOICE_API UUEFieldServerBridgeComponent : public UActorComponen
 	TMap<int32, FUEYang2InstanceWeatherProfile> Yang2WeatherProfiles;
 
 	std::unique_ptr<heaven::instance::InstanceWeather> Yang2LocalWeather;
+    UPROPERTY(EditAnywhere,Config,Category="Yang2|Wild AI",meta=(FilePathFilter="lua",AllowPrivateAccess="true")) FFilePath Yang2WildAiScript;
+    UPROPERTY(EditAnywhere,Config,Category="Yang2|Wild AI",meta=(ClampMin="0",ClampMax="64",AllowPrivateAccess="true")) int32 Yang2WildPerRoom=12;
+    UPROPERTY(EditAnywhere,Config,Category="Yang2|Wild AI",meta=(ClampMin="100",ClampMax="10000",AllowPrivateAccess="true")) float Yang2WildAreaCm=4000;
+    UPROPERTY(EditAnywhere,Config,Category="Yang2|Wild AI",meta=(AllowPrivateAccess="true")) TArray<int32> Yang2WildSpeciesDex;
+    std::shared_ptr<FYang2WildSimulation> Yang2Wild;
+    TFuture<std::shared_ptr<FYang2WildSimulation>> Yang2WildLoading;
+    heaven::instance::InstanceWeatherProfile Yang2ActiveProfile;
+    double Yang2WildAccumulator=0;
 	bool bYang2ClientAuthorityActive = false;
 	double Yang2WeatherAccumulator = 0.0;
 	uint32 Yang2LocalAttackSequence = 0;
