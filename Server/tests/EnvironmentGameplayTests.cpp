@@ -30,6 +30,8 @@ static void runTests(int argc,char** argv) {
     water.environment.tideOffsetCm=0;water.environment.water.front().canSwim=false;
     a={};a.position={1001,0,88.1f};a.mode=Mode::Grounded;a.velocity={-260,0,0};const auto before=a.position;
     simulate(a,{0,-1,0,0},water,terrain);check(a.position.x==before.x,"non-swimmable deep shore allowed entry");
+    a={};a.position={0,0,88.1f};a.mode=Mode::Grounded;
+    simulate(a,{0,1,0,0},water,terrain);check(a.position.x>0,"rising non-swimmable tide trapped existing player");
     // 지연된 서버 보정은 같은 환경으로 미확인 입력을 다시 재생해야 해요.
     PredictionQueue prediction;State initial;initial.position={0,0,88.1f};initial.mode=Mode::Grounded;prediction.reset(initial);
     prediction.predict({0,1,0,0},normal,terrain);prediction.predict({0,1,0,0},normal,terrain);prediction.takeUnsent();

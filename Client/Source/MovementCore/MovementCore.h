@@ -422,8 +422,12 @@ inline void simulate(State& s, const Input& in, const Config& c, const Collision
 	}
 	// 수영 불가 구역은 충분히 깊어지는 첫 이동을 막아요. 바다 전체를 고정 벽으로 막지 않아요.
 	for(const auto& region:c.environment.water) {
-		if(!region.canSwim && region.contains(s.position.x,s.position.y) &&
-			region.seaLevelCm+c.environment.tideOffsetCm-(s.position.z-c.halfHeight)>region.swimDepthCm) {
+		const float level=region.seaLevelCm+c.environment.tideOffsetCm;
+		const float depth=level-(s.position.z-c.halfHeight);
+		const float previousDepth=level-(originalPosition.z-c.halfHeight);
+		if(!region.canSwim && region.contains(s.position.x,s.position.y) && depth>region.swimDepthCm &&
+			(!region.contains(originalPosition.x,originalPosition.y) || previousDepth<=region.swimDepthCm || depth>previousDepth+.01f)) {
+			// 밀물로 이미 잠겼다면 같거나 얕은 쪽으로 탈출할 수 있어요. 더 깊은 진입만 막아요.
 			s.position=originalPosition; s.velocity={}; break;
 		}
 	}

@@ -57,6 +57,8 @@ void UUECoreMovementComponent::ResetFromActor()
 		return;
 	}
 	hhv::movement::State State;
+	// 텔레포트/재배치가 현재 방의 이동 환경을 지우지 않도록 유지해요.
+	State.environment = CoreState.environment;
 	State.position = CoreVector(PawnOwner->GetActorLocation());
 	State.velocity = CoreVector(Velocity);
 	State.facing = PawnOwner->GetActorRotation().Yaw;
