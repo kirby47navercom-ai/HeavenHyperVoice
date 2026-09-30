@@ -342,6 +342,7 @@ class HEAVENHYPERVOICE_API UUEFieldServerBridgeComponent : public UActorComponen
 		                static_cast<uint32>(FMath::Max(TargetInstanceType, 0)));
 	}
 	void StopFieldConnection();
+	void ClearInstanceWeatherState();
 	void DestroyPresentationActors();
 	void HandleFieldEnterAck(const FHHVFieldEventData &Event);
 	void HandleFieldSnapshot(const FHHVFieldSnapshot &Snapshot);

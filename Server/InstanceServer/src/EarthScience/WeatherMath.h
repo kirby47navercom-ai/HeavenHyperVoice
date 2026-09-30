@@ -14,8 +14,9 @@ inline double transfer(double& from,double& to,double amount) {
     const double moved=std::min(from,std::max(0.0,amount)); from-=moved; to+=moved; return moved;
 }
 inline double saturationPressureKPa(double temperature) {
-    const double t=std::clamp(temperature,-20.0,50.0);
-    return 0.6108*std::exp(17.27*t/(t+237.3));
+    const double t=std::clamp(temperature,-80.0,80.0);
+    // 영하에서는 얼음 위 포화 수증기압을 사용해요. 낮은 기온을 -20도로 잘라 버리지 않아요.
+    return t<0 ? .6112*std::exp(22.46*t/(272.62+t)) : .6112*std::exp(17.67*t/(243.5+t));
 }
 template<class Air> double vaporPressureKPa(const Air& air) {
     return air.vaporKgM2*461.5*(air.temperatureC+273.15)/(air.depthM*1000.0);

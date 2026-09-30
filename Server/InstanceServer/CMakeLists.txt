@@ -24,6 +24,9 @@ add_library(InstanceClimate STATIC
     src/InstanceWeather.cpp
     src/EarthScience/EnvironmentProfile.cpp
     src/EarthScience/EnvironmentClock.cpp
+    src/EarthScience/SurfaceEnergyBalance.cpp
+    src/EarthScience/AtmosphericBoundary.cpp
+    src/EarthScience/EnvironmentGameplayRules.cpp
     src/EarthScience/AtmosphereCycle.cpp
     src/EarthScience/SurfaceWaterCycle.cpp
     src/EarthScience/CoastalEnvironment.cpp
@@ -31,7 +34,7 @@ add_library(InstanceClimate STATIC
     src/EarthScience/WeatherSnapshot.cpp
     src/EarthScience/EnvironmentConfig.cpp
 )
-target_include_directories(InstanceClimate PUBLIC src)
+target_include_directories(InstanceClimate PUBLIC src PRIVATE ../Protocol)
 
 add_executable(InstanceServer
     src/main.cpp

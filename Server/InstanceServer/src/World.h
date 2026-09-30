@@ -132,7 +132,7 @@ class World {
     //
     // Lua BT 호출은 action 전환 때만, 월드 락 **밖에서** 한다. 안에서 돌리면
     // 야생 마릿수만큼 플레이어 이동이 뒤에 밀린다.
-    void advanceWild(float dt, WildAi &ai);
+    void advanceWild(float dt, WildAi &ai, float environmentMovementMultiplier = 1);
 
     // 전투 계산이 확정한 체력을 반영한다. 다음 틱에 보이는 클라이언트로 전송된다.
     bool setWildCurrentHp(std::uint64_t entityId, std::uint16_t currentHp);

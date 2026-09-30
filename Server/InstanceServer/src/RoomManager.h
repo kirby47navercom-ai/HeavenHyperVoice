@@ -22,6 +22,7 @@
 
 #include "Map.h"
 #include "InstanceWeather.h"
+#include "EarthScience/WorldEnvironmentClock.h"
 #include "WildAi.h"
 #include "World.h"
 
@@ -63,6 +64,7 @@ struct Room {
 
     // 방마다 독립된 날씨다. 이 값과 누적 시간은 이 방을 맡은 틱 스레드만 만진다.
     InstanceWeather weather;
+    EnvironmentState environment;
     double weatherBroadcastAccumulator = 0.0;
 
     // 아래 둘은 RoomManager::mutex_ 를 쥔 채로만 만진다.
@@ -129,6 +131,7 @@ private:
     // mutex_ 를 쥔 채로 부른다.
     Room* createRoomLocked(std::uint32_t type);
 
+    WorldEnvironmentClock worldClock_;
     RoomSettings settings_;
     std::map<std::uint32_t, InstanceType> types_;
 

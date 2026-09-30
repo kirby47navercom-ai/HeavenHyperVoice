@@ -8,6 +8,8 @@
 // 실행한다.
 
 #include <cstdint>
+#include <vector>
+#include "EarthScience/EnvironmentGameplayRules.h"
 #include "EarthScience/EnvironmentProfile.h"
 #include "EarthScience/EnvironmentState.h"
 
@@ -18,6 +20,7 @@ namespace heaven::instance {
 // 흐려지지 않는다.
 struct InstanceWeatherProfile {
     EnvironmentProfile environment;
+    std::vector<EnvironmentSpawnRule> spawnRules;
     double meanTemperatureC = 18.0;
     double initialRelativeHumidityPct = 72.0;
     double meanPressureHpa = 1013.25;
@@ -50,12 +53,14 @@ class InstanceWeather {
   public:
     // roomId 를 씨앗에 섞기 때문에 같은 type 의 복제 던전도 서로 다른 상태로 시작한다.
     void initialize(std::uint32_t type, std::uint32_t roomId,
-                    const InstanceWeatherProfile &profile);
+                    const InstanceWeatherProfile &profile, double worldRealSeconds = 0);
 
     // 현실 경과 시간을 받는다. 내부에서는 10초짜리 시뮬레이션 단계로 잘라
     // 증발→응결→강수→침투를 순서대로 계산한다.
     void advance(double realDeltaSeconds);
 
+    // 공용 시계로 태양/계절/조석만 정렬해요. 물순환을 새 방 나이만큼 재계산하지 않아요.
+    void synchronizeClock(double worldRealSeconds);
     InstanceWeatherSnapshot snapshot() const;
 
   private:
@@ -74,11 +79,15 @@ class InstanceWeather {
         double soilKgM2 = 0.0;
         double snowKgM2 = 0.0;
         double iceKgM2 = 0.0;
+        double filmKgM2 = 0.0; // 바닥 표면 물막. 토양 저장소와 다른 물이에요.
     };
 
     double simulateStep(double dt);
     void updateClock();
     void updateAtmosphere(double dt);
+    void updateSurfaceEnergy(double dt);
+    void applyLatentHeat(double evaporation, double melting);
+    void exchangeBoundaryMoisture(double dt);
     double updateHydrology(double dt);
     void updateCoast(double dt);
     void updateDesert(double dt);
@@ -91,6 +100,8 @@ class InstanceWeather {
     double simulationTimeSeconds_ = 0.0;
     double pendingSimulationSeconds_ = 0.0;
     double weatherPhase_ = 0.0;
+    double worldSimulationSeconds_ = 0;
+    double importedWaterKgM2_ = 0, exportedWaterKgM2_ = 0;
 
     AirLayer nearAir_;
     AirLayer upperAir_;

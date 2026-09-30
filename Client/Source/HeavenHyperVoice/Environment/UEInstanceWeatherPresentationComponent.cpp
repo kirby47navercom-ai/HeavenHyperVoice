@@ -57,7 +57,7 @@ void UUEInstanceWeatherPresentationComponent::SetWeatherSource(
 		return;
 	}
 
-	if (WeatherSource)
+	if (IsValid(WeatherSource))
 	{
 		WeatherSource->OnInstanceWeatherChanged.RemoveDynamic(
 			this, &UUEInstanceWeatherPresentationComponent::HandleWeatherChanged);
@@ -121,6 +121,14 @@ UUEInstanceWeatherPresentationComponent::MakeTargetState(
 void UUEInstanceWeatherPresentationComponent::HandleWeatherChanged(
 	const FUEInstanceWeatherState& Weather)
 {
+	// 방 번호 0은 브릿지의 연결 해제 알림이에요. 낮밤/수면까지 같은 지점에서 비워요.
+	if (Weather.RoomId == 0)
+	{
+		bHasWeather = false;
+		CurrentState = {}; TargetState = {};
+		BroadcastCurrentState();
+		return;
+	}
 	TargetState = MakeTargetState(Weather);
 	if (!bHasWeather)
 	{
@@ -135,6 +143,7 @@ void UUEInstanceWeatherPresentationComponent::TickComponent(
 	float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	if (WeatherSource && !IsValid(WeatherSource)) SetWeatherSource(nullptr);
 	if (!WeatherSource && bFindWeatherSourceAutomatically)
 	{
 		SourceSearchSeconds += FMath::Max(0.0f, DeltaTime);

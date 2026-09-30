@@ -1,9 +1,12 @@
 #include "EnvironmentConfig.h"
 #include <cmath>
+#include <algorithm>
 #include <fstream>
 #include <map>
 #include <set>
 #include <stdexcept>
+#include <sstream>
+#include "PokemonSpecies.h"
 namespace heaven::instance {
 InstanceWeatherProfile loadEnvironmentProfile(const std::string& filename) {
     // 데이터 에셋과 같은 필드 이름을 사용하므로 특정 맵 경로/좌표를 코드에 박지 않는다.
@@ -21,6 +24,20 @@ InstanceWeatherProfile loadEnvironmentProfile(const std::string& filename) {
         {"dustResponseSeconds",&result.environment.dustResponseSeconds}, {"tideAmplitudeM",&result.environment.tideAmplitudeM},
         {"tidePeriodHours",&result.environment.tidePeriodHours}, {"tidePhaseDegrees",&result.environment.tidePhaseDegrees},
         {"waveMaxHeightM",&result.environment.waveMaxHeightM}, {"waveResponseSeconds",&result.environment.waveResponseSeconds} ,
+        {"surfaceFilmCapacityKgM2",&result.environment.surfaceFilmCapacityKgM2},
+        {"moistureExchangeSeconds",&result.environment.moistureExchangeSeconds},
+        {"solarPeakWm2",&result.environment.solarPeakWm2},
+        {"surfaceAlbedo",&result.environment.surfaceAlbedo},
+        {"surfaceEmissivity",&result.environment.surfaceEmissivity},
+        {"clearSkyCoolingWm2",&result.environment.clearSkyCoolingWm2},
+        {"airHeatTransferWm2K",&result.environment.airHeatTransferWm2K},
+        {"springNeapPeriodDays",&result.environment.springNeapPeriodDays},
+        {"neapTideFraction",&result.environment.neapTideFraction},
+        {"springNeapPhaseDegrees",&result.environment.springNeapPhaseDegrees},
+        {"shoreHeightM",&result.environment.shoreHeightM},
+        {"wetMovementMultiplier",&result.environment.wetMovementMultiplier},
+        {"iceMovementMultiplier",&result.environment.iceMovementMultiplier},
+        {"sandVisibilityMultiplier",&result.environment.sandVisibilityMultiplier},
         {"meanTemperatureC",&result.meanTemperatureC},
         {"initialRelativeHumidityPct",&result.initialRelativeHumidityPct},
         {"meanPressureHpa",&result.meanPressureHpa},
@@ -38,8 +55,27 @@ InstanceWeatherProfile loadEnvironmentProfile(const std::string& filename) {
         const auto equals=line.find('=',first);
         if(equals==std::string::npos) throw std::runtime_error("Expected name=value: "+line);
         const auto key=line.substr(first,line.find_last_not_of(" \t",equals-1)-first+1);
+        if(!seen.insert(key).second) throw std::runtime_error("Duplicate environment key: "+key);
+        if(key.rfind("spawn.",0)==0) {
+            std::size_t end=0; const auto idText=key.substr(6);
+            if(idText.empty() || idText.find_first_not_of("0123456789")!=std::string::npos)
+                throw std::runtime_error("Invalid spawn dex: "+key);
+            const auto dex=std::stoul(idText,&end);
+            if(dex==0 || dex>65535 || !heaven::proto::findSpeciesByDex(static_cast<std::uint16_t>(dex)))
+                throw std::runtime_error("Unknown spawn dex: "+key);
+            EnvironmentSpawnRule rule; rule.pokemonDex=static_cast<std::uint16_t>(dex);
+            if(std::any_of(result.spawnRules.begin(),result.spawnRules.end(),[&](const auto& r){return r.pokemonDex==rule.pokemonDex;}))
+                throw std::runtime_error("Duplicate spawn dex: "+key);
+            std::string text=line.substr(equals+1); std::replace(text.begin(),text.end(),',',' ');
+            std::istringstream values(text); std::string extra;
+            if(!(values>>rule.baseWeight>>rule.rainMultiplier>>rule.snowMultiplier>>rule.nightMultiplier) || values>>extra)
+                throw std::runtime_error("Expected four spawn weights: "+line);
+            for(double v:{rule.baseWeight,rule.rainMultiplier,rule.snowMultiplier,rule.nightMultiplier})
+                if(!std::isfinite(v) || v<0 || v>100) throw std::runtime_error("Invalid spawn weight: "+line);
+            result.spawnRules.push_back(rule); continue;
+        }
         const auto field=fields.find(key);
-        if(field==fields.end() || !seen.insert(key).second) throw std::runtime_error("Unknown/duplicate environment key: "+key);
+        if(field==fields.end()) throw std::runtime_error("Unknown/duplicate environment key: "+key);
         const auto text=line.substr(equals+1); std::size_t end=0;
         const double value=std::stod(text,&end);
         if(!std::isfinite(value) || text.find_first_not_of(" \t\r",end)!=std::string::npos)
@@ -71,6 +107,20 @@ InstanceWeatherProfile loadEnvironmentProfile(const std::string& filename) {
     if(safe.tidePhaseDegrees!=result.environment.tidePhaseDegrees) throw std::runtime_error("Invalid tidePhaseDegrees");
     if(safe.waveMaxHeightM!=result.environment.waveMaxHeightM) throw std::runtime_error("Invalid waveMaxHeightM");
     if(safe.waveResponseSeconds!=result.environment.waveResponseSeconds) throw std::runtime_error("Invalid waveResponseSeconds");
+    if(safe.surfaceFilmCapacityKgM2!=result.environment.surfaceFilmCapacityKgM2) throw std::runtime_error("Invalid surfaceFilmCapacityKgM2");
+    if(safe.moistureExchangeSeconds!=result.environment.moistureExchangeSeconds) throw std::runtime_error("Invalid moistureExchangeSeconds");
+    if(safe.solarPeakWm2!=result.environment.solarPeakWm2) throw std::runtime_error("Invalid solarPeakWm2");
+    if(safe.surfaceAlbedo!=result.environment.surfaceAlbedo) throw std::runtime_error("Invalid surfaceAlbedo");
+    if(safe.surfaceEmissivity!=result.environment.surfaceEmissivity) throw std::runtime_error("Invalid surfaceEmissivity");
+    if(safe.clearSkyCoolingWm2!=result.environment.clearSkyCoolingWm2) throw std::runtime_error("Invalid clearSkyCoolingWm2");
+    if(safe.airHeatTransferWm2K!=result.environment.airHeatTransferWm2K) throw std::runtime_error("Invalid airHeatTransferWm2K");
+    if(safe.springNeapPeriodDays!=result.environment.springNeapPeriodDays) throw std::runtime_error("Invalid springNeapPeriodDays");
+    if(safe.neapTideFraction!=result.environment.neapTideFraction) throw std::runtime_error("Invalid neapTideFraction");
+    if(safe.springNeapPhaseDegrees!=result.environment.springNeapPhaseDegrees) throw std::runtime_error("Invalid springNeapPhaseDegrees");
+    if(safe.shoreHeightM!=result.environment.shoreHeightM) throw std::runtime_error("Invalid shoreHeightM");
+    if(safe.wetMovementMultiplier!=result.environment.wetMovementMultiplier) throw std::runtime_error("Invalid wetMovementMultiplier");
+    if(safe.iceMovementMultiplier!=result.environment.iceMovementMultiplier) throw std::runtime_error("Invalid iceMovementMultiplier");
+    if(safe.sandVisibilityMultiplier!=result.environment.sandVisibilityMultiplier) throw std::runtime_error("Invalid sandVisibilityMultiplier");
     if(result.meanTemperatureC<-60 || result.meanTemperatureC>60) throw std::runtime_error("Invalid meanTemperatureC");
     if(result.initialRelativeHumidityPct<0 || result.initialRelativeHumidityPct>100) throw std::runtime_error("Invalid initialRelativeHumidityPct");
     if(result.meanPressureHpa<800 || result.meanPressureHpa>1100) throw std::runtime_error("Invalid meanPressureHpa");

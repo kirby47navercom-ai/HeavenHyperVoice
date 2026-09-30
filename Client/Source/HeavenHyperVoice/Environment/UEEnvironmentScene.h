@@ -53,6 +53,11 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Environment|Cloud") float CloudDensityScale=1;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Environment|Ocean") float WaveLengthCm=1200;
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Environment|Ocean") float WaveSteepness=.2f;
+    // Water 높이/파도 변경은 물 구역과 GPU 데이터를 다시 만들어요. 허용 오차와 주기를 BP에서 조정해요.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Environment|Ocean", meta=(ClampMin="0.1",ClampMax="10")) float OceanUpdateSeconds=.5f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Environment|Ocean", meta=(ClampMin="0.25")) float TideToleranceCm=1;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Environment|Ocean", meta=(ClampMin="0.1")) float WaveToleranceCm=2;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Environment|Ocean", meta=(ClampMin="0.1")) float WaveDirectionToleranceDegrees=2;
     UPROPERTY(BlueprintReadOnly, Category="Environment") FUEInstanceWeatherPresentationState State;
 private:
     void UpdateLighting();
@@ -72,5 +77,6 @@ private:
     float TideBiasCm=0;
     EComponentMobility::Type OceanMobility=EComponentMobility::Static;
     bool bApplied=false;
+    float OceanTimer=0;
     bool bSkyDomeWasHidden=false;
 };

@@ -24,8 +24,8 @@ void AUEEnvironmentScene::UpdateOcean() {
     const FVector Base=OceanLocation-FVector(0,0,TideBiasCm);
     if(!Ocean->GetActorLocation().Equals(Base,.01)) Ocean->SetActorLocation(Base);
     const float Offset=OceanOffset+TideBiasCm+TideCm;
-    // 물 구역 재구성을 매 프레임 요청하지 않는다. 수면 높이 오차는 2.5 mm 이하다.
-    if(FMath::Abs(Ocean->GetWaterBodyComponent()->GetHeightOffset()-Offset)>.25f)
+    // 프로필의 허용 오차와 갱신 간격으로 물 구역 재구성 비용을 제한해요.
+    if(FMath::Abs(Ocean->GetWaterBodyComponent()->GetHeightOffset()-Offset)>FMath::Max(.25f,TideToleranceCm))
         Ocean->GetWaterBodyComponent()->SetHeightOffset(Offset);
     if(!RuntimeWaves) {
         RuntimeWaves=NewObject<UGerstnerWaterWaves>(this);
@@ -34,8 +34,9 @@ void AUEEnvironmentScene::UpdateOcean() {
         Ocean->SetWaterWaves(RuntimeWaves);
     }
     const float Height=State.Environment.WaveHeightM*100;
-    if(FMath::Abs(WaveGenerator->HeightCm-Height)>.1f ||
-       FMath::Abs(FMath::FindDeltaAngleDegrees(WaveGenerator->DirectionDegrees,State.WindDirectionDegrees))>.1f) {
+    if(FMath::Abs(WaveGenerator->HeightCm-Height)>FMath::Max(.1f,WaveToleranceCm) ||
+       FMath::Abs(FMath::FindDeltaAngleDegrees(WaveGenerator->DirectionDegrees,State.WindDirectionDegrees))>FMath::Max(.1f,WaveDirectionToleranceDegrees) ||
+       !FMath::IsNearlyEqual(WaveGenerator->LengthCm,WaveLengthCm) || !FMath::IsNearlyEqual(WaveGenerator->Steepness,WaveSteepness)) {
         WaveGenerator->HeightCm=Height; WaveGenerator->LengthCm=WaveLengthCm;
         WaveGenerator->DirectionDegrees=State.WindDirectionDegrees; WaveGenerator->Steepness=WaveSteepness;
         RuntimeWaves->RecomputeWaves(true);

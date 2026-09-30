@@ -18,6 +18,9 @@ WildAi::WildAi(std::unique_ptr<WildBt> behavior)
 
 WildAi::~WildAi() = default;
 
+void WildAi::setVisibilityMultiplier(float value) {
+    visibilityMultiplier_=std::isfinite(value) ? std::clamp(value,.1f,1.f) : 1.f;
+}
 void WildAi::setArea(const WildArea& area) {
     area_ = area;
 }
@@ -60,6 +63,7 @@ WildIntent WildAi::decide(std::uint64_t entityId, std::uint16_t species, std::ui
     WildBtContext context;
     context.entityId = entityId;
     context.species = species;
+    context.visibilityMultiplier = visibilityMultiplier_;
     context.mapId = mapId;
     context.position = actionContext.position;
     context.state = brain.fsm.state();

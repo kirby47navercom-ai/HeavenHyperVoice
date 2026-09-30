@@ -7,6 +7,24 @@
 #include "UObject/UnrealType.h"
 #include "Stateless/NiagaraStatelessDistribution.h"
 
+bool UUEWaterVFXEditorLibrary::BindWeatherSpawnRate(UNiagaraSystem* System, UObject* Object)
+{
+    // Niagara 내부 헤더에 의존하지 않고 기존 제작 라이브러리와 같은 reflection 경로를 사용해요.
+    auto* Array=Object ? FindFProperty<FArrayProperty>(Object->GetClass(),TEXT("SpawnInfos")) : nullptr;
+    auto* Item=Array ? CastField<FStructProperty>(Array->Inner) : nullptr;
+    auto* Property=Item ? FindFProperty<FStructProperty>(Item->Struct,TEXT("Rate")) : nullptr;
+    if(!System || !Property || Property->Struct!=FNiagaraDistributionRangeFloat::StaticStruct()) return false;
+    FScriptArrayHelper Spawns(Array,Array->ContainerPtrToValuePtr<void>(Object));
+    if(Spawns.Num()!=1) return false;
+    FNiagaraVariable Rate(FNiagaraTypeDefinition::GetFloatDef(),TEXT("User.SpawnRate"));
+    System->GetExposedParameters().AddParameter(Rate);
+    System->GetExposedParameters().SetParameterValue(4.f,Rate); // 에디터 단독 미리보기에서도 낙하가 보여요.
+    auto* Distribution=Property->ContainerPtrToValuePtr<FNiagaraDistributionRangeFloat>(Spawns.GetRawPtr(0));
+    Distribution->Mode=ENiagaraDistributionMode::Binding;
+    Distribution->ParameterBinding=Rate;
+    return true;
+}
+
 bool UUEWaterVFXEditorLibrary::BindWeatherParticle(UNiagaraSystem* System, UObject* Initialize, UObject* Velocity)
 {
     if (!System || !Initialize || !Velocity) return false;

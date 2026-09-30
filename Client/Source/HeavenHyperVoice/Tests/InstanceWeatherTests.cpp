@@ -25,6 +25,8 @@ bool FInstanceWeatherTest::RunTest(const FString&)
     Presentation->RegisterComponent();
     Presentation->SetWeatherSource(Bridge);
     FUEInstanceWeatherState Weather;
+    Weather.RoomId = 47;
+    Weather.Environment.Enabled = true;
     Weather.TemperatureC = -2;
     Weather.PrecipitationMmPerHour = Presentation->HeavyPrecipitationMmPerHour;
     Weather.SnowDepthM = Presentation->FullSnowCoverageDepthM;
@@ -39,6 +41,9 @@ bool FInstanceWeatherTest::RunTest(const FString&)
     const auto Visual = Presentation->GetPresentationState();
     TestTrue(TEXT("Warm snapshot transitions to rain"), Visual.RainIntensity > Visual.SnowIntensity);
     TestTrue(TEXT("Wind crosses north by short arc"), Visual.WindDirectionDegrees < 2 || Visual.WindDirectionDegrees > 358);
+    Bridge->OnInstanceWeatherChanged.Broadcast(FUEInstanceWeatherState{});
+    TestFalse(TEXT("Disconnect clears environment immediately"),Presentation->GetPresentationState().Environment.Enabled);
+    TestEqual(TEXT("Disconnect clears rain immediately"),Presentation->GetPresentationState().RainIntensity,0.f);
     Presentation->SetWeatherSource(nullptr);
     TestEqual(TEXT("Detach clears rainfall"), Presentation->GetPresentationState().RainIntensity, 0.f);
 

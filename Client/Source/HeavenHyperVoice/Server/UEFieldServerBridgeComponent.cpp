@@ -320,6 +320,13 @@ void UUEFieldServerBridgeComponent::StartConnection(const FString &Service, uint
 	SetComponentTickEnabled(true);
 }
 
+void UUEFieldServerBridgeComponent::ClearInstanceWeatherState()
+{
+    bHasInstanceWeatherState=false;
+    InstanceWeatherState={};
+    OnInstanceWeatherChanged.Broadcast(InstanceWeatherState);
+}
+
 void UUEFieldServerBridgeComponent::StopFieldConnection()
 {
 	FieldConnection.reset();
@@ -330,8 +337,7 @@ void UUEFieldServerBridgeComponent::StopFieldConnection()
 	bInInstance = false;
 	LocalEntityId = 0;
 	CurrentRoomId = 0;
-	bHasInstanceWeatherState = false;
-	InstanceWeatherState = {};
+	ClearInstanceWeatherState();
 	SetComponentTickEnabled(false);
 }
 
@@ -669,8 +675,7 @@ void UUEFieldServerBridgeComponent::HandleFieldDisconnected(const FString &Reaso
 	}
 	LocalEntityId = 0;
 	CurrentRoomId = 0;
-	bHasInstanceWeatherState = false;
-	InstanceWeatherState = {};
+	ClearInstanceWeatherState();
 	DestroyPresentationActors();
 }
 

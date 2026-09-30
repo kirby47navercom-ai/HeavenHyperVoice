@@ -50,9 +50,8 @@ def particle_material(kind):
 
 def particles(kind, mat):
     path = ROOT+'/NS_Weather_'+kind
-    if LIB.does_asset_exist(path):
-        return LIB.load_asset(path)
-    system = LIB.duplicate_asset('/Niagara/DefaultAssets/Templates/Systems/FountainLightweight', path)
+    existing=LIB.load_asset(path) if LIB.does_asset_exist(path) else None
+    system = existing or LIB.duplicate_asset('/Niagara/DefaultAssets/Templates/Systems/FountainLightweight', path)
     falling = kind in ('Rain', 'Snow')
     specs = {'Rain': (1,(1,1),(1,1),0,(0,0),0),
              'Snow': (1,(4,4),(2,4),0,(0,0),0),
@@ -68,7 +67,11 @@ def particles(kind, mat):
     init = mods['InitializeParticle']
     # Lightweight 이미터는 로컬 공간이다. 낙하 액터는 회전 없이 고정 생성한다.
     if falling:
-        # 한 입자의 실제 속도/수명을 C++ 충돌 경로와 일치시킨다.
+        # 좁은 경로마다 지속 방출해요. CPU 충돌 샘플은 별도로 계산해요.
+        setp(emitter,'EmitterState',f'(LoopBehavior=Infinite,LoopDuration={scalar(.2)},InactiveResponse=Complete)')
+        setp(emitter,'SpawnInfos',f'((Type=Rate,Rate={scalar(0)}))')
+        if not water.EDIT.bind_weather_spawn_rate(system,emitter):
+            raise RuntimeError('Spawn rate binding failed: '+kind)
         setp(mods['ShapeLocation'], 'bModuleEnabled', 'False')
         setp(mods['AddVelocity'], 'bModuleEnabled', 'True')
         setp(mods['AddVelocity'], 'VelocityType', 'Linear')

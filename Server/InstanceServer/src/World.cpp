@@ -231,7 +231,7 @@ bool World::setWildCurrentHp(std::uint64_t entityId, std::uint16_t currentHp) {
     return true;
 }
 
-void World::advanceWild(float dt, WildAi &ai) {
+void World::advanceWild(float dt, WildAi &ai, float environmentMovementMultiplier) {
     // 1) 락 안에서 AI 판단에 필요한 좌표만 뜬다.
     struct Pending {
         std::uint64_t id;
@@ -308,7 +308,7 @@ void World::advanceWild(float dt, WildAi &ai) {
             const auto previous = entity.movement.state.position;
             map_->advance(entity.movement.state, entity.movementAccumulator, dt,
                           {p.intent.targetX, p.intent.targetY, entity.position.z}, p.intent.moving,
-                          fieldshared::pokemonMoveSpeed(entity.species));
+                          fieldshared::pokemonMoveSpeed(entity.species)*std::clamp(environmentMovementMultiplier,.1f,1.f));
             const auto &state = entity.movement.state;
             const auto location = map_->toServer(state.position);
             const float nx = location.x;

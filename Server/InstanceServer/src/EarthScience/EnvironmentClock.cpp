@@ -3,8 +3,8 @@
 namespace heaven::instance {
 void InstanceWeather::updateClock() {
     const auto& p=profile_.environment;
-    environment_.dayFraction=earth::cycle(simulationTimeSeconds_/p.daySeconds+p.startHour/24.0);
-    environment_.yearFraction=earth::cycle(simulationTimeSeconds_/(p.daySeconds*p.yearDays)+p.startYearFraction);
+    environment_.dayFraction=earth::cycle(worldSimulationSeconds_/p.daySeconds+p.startHour/24.0);
+    environment_.yearFraction=earth::cycle(worldSimulationSeconds_/(p.daySeconds*p.yearDays)+p.startYearFraction);
     const double latitude=p.latitudeDegrees*earth::Pi/180;
     // 공전 주기에 따른 태양 적위와 자전 시각으로 태양 방향을 얻는다.
     const double declination=23.44*earth::Pi/180*std::sin(2*earth::Pi*(environment_.yearFraction-.218));

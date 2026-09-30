@@ -74,6 +74,7 @@ WildDecision WildBt::decide(const WildBtContext& context) {
         auto luaContext = lua_->create_table_with(
             "entity_id", context.entityId,
             "species", context.species,
+            "visibility_multiplier", context.visibilityMultiplier,
             "map_id", context.mapId,
             "state", stateName(context.state),
             "x", context.position.x,
