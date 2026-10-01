@@ -130,6 +130,36 @@ AI의 과거 타깃/배회 경로는 슬롯 회수 때 `forget()`으로 지워�
 
 ## 지구과학 엔진의 범위와 후속 확인
 
+### 얼음·서리와 해안 거품 에셋
+
+실제 편집 가능한 에셋은 기존 `/Game/VFX/Weather` 안에 만들었어요.
+게임 맵의 머티리얼을 일괄 교체하거나 해안을 새로 배치하지 않았어요.
+
+- `Materials/MF_EnvironmentIce`: 기존 BaseColor/Roughness/WorldNormal을 받아 얼음 균열과 서리를 섞는 공용 함수예요. Exposure로 적용 영역을 제한해요. 기존 머티리얼의 출력 앞에 연결할 수 있어요.
+- `Materials/M_Environment_Ice`: 위 함수의 기본 머티리얼이에요. `MI_Environment_ClearIce`, `MI_Environment_Frost`는 얼음/서리 비중이 다른 인스턴스예요. `CellSizeCm`은 균열 간격, `FrostAmount`는 서리 비중, `FullThicknessMm`는 완전히 얼어 보이는 물 환산 얼음 두께예요. `Override=-1`이 환경 연동이고 0~1은 수동 미리보기예요.
+- `Materials/M_Environment_ShoreFoam`: 절차적 거품막/기포 머티리얼이에요. `FoamTint`, `FoamOpacity`, `FoamRoughness`를 조정해요. 장면 조명을 받아 낮/밤의 밝기가 맞춰져요. 파고가 거의 0이면 투명해지고 조석의 상대 높이(m)를 월드 cm로 바꾸어 수면을 따라 이동해요.
+- `NS_Environment_ShoreFoam`: FoamLace/SmallBubbles 두 Lightweight 이미터로 방출하고 서서히 소멸해요. 위치, 방출 상자 크기, 크기/속도/수명/방출량은 Niagara에서 수정해요.
+- `BP_EnvironmentShoreFoam`: 해당 시스템을 지정한 배치용 NiagaraActor BP예요. 해안선의 평균 수면에 놓고 회전/스케일로 방향·폭을 맞춰요. 기준 조석이 0인 수면 높이에 두어야 조석을 이중 적용하지 않아요.
+
+`UEInstanceWeatherDirector::ApplyParameters()`가 보간된 `IceMm`, `GroundTemperatureC`,
+`WaveHeightM`, `TideLevelM`를 기존 `MPC_InstanceWeather`에 전달해요. 환경을 비활성화하면
+얼음/파도/조석은 0, 지표 온도는 20으로 돌려요. main은 서버 상태를 사용하고 Yang2는
+기존 로컬 계산 상태가 같은 연출 경로로 들어가요. 입자 위치를 서버에 복제하지 않아요.
+
+`Client/Scripts/Unreal/create_ice_shore_assets.py`는 에디터 제작 스크립트이고 이미 있는
+에셋의 작가 수정은 보존해요. `Shaders/EnvironmentIce.ush`, `EnvironmentFoam.ush` 내용은
+에셋의 Custom 노드에 저장돼요. 게임 실행 시 Python/외부 shader 파일을 읽지 않아요.
+`.ush`를 고친 뒤 기존 에셋에 자동 덮어쓰지 않으므로 Custom 노드도 직접 수정해야 해요.
+
+`preview_ice_shore_assets.py`는 임시 레벨에서 실제 에셋을 렌더해
+`Client/Saved/Codex/EarthScienceAssets`에 PNG를 저장해요. 비교 화면 왼쪽은 기본 표면,
+가운데는 얼음, 오른쪽은 서리예요. 바다는 미리보기용 표면이고 실제 Water Body의
+파도/충돌 판정은 바꾸지 않아요. 이 거품은 배치한 해안 구간용 시각 효과예요.
+자동 해안선 추출, 파도 쇄파 물리, 물 위의 실제 얼음 지형 생성은 포함하지 않았어요.
+기존 에디터 라이브러리의 `TickWaterPreview`는 이 비게임 레벨에서만 컴포넌트와
+MPC 렌더 버퍼를 갱신하고 실제 생성 입자 수를 반환해요. PIE/게임 월드는 거절해요.
+미리보기 스크립트는 BP의 실제 배치 인스턴스 연결과 입자 생성도 확인해요.
+
 전투·포획 판정, 수영 애니메이션·스태미나·익사, 다른 해안의 신규 제작/수역 배치는
 이 엔진의 필수 후속 작업으로 취급하지 않아요. 게임 규칙은 사용자가 별도로 정할 때 연결해요.
 기존 맵/에셋의 실제 오류는 해당 오류만 수정해요.

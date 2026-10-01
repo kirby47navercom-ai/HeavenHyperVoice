@@ -6,6 +6,25 @@
 #include "NiagaraEmitter.h"
 #include "UObject/UnrealType.h"
 #include "Stateless/NiagaraStatelessDistribution.h"
+#include "NiagaraComponent.h"
+#include "Engine/World.h"
+#include "NiagaraSystemInstanceController.h"
+#include "NiagaraSystemInstance.h"
+#include "NiagaraEmitterInstance.h"
+
+int32 UUEWaterVFXEditorLibrary::TickWaterPreview(UNiagaraComponent* Component, float DeltaSeconds)
+{
+    if (!IsValid(Component) || !Component->GetWorld() || Component->GetWorld()->IsGameWorld()) return -1;
+    // Python의 AdvanceSimulation만으로는 PSO 대기와 MPC의 렌더 버퍼가 갱신되지 않아요.
+    // 게임 월드/서버는 실행하지 않고 이 컴포넌트와 파라미터 컬렉션만 갱신해요.
+    Component->TickComponent(FMath::Clamp(DeltaSeconds,.001f,.1f),LEVELTICK_All,nullptr);
+    Component->MarkRenderDynamicDataDirty();
+    Component->GetWorld()->UpdateParameterCollectionInstances(true,false);
+    int32 Count=0;
+    if (auto Controller=Component->GetSystemInstanceController())
+        for (const auto& Emitter:Controller->GetSystemInstance_Unsafe()->GetEmitters()) Count+=Emitter->GetNumParticles();
+    return Count;
+}
 
 bool UUEWaterVFXEditorLibrary::BindWeatherSpawnRate(UNiagaraSystem* System, UObject* Object)
 {
