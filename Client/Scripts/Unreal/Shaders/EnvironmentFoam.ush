@@ -1,0 +1,23 @@
+// 거품 막은 셀 경계에, 작은 공기방울은 원 둘레에 나타나요.
+// 입자 수명과 파고가 투명도를 조정해서 생겼다가 풀어지는 해안 거품이에요.
+float2 p=UV*2-1;
+float2 q=UV*float2(9,5)+float2(Age*.7,Age*1.2);
+float2 cell=floor(q),f=frac(q);
+float nearest=9,second=9,bubbles=0;
+for(int y=-1;y<=1;y++) for(int x=-1;x<=1;x++) {
+    float2 c=cell+float2(x,y);
+    float2 h=frac(sin(float2(dot(c,float2(127.1,311.7)),dot(c,float2(269.5,183.3))))*43758.5453);
+    float2 v=float2(x,y)+.15+h*.7-f;
+    float d=length(v);
+    if(d<nearest) {second=nearest;nearest=d;} else second=min(second,d);
+    float radius=.08+.15*h.x;
+    bubbles=max(bubbles,1-smoothstep(.012,.045,abs(d-radius)));
+}
+float lace=1-smoothstep(.012,.065,second-nearest);
+float edge=1-smoothstep(.65,1,length(p*float2(.83,1.04)));
+float broken=.55+.45*sin(q.x*1.1+sin(q.y*2));
+float membrane=lerp(bubbles, max(lace*.9,bubbles*.65),.55);
+float strength=smoothstep(.005,.3,max(Wave,0));
+// 생성/소멸 투명도는 Niagara의 Scale Color 모듈에서 처리해요. 이중 수명 마스크를 피해요.
+float alpha=(membrane*.72+.18)*edge*broken*strength*Opacity;
+return float4(lerp(Tint,float3(.94,.99,1),lace*.7),alpha);

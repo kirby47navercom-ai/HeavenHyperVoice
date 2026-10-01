@@ -160,6 +160,12 @@ void AUEInstanceWeatherDirector::ApplyParameters()
     MPC->SetScalarParameterValue(TEXT("Rain"),State.RainIntensity);
     MPC->SetScalarParameterValue(TEXT("Cloud"),State.CloudAmount);
     MPC->SetScalarParameterValue(TEXT("Fog"),State.FogDensity);
+    // 얼음·해안 에셋은 이미 보간한 환경값만 읽어요. 여기서는 기후를 다시 계산하지 않아요.
+    const auto& E=State.Environment;
+    MPC->SetScalarParameterValue(TEXT("IceMm"),E.Enabled ? FMath::Max(0.,E.IceMm) : 0);
+    MPC->SetScalarParameterValue(TEXT("GroundTemperatureC"),E.Enabled ? E.GroundTemperatureC : 20);
+    MPC->SetScalarParameterValue(TEXT("WaveHeightM"),E.Enabled ? FMath::Max(0.,E.WaveHeightM) : 0);
+    MPC->SetScalarParameterValue(TEXT("TideLevelM"),E.Enabled ? E.TideLevelM : 0);
     const float A = FMath::DegreesToRadians(State.WindDirectionDegrees);
     MPC->SetVectorParameterValue(TEXT("Wind"),FLinearColor(FMath::Cos(A)*State.WindIntensity,
         FMath::Sin(A)*State.WindIntensity,0,0));

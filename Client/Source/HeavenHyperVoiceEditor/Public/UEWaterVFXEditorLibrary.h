@@ -3,6 +3,7 @@
 #include "UEWaterVFXEditorLibrary.generated.h"
 class UNiagaraSystem;
 class UNiagaraEmitter;
+class UNiagaraComponent;
 
 /** Editor-only access for authoring lightweight Niagara layers from Python. */
 UCLASS()
@@ -10,6 +11,9 @@ class HEAVENHYPERVOICEEDITOR_API UUEWaterVFXEditorLibrary : public UBlueprintFun
 {
 	GENERATED_BODY()
 public:
+	/** 플레이하지 않는 임시 에디터 레벨의 입자/날씨 GPU 버퍼만 갱신해요. */
+	UFUNCTION(BlueprintCallable, Category="VFX|Editor")
+	static int32 TickWaterPreview(UNiagaraComponent* Component, float DeltaSeconds);
 	/** 에디터 제작 전용: 경로별 수명/속도를 Niagara User 파라미터에 연결한다. */
 	UFUNCTION(BlueprintCallable, Category="VFX|Editor")
 	static bool BindWeatherParticle(UNiagaraSystem* System, UObject* Initialize, UObject* Velocity);
