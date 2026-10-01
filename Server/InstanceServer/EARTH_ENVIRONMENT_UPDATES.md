@@ -136,9 +136,9 @@ AI의 과거 타깃/배회 경로는 슬롯 회수 때 `forget()`으로 지워�
 게임 맵의 머티리얼을 일괄 교체하거나 해안을 새로 배치하지 않았어요.
 
 - `Materials/MF_EnvironmentIce`: 기존 BaseColor/Roughness/WorldNormal을 받아 얼음 균열과 서리를 섞는 공용 함수예요. Exposure로 적용 영역을 제한해요. 기존 머티리얼의 출력 앞에 연결할 수 있어요.
-- `Materials/M_Environment_Ice`: 위 함수의 기본 머티리얼이에요. `MI_Environment_ClearIce`, `MI_Environment_Frost`는 얼음/서리 비중이 다른 인스턴스예요. `CellSizeCm`은 균열 간격, `FrostAmount`는 서리 비중, `FullThicknessMm`는 완전히 얼어 보이는 물 환산 얼음 두께예요. `Override=-1`이 환경 연동이고 0~1은 수동 미리보기예요.
-- `Materials/M_Environment_ShoreFoam`: 절차적 거품막/기포 머티리얼이에요. `FoamTint`, `FoamOpacity`, `FoamRoughness`를 조정해요. 장면 조명을 받아 낮/밤의 밝기가 맞춰져요. 파고가 거의 0이면 투명해지고 조석의 상대 높이(m)를 월드 cm로 바꾸어 수면을 따라 이동해요.
-- `NS_Environment_ShoreFoam`: FoamLace/SmallBubbles 두 Lightweight 이미터로 방출하고 서서히 소멸해요. 위치, 방출 상자 크기, 크기/속도/수명/방출량은 Niagara에서 수정해요.
+- `Materials/M_Environment_Ice`: 위 함수의 기본 머티리얼이에요. `MI_Environment_ClearIce`, `MI_Environment_Frost`는 얼음/서리 비중이 다른 인스턴스예요. `CellSizeCm`은 균열 텍스처의 월드 반복 크기(cm), `FrostAmount`는 서리 비중, `FullThicknessMm`는 완전히 얼어 보이는 물 환산 얼음 두께예요. `Override=-1`이 환경 연동이고 0~1은 수동 미리보기예요.
+- `Materials/M_Environment_ShoreFoam`: 기존 Fab `T_Ocean_Foam`의 큰 거품/미세 포말 마스크를 겹친 머티리얼이에요. `FoamTint`, `FoamOpacity`, `FoamRoughness`를 조정해요. 장면 조명을 받아 낮/밤의 밝기가 맞춰져요. 파고가 거의 0이면 투명해지고 조석의 상대 높이(m)를 월드 cm로 바꾸어 수면을 따라 이동해요.
+- `NS_Environment_ShoreFoam`: FoamLace/SmallBubbles/SeaSpray 세 Lightweight 이미터가 퍼지면서 커지고 서서히 소멸해요. 물결 주기에 따라 로컬 +Y 방향으로 전진/후퇴해요. SeaSpray는 기존 `T_WaterSplash2` 4x4 flipbook을 사용하는 물보라예요. 위치, 방출 상자 크기, 크기/속도/수명/방출량은 Niagara에서 수정해요.
 - `BP_EnvironmentShoreFoam`: 해당 시스템을 지정한 배치용 NiagaraActor BP예요. 해안선의 평균 수면에 놓고 회전/스케일로 방향·폭을 맞춰요. 기준 조석이 0인 수면 높이에 두어야 조석을 이중 적용하지 않아요.
 
 `UEInstanceWeatherDirector::ApplyParameters()`가 보간된 `IceMm`, `GroundTemperatureC`,
@@ -147,15 +147,26 @@ AI의 과거 타깃/배회 경로는 슬롯 회수 때 `forget()`으로 지워�
 기존 로컬 계산 상태가 같은 연출 경로로 들어가요. 입자 위치를 서버에 복제하지 않아요.
 
 `Client/Scripts/Unreal/create_ice_shore_assets.py`는 에디터 제작 스크립트이고 이미 있는
-에셋의 작가 수정은 보존해요. `Shaders/EnvironmentIce.ush`, `EnvironmentFoam.ush` 내용은
+에셋의 작가 수정은 보존해요. 명시적으로 `--refresh`를 넘기면 이 스크립트가 만든 얼음/거품 그래프와 이미터만 재작성해요. 공용 함수의 기존 입출력 ID는 유지해요. `Shaders/EnvironmentIce.ush`, `EnvironmentFoam.ush` 내용은
 에셋의 Custom 노드에 저장돼요. 게임 실행 시 Python/외부 shader 파일을 읽지 않아요.
-`.ush`를 고친 뒤 기존 에셋에 자동 덮어쓰지 않으므로 Custom 노드도 직접 수정해야 해요.
+`.ush` 수정은 `--refresh`로 반영하거나 에디터 Custom 노드에서 직접 수정해요.
 
 `preview_ice_shore_assets.py`는 임시 레벨에서 실제 에셋을 렌더해
-`Client/Saved/Codex/EarthScienceAssets`에 PNG를 저장해요. 비교 화면 왼쪽은 기본 표면,
-가운데는 얼음, 오른쪽은 서리예요. 바다는 미리보기용 표면이고 실제 Water Body의
+`Client/Saved/Codex/EarthScienceAssets`에 PNG를 저장해요. 미리보기는 얼어붙은 수면과 서리 바위, 경사진 모래 해안 두 장면이에요. 바다는 미리보기용 표면이고 실제 Water Body의
 파도/충돌 판정은 바꾸지 않아요. 이 거품은 배치한 해안 구간용 시각 효과예요.
 자동 해안선 추출, 파도 쇄파 물리, 물 위의 실제 얼음 지형 생성은 포함하지 않았어요.
+2026-10-01 시각 개선: 큰 셀 경계 무늬를 제거하고 생성한 미세 균열/기포와 서리 결정 마스크를
+사용해요. `T_Environment_IceFractures`, `T_Environment_FrostCrystals`는 같은 Materials 폴더에
+있어요. `IceFractureTexture`, `FrostCrystalTexture`를 MI에서 교체할 수 있어요.
+원본 PNG는 Git 제외된 `Client/SourceArt/Weather`에 보관하고 가져온 uasset만 커밋해요.
+제작 프롬프트는 `Client/Scripts/Unreal/weather_texture_prompts.txt`에 있어요. 이미지 생성 도구로
+만든 마스크이며 사진 스캔 데이터는 아니에요. 최종 미리보기는 생성 이미지가 아니라 Unreal 렌더예요.
+균열의 두 층은 시점에 따라 서로 어긋나는 시차를 보여주고, 서리 높이 기울기가 노멀을 바꿔요.
+Clear Coat와 `IceCoatRoughness`로 얼음 반사를 조절해요.
+`SurfaceTexture`/`SurfaceNormal`과 각 Weight를 MI에서 지정하면 원래 바위 무늬를 보존해요.
+마스크는 선형 색 공간으로 읽고 엔진의 PowerOfTwo 빌드 옵션으로 mip/스트리밍을 사용해요. 이는 기존 불투명 표면 위의 시각 코팅이며
+실제 두께를 가진 투명 얼음/유체 시뮬레이션은 아니에요.
+
 기존 에디터 라이브러리의 `TickWaterPreview`는 이 비게임 레벨에서만 컴포넌트와
 MPC 렌더 버퍼를 갱신하고 실제 생성 입자 수를 반환해요. PIE/게임 월드는 거절해요.
 미리보기 스크립트는 BP의 실제 배치 인스턴스 연결과 입자 생성도 확인해요.
