@@ -138,7 +138,7 @@ AI의 과거 타깃/배회 경로는 슬롯 회수 때 `forget()`으로 지워�
 - `Materials/MF_EnvironmentIce`: 기존 BaseColor/Roughness/WorldNormal을 받아 얼음 균열과 서리를 섞는 공용 함수예요. Exposure로 적용 영역을 제한해요. 기존 머티리얼의 출력 앞에 연결할 수 있어요.
 - `Materials/M_Environment_Ice`: 위 함수의 기본 머티리얼이에요. `MI_Environment_ClearIce`, `MI_Environment_Frost`는 얼음/서리 비중이 다른 인스턴스예요. `CellSizeCm`은 균열 텍스처의 월드 반복 크기(cm), `FrostAmount`는 서리 비중, `FullThicknessMm`는 완전히 얼어 보이는 물 환산 얼음 두께예요. `Override=-1`이 환경 연동이고 0~1은 수동 미리보기예요.
 - `Materials/M_Environment_ShoreFoam`: 기존 Fab `T_Ocean_Foam`의 큰 거품/미세 포말 마스크를 겹친 머티리얼이에요. `FoamTint`, `FoamOpacity`, `FoamRoughness`를 조정해요. 장면 조명을 받아 낮/밤의 밝기가 맞춰져요. 파고가 거의 0이면 투명해지고 조석의 상대 높이(m)를 월드 cm로 바꾸어 수면을 따라 이동해요.
-- `NS_Environment_ShoreFoam`: FoamLace/SmallBubbles/SeaSpray 세 Lightweight 이미터가 퍼지면서 커지고 서서히 소멸해요. 물결 주기에 따라 로컬 +Y 방향으로 전진/후퇴해요. SeaSpray는 기존 `T_WaterSplash2` 4x4 flipbook을 사용하는 물보라예요. 위치, 방출 상자 크기, 크기/속도/수명/방출량은 Niagara에서 수정해요.
+- `NS_Environment_ShoreFoam`: FoamLace/SmallBubbles/SeaSpray 세 Lightweight 이미터가 퍼지면서 커지고 서서히 소멸해요. 물결 주기에 따라 로컬 +Y 방향으로 전진/후퇴해요. SeaSpray는 작은 반투명 물방울이며 포말이 전진하는 구간에만 보이는 약한 물보라예요. 위치, 방출 상자 크기, 크기/속도/수명/방출량은 Niagara에서 수정해요.
 - `BP_EnvironmentShoreFoam`: 해당 시스템을 지정한 배치용 NiagaraActor BP예요. 해안선의 평균 수면에 놓고 회전/스케일로 방향·폭을 맞춰요. 기준 조석이 0인 수면 높이에 두어야 조석을 이중 적용하지 않아요.
 
 `UEInstanceWeatherDirector::ApplyParameters()`가 보간된 `IceMm`, `GroundTemperatureC`,
@@ -162,6 +162,13 @@ AI의 과거 타깃/배회 경로는 슬롯 회수 때 `forget()`으로 지워�
 제작 프롬프트는 `Client/Scripts/Unreal/weather_texture_prompts.txt`에 있어요. 이미지 생성 도구로
 만든 마스크이며 사진 스캔 데이터는 아니에요. 최종 미리보기는 생성 이미지가 아니라 Unreal 렌더예요.
 균열의 두 층은 시점에 따라 서로 어긋나는 시차를 보여주고, 서리 높이 기울기가 노멀을 바꿔요.
+큰 흰 피격 flipbook을 해안에 연속으로 띄우던 방식은 제거했어요. `SeaSpray`는 1.2~3cm
+방울이 0.25~0.5초 동안 낮게 튀고 중력으로 내려오는 방식이에요. 방울 크기는 BP의 폭 스케일로
+늘리지 않아요. `SprayTint`, `SprayOpacity`, `SprayRoughness`로 물방울 재질을 조절해요.
+포말은 방출량/수명/불투명도를 낮추고 모래 교차 지점을 Depth Fade로 부드럽게 연결해요.
+`FoamIntersectionFadeCm`으로 교차 경계의 페이드 길이를 조절해요.
+이것도 배치용 시각 효과이며 실제 파도 충돌/쇄파 판정은 하지 않아요.
+
 Clear Coat와 `IceCoatRoughness`로 얼음 반사를 조절해요.
 `SurfaceTexture`/`SurfaceNormal`과 각 Weight를 MI에서 지정하면 원래 바위 무늬를 보존해요.
 마스크는 선형 색 공간으로 읽고 엔진의 PowerOfTwo 빌드 옵션으로 mip/스트리밍을 사용해요. 이는 기존 불투명 표면 위의 시각 코팅이며

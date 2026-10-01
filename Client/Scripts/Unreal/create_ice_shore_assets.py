@@ -155,6 +155,7 @@ def shore_displacement(mat,mpc,wave):
     offset=ext.custom(mat,'float3 d=normalize(Direction); float phase=Time*1.05+dot(P,cross(d,float3(0,0,1)))*.0013; return float4(d*sin(phase)*min(Wave*130,110)+float3(0,0,Tide*100+sin(phase*2)*min(Wave*5,3)),0);',{'Tide':tide,'Time':time,'Wave':wave,'P':position,'Direction':direction},-250,950)
     xyz=node(mat,unreal.MaterialExpressionComponentMask,50,950,r=True,g=True,b=True,a=False);link(offset,xyz)
     MEL.connect_material_property(xyz,'',unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET)
+    return direction
 
 
 def foam_material(mpc):
@@ -169,8 +170,8 @@ def foam_material(mpc):
     uv=node(mat,unreal.MaterialExpressionTextureCoordinate,-900,0)
     age=node(mat,unreal.MaterialExpressionParticleRelativeTime,-900,180)
     wave=node(mat,unreal.MaterialExpressionCollectionParameter,-900,360,collection=mpc,parameter_name='WaveHeightM')
-    tint=node(mat,unreal.MaterialExpressionVectorParameter,-900,540,parameter_name='FoamTint',default_value=unreal.LinearColor(.83,.89,.9),group='Environment')
-    opacity=parameter(mat,'FoamOpacity',1,-900,700)
+    tint=node(mat,unreal.MaterialExpressionVectorParameter,-900,540,parameter_name='FoamTint',default_value=unreal.LinearColor(.72,.8,.82),group='Environment')
+    opacity=parameter(mat,'FoamOpacity',.7,-900,700)
     texture=texture_parameter(mat,'FoamTexture','/Game/Fab/WaterMaterials/Textures/T_Ocean_Foam',-1200,0)
     fx=ext.custom(mat,(SHADERS/'EnvironmentFoam.ush').read_text(encoding='utf8'),{'UV':uv,'Age':age,'Wave':wave,'Tint':tint,'Opacity':opacity,'Foam':texture},-450,0)
     rgb=node(mat,unreal.MaterialExpressionComponentMask,-150,0,r=True,g=True,b=True,a=False);link(fx,rgb)
@@ -180,7 +181,10 @@ def foam_material(mpc):
     MEL.connect_material_property(rgb,'',unreal.MaterialProperty.MP_BASE_COLOR)
     rough=parameter(mat,'FoamRoughness',.75,100,450)
     MEL.connect_material_property(rough,'',unreal.MaterialProperty.MP_ROUGHNESS)
-    MEL.connect_material_property(a,'',unreal.MaterialProperty.MP_OPACITY)
+    # 모래와 만나는 얇은 막을 부드럽게 지워 하얀 페인트처럼 붙는 경계를 줄여요.
+    fade=node(mat,unreal.MaterialExpressionDepthFade,300,180)
+    link(a,fade,'Opacity');link(parameter(mat,'FoamIntersectionFadeCm',4,100,650),fade,'FadeDistance')
+    MEL.connect_material_property(fade,'',unreal.MaterialProperty.MP_OPACITY)
     shore_displacement(mat,mpc,wave)
     # 먼저 그래프/WPO 캐시를 갱신해야 UE 5.8 사용 플래그의 셰이더 검사와 일치해요.
     MEL.recompile_material(mat)
@@ -196,31 +200,36 @@ def shore_foam(mat):
     if not system:system=LIB.duplicate_asset('/Niagara/DefaultAssets/Templates/Systems/FountainLightweight',path)
     water=base.water
     for i,(name,count,size,life,speed,alpha) in enumerate([
-        ('FoamLace',18,(180,300),(3.5,5.5),26,1),
-        ('SmallBubbles',38,(22,55),(1.6,2.8),45,.9)]):
+        ('FoamLace',12,(120,200),(2,3.5),14,.65),
+        ('SmallBubbles',26,(12,32),(.8,1.6),26,.5)]):
         water.configure_layer(system,name,i>0,mat,False,count,life,size,0,(speed,speed),0,0,alpha)
         emitter=water.EDIT.water_layer(system,name,False)
         mods={m.get_class().get_name().replace('NiagaraStatelessModule_',''):m for m in emitter.get_editor_property('modules')}
         # 템플릿의 색 곡선을 물려받지 않고 거품의 수명에 맞게 투명도 곡선을 지정해요.
         white='(Keys=((Time=0,Value=1),(Time=1,Value=1)))'
-        fade='(Keys=((Time=0,Value=0),(Time=.12,Value=1),(Time=.65,Value=.9),(Time=1,Value=0)))'
+        fade='(Keys=((Time=0,Value=0),(Time=.18,Value=.8),(Time=.5,Value=.5),(Time=1,Value=0)))'
         setp(mods['ScaleColor'],'ScaleDistribution',f'(Mode=NonUniformCurve,LookupValueMode=0,ChannelConstantsAndRanges=,ChannelCurves=({white},{white},{white},{fade}))')
         shape=mods['ShapeLocation'];setp(shape,'ShapePrimitive','Box');setp(shape,'BoxSize',water.vector((1200,140,2)))
         setp(mods['AddVelocity'],'ConeDirection',water.vector((0,1,0)))
         facing=mods['SpriteFacingAndAlignment'];setp(facing,'bModuleEnabled','True');setp(facing,'SpriteFacing',water.vector((0,0,1)))
         # 얇은 물막이 퍼진 뒤 사라지도록 수명에 맞춰 입자 크기도 키워요.
-        growth='(Keys=((Time=0,Value=.45),(Time=.45,Value=1),(Time=1,Value=1.5)))'
+        growth='(Keys=((Time=0,Value=.45),(Time=.45,Value=1),(Time=1,Value=1.1)))'
         setp(mods['ScaleSpriteSize'],'bModuleEnabled','True')
         setp(mods['ScaleSpriteSize'],'ScaleDistribution',f'(Mode=UniformCurve,ChannelCurves=({growth}))')
         renderer=unreal.find_object(None,emitter.get_path_name()+'.Renderer');setp(renderer,'FacingMode','CustomFacingVector')
         setp(emitter,'FixedBounds','(Min=(X=-1200,Y=-500,Z=-1000),Max=(X=1200,Y=500,Z=1000),IsValid=1)')
-    # 평면 포말 위로 짧게 솟는 물보라. 기존 4x4 flipbook을 재사용해요.
-    water.configure_layer(system,'SeaSpray',True,spray_material(collection()),False,26,(.45,.8),(25,65),0,(55,95),22,-145,.65)
+    # 큰 피격용 흰 이미지 대신 수면 가까이서 빠르게 떨어지는 작은 물방울이에요.
+    water.configure_layer(system,'SeaSpray',True,spray_material(collection()),False,70,(.25,.5),(1.2,3),0,(25,55),30,-220,.55)
     emitter=water.EDIT.water_layer(system,'SeaSpray',False)
     mods={m.get_class().get_name().replace('NiagaraStatelessModule_',''):m for m in emitter.get_editor_property('modules')}
     setp(mods['ShapeLocation'],'ShapePrimitive','Box');setp(mods['ShapeLocation'],'BoxSize',water.vector((1200,65,4)))
-    setp(mods['AddVelocity'],'ConeDirection',water.vector((0,.5,1)))
-    setp(mods['InitializeParticle'],'SpriteRotationDistribution',water.scalar(-12,12))
+    setp(mods['AddVelocity'],'ConeDirection',water.vector((0,1,.4)))
+    setp(mods['InitializeParticle'],'SpriteRotationDistribution',water.scalar(0))
+    # 해안 BP의 폭 스케일이 방울까지 늘려 거대한 조각이 되지 않게 해요.
+    setp(mods['ApplyOwnerScaleToAttributes'],'bModuleEnabled','False')
+    white='(Keys=((Time=0,Value=1),(Time=1,Value=1)))'
+    fade='(Keys=((Time=0,Value=0),(Time=.08,Value=.7),(Time=.4,Value=.55),(Time=1,Value=0)))'
+    setp(mods['ScaleColor'],'ScaleDistribution',f'(Mode=NonUniformCurve,LookupValueMode=0,ChannelConstantsAndRanges=,ChannelCurves=({white},{white},{white},{fade}))')
     renderer=unreal.find_object(None,emitter.get_path_name()+'.Renderer');setp(renderer,'FacingMode','FaceCamera')
     setp(emitter,'FixedBounds','(Min=(X=-1200,Y=-500,Z=-1000),Max=(X=1200,Y=500,Z=1000),IsValid=1)')
     assert water.EDIT.finish_water_system(system),'해안 거품 Niagara 컴파일 실패'
@@ -236,18 +245,26 @@ def spray_material(mpc):
     MEL.delete_all_material_expressions(mat)
     mat.set_editor_property('blend_mode',unreal.BlendMode.BLEND_TRANSLUCENT)
     mat.set_editor_property('shading_model',unreal.MaterialShadingModel.MSM_DEFAULT_LIT)
+    mat.set_editor_property('translucency_lighting_mode',unreal.TranslucencyLightingMode.TLM_SURFACE_PER_PIXEL_LIGHTING)
     uv=node(mat,unreal.MaterialExpressionTextureCoordinate,-600,0)
-    age=node(mat,unreal.MaterialExpressionParticleRelativeTime,-600,160)
-    tex=texture_parameter(mat,'SprayTexture','/Game/Fab/WaterMaterials/Textures/T_WaterSplash2',-600,320)
     wave=node(mat,unreal.MaterialExpressionCollectionParameter,-600,480,collection=mpc,parameter_name='WaveHeightM')
-    fx=ext.custom(mat,'float frame=min(15,floor(saturate(Age)*16)); float2 uv=(UV+float2(fmod(frame,4),floor(frame/4)))*.25; float v=Texture2DSample(T,TSampler,uv).r; return float4(.8,.88,.9,v*smoothstep(.005,.3,Wave));',{'UV':uv,'Age':age,'T':tex,'Wave':wave},-100,0)
+    time=node(mat,unreal.MaterialExpressionTime,-600,160)
+    position=node(mat,unreal.MaterialExpressionWorldPosition,-600,320)
+    tint=node(mat,unreal.MaterialExpressionVectorParameter,-600,620,parameter_name='SprayTint',default_value=unreal.LinearColor(.15,.28,.32),group='Environment')
+    density=parameter(mat,'SprayOpacity',.24,-600,780)
+    direction=shore_displacement(mat,mpc,wave)
+    fx=ext.custom(mat,(SHADERS/'EnvironmentSeaSpray.ush').read_text(encoding='utf8'),{'UV':uv,'Wave':wave,'Time':time,'P':position,'Tint':tint,'Opacity':density,'Direction':direction},-100,0)
     rgb=node(mat,unreal.MaterialExpressionComponentMask,200,0,r=True,g=True,b=True,a=False);link(fx,rgb)
     alpha=node(mat,unreal.MaterialExpressionComponentMask,200,180,r=False,g=False,b=False,a=True);link(fx,alpha)
     pc=node(mat,unreal.MaterialExpressionParticleColor,0,420)
     opacity=node(mat,unreal.MaterialExpressionMultiply,400,180);link(alpha,opacity,'A');link(pc,opacity,'B','A')
     MEL.connect_material_property(rgb,'',unreal.MaterialProperty.MP_BASE_COLOR)
     MEL.connect_material_property(opacity,'',unreal.MaterialProperty.MP_OPACITY)
-    shore_displacement(mat,mpc,wave)
+    # 작은 방울의 둥근 법선으로 장면 조명의 반사만 받아요. 흰 발광은 넣지 않아요.
+    normal=ext.custom(mat,'float2 p=(UV*2-1)*float2(1,1.25); return float4(normalize(float3(p*.7,sqrt(saturate(1-dot(p,p))))),0);',{'UV':uv},0,550)
+    xyz=node(mat,unreal.MaterialExpressionComponentMask,250,550,r=True,g=True,b=True,a=False);link(normal,xyz)
+    MEL.connect_material_property(xyz,'',unreal.MaterialProperty.MP_NORMAL)
+    MEL.connect_material_property(parameter(mat,'SprayRoughness',.12,400,550),'',unreal.MaterialProperty.MP_ROUGHNESS)
     MEL.recompile_material(mat);MEL.set_material_usage(mat,unreal.MaterialUsage.MATUSAGE_NIAGARA_SPRITES)
     MEL.recompile_material(mat);save(mat)
     return mat

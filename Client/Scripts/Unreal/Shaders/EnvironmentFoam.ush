@@ -6,7 +6,8 @@ float density=saturate(a.g*.85+a.r*.45+b.b*.35);
 float2 p=UV*2-1;
 float edge=1-smoothstep(.55,.98,length(p)+warp.x*.22);
 // 두꺼운 흰 부분과 얇은 막을 함께 남겨 선으로만 보이지 않게 해요.
-float film=smoothstep(.12,.66,density);
+// 낮은 농도는 물이 비치게 남기고 거품끼리 겹쳐도 두꺼운 흰 덩어리가 되지 않게 해요.
+float film=smoothstep(.25,.72,density);
 float strength=smoothstep(.005,.3,max(Wave,0));
 float alpha=film*edge*strength*Opacity;
 return float4(Tint*(.8+.2*b.g),alpha);
