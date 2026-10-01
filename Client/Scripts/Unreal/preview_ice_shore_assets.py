@@ -44,65 +44,59 @@ def solid(color,rough=.7):
     return mat
 
 
-# 같은 조명 아래에서 기본 표면 / 얼음 / 서리를 비교해요.
-floor=solid((.035,.06,.075))
-mesh('Display base','/Engine/BasicShapes/Cube',(0,0,-100),(34,14,1),floor)
-for x,name,override in [(-1000,'ClearIce',0),(0,'ClearIce',-1),(1000,'Frost',-1)]:
-    material=LIB.load_asset(ROOT+'/Materials/MI_Environment_'+name)
-    slab=mesh(name,'/Engine/BasicShapes/Cube',(x,0,-20),(8.8,10,.4),material)
-    mid=slab.static_mesh_component.create_dynamic_material_instance(0)
-    mid.set_scalar_parameter_value('Override',override)
-    mid.set_scalar_parameter_value('CellSizeCm',210)
-    mid.set_vector_parameter_value('BaseColor',unreal.LinearColor(.16,.21,.24))
-    rock=mesh(name+' rock','/Game/Fab/WaterMaterials/Meshes/SM_River_Rock',(x,180,20),(.55,.55,.55),material)
-    mid=rock.static_mesh_component.create_dynamic_material_instance(0)
-    mid.set_scalar_parameter_value('Override',override)
-    mid.set_scalar_parameter_value('CellSizeCm',90)
+# 실제 재질을 바위/얼어붙은 수면/경사진 모래 위에서 확인해요.
+# 모든 배치는 저장하지 않는 에디터 임시 레벨에만 존재해요.
+ice=LIB.load_asset(ROOT+'/Materials/MI_Environment_ClearIce')
+frost=LIB.load_asset(ROOT+'/Materials/MI_Environment_Frost')
+mesh('Frozen lake','/Engine/BasicShapes/Plane',(0,-4300,0),(80,80,1),ice)
+for i,(x,y,z,scale) in enumerate([(-1050,-3800,-10,3.4),(-800,-4160,-20,2.1),(800,-4850,-15,2.5),(1100,-4750,-5,1.6)]):
+    stone=mesh('Hoarfrost rock','/Game/Fab/WaterMaterials/Meshes/SM_River_Rock',(x,y,z),(scale,scale,scale),frost)
+    stone.set_actor_rotation(unreal.Rotator(0,i*53,0),False)
+    mid=stone.static_mesh_component.create_dynamic_material_instance(0)
+    mid.set_scalar_parameter_value('CellSizeCm',450)
+    mid.set_vector_parameter_value('BaseColor',unreal.LinearColor(.18,.16,.14))
 
-# 이 물은 미리보기용이에요. 실제 수위/파도는 기존 Water Body Ocean에서 계산해요.
-water=unreal.new_object(unreal.Material)
-position=ext.node(water,unreal.MaterialExpressionWorldPosition,-600,0)
-clock=ext.node(water,unreal.MaterialExpressionTime,-600,180)
-shader=ext.custom(water,'''
-float depth=saturate((3200-P.y)/1800);
-float3 col=lerp(float3(.09,.48,.49),float3(.012,.12,.22),depth);
-float w=sin(P.x*.033+sin(P.y*.026+Time)*2+Time*.7);
-float v=sin(P.y*.018-P.x*.024-Time*.9);
-col+=float3(.05,.1,.085)*pow(saturate(w*v),6)*(1-depth);
-return float4(col,.2);''',{'P':position,'Time':clock},0,0)
-rgb=ext.node(water,unreal.MaterialExpressionComponentMask,300,0,r=True,g=True,b=True,a=False);ext.link(shader,rgb)
-MEL.connect_material_property(rgb,'',unreal.MaterialProperty.MP_BASE_COLOR)
-rough=ext.node(water,unreal.MaterialExpressionConstant,300,150,r=.22)
-MEL.connect_material_property(rough,'',unreal.MaterialProperty.MP_ROUGHNESS)
-normal=ext.custom(water,'return float4(normalize(float3(cos(P.x*.024+Time)*.12,sin(P.y*.025-Time)*.16,1)),0);',{'P':position,'Time':clock},0,400)
-n=ext.node(water,unreal.MaterialExpressionComponentMask,300,400,r=True,g=True,b=True,a=False);ext.link(normal,n)
-MEL.connect_material_property(n,'',unreal.MaterialProperty.MP_NORMAL)
-MEL.recompile_material(water)
-mesh('Preview sea','/Engine/BasicShapes/Plane',(0,2200,0),(36,20,1),water)
-mesh('Preview beach','/Engine/BasicShapes/Plane',(0,4000,-1),(36,16,1),LIB.load_asset(ROOT+'/Materials/M_Environment_Sand'))
-for x,y,size in [(-1200,3280,.45),(-1100,3320,.22),(1100,3240,.5),(1300,3380,.24)]:
-    mesh('Shore rock','/Game/Fab/WaterMaterials/Meshes/SM_River_Rock',(x,y,15),(size,size,size))
+# 프로젝트에 있는 실제 Shore 메시와 물 재질을 재사용해요.
+water=LIB.load_asset('/Game/Fab/WaterMaterials/Materials/M_Ocean')
+sea=mesh('Preview sea','/Game/Fab/WaterMaterials/Meshes/SM_Water_Plane',(0,1700,0),(5,3.5,1),water)
+mid=sea.static_mesh_component.create_dynamic_material_instance(0)
+for name,value in [('Opacity',.82),('OpacityDeep',.97),('Master_Intensity',.25),('Master_Speed',.6),('Refraction',.01),('Emissive',0),('FakeSpec_Intensity',.3),('Ocean_Depth',.5),('Ocean_DepthScale',1),('CubeMap_Intensity',.7),('OceanShore_Intensity',.2)]:mid.set_scalar_parameter_value(name,value)
+mid.set_vector_parameter_value('ColourDeep',unreal.LinearColor(.007,.045,.055))
+mid.set_vector_parameter_value('Colour',unreal.LinearColor(.05,.2,.22))
+shore=mesh('Sloping shore','/Game/Fab/WaterMaterials/Meshes/SM_Shore',(0,3150,0),(5,1.3,2),LIB.load_asset('/Game/Fab/WaterMaterials/Materials/M_Sand'))
+mid=shore.static_mesh_component.create_dynamic_material_instance(0)
+mid.set_scalar_parameter_value('NormalIntensity',.5);mid.set_scalar_parameter_value('Tiling',3)
+for i,(x,y,scale) in enumerate([(-1250,3270,2.4),(-990,3380,1.2),(-840,3260,.65),(1050,3510,1.7),(1240,3480,.9)]):
+    stone=mesh('Shore rock','/Game/Fab/WaterMaterials/Meshes/SM_River_Rock',(x,y,-5),(scale,scale,scale))
+    stone.set_actor_rotation(unreal.Rotator(0,i*67,0),False)
 foam=LIB.load_asset(ROOT+'/NS_Environment_ShoreFoam')
 assert unreal.UEWaterVFXEditorLibrary.finish_water_system(foam),'Niagara 준비 실패'
 bp=LIB.load_asset(ROOT+'/BP_EnvironmentShoreFoam')
 assert unreal.get_default_object(bp.generated_class()).get_component_by_class(unreal.NiagaraComponent).get_asset()==foam
-actor=actors.spawn_actor_from_class(bp.generated_class(),unreal.Vector(0,3150,5))
+actor=actors.spawn_actor_from_class(bp.generated_class(),unreal.Vector(0,3230,6))
 actor.set_actor_scale3d(unreal.Vector(2.6,1,1))
 fx=actor.get_component_by_class(unreal.NiagaraComponent)
 assert fx.get_asset()==foam,'배치한 BP의 Niagara 에셋 누락'
 fx.set_editor_property('allow_scalability',False);fx.set_force_solo(True);fx.activate(True)
 
+sky=actors.spawn_actor_from_class(unreal.SkyLight,unreal.Vector())
+sky.light_component.set_mobility(unreal.ComponentMobility.MOVABLE)
+sky.light_component.set_editor_property('source_type',unreal.SkyLightSourceType.SLS_SPECIFIED_CUBEMAP)
+sky.light_component.set_editor_property('cubemap',LIB.load_asset('/Game/Fab/WaterMaterials/Textures/T_Cubemap'))
+sky.light_component.set_intensity(1.8)
+sky.light_component.recapture_sky()
+
 sun=actors.spawn_actor_from_class(unreal.DirectionalLight,unreal.Vector())
 sun.set_actor_rotation(unreal.Rotator(pitch=-50,yaw=-25,roll=0),False)
-sun.light_component.set_mobility(unreal.ComponentMobility.MOVABLE);sun.light_component.set_intensity(12)
+sun.light_component.set_mobility(unreal.ComponentMobility.MOVABLE);sun.light_component.set_intensity(7)
 sun.light_component.set_light_color(unreal.LinearColor(1,.9,.77))
 fill=actors.spawn_actor_from_class(unreal.DirectionalLight,unreal.Vector())
 fill.set_actor_rotation(unreal.Rotator(pitch=-40,yaw=140,roll=0),False)
-fill.light_component.set_mobility(unreal.ComponentMobility.MOVABLE);fill.light_component.set_intensity(6)
+fill.light_component.set_mobility(unreal.ComponentMobility.MOVABLE);fill.light_component.set_intensity(4)
 fill.light_component.set_light_color(unreal.LinearColor(.54,.78,1))
 
-capture=actors.spawn_actor_from_class(unreal.SceneCapture2D,unreal.Vector(0,2200,2200))
-capture.set_actor_rotation(unreal.MathLibrary.find_look_at_rotation(capture.get_actor_location(),unreal.Vector(0,0,0)),False)
+capture=actors.spawn_actor_from_class(unreal.SceneCapture2D,unreal.Vector(350,-3500,850))
+capture.set_actor_rotation(unreal.MathLibrary.find_look_at_rotation(capture.get_actor_location(),unreal.Vector(0,-4700,0)),False)
 component=capture.get_component_by_class(unreal.SceneCaptureComponent2D)
 target=unreal.RenderingLibrary.create_render_target2d(world,1440,900,unreal.TextureRenderTargetFormat.RTF_RGBA8)
 component.texture_target=target;component.capture_source=unreal.SceneCaptureSource.SCS_FINAL_COLOR_LDR
@@ -130,17 +124,23 @@ def tick(delta):
         if elapsed<40:return
         assert count>0,'해안 거품이 컴파일만 되고 실제 입자는 생성되지 않음'
         if state['phase']==0:
-            unreal.RenderingLibrary.export_render_target(world,target,str(OUT),'ice-frost.png')
-            capture.set_actor_location(unreal.Vector(1350,4720,1650),False,False)
-            capture.set_actor_rotation(unreal.MathLibrary.find_look_at_rotation(capture.get_actor_location(),unreal.Vector(0,2900,0)),False)
+            unreal.RenderingLibrary.export_render_target(world,target,str(OUT),'realistic-ice-frost.png')
+            capture.set_actor_location(unreal.Vector(-650,-3400,450),False,False)
+            capture.set_actor_rotation(unreal.MathLibrary.find_look_at_rotation(capture.get_actor_location(),unreal.Vector(-1020,-3800,120)),False)
             state.update(phase=1,start=time.monotonic()-36)
             return
-        if elapsed-state['last']<.16:return
-        filename='shore-foam.png' if state['frame']==0 else f'shore-{state["frame"]:02}.png'
+        if state['phase']==1:
+            unreal.RenderingLibrary.export_render_target(world,target,str(OUT),'realistic-frost.png')
+            capture.set_actor_location(unreal.Vector(450,4300,750),False,False)
+            capture.set_actor_rotation(unreal.MathLibrary.find_look_at_rotation(capture.get_actor_location(),unreal.Vector(0,3000,0)),False)
+            state.update(phase=2,start=time.monotonic()-36)
+            return
+        if elapsed-state['last']<.18:return
+        filename='realistic-shore-foam.png' if state['frame']==0 else f'realistic-shore-{state["frame"]:02}.png'
         unreal.RenderingLibrary.export_render_target(world,target,str(OUT),filename)
         state['frame']+=1;state['last']=elapsed
-        if state['frame']<18:return
-        (OUT/'assets-preview.json').write_text(json.dumps({'niagara_ready':True,'active':fx.is_active(),'particles':count,'blueprint_bound':True,'images':['ice-frost.png','shore-foam.png'],'frames':18}),encoding='utf8')
+        if state['frame']<32:return
+        (OUT/'assets-preview.json').write_text(json.dumps({'niagara_ready':True,'active':fx.is_active(),'particles':count,'blueprint_bound':True,'images':['realistic-ice-frost.png','realistic-frost.png','realistic-shore-foam.png'],'frames':32}),encoding='utf8')
         unreal.unregister_slate_post_tick_callback(handle);unreal.SystemLibrary.quit_editor()
     except Exception as exc:
         (OUT/'preview-error.txt').write_text(str(exc),encoding='utf8')

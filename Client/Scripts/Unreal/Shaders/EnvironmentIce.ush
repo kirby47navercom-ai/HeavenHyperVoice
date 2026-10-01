@@ -1,32 +1,22 @@
-// 표면 색/거칠기를 보존하고 물 환산 얼음 두께(mm)에 따라 서서히 얼려요.
-// Voronoi의 두 경계 거리로 얼음 균열을 만들어요. 별도 텍스처는 필요 없어요.
-float2 q=World.xy/max(CellSizeCm,1);
-q+=float2(sin(q.y*2.7),sin(q.x*3.1))*.12;
-float2 cell=floor(q),f=frac(q);
-float nearest=9,second=9;
-for(int y=-1;y<=1;y++) for(int x=-1;x<=1;x++) {
-    float2 c=cell+float2(x,y);
-    float2 jitter=frac(sin(float2(dot(c,float2(127.1,311.7)),dot(c,float2(269.5,183.3))))*43758.5453);
-    float d=length(float2(x,y)+.15+jitter*.7-f);
-    if(d<nearest) {second=nearest;nearest=d;} else second=min(second,d);
-}
-float border=second-nearest;
-float crack=1-smoothstep(.002,.009,border);
-float halo=1-smoothstep(.008,.07,border);
-float fine=frac(sin(dot(floor(World.xy*1.2),float2(37.1,91.7)))*43758.5453);
-float cloud=.5+.25*sin(q.x*1.7+sin(q.y*2.3))+.25*sin(q.y*3.7-q.x);
-float up=smoothstep(.45,.9,normalize(WorldNormal).z);
+// 균열/기포 층을 다른 깊이에서 샘플링해 내부 시차를 보여줘요.
+float2 uv=World.xy/max(CellSizeCm,1);
+float2 parallax=View.xy/max(abs(View.z),.3)*.012;
+float nearLayer=Texture2DSample(Cracks,CracksSampler,uv).r;
+float deepLayer=Texture2DSample(Cracks,CracksSampler,uv*1.19+parallax+float2(.31,.17)).r;
+float crystals=Texture2DSample(Frost,FrostSampler,uv*6.25).r;
+float up=smoothstep(-.12,.9,normalize(WorldNormal).z);
 float amount=(Override>=0 ? saturate(Override) : smoothstep(.02,max(FullThicknessMm,.03),max(IceMm,0)));
 amount*=saturate(Exposure)*up;
-// 미세한 서리는 젖고 영하인 표면에서만 생겨요. 적설은 기존 날씨 함수에서 처리해요.
 float cold=1-smoothstep(-4,0,Temperature);
 float frost=saturate(FrostAmount)*(Override>=0 ? amount : max(amount,cold*saturate(Wetness)*up*saturate(Exposure)));
-frost*=saturate(cloud*.6+halo*.7+fine*.25);
-float3 ice=lerp(BaseColor*.28,IceTint,.78)+halo*float3(.08,.18,.22);
-ice=lerp(ice,float3(.46,.8,.89),crack*.85);
-ice+=pow(fine,24)*.045;
+// 검은 얼음 내부는 어둡게, 공기층/균열은 확산광을 받아 밝게 보여요.
+float crack=smoothstep(.16,.8,nearLayer);
+float3 ice=lerp(BaseColor*.1,IceTint,.85);
+ice+=deepLayer*float3(.075,.115,.13);
+ice=lerp(ice,float3(.52,.63,.65),crack*.82);
 float3 color=lerp(BaseColor,ice,amount);
-color=lerp(color,float3(.72,.88,.92),frost);
-float rough=lerp(Roughness,.13+cloud*.07,amount);
-rough=lerp(rough,.78,frost);
+float coverage=frost*smoothstep(.08,.6,crystals);
+color=lerp(color,float3(.67,.73,.75),coverage);
+float rough=lerp(Roughness,.11+nearLayer*.24,amount);
+rough=lerp(rough,.76,coverage);
 return float4(color,rough);
