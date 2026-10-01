@@ -1,0 +1,9 @@
+// 작은 물방울의 가장자리를 부드럽게 지워 이미지 판이 보이지 않게 해요.
+float2 p=(UV*2-1)*float2(1,1.25);
+float radius=length(p);
+float drop=1-smoothstep(.45,.94,radius);
+// 해안 포말이 전진하는 구간에서만 약한 물보라를 보여줘요.
+float phase=Time*1.05+dot(P,cross(normalize(Direction),float3(0,0,1)))*.0013;
+float incoming=smoothstep(.15,.75,cos(phase));
+float strength=smoothstep(.08,.6,max(Wave,0));
+return float4(Tint,drop*incoming*strength*Opacity);
