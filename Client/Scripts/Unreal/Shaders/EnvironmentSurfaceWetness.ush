@@ -1,0 +1,11 @@
+// 같은 젖음 값도 표면의 높낮이와 허용 마스크에 따라 다르게 보여요.
+float exposed=saturate(Exposure)*saturate(Mask);
+float up=smoothstep(.6,.95,normalize(WorldNormal).z);
+float wet=saturate(Wetness)*exposed;
+float hollows=1-smoothstep(PuddleLevel-.06,PuddleLevel+.06,Height);
+float puddle=hollows*saturate(PuddleStrength)*wet*up;
+float3 color=lerp(BaseColor,BaseColor*saturate(WetDarkening),wet);
+color=lerp(color,color*.72,puddle);
+float rough=lerp(Roughness,min(Roughness,WetRoughness),wet);
+rough=lerp(rough,PuddleRoughness,puddle);
+return float4(color,rough);
