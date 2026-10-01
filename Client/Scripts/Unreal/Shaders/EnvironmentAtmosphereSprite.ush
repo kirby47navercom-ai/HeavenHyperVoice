@@ -1,0 +1,7 @@
+// 부드러운 외곽과 서로 다른 크기의 노이즈로 동그란 흰 판이 보이지 않게 해요.
+float2 p=UV*2-1;
+float radial=pow(saturate(1-dot(p,p)),2);
+float n=Texture2DSample(Noise,NoiseSampler,UV*1.8+float2(Time*.018,-Time*.011)).r;
+float fine=Texture2DSample(Noise,NoiseSampler,UV*4.1+float2(-Time*.012,Time*.016)).g;
+float wisp=smoothstep(.12,.78,n*.72+fine*.28);
+return float4(Tint,radial*wisp*Density);
