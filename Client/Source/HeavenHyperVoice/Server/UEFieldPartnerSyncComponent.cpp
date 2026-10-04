@@ -1,6 +1,8 @@
 #include "UEFieldPartnerSyncComponent.h"
 
 #include "../Pokemon/UEPokemonCharacter.h"
+#include "../Animation/UEPokemonAnimInstance.h"
+#include "Components/SkeletalMeshComponent.h"
 
 #include "Engine/World.h"
 
@@ -10,7 +12,8 @@
 
 UUEFieldPartnerSyncComponent::UUEFieldPartnerSyncComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
 }
 
 void UUEFieldPartnerSyncComponent::SetPartnerPokemonClass(
@@ -90,28 +93,45 @@ void UUEFieldPartnerSyncComponent::AddLocalPartner(uint64 OwnerEntityId, AActor 
 {
 	// YANG2_CLIENT_AUTHORITY_ONLY
 	AddPartner(OwnerEntityId, OwnerActor, DexNumber);
-	const FPartner* Partner = Partners.Find(OwnerEntityId);
+	FPartner* Partner = Partners.Find(OwnerEntityId);
 	if (!Partner || !Partner->Actor.IsValid() || !OwnerActor)
 	{
 		return;
 	}
 
 	AUEPokemonCharacter* PartnerActor = Partner->Actor.Get();
-	PartnerActor->AttachToActor(OwnerActor, FAttachmentTransformRules::KeepWorldTransform);
-	PartnerActor->SetActorRelativeLocation(FVector(-140.0f, 90.0f, 0.0f));
-	PartnerActor->SetActorRelativeRotation(FRotator::ZeroRotator);
+	// 부착만 하면 속도가 0으로 남고 장애물도 무시해요. 서버 추종 결과를 같은 보간 경로로 보내요.
+	PartnerActor->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	PartnerActor->SetActorHiddenInGame(true); // 길찾기 준비 전 주인과 겹친 모델을 숨겨요.
+	PartnerActor->GetMesh()->AddTickPrerequisiteActor(PartnerActor);
+	Partner->LocalOwner = OwnerActor;
+	Partner->FollowState = {};
+	SetComponentTickEnabled(true);
 }
 
-bool UUEFieldPartnerSyncComponent::PlayLocalPartnerAttack(uint64 OwnerEntityId, uint32 AttackSequence)
+bool UUEFieldPartnerSyncComponent::PlayLocalPartnerAttack(uint64 OwnerEntityId, int32 AttackSlot)
 {
 	// YANG2_CLIENT_AUTHORITY_ONLY
 	const FPartner* Partner = Partners.Find(OwnerEntityId);
-	if (!Partner || !Partner->Actor.IsValid())
+	if (!Partner || !Partner->Actor.IsValid() || Partner->Actor->IsHidden() || AttackSlot < 1 || AttackSlot > 4)
 	{
 		return false;
 	}
-	Partner->Actor->HandleServerAttackSignal(/*TargetEntityId=*/0, AttackSequence);
-	return true;
+	auto *Animation = Cast<UUEPokemonAnimInstance>(Partner->Actor->GetMesh()->GetAnimInstance());
+	// 네 슬롯을 모두 Attack01로 보내던 임시 경로를 실제 공격 종류로 나눠요.
+	const EUEPokemonAttackAnimation Attacks[] = {EUEPokemonAttackAnimation::Attack01,
+	    EUEPokemonAttackAnimation::Attack02, EUEPokemonAttackAnimation::RangeAttack01,
+	    EUEPokemonAttackAnimation::RangeAttack02};
+	return Animation && Animation->PlayAttackAnimation(Attacks[AttackSlot - 1]);
+}
+
+bool UUEFieldPartnerSyncComponent::PlayLocalPartnerFieldAnimation(uint64 OwnerEntityId,
+    EUEPokemonFieldAnimation Animation, int32 LoopCount)
+{
+	const FPartner *Partner = Partners.Find(OwnerEntityId);
+	auto *Instance = Partner && Partner->Actor.IsValid() && !Partner->Actor->IsHidden()
+	    ? Cast<UUEPokemonAnimInstance>(Partner->Actor->GetMesh()->GetAnimInstance()) : nullptr;
+	return Instance && Instance->PlayFieldAnimation(Animation, LoopCount);
 }
 
 bool UUEFieldPartnerSyncComponent::ApplyPartnerServerState(uint64 OwnerEntityId,
@@ -153,4 +173,9 @@ void UUEFieldPartnerSyncComponent::DestroyPartners()
 		}
 	}
 	Partners.Empty();
+	LocalNavigation.reset();
+	LocalNavigationLoading = {};
+	bLocalNavigationStarted = false;
+	FollowAccumulator = FollowTime = 0.0;
+	SetComponentTickEnabled(false);
 }

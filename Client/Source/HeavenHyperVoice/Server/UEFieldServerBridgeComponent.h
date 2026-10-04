@@ -5,6 +5,7 @@
 #include "Components/ActorComponent.h"
 #include "../Net/HHVFieldConnection.h"
 #include "../Gacha/UEGachaPool.h"
+#include "../Pokemon/UEPokemonCharacter.h" // Yang2 행동 미리보기 열거형
 #include "../Yang2/UEYang2InstanceWeather.h" // YANG2_CLIENT_AUTHORITY_ONLY
 #include "Async/Future.h"
 #include "Templates/SubclassOf.h"
@@ -178,6 +179,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Field Server|Pokemon")
 	bool SendPokemonAttackRequest(int32 AttackSlot);
+
+	// YANG2_CLIENT_AUTHORITY_ONLY: 행동 UI/BP에서 현재 파트너의 기존 DA 시퀀스를 재생해요.
+	UFUNCTION(BlueprintCallable, Category = "Yang2|Animation")
+	bool PlayYang2PartnerFieldAnimation(EUEPokemonFieldAnimation Animation, int32 LoopCount = 1);
 
 	UFUNCTION(BlueprintPure, Category = "Field Server|Pokemon")
 	TArray<FUEFieldPokemonPartyEntry> GetPokemonPartyEntries() const
@@ -422,9 +427,9 @@ public:
     TFuture<std::shared_ptr<FYang2WildSimulation>> Yang2WildLoading;
     heaven::instance::InstanceWeatherProfile Yang2ActiveProfile;
     double Yang2WildAccumulator=0;
+	bool bYang2WildStartPending = false;
 	bool bYang2ClientAuthorityActive = false;
 	double Yang2WeatherAccumulator = 0.0;
-	uint32 Yang2LocalAttackSequence = 0;
 
 	TArray<FUEFieldPokemonPartyEntry> PokemonPartyEntries;
 	int32 SnapshotsLogged = 0;

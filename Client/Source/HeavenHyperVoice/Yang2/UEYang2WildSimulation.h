@@ -11,6 +11,10 @@ public:
     FYang2WildSimulation(const std::string& collision,const std::string& script,std::uint64_t expectedHash,
         std::uint32_t type,heaven::nav::Vec3 center,float extent,int count,
         heaven::instance::InstanceWeatherProfile profile,std::vector<std::uint16_t> pool);
+    // YANG2_CLIENT_AUTHORITY_ONLY: 파트너와 이미 준비된 맵을 공유해요.
+    FYang2WildSimulation(std::shared_ptr<heaven::Map> map,const std::string& script,
+        std::uint32_t type,heaven::nav::Vec3 center,float extent,int count,
+        heaven::instance::InstanceWeatherProfile profile,std::vector<std::uint16_t> pool);
     void Step(float dt,const heaven::instance::ObservedPlayer& player,const heaven::instance::InstanceWeatherSnapshot& climate,
         TArray<FHHVFieldEntity>& spawned,TArray<FHHVFieldEntity>& moved,TArray<uint64>& gone);
     bool SetHealth(std::uint64_t id,std::uint16_t hp);
@@ -23,7 +27,7 @@ private:
         bool Alive=false;
     };
     bool Spawn(Slot& slot,const heaven::instance::InstanceWeatherSnapshot& climate);
-    heaven::Map Map;
+    std::shared_ptr<heaven::Map> Map;
     std::unique_ptr<heaven::instance::WildAi> Ai;
     heaven::instance::InstanceWeatherProfile Profile;
     heaven::instance::WildArea Area;

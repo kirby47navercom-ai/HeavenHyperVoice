@@ -5,3 +5,4 @@
 #include "../../../../Server/Movement/src/Map.cpp"
 #include "../../../../Server/Movement/src/Path.cpp"
 #include "../../../../Server/Movement/src/NavigationMesh.cpp"
+#include "../../../../Server/FieldShared/src/PartnerFollower.cpp"

@@ -1,6 +1,7 @@
 // YANG2_CLIENT_AUTHORITY_ONLY: 서버/게임 월드 없이 실제 Lua AI와 충돌 모델을 검사해요.
 #if WITH_DEV_AUTOMATION_TESTS
 #include "../Yang2/UEYang2WildSimulation.h"
+#include "PartnerFollower.h"
 #include "TriangleWorld.h"
 #include "PokemonSpecies.h"
 #include "Misc/AutomationTest.h"
@@ -9,6 +10,7 @@
 #include "HAL/PlatformProcess.h"
 #include "HAL/FileManager.h"
 #include <fstream>
+#include <stdexcept>
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FYang2WildTest,"Heaven.Weather.Yang2WildAI",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -26,8 +28,25 @@ bool FYang2WildTest::RunTest(const FString&) {
         Profile.spawnRules.push_back({393,1,1,1,0}); // 밤에는 생성 불가: 리스폰 당시 날씨를 확인해요.
         heaven::instance::InstanceWeather Weather;Weather.initialize(1,1,Profile);
         auto Climate=Weather.snapshot();Climate.environment.sunElevationDegrees=30;
-        FYang2WildSimulation Model(TCHAR_TO_UTF8(*File),TCHAR_TO_UTF8(*(Binary/TEXT("Yang2AI/wild_ai.lua"))),
-            Terrain.hash(),1,{0,0,88.1f},100,1,Profile,{Base->id});
+        // YANG2_CLIENT_AUTHORITY_ONLY: 야생과 파트너가 같은 맵에서 이동할 수 있어야 해요.
+        auto Navigation=std::make_shared<heaven::Map>(0);std::string Error;
+        if(!Navigation->loadFromFile(TCHAR_TO_UTF8(*File),Error)) throw std::runtime_error(Error);
+        TestEqual(TEXT("Shared navigation collision hash"),Navigation->collision().hash(),Terrain.hash());
+        heaven::fieldshared::PartnerState Partner;
+        heaven::fieldshared::PartnerOwnerState Owner{{0,0,88.1f},{},0};
+        TestTrue(TEXT("Partner initialized on canonical terrain"),
+            heaven::fieldshared::PartnerFollower::initialize(Owner,Base->id,Partner,Navigation.get()));
+        Owner.location.x=450;
+        heaven::fieldshared::PartnerFollower::update(.05f,Owner,Base->id,Partner,Navigation.get());
+        TestTrue(TEXT("Follow publishes animation velocity without attachment"),
+            hhv::movement::length(Partner.movement.velocity)>0);
+        for(int i=0;i<200;++i) heaven::fieldshared::PartnerFollower::update(.05f,Owner,Base->id,Partner,Navigation.get());
+        TestTrue(TEXT("Partner stops after arrival"),hhv::movement::length(Partner.movement.velocity)<.01f);
+        Owner.location.x=1700;
+        heaven::fieldshared::PartnerFollower::update(.05f,Owner,Base->id,Partner,Navigation.get());
+        TestTrue(TEXT("Far owner teleports partner safely"),Partner.teleportedThisTick);
+        FYang2WildSimulation Model(Navigation,TCHAR_TO_UTF8(*(Binary/TEXT("Yang2AI/wild_ai.lua"))),
+            1,{0,0,88.1f},100,1,Profile,{Base->id});
         TArray<FHHVFieldEntity> Spawned,Moved;TArray<uint64> Gone;
         heaven::instance::ObservedPlayer Observer{1,1,600,0,88.1f};
         auto Step=[&]() {Spawned.Reset();Moved.Reset();Gone.Reset();Model.Step(.05f,Observer,Climate,Spawned,Moved,Gone);};

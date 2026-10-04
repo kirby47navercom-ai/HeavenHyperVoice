@@ -64,7 +64,13 @@ bool UUEFieldServerBridgeComponent::SendPokemonAttackRequest(int32 AttackSlot)
 	// 없으므로, 로컬 파트너의 공격 모션을 실행해 입력과 연출을 시험한다.
 	return bYang2ClientAuthorityActive && AttackSlot >= 1 && AttackSlot <= 4 &&
 		PartyState.ActiveDex > 0 && PartnerSyncComponent.IsValid() &&
-		PartnerSyncComponent->PlayLocalPartnerAttack(LocalEntityId, ++Yang2LocalAttackSequence);
+		PartnerSyncComponent->PlayLocalPartnerAttack(LocalEntityId, AttackSlot);
+}
+
+bool UUEFieldServerBridgeComponent::PlayYang2PartnerFieldAnimation(EUEPokemonFieldAnimation Animation, int32 LoopCount)
+{
+	return bYang2ClientAuthorityActive && PartnerSyncComponent.IsValid() &&
+		PartnerSyncComponent->PlayLocalPartnerFieldAnimation(LocalEntityId, Animation, LoopCount);
 }
 
 void UUEFieldServerBridgeComponent::ReplacePokemonPartyEntriesFromServer(
@@ -86,7 +92,7 @@ void UUEFieldServerBridgeComponent::BeginPlay()
 		return;
 	}
 
-	SetComponentTickEnabled(FieldConnection != nullptr);
+	SetComponentTickEnabled(FieldConnection != nullptr || bYang2ClientAuthorityActive);
 }
 
 void UUEFieldServerBridgeComponent::AttachToPlayer(AUEPlayerCharacter *PlayerCharacter)
@@ -334,11 +340,11 @@ void UUEFieldServerBridgeComponent::StopFieldConnection()
 	FieldConnection.reset();
 	if(bYang2ClientAuthorityActive) SaveYang2Environment(GetWorld(),Yang2LocalWeather.get(),true);
 	Yang2Wild.reset();Yang2WildLoading={};Yang2WildAccumulator=0;
+	bYang2WildStartPending = false;
 	if(auto* Player=GetPlayerCharacter()) Player->GetCoreMovement()->SetLocalEnvironment({});
 	Yang2LocalWeather.reset();
 	bYang2ClientAuthorityActive = false;
 	Yang2WeatherAccumulator = 0.0;
-	Yang2LocalAttackSequence = 0;
 	bInInstance = false;
 	LocalEntityId = 0;
 	CurrentRoomId = 0;
@@ -356,6 +362,7 @@ void UUEFieldServerBridgeComponent::StartYang2ClientAuthority(uint32 InstanceTyp
 
 	// 서버 EnterAck를 기다리지 않고 공통 이동 코어가 로컬 상태를 권위 상태로 쓴다.
 	Player->GetCoreMovement()->PrepareForNetworkSimulation(/*bAllowLocalSimulation=*/true);
+	if (PartnerSyncComponent.IsValid()) PartnerSyncComponent->PrepareLocalNavigation(Player);
 
 	bYang2ClientAuthorityActive = true;
 	LocalEntityId = 1;
@@ -398,7 +405,7 @@ void UUEFieldServerBridgeComponent::StartYang2ClientAuthority(uint32 InstanceTyp
 		Yang2ActiveProfile=Profile;
         Yang2LocalWeather->initialize(InstanceType, CurrentRoomId, Profile,GetYang2WorldRealSeconds(GetWorld()));
         RestoreYang2Climate(GetWorld(),*Yang2LocalWeather);
-        StartYang2Wild(Profile);
+        bYang2WildStartPending = Yang2WildPerRoom > 0;
 		UE_LOG(LogTemp, Display,
 			TEXT("YANG2 CLIENT AUTHORITY: local climate type %u = %.1f C, %.0f%% RH, %.1f hPa, x%.1f time"),
 			InstanceType, Profile.meanTemperatureC, Profile.initialRelativeHumidityPct,

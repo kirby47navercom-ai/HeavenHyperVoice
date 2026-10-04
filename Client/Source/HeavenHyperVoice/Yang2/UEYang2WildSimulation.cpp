@@ -9,16 +9,28 @@
 #include "EarthScience/EnvironmentMovement.h"
 #include <stdexcept>
 
+namespace {
+std::shared_ptr<heaven::Map> LoadYang2Map(const std::string& file,std::uint64_t hash) {
+    auto map=std::make_shared<heaven::Map>(0);std::string error;
+    if(!map->loadFromFile(file,error)) throw std::runtime_error(error);
+    if(map->collision().hash()!=hash) throw std::runtime_error("Offline AI/player collision hash mismatch");
+    return map;
+}
+}
+
 FYang2WildSimulation::FYang2WildSimulation(const std::string& collision,const std::string& script,std::uint64_t expectedHash,
     std::uint32_t type,heaven::nav::Vec3 center,float extent,int count,
     heaven::instance::InstanceWeatherProfile profile,std::vector<std::uint16_t> pool)
-    :Map(0),Profile(std::move(profile)),Pool(std::move(pool)),Random(std::random_device{}()),Type(type) {
-    std::string Error;
-    if(!Map.loadFromFile(collision,Error)) throw std::runtime_error(Error);
-    if(Map.collision().hash()!=expectedHash) throw std::runtime_error("Offline AI/player collision hash mismatch");
+    :FYang2WildSimulation(LoadYang2Map(collision,expectedHash),script,type,center,extent,count,std::move(profile),std::move(pool)) {}
+
+FYang2WildSimulation::FYang2WildSimulation(std::shared_ptr<heaven::Map> map,const std::string& script,
+    std::uint32_t type,heaven::nav::Vec3 center,float extent,int count,
+    heaven::instance::InstanceWeatherProfile profile,std::vector<std::uint16_t> pool)
+    :Map(std::move(map)),Profile(std::move(profile)),Pool(std::move(pool)),Random(std::random_device{}()),Type(type) {
+    if(!Map || !Map->loaded()) throw std::runtime_error("Offline navigation is not ready");
     Area={center.x,center.y,std::clamp(extent,100.f,10000.f)};
     Ai=std::make_unique<heaven::instance::WildAi>(std::make_unique<heaven::instance::WildBt>(script));
-    Ai->setMap(&Map);Ai->setArea(Area);
+    Ai->setMap(Map.get());Ai->setArea(Area);
     if(Pool.empty()) for(const auto& base:heaven::proto::kSpecies) if(heaven::proto::isWildSpawnable(base.dex)) Pool.push_back(base.id);
     Slots.resize(std::clamp(count,0,64));
     for(std::size_t i=0;i<Slots.size();++i) Slots[i].Entity.EntityId=(1ull<<52)+i;
@@ -35,10 +47,10 @@ bool FYang2WildSimulation::Spawn(Slot& slot,const heaven::instance::InstanceWeat
     std::uniform_real_distribution<float> X(Area.centerX-Area.halfExtent,Area.centerX+Area.halfExtent),Y(Area.centerY-Area.halfExtent,Area.centerY+Area.halfExtent);
     for(int Attempt=0;Attempt<16;++Attempt) {
         heaven::nav::Vec3 Position;
-        if(!Map.canStandAt(X(Random),Y(Random),Map.agent(),&Position)) continue;
+        if(!Map->canStandAt(X(Random),Y(Random),Map->agent(),&Position)) continue;
         bool Deep=false;
         for(const auto& Region:Profile.environment.waterRegions)
-            if(Region.contains(Position.x,Position.y) && Region.seaLevelCm+climate.environment.tideLevelM*100-(Position.z-Map.agent().halfHeight)>Region.swimDepthCm) Deep=true;
+            if(Region.contains(Position.x,Position.y) && Region.seaLevelCm+climate.environment.tideLevelM*100-(Position.z-Map->agent().halfHeight)>Region.swimDepthCm) Deep=true;
         if(Deep) continue;
         const auto* Base=heaven::proto::findSpecies(Pool[Choose(Random)]);if(!Base) return false;
         const auto Id=slot.Entity.EntityId;slot.Entity={};slot.Entity.EntityId=Id;slot.Entity.Species=Base->dex;
@@ -66,7 +78,7 @@ void FYang2WildSimulation::Step(float dt,const heaven::instance::ObservedPlayer&
         const auto Position=Entity.CoreState.position;
         const auto* Base=heaven::proto::findSpeciesByDex(Entity.Species);if(!Base) continue;
         const auto Intent=Ai->decide(Entity.EntityId,Base->id,Type,Position.x,Position.y,Position.z,Elapsed,Players);
-        Map.advance(Entity.CoreState,Slot.Accumulator,Elapsed,{Intent.targetX,Intent.targetY,Position.z},Intent.moving,
+        Map->advance(Entity.CoreState,Slot.Accumulator,Elapsed,{Intent.targetX,Intent.targetY,Position.z},Intent.moving,
             heaven::fieldshared::pokemonMoveSpeed(Base->id)*static_cast<float>(climate.environment.movementMultiplier),Land);
         if(Intent.moving && hhv::movement::length(Entity.CoreState.position-Position)<.01f) Ai->notifyMoveBlocked(Entity.EntityId);
         if(Intent.attacking && Intent.attackTargetId==player.entityId && std::hypot(Position.x-player.x,Position.y-player.y)<=Intent.attackRange) {

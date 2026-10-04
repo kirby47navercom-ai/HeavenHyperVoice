@@ -132,7 +132,8 @@ main의 공통 계산과 프로토콜 변경은 main에서 병합한다. 아래 
 - `UEYang2Environment.cpp`: DA의 IceTractionMultiplier, SwimSpeedCmPerSecond, WildRespawnSeconds, WaterRegions를 공통 모델에 전달한다. 도시처럼 물이 없는 곳은 WaterRegions를 비워 둔다. 해안 예제 DA에는 실제 해수면/해변/해저 구역을 넣었다.
 - 브릿지 `PublishYang2ClientWeather()`: 로컬 기후의 이동 환경을 공통 MovementCore에 전달한다. main에서는 이 값이 서버 CoreState 패킷에서만 온다.
 - `UEYang2WildSimulation.h/.cpp`: 소켓/UObject 없이 서버 Lua AI와 공통 충돌/이동을 실행한다. 야생 개체의 HP가 0이 되면 제거하고 지정한 대기 시간 후 현재 날씨로 다시 선택한다.
-- `UEYang2WildBridge.cpp`: 플레이어가 쓰는 동일한 충돌 파일/해시로 길찾기를 백그라운드에서 준비한다. 준비되면 기존 WildPokemonSyncComponent로 모델/애니메이션/공격 신호를 표시한다. Lua 파일 오류나 해시 불일치가 있으면 실패 로그를 남긴다.
+- `UEYang2PartnerNavigation.cpp`: 플레이어와 같은 충돌 파일/해시로 길찾기를 백그라운드에서 한 번 준비한다. 필드와 인스턴스의 파트너가 사용하며 야생 AI도 같은 맵을 공유한다.
+- `UEYang2WildBridge.cpp`: 공용 로컬 길찾기가 준비된 뒤 Lua AI를 시작한다. 기존 WildPokemonSyncComponent로 모델/애니메이션/공격 신호를 표시한다. Lua 파일 오류나 해시 불일치가 있으면 실패 로그를 남긴다.
 - `UEYang2ServerWildAI/ServerWildBT/ServerNavigation.cpp`: 실제 서버 소스를 포함하여 한 번 컴파일한다. main에서 AI를 고치면 Yang2도 동일한 소스가 갱신된다.
 
 브릿지 BP의 `Yang2|Wild AI`에서 아래 값을 편집한다.
@@ -150,3 +151,32 @@ main의 공통 계산과 프로토콜 변경은 main에서 병합한다. 아래 
 서버와 같은 Lua/네이티브 라이브러리를 사용하므로 빌드 전 기존 `Server/build/vs2022/vcpkg_installed/x64-windows` 의존성이 있어야 한다. 새 패키지는 추가하지 않았다. Lua DLL/스크립트는 빌드/패키징 결과 폴더로 함께 복사한다. 서버 OpenSSL 헤더가 UE OpenSSL 버전을 가리지 않도록 AI 헤더만 Intermediate에 준비한다. 큰 맵의 최초 NavMesh 생성이 끝나기 전에는 야생이 표시되지 않으며 준비 로그가 나온다.
 
 검증: Editor 빌드, 공통 환경 검사, `Heaven.Weather.Yang2LocalSource`, `Heaven.Weather.Yang2WildAI`, 로컬 저장 복구 검사. 자동 검사는 작은 충돌 평면에서 실제 Lua의 추적·공격·사망·날씨별 리스폰을 확인한다. 실제 게임 접속/플레이 및 멀티플레이 부하 검증은 별도다.
+
+## 로컬 파트너 추종과 행동 애니메이션 (2026-10-05)
+
+기존 `AddLocalPartner`는 포켓몬을 주인 액터에 부착만 했어요. 그 결과 장애물을 무시하고
+속도가 0으로 남아 AnimBP가 걷기/달리기로 전환하지 못했어요. 이제 부착하지 않고 서버의
+`Server/FieldShared/src/PartnerFollower.cpp`를 Yang2 전용 TU에서 그대로 컴파일해요.
+
+1. `PrepareLocalNavigation()`이 플레이어와 같은 공통 충돌로 Recast/Detour 맵을 한 번 준비해요.
+2. `UEYang2PartnerNavigation.cpp`가 필드/인스턴스 모두 20Hz로 서버 추종을 실행해요.
+3. 서버와 같은 앞/옆 대기 위치, 장애물 회피, 추격, 도착 정지, 주인 바라보기, 멀어졌을 때
+   안전한 재배치를 사용해요. 앞/옆 간격과 재배치 거리는 기존 파트너 컴포넌트 BP에서 바꿔요.
+4. 위치·속도·회전을 `ApplyCoreSnapshot()`으로 보내 기존 보간과 AnimBP의 대기/걷기/달리기를 사용해요.
+5. 기존 공격 입력 슬롯 1~4는 각각 Attack01/Attack02/RangeAttack01/RangeAttack02를 요청해요.
+   해당 종족 DA에 시퀀스가 없으면 요청은 false를 반환해요. 전투 대미지 판정은 추가하지 않아요.
+6. 브릿지의 BP 함수 `PlayYang2PartnerFieldAnimation(Animation, LoopCount)`로 대기 행동,
+   먹기, 잠자기, 쉬기, 반응 등의 기존 DA 시퀀스를 로컬에서 재생할 수 있어요.
+
+길찾기 준비 중에는 파트너를 숨기고 준비가 끝나면 표시해요. 콘솔의
+`Yang2 shared partner/wild navigation ready`가 준비 완료 표식이에요.
+야생 AI는 같은 맵을 공유해 큰 맵의 길찾기와 충돌을 두 번 생성하지 않아요.
+레벨 종료/연결 해제 때 파트너와 맵 참조를 정리하고 다음 레벨에서 새로 준비해요.
+개인 PC의 파일 경로를 고정하지 않으며, BP의 충돌 참조와 프로젝트 Saved 위치를 사용해요.
+
+이번 확인은 Editor C++ 빌드와 저장된 에셋 참조 조회까지예요. 실제 종족 DA 73개에
+대기/걷기/달리기/AnimBP/BlendSpace 참조가 있었고 캐릭터의 남녀 AnimBP/애니메이션 DA도
+연결되어 있었어요. 빈 시험 DA(`DA_1`, Dex 0)는 실제 종족으로 세지 않아요.
+기존 `Heaven.Weather.Yang2WildAI` 검사에 공유 맵과 추종 속도/도착 정지/재배치 확인을
+추가했지만 사용자 요청에 따라 자동 검사와 PIE/게임 플레이는 실행하지 않았어요.
+이 변경도 main으로 병합하거나 체리픽하지 않아요.
