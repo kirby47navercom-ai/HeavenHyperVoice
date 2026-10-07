@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "UEEnvironmentSpawnRule.h"
+#include "UEFuzzyWeatherProfile.h"
 #include "UEEnvironmentProfile.generated.h"
 
 /** 지역 환경 원본. 서버에는 설정 파일로 내보내고 Yang2는 로컬에서 읽는다. */
@@ -10,6 +11,8 @@ UCLASS(BlueprintType)
 class HEAVENHYPERVOICE_API UUEEnvironmentProfile : public UDataAsset {
     GENERATED_BODY()
 public:
+    // 펼치면 소속 함수의 기준과 8개씩의 규칙 결과를 바꿀 수 있어요.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Environment|Fuzzy") FUEFuzzyWeatherProfile FuzzyWeather;
     // 비/눈/밤에 따른 종족 가중치. 빈 배열은 기존 종족 확률을 유지해요.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Environment|Gameplay") TArray<FUEEnvironmentSpawnRule> SpawnRules;
     // 지역 평균 기온. 계절, 고도, 낮밤 변화의 기준이에요.

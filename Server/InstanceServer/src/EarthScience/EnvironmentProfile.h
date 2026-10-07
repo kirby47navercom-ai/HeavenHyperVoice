@@ -1,10 +1,12 @@
 #pragma once
 #include "MovementEnvironment.h"
+#include "FuzzyWeather.h"
 
 namespace heaven::instance {
 // 방/지역의 환경 설정. 단위가 붙은 값을 서버 설정 파일과 에디터 데이터 에셋에서 공유한다.
 // 태양과 조석은 게임용 주기 모델이며 특정 날짜/지역의 천문 예보가 아니다.
 struct EnvironmentProfile {
+    FuzzyWeatherProfile fuzzyWeather; // 비·눈·안개·모래폭풍을 판단하는 규칙 설정이에요.
     std::vector<hhv::movement::WaterRegion> waterRegions;
     double iceTractionMultiplier=.12; // 얼음의 가속/제동/마찰 배율이에요.
     double swimSpeedCmPerSecond=160;

@@ -96,6 +96,7 @@ class InstanceWeather {
     void updateCoast(double dt);
     void updateDesert(double dt);
     double totalWaterKgM2() const;
+    FuzzyWeatherInputs fuzzyWeatherInputs() const;
 
     InstanceWeatherProfile profile_;
     EnvironmentState environment_;

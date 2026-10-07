@@ -96,8 +96,10 @@ UUEInstanceWeatherPresentationComponent::MakeTargetState(
 		Weather.PrecipitationMmPerHour, HeavyPrecipitationMmPerHour);
 	const float TemperatureRange = FMath::Max(
 		FullRainTemperatureC - FullSnowTemperatureC, KINDA_SMALL_NUMBER);
-	const float RainFraction = FMath::Clamp(
-		(Weather.TemperatureC - FullSnowTemperatureC) / TemperatureRange, 0.0f, 1.0f);
+	// main은 서버의 퍼지 판단을 표시해요. 구버전 패킷만 기존 온도 규칙을 사용해요.
+	const float RainFraction = Weather.Environment.FuzzyWeatherEnabled
+		? 1.0f - FMath::Clamp(static_cast<float>(Weather.Environment.SnowFraction), 0.0f, 1.0f)
+		: FMath::Clamp((Weather.TemperatureC - FullSnowTemperatureC) / TemperatureRange, 0.0f, 1.0f);
 	Result.RainIntensity = Precipitation * RainFraction;
 	Result.SnowIntensity = Precipitation * (1.0f - RainFraction);
 
@@ -105,7 +107,9 @@ UUEInstanceWeatherPresentationComponent::MakeTargetState(
 		FullFogHumidityPct - FogStartHumidityPct, KINDA_SMALL_NUMBER);
 	const float HumidityFog = FMath::Clamp(
 		(Weather.RelativeHumidityPct - FogStartHumidityPct) / FogRange, 0.0f, 1.0f);
-	Result.FogDensity = HumidityFog * FMath::Lerp(0.35f, 1.0f, Result.CloudAmount);
+	Result.FogDensity = Weather.Environment.FuzzyWeatherEnabled
+		? FMath::Clamp(static_cast<float>(Weather.Environment.FogDensity), 0.0f, 1.0f)
+		: HumidityFog * FMath::Lerp(0.35f, 1.0f, Result.CloudAmount);
 
 	Result.WindIntensity = Normalize(Weather.WindSpeedMps, StrongWindMps);
 	Result.WindDirectionDegrees = FMath::Fmod(

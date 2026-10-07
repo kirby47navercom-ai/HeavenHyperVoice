@@ -633,6 +633,9 @@ void FHHVFieldConnection::DispatchFrame(const uint8 *Data, int32 Size)
 			Event.Weather.Environment.ShoreWaterDepthM=Env->shore_water_depth_m();
 			Event.Weather.Environment.MovementMultiplier=Env->movement_multiplier();
 			Event.Weather.Environment.VisibilityMultiplier=Env->visibility_multiplier();
+			Event.Weather.Environment.FuzzyWeatherEnabled=Env->fuzzy_weather_enabled();
+			Event.Weather.Environment.SnowFraction=Env->snow_fraction();
+			Event.Weather.Environment.FogDensity=Env->fog_density();
 
 		}
 

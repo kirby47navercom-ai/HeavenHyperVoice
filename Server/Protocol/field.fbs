@@ -340,6 +340,10 @@ table EnvironmentState {
   shore_water_depth_m:double;
   movement_multiplier:double = 1;
   visibility_multiplier:double = 1;
+  // 기존 필드 뒤에 추가해 구버전 클라이언트/서버와 읽기 호환을 유지해요.
+  fuzzy_weather_enabled:bool = false;
+  snow_fraction:double;
+  fog_density:double;
 
 }
 

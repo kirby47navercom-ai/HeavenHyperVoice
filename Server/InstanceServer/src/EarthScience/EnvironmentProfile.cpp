@@ -3,6 +3,7 @@
 #include <cmath>
 namespace heaven::instance {
 void normalizeEnvironment(EnvironmentProfile& p) {
+    normalizeFuzzyWeatherProfile(p.fuzzyWeather);
     const EnvironmentProfile defaults;
     p.iceTractionMultiplier=std::isfinite(p.iceTractionMultiplier) ? std::clamp(p.iceTractionMultiplier,.02,1.) : defaults.iceTractionMultiplier;
     p.swimSpeedCmPerSecond=std::isfinite(p.swimSpeedCmPerSecond) ? std::clamp(p.swimSpeedCmPerSecond,10.,1000.) : defaults.swimSpeedCmPerSecond;

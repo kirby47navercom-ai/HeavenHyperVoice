@@ -13,6 +13,10 @@ double InstanceWeather::totalWaterKgM2() const {
 InstanceWeatherSnapshot InstanceWeather::snapshot() const {
     InstanceWeatherSnapshot result;
     result.environment=environment_;
+    const auto fuzzy = evaluateFuzzyWeather(profile_.environment.fuzzyWeather, fuzzyWeatherInputs());
+    result.environment.fuzzyWeatherEnabled = true;
+    result.environment.snowFraction = fuzzy.snowFraction;
+    result.environment.fogDensity = fuzzy.fogDensity;
     result.environment.importedWaterKgM2=importedWaterKgM2_;
     result.environment.exportedWaterKgM2=exportedWaterKgM2_;
     result.environment.groundTemperatureC=ground_.temperatureC;
@@ -37,6 +41,23 @@ InstanceWeatherSnapshot InstanceWeather::snapshot() const {
         totalWaterKgM2() - initialWaterKgM2_ + drainedWaterKgM2_ + exportedWaterKgM2_ - importedWaterKgM2_);
     applyEnvironmentGameplay(profile_.environment,result);
     return result;
+}
+
+// 현재 방의 값을 퍼지 입력으로 모아요. 맵 주소나 플레이어 좌표에 의존하지 않아요.
+FuzzyWeatherInputs InstanceWeather::fuzzyWeatherInputs() const {
+    const auto& p = profile_.environment;
+    FuzzyWeatherInputs inputs;
+    inputs.temperatureC = nearAir_.temperatureC;
+    inputs.upperHumidityPct = 100 * upperAir_.vaporKgM2 / std::max(.000001, saturationMassKgM2(upperAir_));
+    inputs.nearHumidityPct = 100 * nearAir_.vaporKgM2 / std::max(.000001, saturationMassKgM2(nearAir_));
+    inputs.pressureDeficitHpa = profile_.meanPressureHpa - pressureHpa_;
+    inputs.cloudCover = clamp01(upperAir_.liquidKgM2 / .35);
+    inputs.surfaceCoolingC = nearAir_.temperatureC - ground_.temperatureC;
+    inputs.windSpeedMps = windSpeedMps_;
+    inputs.soilDryness = 1 - clamp01((ground_.waterKgM2 + ground_.soilKgM2) / p.soilCapacityKgM2);
+    inputs.surfaceDryness = 1 - clamp01((ground_.waterKgM2 + ground_.filmKgM2) / p.surfaceFilmCapacityKgM2);
+    inputs.dustWind = clamp01((windSpeedMps_ - p.dustStartWindMps) / (p.dustFullWindMps - p.dustStartWindMps));
+    return inputs;
 }
 
 

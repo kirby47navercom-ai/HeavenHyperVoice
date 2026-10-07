@@ -1,6 +1,9 @@
 #include "UEEnvironmentState.h"
 void BlendEnvironment(FUEEnvironmentState& current,const FUEEnvironmentState& target,double alpha) {
     current.Enabled=target.Enabled;
+    current.FuzzyWeatherEnabled=target.FuzzyWeatherEnabled;
+    current.SnowFraction=FMath::Lerp(current.SnowFraction,target.SnowFraction,alpha);
+    current.FogDensity=FMath::Lerp(current.FogDensity,target.FogDensity,alpha);
     current.DayFraction=FMath::Fmod(current.DayFraction+FMath::FindDeltaAngleDegrees(current.DayFraction*360.0,target.DayFraction*360.0)/360.0*alpha+1.0,1.0);
     current.YearFraction=FMath::Fmod(current.YearFraction+FMath::FindDeltaAngleDegrees(current.YearFraction*360.0,target.YearFraction*360.0)/360.0*alpha+1.0,1.0);
     current.SunElevationDegrees=FMath::Lerp(current.SunElevationDegrees,target.SunElevationDegrees,alpha);

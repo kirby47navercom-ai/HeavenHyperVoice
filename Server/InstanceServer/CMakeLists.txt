@@ -23,6 +23,7 @@ target_link_libraries(WildPokemonAI PUBLIC ServerMovement PRIVATE spdlog::spdlog
 add_library(InstanceClimate STATIC
     src/InstanceWeather.cpp
     src/EarthScience/EnvironmentProfile.cpp
+    src/EarthScience/FuzzyWeather.cpp
     src/EarthScience/EnvironmentClock.cpp
     src/EarthScience/SurfaceEnergyBalance.cpp
     src/EarthScience/AtmosphericBoundary.cpp

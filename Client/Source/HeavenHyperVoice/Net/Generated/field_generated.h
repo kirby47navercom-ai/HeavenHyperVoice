@@ -2385,7 +2385,10 @@ struct EnvironmentState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_TIDE_ENVELOPE_M = 34,
     VT_SHORE_WATER_DEPTH_M = 36,
     VT_MOVEMENT_MULTIPLIER = 38,
-    VT_VISIBILITY_MULTIPLIER = 40
+    VT_VISIBILITY_MULTIPLIER = 40,
+    VT_FUZZY_WEATHER_ENABLED = 42,
+    VT_SNOW_FRACTION = 44,
+    VT_FOG_DENSITY = 46
   };
   double day_fraction() const {
     return GetField<double>(VT_DAY_FRACTION, 0.0);
@@ -2444,6 +2447,15 @@ struct EnvironmentState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   double visibility_multiplier() const {
     return GetField<double>(VT_VISIBILITY_MULTIPLIER, 1.0);
   }
+  bool fuzzy_weather_enabled() const {
+    return GetField<uint8_t>(VT_FUZZY_WEATHER_ENABLED, 0) != 0;
+  }
+  double snow_fraction() const {
+    return GetField<double>(VT_SNOW_FRACTION, 0.0);
+  }
+  double fog_density() const {
+    return GetField<double>(VT_FOG_DENSITY, 0.0);
+  }
   template <bool B = false>
   bool Verify(::flatbuffers::VerifierTemplate<B> &verifier) const {
     return VerifyTableStart(verifier) &&
@@ -2466,6 +2478,9 @@ struct EnvironmentState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<double>(verifier, VT_SHORE_WATER_DEPTH_M, 8) &&
            VerifyField<double>(verifier, VT_MOVEMENT_MULTIPLIER, 8) &&
            VerifyField<double>(verifier, VT_VISIBILITY_MULTIPLIER, 8) &&
+           VerifyField<uint8_t>(verifier, VT_FUZZY_WEATHER_ENABLED, 1) &&
+           VerifyField<double>(verifier, VT_SNOW_FRACTION, 8) &&
+           VerifyField<double>(verifier, VT_FOG_DENSITY, 8) &&
            verifier.EndTable();
   }
 };
@@ -2531,6 +2546,15 @@ struct EnvironmentStateBuilder {
   void add_visibility_multiplier(double visibility_multiplier) {
     fbb_.AddElement<double>(EnvironmentState::VT_VISIBILITY_MULTIPLIER, visibility_multiplier, 1.0);
   }
+  void add_fuzzy_weather_enabled(bool fuzzy_weather_enabled) {
+    fbb_.AddElement<uint8_t>(EnvironmentState::VT_FUZZY_WEATHER_ENABLED, static_cast<uint8_t>(fuzzy_weather_enabled), 0);
+  }
+  void add_snow_fraction(double snow_fraction) {
+    fbb_.AddElement<double>(EnvironmentState::VT_SNOW_FRACTION, snow_fraction, 0.0);
+  }
+  void add_fog_density(double fog_density) {
+    fbb_.AddElement<double>(EnvironmentState::VT_FOG_DENSITY, fog_density, 0.0);
+  }
   explicit EnvironmentStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -2562,8 +2586,13 @@ inline ::flatbuffers::Offset<EnvironmentState> CreateEnvironmentState(
     double tide_envelope_m = 0.0,
     double shore_water_depth_m = 0.0,
     double movement_multiplier = 1.0,
-    double visibility_multiplier = 1.0) {
+    double visibility_multiplier = 1.0,
+    bool fuzzy_weather_enabled = false,
+    double snow_fraction = 0.0,
+    double fog_density = 0.0) {
   EnvironmentStateBuilder builder_(_fbb);
+  builder_.add_fog_density(fog_density);
+  builder_.add_snow_fraction(snow_fraction);
   builder_.add_visibility_multiplier(visibility_multiplier);
   builder_.add_movement_multiplier(movement_multiplier);
   builder_.add_shore_water_depth_m(shore_water_depth_m);
@@ -2583,6 +2612,7 @@ inline ::flatbuffers::Offset<EnvironmentState> CreateEnvironmentState(
   builder_.add_sun_elevation_degrees(sun_elevation_degrees);
   builder_.add_year_fraction(year_fraction);
   builder_.add_day_fraction(day_fraction);
+  builder_.add_fuzzy_weather_enabled(fuzzy_weather_enabled);
   return builder_.Finish();
 }
 

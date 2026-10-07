@@ -2,6 +2,7 @@
 에디터 Python에서 실행하면 기존 DA에 저장한 값을 그대로 내보낸다.
 """
 from pathlib import Path
+import math
 import re
 import unreal
 
@@ -20,6 +21,25 @@ def export_profile(asset):
         # 숫자/연속 대문자가 있는 단위 이름은 Python의 snake_case 변환과 달라질 수 있어요.
         # 헤더의 원래 reflection 이름으로 읽으면 Wm2K 같은 단위도 정확히 가져와요.
         lines.append(name[0].lower()+name[1:]+'='+format(asset.get_editor_property(name),'.12g'))
+    # 같은 DA 안의 퍼지 구조체도 내보내요. PC 절대 주소를 게임 코드에 넣지 않아요.
+    fuzzy_header=header.with_name('UEFuzzyWeatherProfile.h')
+    fuzzy_fields=re.findall(r'UPROPERTY[^\n]+\bdouble (\w+)\s*=',fuzzy_header.read_text(encoding='utf8'))
+    fuzzy=asset.get_editor_property('FuzzyWeather')
+    values={name:float(fuzzy.get_editor_property(name)) for name in fuzzy_fields}
+    bounds=[('HumidStartPct','HumidFullPct',0,100), ('FogHumidStartPct','FogHumidFullPct',0,100),
+            ('FullSnowTemperatureC','FullRainTemperatureC',-60,60), ('FogCalmStartMps','FogCalmEndMps',0,200),
+            ('SoilDryStart','SoilDryFull',0,1)]
+    if not all(math.isfinite(v) for v in values.values()): raise ValueError('Fuzzy values must be finite')
+    for start,full,low,high in bounds:
+        if not low<=values[start]<values[full]<=high: raise ValueError('Invalid fuzzy bounds: '+start+'/'+full)
+    for name,low,high in [('LowPressureFullDeficitHpa',.01,100),('CloudFullCover',.001,1),('FogCoolingFullC',.01,60)]:
+        if not low<=values[name]<=high: raise ValueError('Invalid fuzzy value: '+name)
+    for name,value in values.items(): lines.append('fuzzy.'+name[0].lower()+name[1:]+'='+format(value,'.12g'))
+    for name in ('RainRuleOutputs','FogRuleOutputs','DustRuleOutputs'):
+        rules=list(fuzzy.get_editor_property(name))
+        if len(rules)!=8 or not all(math.isfinite(v) and 0<=v<=1 for v in rules):
+            raise ValueError('Expected eight fuzzy rule outputs in [0,1]: '+name)
+        lines.append('fuzzy.'+name[0].lower()+name[1:]+'='+','.join(format(v,'.12g') for v in rules))
     for rule in asset.get_editor_property('spawn_rules'):
         dex=rule.get_editor_property('pokemon_dex')
         weights=[rule.get_editor_property(p) for p in ('base_weight','rain_multiplier','snow_multiplier','night_multiplier')]

@@ -25,6 +25,19 @@ std::uint64_t profileKey(const InstanceWeatherProfile& profile) {
         p.sandVisibilityMultiplier,profile.meanTemperatureC,profile.initialRelativeHumidityPct,profile.meanPressureHpa,
         profile.initialSurfaceWaterKgM2,profile.initialSoilWaterKgM2,profile.gameSecondsPerRealSecond
     }) out<<v<<' ';
+    // 기본 규칙은 기존 CLIMATE1의 키를 유지해요. 새 규칙으로 계속 진행할 수 있어요.
+    // 사용자 조절값이 다르면 다른 기후 설정이므로 기존의 복구 거절 절차를 유지해요.
+    const auto& f=p.fuzzyWeather;const FuzzyWeatherProfile defaults;
+    std::ostringstream fuzzy,original;fuzzy<<std::setprecision(17);original<<std::setprecision(17);
+    const auto append=[](std::ostream& stream,const FuzzyWeatherProfile& value) {
+        for(double v:{value.humidStartPct,value.humidFullPct,value.fogHumidStartPct,value.fogHumidFullPct,
+            value.lowPressureFullDeficitHpa,value.cloudFullCover,value.fullSnowTemperatureC,value.fullRainTemperatureC,
+            value.fogCoolingFullC,value.fogCalmStartMps,value.fogCalmEndMps,value.soilDryStart,value.soilDryFull}) stream<<v<<' ';
+        for(const auto* rules:{&value.rainRuleOutputs,&value.fogRuleOutputs,&value.dustRuleOutputs})
+            for(double v:*rules) stream<<v<<' ';
+    };
+    append(fuzzy,f);append(original,defaults);
+    if(fuzzy.str()!=original.str()) out<<"fuzzy1 "<<fuzzy.str();
     std::uint64_t key=14695981039346656037ull;
     for(unsigned char c:out.str()) {key^=c;key*=1099511628211ull;}return key;
 }
