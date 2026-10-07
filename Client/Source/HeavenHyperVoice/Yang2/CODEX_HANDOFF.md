@@ -3,6 +3,12 @@
 YANG2_CLIENT_AUTHORITY_ONLY — main 병합 금지예요. main → Yang2 방향만 허용해요.
 
 - 상태: 로컬 파트너 추종/공격 슬롯 수정, Editor 빌드 성공. 실제 플레이 확인은 사용자 담당이에요.
+- 최신 날씨: main의 퍼지 강수·눈·안개·먼지 규칙을 가져왔어요. Yang2는 같은
+  `FuzzyWeather.cpp`를 포함하고 `UEYang2Environment.cpp`가 DA의 기준13개/규칙24개를 전달해요.
+  서버 없이 계산한 눈 비중/안개는 같은 화면 상태로 전달해요. 로컬 어댑터는 main 병합 금지예요.
+- 퍼지 확인: main 서버/Editor와 Yang2 Editor 컴파일·링크 성공.
+  기존 숫자 검사와 DA→로컬 연결 검사는 확장해 컴파일했고 실행하지 않았어요.
+  공통 안내는 `Server/InstanceServer/FUZZY_WEATHER_GUIDE.md`예요.
 - 원인: `AddLocalPartner`의 액터 부착은 속도를 생성하지 않아 포켓몬 이동 AnimBP가 대기 상태에 남았어요.
 - 흐름: 공통 충돌 → 백그라운드 Recast 준비 → 서버 PartnerFollower 20Hz → 기존 이동 보간 → 기존 AnimBP예요.
 - 소유자: `Server/UEFieldPartnerSyncComponent.*`, `Yang2/UEYang2PartnerNavigation.cpp`예요.

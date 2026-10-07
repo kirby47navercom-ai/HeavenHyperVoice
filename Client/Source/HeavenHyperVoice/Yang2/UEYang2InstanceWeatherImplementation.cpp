@@ -10,6 +10,7 @@
 
 #include "../../../../Server/InstanceServer/src/InstanceWeather.cpp"
 #include "../../../../Server/InstanceServer/src/EarthScience/EnvironmentProfile.cpp"
+#include "../../../../Server/InstanceServer/src/EarthScience/FuzzyWeather.cpp"
 #include "../../../../Server/InstanceServer/src/EarthScience/EnvironmentClock.cpp"
 #include "../../../../Server/InstanceServer/src/EarthScience/SurfaceEnergyBalance.cpp"
 #include "../../../../Server/InstanceServer/src/EarthScience/AtmosphericBoundary.cpp"

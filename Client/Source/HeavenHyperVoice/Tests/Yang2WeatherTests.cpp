@@ -47,6 +47,15 @@ bool FYang2WeatherTest::RunTest(const FString&)
         FMath::Clamp(Snapshot.snowDepthM/Presentation->FullSnowCoverageDepthM,0.f,1.f)));
     TestTrue(TEXT("Local clock reaches common presentation"),Presentation->GetPresentationState().Environment.Enabled);
     Presentation->SetWeatherSource(nullptr);
+    // DA에서 바꾼 규칙이 공통 계산기로 들어가는지 확인하는 실행 가능한 검사예요.
+    auto* Custom=NewObject<UUEEnvironmentProfile>();
+    Custom->FuzzyWeather.FullSnowTemperatureC=-8;Custom->FuzzyWeather.FullRainTemperatureC=-4;
+    Custom->FuzzyWeather.RainRuleOutputs[5]=.8;
+    ApplyYang2EnvironmentProfile(nullptr,Custom,Profile);
+    TestEqual(TEXT("Custom fuzzy temperature copied"),Profile.environment.fuzzyWeather.fullSnowTemperatureC,-8.);
+    TestEqual(TEXT("Custom fuzzy rule copied"),Profile.environment.fuzzyWeather.rainRuleOutputs[5],.8);
+    heaven::instance::FuzzyWeatherInputs FuzzyInput;FuzzyInput.temperatureC=-6;
+    TestEqual(TEXT("Local engine uses custom snow bounds"),heaven::instance::evaluateFuzzyWeather(Profile.environment.fuzzyWeather,FuzzyInput).snowFraction,.5);
     // 레벨이 달라도 같은 플레이 세션이면 첫 시간 설정을 공유해요.
     auto* Session=NewObject<UGameInstance>();
     auto* FirstWorld=NewObject<UWorld>(); FirstWorld->SetGameInstance(Session);
@@ -72,12 +81,16 @@ bool FYang2WeatherTest::RunTest(const FString&)
         TestEqual(TEXT("DA sand copied"),Profile.environment.sandAvailability,Asset->SandAvailability);
         TestEqual(TEXT("DA heat exchange copied"),Profile.environment.airHeatTransferWm2K,Asset->AirHeatTransferWm2K);
         TestEqual(TEXT("DA spawn rows copied"),static_cast<int32>(Profile.spawnRules.size()),Asset->SpawnRules.Num());
+        TestEqual(TEXT("DA fuzzy humidity copied"),Profile.environment.fuzzyWeather.humidStartPct,Asset->FuzzyWeather.HumidStartPct);
+        TestEqual(TEXT("DA fuzzy rain rules copied"),Profile.environment.fuzzyWeather.rainRuleOutputs[5],Asset->FuzzyWeather.RainRuleOutputs[5]);
         Model.initialize(1,47,Profile);for(int i=0;i<600;++i)Model.advance(1);
         const auto LocalResult=Model.snapshot();
         const auto State=MakeYang2EnvironmentState(LocalResult.environment);
         TestTrue(TEXT("New environment outputs copied"),State.SurfaceHeatFluxWm2==LocalResult.environment.surfaceHeatFluxWm2 &&
             State.VisibilityMultiplier==LocalResult.environment.visibilityMultiplier && State.ImportedWaterKgM2==LocalResult.environment.importedWaterKgM2);
         TestTrue(TEXT("Local environment finite"),FMath::IsFinite(State.TideLevelM) && FMath::IsFinite(State.SandstormIntensity));
+        TestTrue(TEXT("Local fuzzy result reaches common state"),State.FuzzyWeatherEnabled &&
+            State.SnowFraction==LocalResult.environment.snowFraction && State.FogDensity==LocalResult.environment.fogDensity);
         if(Asset->SandAvailability>0)TestTrue(TEXT("Desert DA drives a storm"),State.SandstormIntensity>.01);
     }
     return true;

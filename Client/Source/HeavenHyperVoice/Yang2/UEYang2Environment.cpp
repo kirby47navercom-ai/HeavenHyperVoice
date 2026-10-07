@@ -15,6 +15,25 @@ void ApplyYang2EnvironmentProfile(UWorld* World,const UUEEnvironmentProfile* Ove
         if(It->Profile) { Asset=It->Profile; break; }
     }
     if(!Asset) return; // 기존 Yang2WeatherProfiles의 여섯 값도 계속 사용할 수 있다.
+    // DA의 퍼지 기준/규칙을 서버와 같은 계산기에 전달해요. 이 실행 경로는 Yang2 전용이에요.
+    auto& Fuzzy=Result.environment.fuzzyWeather;const auto& Source=Asset->FuzzyWeather;
+    Fuzzy.humidStartPct=Source.HumidStartPct;Fuzzy.humidFullPct=Source.HumidFullPct;
+    Fuzzy.fogHumidStartPct=Source.FogHumidStartPct;Fuzzy.fogHumidFullPct=Source.FogHumidFullPct;
+    Fuzzy.lowPressureFullDeficitHpa=Source.LowPressureFullDeficitHpa;Fuzzy.cloudFullCover=Source.CloudFullCover;
+    Fuzzy.fullSnowTemperatureC=Source.FullSnowTemperatureC;Fuzzy.fullRainTemperatureC=Source.FullRainTemperatureC;
+    Fuzzy.fogCoolingFullC=Source.FogCoolingFullC;
+    Fuzzy.fogCalmStartMps=Source.FogCalmStartMps;Fuzzy.fogCalmEndMps=Source.FogCalmEndMps;
+    Fuzzy.soilDryStart=Source.SoilDryStart;Fuzzy.soilDryFull=Source.SoilDryFull;
+    const bool RuleCountValid=Source.RainRuleOutputs.Num()==8 && Source.FogRuleOutputs.Num()==8 && Source.DustRuleOutputs.Num()==8;
+    if(RuleCountValid) for(int32 Index=0;Index<8;++Index) {
+        Fuzzy.rainRuleOutputs[Index]=Source.RainRuleOutputs[Index];
+        Fuzzy.fogRuleOutputs[Index]=Source.FogRuleOutputs[Index];
+        Fuzzy.dustRuleOutputs[Index]=Source.DustRuleOutputs[Index];
+    }
+    if(!RuleCountValid || !heaven::instance::validFuzzyWeatherProfile(Fuzzy)) {
+        UE_LOG(LogTemp,Warning,TEXT("Invalid FuzzyWeather in %s; using default fuzzy rules."),*Asset->GetPathName());
+        Fuzzy=heaven::instance::FuzzyWeatherProfile{};
+    }
     if(FMath::IsFinite(Asset->MeanTemperatureC)) Result.meanTemperatureC=FMath::Clamp(Asset->MeanTemperatureC,-60.0,60.0);
     if(FMath::IsFinite(Asset->InitialRelativeHumidityPct)) Result.initialRelativeHumidityPct=FMath::Clamp(Asset->InitialRelativeHumidityPct,0.0,100.0);
     if(FMath::IsFinite(Asset->MeanPressureHpa)) Result.meanPressureHpa=FMath::Clamp(Asset->MeanPressureHpa,800.0,1100.0);
@@ -99,5 +118,8 @@ FUEEnvironmentState MakeYang2EnvironmentState(const heaven::instance::Environmen
     Result.ShoreWaterDepthM=Source.shoreWaterDepthM;
     Result.MovementMultiplier=Source.movementMultiplier;
     Result.VisibilityMultiplier=Source.visibilityMultiplier;
+    Result.FuzzyWeatherEnabled=Source.fuzzyWeatherEnabled;
+    Result.SnowFraction=Source.snowFraction;
+    Result.FogDensity=Source.fogDensity;
     return Result;
 }
