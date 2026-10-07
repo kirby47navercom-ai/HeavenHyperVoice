@@ -5,7 +5,7 @@ namespace heaven::instance {
 double environmentSpawnWeight(const EnvironmentSpawnRule& r,const InstanceWeatherSnapshot& w) {
     using namespace earth;
     const double precipitation=clamp01(w.precipitationMmPerHour/10);
-    const double snow=clamp01((1-w.temperatureC)/2);
+    const double snow=w.environment.fuzzyWeatherEnabled ? w.environment.snowFraction : clamp01((1-w.temperatureC)/2);
     const double night=clamp01(-w.environment.sunElevationDegrees/12);
     // 경계에서 종족이 갑자기 갈리는 대신 비/눈/밤의 정도에 따라 가중치를 보간해요.
     return std::max(0.0,r.baseWeight)*(1+(r.rainMultiplier-1)*precipitation*(1-snow))*

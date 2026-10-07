@@ -11,7 +11,14 @@ namespace heaven::instance {
 InstanceWeatherProfile loadEnvironmentProfile(const std::string& filename) {
     // 데이터 에셋과 같은 필드 이름을 사용하므로 특정 맵 경로/좌표를 코드에 박지 않는다.
     InstanceWeatherProfile result;
+    auto& fuzzy=result.environment.fuzzyWeather;
     const std::map<std::string,double*> fields={
+        {"fuzzy.humidStartPct",&fuzzy.humidStartPct}, {"fuzzy.humidFullPct",&fuzzy.humidFullPct},
+        {"fuzzy.fogHumidStartPct",&fuzzy.fogHumidStartPct}, {"fuzzy.fogHumidFullPct",&fuzzy.fogHumidFullPct},
+        {"fuzzy.lowPressureFullDeficitHpa",&fuzzy.lowPressureFullDeficitHpa}, {"fuzzy.cloudFullCover",&fuzzy.cloudFullCover},
+        {"fuzzy.fullSnowTemperatureC",&fuzzy.fullSnowTemperatureC}, {"fuzzy.fullRainTemperatureC",&fuzzy.fullRainTemperatureC},
+        {"fuzzy.fogCoolingFullC",&fuzzy.fogCoolingFullC}, {"fuzzy.fogCalmStartMps",&fuzzy.fogCalmStartMps},
+        {"fuzzy.fogCalmEndMps",&fuzzy.fogCalmEndMps}, {"fuzzy.soilDryStart",&fuzzy.soilDryStart}, {"fuzzy.soilDryFull",&fuzzy.soilDryFull},
         {"iceTractionMultiplier",&result.environment.iceTractionMultiplier},
         {"swimSpeedCmPerSecond",&result.environment.swimSpeedCmPerSecond},
         {"wildRespawnSeconds",&result.environment.wildRespawnSeconds},
@@ -59,6 +66,20 @@ InstanceWeatherProfile loadEnvironmentProfile(const std::string& filename) {
         if(equals==std::string::npos) throw std::runtime_error("Expected name=value: "+line);
         const auto key=line.substr(first,line.find_last_not_of(" \t",equals-1)-first+1);
         if(!seen.insert(key).second) throw std::runtime_error("Duplicate environment key: "+key);
+        // 규칙은 정확히 8개여야 해요. 잘못된 파일을 조용히 기본값으로 바꾸지 않아요.
+        std::array<double,8>* rules=nullptr;
+        if(key=="fuzzy.rainRuleOutputs") rules=&fuzzy.rainRuleOutputs;
+        if(key=="fuzzy.fogRuleOutputs") rules=&fuzzy.fogRuleOutputs;
+        if(key=="fuzzy.dustRuleOutputs") rules=&fuzzy.dustRuleOutputs;
+        if(rules) {
+            std::string text=line.substr(equals+1);std::replace(text.begin(),text.end(),',',' ');
+            std::istringstream values(text);std::string extra;
+            for(auto& value:*rules)
+                if(!(values>>value) || !std::isfinite(value) || value<0 || value>1)
+                    throw std::runtime_error("Invalid fuzzy rule output: "+line);
+            if(values>>extra) throw std::runtime_error("Expected eight fuzzy rule outputs: "+line);
+            continue;
+        }
         if(key.rfind("water.",0)==0) {
             const auto id=key.substr(6);
             if(id.empty() || id.find_first_not_of("0123456789")!=std::string::npos || result.environment.waterRegions.size()>=64)
@@ -100,6 +121,7 @@ InstanceWeatherProfile loadEnvironmentProfile(const std::string& filename) {
             throw std::runtime_error("Invalid environment value: "+line);
         *field->second=value;
     }
+    if(!validFuzzyWeatherProfile(fuzzy)) throw std::runtime_error("Invalid fuzzy membership bounds or rule outputs");
     auto safe=result.environment; normalizeEnvironment(safe);
     if(safe.iceTractionMultiplier!=result.environment.iceTractionMultiplier || safe.swimSpeedCmPerSecond!=result.environment.swimSpeedCmPerSecond ||
         safe.wildRespawnSeconds!=result.environment.wildRespawnSeconds) throw std::runtime_error("Invalid movement/respawn setting");

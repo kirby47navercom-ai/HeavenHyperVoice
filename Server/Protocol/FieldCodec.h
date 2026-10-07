@@ -260,7 +260,10 @@ inline Bytes encodeWeatherState(const Weather& weather) {
         e.tideEnvelopeM,
         e.shoreWaterDepthM,
         e.movementMultiplier,
-        e.visibilityMultiplier);
+        e.visibilityMultiplier,
+        e.fuzzyWeatherEnabled,
+        e.snowFraction,
+        e.fogDensity);
     const auto packet=HeavenField::CreateWeatherState(fbb,
         weather.roomId,
         weather.revision,

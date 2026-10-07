@@ -45,6 +45,10 @@ struct FUEEnvironmentState {
     UPROPERTY(BlueprintReadOnly, Category="Environment") double MovementMultiplier=1;
     // 서버가 확정한 야생 탐지 배율
     UPROPERTY(BlueprintReadOnly, Category="Environment") double VisibilityMultiplier=1;
+    // 구버전 서버에서 값이 없으면 기존 화면 규칙을 사용해요.
+    UPROPERTY(BlueprintReadOnly, Category="Environment|Fuzzy") bool FuzzyWeatherEnabled=false;
+    UPROPERTY(BlueprintReadOnly, Category="Environment|Fuzzy") double SnowFraction=0;
+    UPROPERTY(BlueprintReadOnly, Category="Environment|Fuzzy") double FogDensity=0;
 };
 // 자정·연말·북쪽에서 긴 경로로 역회전하지 않게 순환 값을 보간한다.
 void BlendEnvironment(FUEEnvironmentState& current,const FUEEnvironmentState& target,double alpha);

@@ -21,5 +21,8 @@ struct EnvironmentState {
     double shoreWaterDepthM = 0; // 프로필의 해변 기준점에 물이 덮인 깊이
     double movementMultiplier = 1; // 서버가 확정한 야생 이동 배율
     double visibilityMultiplier = 1; // 서버가 확정한 야생 탐지 배율
+    bool fuzzyWeatherEnabled = false; // 구버전 패킷에서는 기존 표시 규칙을 유지해요.
+    double snowFraction = 0; // 서버가 정한 비/눈 비중을 클라이언트가 그대로 사용해요.
+    double fogDensity = 0; // 습도·잔잔한 바람·차가운 지표의 퍼지 결과예요.
 };
 }

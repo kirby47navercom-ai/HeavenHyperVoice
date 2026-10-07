@@ -106,19 +106,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Instance Weather|Tuning", meta = (ClampMin = "0.1", Units = "MetersPerSecond"))
 	float StrongWindMps = 15.0f;
 
-	/** 이 습도부터 안개 연출이 시작된다. */
+	/** 구버전 패킷용 안개 시작 습도. 새 서버는 환경 DA의 퍼지 규칙을 사용해요. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Instance Weather|Tuning", meta = (ClampMin = "0.0", ClampMax = "100.0"))
 	float FogStartHumidityPct = 85.0f;
 
-	/** 이 습도에서 안개 연출이 최대가 된다. */
+	/** 구버전 패킷용 최대 안개 습도예요. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Instance Weather|Tuning", meta = (ClampMin = "0.0", ClampMax = "100.0"))
 	float FullFogHumidityPct = 100.0f;
 
-	/** 이 온도 이하는 강수를 전부 눈으로 표현한다. */
+	/** 구버전 패킷용 눈 온도. 새 서버는 DA의 FuzzyWeather에서 조절해요. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Instance Weather|Tuning", meta = (Units = "Celsius"))
 	float FullSnowTemperatureC = -1.0f;
 
-	/** 이 온도 이상은 강수를 전부 비로 표현한다. */
+	/** 구버전 패킷용 비 온도예요. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Instance Weather|Tuning", meta = (Units = "Celsius"))
 	float FullRainTemperatureC = 1.0f;
 

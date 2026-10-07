@@ -41,6 +41,15 @@ bool FInstanceWeatherTest::RunTest(const FString&)
     const auto Visual = Presentation->GetPresentationState();
     TestTrue(TEXT("Warm snapshot transitions to rain"), Visual.RainIntensity > Visual.SnowIntensity);
     TestTrue(TEXT("Wind crosses north by short arc"), Visual.WindDirectionDegrees < 2 || Visual.WindDirectionDegrees > 358);
+    // 새 패킷에서는 클라이언트의 온도/습도 기준보다 서버 퍼지 결과가 우선이에요.
+    Weather.Environment.FuzzyWeatherEnabled=true;
+    Weather.Environment.SnowFraction=.75;
+    Weather.Environment.FogDensity=.42;
+    Weather.TemperatureC=20;
+    Bridge->OnInstanceWeatherChanged.Broadcast(Weather);
+    Presentation->TickComponent(10,LEVELTICK_All,nullptr);
+    TestTrue(TEXT("Server fuzzy snow overrides local temperature"),FMath::IsNearlyEqual(Presentation->GetPresentationState().SnowIntensity,.75f));
+    TestTrue(TEXT("Server fuzzy fog reaches presentation"),FMath::IsNearlyEqual(Presentation->GetPresentationState().FogDensity,.42f));
     Bridge->OnInstanceWeatherChanged.Broadcast(FUEInstanceWeatherState{});
     TestFalse(TEXT("Disconnect clears environment immediately"),Presentation->GetPresentationState().Environment.Enabled);
     TestEqual(TEXT("Disconnect clears rain immediately"),Presentation->GetPresentationState().RainIntensity,0.f);

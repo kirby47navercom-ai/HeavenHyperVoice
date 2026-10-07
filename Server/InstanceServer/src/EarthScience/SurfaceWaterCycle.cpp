@@ -35,10 +35,11 @@ double InstanceWeather::updateHydrology(double dt) {
     adjustSaturation(nearAir_);
     adjustSaturation(upperAir_);
 
-    // 4) 강수: 상층 구름물이 임계량을 넘으면 비 또는 눈으로 내려온다.
+    // 4) 강수: 퍼지 규칙이 강수 세기와 눈 비중을 정해요. 실제 구름물만 지표로 옮겨요.
+    const auto fuzzy = evaluateFuzzyWeather(profile_.environment.fuzzyWeather, fuzzyWeatherInputs());
     const double cloudExcess = std::max(0.0, upperAir_.liquidKgM2 - 0.05);
-    const double falling = cloudExcess * (-std::expm1(-dt / 600.0));
-    const double snowFraction = clamp01((1.0 - nearAir_.temperatureC) / 2.0);
+    const double falling = cloudExcess * (-std::expm1(-dt / 600.0)) * fuzzy.precipitationStrength;
+    const double snowFraction = fuzzy.snowFraction;
     const double snowfall = transfer(upperAir_.liquidKgM2, ground_.snowKgM2,
                                      falling * snowFraction);
     const double rainfall = transfer(upperAir_.liquidKgM2, ground_.waterKgM2,
